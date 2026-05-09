@@ -104,11 +104,12 @@ export default function Index() {
     if (prFile && twoBFile) setStep('map');
   };
 
+  const requireTaxable = mode === 'output';
   const handleReconcile = async () => {
-    if (!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping)) return;
+    if (!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable)) return;
     // Validate any uploaded journal mappings
     const activeJournals = journals.filter((j) => j.file);
-    if (activeJournals.some((j) => !isMappingComplete(j.mapping))) return;
+    if (activeJournals.some((j) => !isMappingComplete(j.mapping, requireTaxable))) return;
     setProcessing(true);
     setTimeout(() => {
       const prRecords = mapToRecords(prRows, prMapping, 'PR', 'Purchase Register');
