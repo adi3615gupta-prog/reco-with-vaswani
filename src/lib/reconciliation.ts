@@ -225,11 +225,14 @@ export function reconcile(
     const sgstDiff = +(p.sgst - t.sgst).toFixed(2);
     const igstDiff = +(p.igst - t.igst).toFixed(2);
     const gstDiff = +(Math.abs(cgstDiff) + Math.abs(sgstDiff) + Math.abs(igstDiff)).toFixed(2);
+    const hasTaxable = typeof p.taxableValue === 'number' && typeof t.taxableValue === 'number';
+    const taxableDiff = hasTaxable ? +((p.taxableValue! - t.taxableValue!)).toFixed(2) : undefined;
 
     const within =
       Math.abs(cgstDiff) <= TOLERANCE &&
       Math.abs(sgstDiff) <= TOLERANCE &&
-      Math.abs(igstDiff) <= TOLERANCE;
+      Math.abs(igstDiff) <= TOLERANCE &&
+      (taxableDiff === undefined || Math.abs(taxableDiff) <= TOLERANCE);
 
     let status: MatchStatus = within ? 'Perfect Match' : 'Value Mismatch';
 
