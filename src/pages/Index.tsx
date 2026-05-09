@@ -539,6 +539,7 @@ export default function Index() {
             <ResultsCategoryTabs results={results} summary={summary} />
           </div>
         )}
+        </>)}
       </main>
     </div>
   );
