@@ -15,7 +15,6 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -29,34 +28,12 @@ jobs:
     - name: Build application
       run: npm run build
       
-    - name: Get current version and bump
+    - name: Get version
       id: version
       run: |
         $version = (Get-Content package.json | ConvertFrom-Json).version
-        $parts = $version.Split('.')
-        $patch = [int]$parts[2] + 1
-        $newVersion = "$($parts[0]).$($parts[1]).$patch"
-        Write-Output "new_version=$newVersion" >> $env:GITHUB_OUTPUT
-        Write-Output "Current: $version, New: $newVersion"
-        
-    - name: Update version in package.json
-      run: |
-        $content = Get-Content package.json -Raw
-        $newContent = $content -replace '"version": "[^"]+"', "`"version`": `"${{ steps.version.outputs.new_version }}`""
-        $newContent | Set-Content package.json -NoNewline
-        
-    - name: Commit version update
-      run: |
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-        git add package.json
-        git commit -m "Auto-bump version to ${{ steps.version.outputs.new_version }}"
-        git push origin main
-        
-    - name: Create new tag
-      run: |
-        git tag v${{ steps.version.outputs.new_version }}
-        git push origin v${{ steps.version.outputs.new_version }}
+        Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+        Write-Output "Building version: $version"
       
     - name: Build Electron app
       run: npm run build:exe
@@ -69,10 +46,10 @@ jobs:
         name: installer
         path: dist-electron/*.exe
         
-    - name: Create Release
+    - name: Create Tag and Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ steps.version.outputs.new_version }}
+        tag_name: v${{ steps.version.outputs.version }}
         files: |
           dist-electron/*.exe
           dist-electron/latest.yml
