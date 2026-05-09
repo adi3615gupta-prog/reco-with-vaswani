@@ -46,6 +46,14 @@ jobs:
         name: installer
         path: dist-electron/*.exe
         
+    - name: Delete existing release if exists
+      continue-on-error: true
+      run: |
+        gh release delete v${{ steps.version.outputs.version }} --yes || true
+        git push origin --delete v${{ steps.version.outputs.version }} || true
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
     - name: Create Tag and Release
       uses: softprops/action-gh-release@v1
       with:
