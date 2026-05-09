@@ -421,9 +421,9 @@ export default function Index() {
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">Reconciliation Results</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{term.title} Results</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} at ITC risk
+                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} {term.riskLabel}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
