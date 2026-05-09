@@ -360,32 +360,35 @@ export default function Index() {
             </div>
             <div className="grid gap-4">
               <ColumnMapper
-                title={`Purchase Register — ${prRows.length} rows`}
+                title={`${term.primaryBookLabel} — ${prRows.length} rows`}
                 headers={prHeaders}
                 mapping={prMapping}
                 onChange={setPrMapping}
-                labelOverrides={{ gstin: 'GST No.' }}
+                labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
+                requireTaxable={requireTaxable}
               />
               <ColumnMapper
-                title={`GSTR-2B — ${twoBRows.length} rows`}
+                title={`${term.govtLabel} — ${twoBRows.length} rows`}
                 headers={twoBHeaders}
                 mapping={twoBMapping}
                 onChange={setTwoBMapping}
-                labelOverrides={{ supplierName: 'Trade / Legal Name' }}
+                labelOverrides={{ supplierName: term.partyTradeLabel }}
+                requireTaxable={requireTaxable}
               />
               {journals.filter((j) => j.file).map((j, idx) => (
                 <ColumnMapper
                   key={j.id}
-                  title={`Journal Register ${idx + 1} — ${j.rows.length} rows`}
+                  title={`${term.secondaryBookLabel} ${idx + 1} — ${j.rows.length} rows`}
                   headers={j.headers}
                   mapping={j.mapping}
                   onChange={(m) => updateJournalMapping(j.id, m)}
-                  labelOverrides={{ gstin: 'GST No.' }}
+                  labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
+                  requireTaxable={requireTaxable}
                 />
               ))}
               {prDnFile && (
                 <ColumnMapper
-                  title={`PR Debit Notes — ${prDnRows.length} rows`}
+                  title={`${term.primaryShort} Debit Notes — ${prDnRows.length} rows`}
                   headers={prDnHeaders}
                   mapping={prDnMapping}
                   onChange={setPrDnMapping}
@@ -393,7 +396,7 @@ export default function Index() {
               )}
               {twoBDnFile && (
                 <ColumnMapper
-                  title={`GSTR-2B Debit Notes — ${twoBDnRows.length} rows`}
+                  title={`${term.govtShort} Debit Notes — ${twoBDnRows.length} rows`}
                   headers={twoBDnHeaders}
                   mapping={twoBDnMapping}
                   onChange={setTwoBDnMapping}
@@ -404,7 +407,7 @@ export default function Index() {
               <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
               <Button
                 onClick={handleReconcile}
-                disabled={!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping) || journals.some((j) => j.file && !isMappingComplete(j.mapping)) || processing}
+                disabled={!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable) || journals.some((j) => j.file && !isMappingComplete(j.mapping, requireTaxable)) || processing}
                 className="gap-2 shadow-xl shadow-primary/25 hover:shadow-2xl hover:shadow-primary/30 transition-all duration-300 hover:scale-[1.02]"
               >
                 {processing ? 'Processing...' : 'Run Reconciliation'} <ArrowRight className="w-4 h-4" />
