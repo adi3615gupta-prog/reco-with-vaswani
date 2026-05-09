@@ -133,7 +133,7 @@ export default function Index() {
     }, 100);
   };
 
-  const handleReset = () => {
+  const handleReset = (clearMode = false) => {
     setStep('upload');
     setPrFile(null);
     setTwoBFile(null);
@@ -152,7 +152,10 @@ export default function Index() {
     setSummary(null);
     setShowMonthly(false);
     setShowPartyWise(false);
+    if (clearMode) setMode(null);
   };
+
+  const term = mode ? TERMS[mode] : TERMS.input;
 
   return (
     <div className="min-h-screen bg-background transition-colors duration-500">
