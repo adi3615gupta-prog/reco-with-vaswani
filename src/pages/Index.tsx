@@ -11,15 +11,18 @@ import { parseFile, detectColumnMapping, mapToRecords, exportMonthlyComparison, 
 import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
 import { aggregateByParty } from '@/lib/partyWise';
 import { PartyWiseReport } from '@/components/PartyWiseReport';
-import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2, Repeat } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { downloadUserGuide } from '@/lib/userGuide';
 import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
+import { ModeSelector } from '@/components/ModeSelector';
+import { TERMS, type ReconciliationMode } from '@/lib/mode';
 
 type Step = 'upload' | 'map' | 'results';
 
 export default function Index() {
+  const [mode, setMode] = useState<ReconciliationMode | null>(null);
   const [step, setStep] = useState<Step>('upload');
   const [prFile, setPrFile] = useState<File | null>(null);
   const [twoBFile, setTwoBFile] = useState<File | null>(null);
@@ -101,11 +104,12 @@ export default function Index() {
     if (prFile && twoBFile) setStep('map');
   };
 
+  const requireTaxable = mode === 'output';
   const handleReconcile = async () => {
-    if (!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping)) return;
+    if (!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable)) return;
     // Validate any uploaded journal mappings
     const activeJournals = journals.filter((j) => j.file);
-    if (activeJournals.some((j) => !isMappingComplete(j.mapping))) return;
+    if (activeJournals.some((j) => !isMappingComplete(j.mapping, requireTaxable))) return;
     setProcessing(true);
     setTimeout(() => {
       const prRecords = mapToRecords(prRows, prMapping, 'PR', 'Purchase Register');
@@ -120,15 +124,16 @@ export default function Index() {
       setSummary(sum);
       setStep('results');
       setProcessing(false);
+      const t = mode ? TERMS[mode] : TERMS.input;
       toast.success('Reconciliation complete', {
-        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} at ITC risk`,
+        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} ${t.riskLabel}`,
         icon: <CheckCircle2 className="w-4 h-4 text-success" />,
         duration: 5000,
       });
     }, 100);
   };
 
-  const handleReset = () => {
+  const handleReset = (clearMode = false) => {
     setStep('upload');
     setPrFile(null);
     setTwoBFile(null);
@@ -147,7 +152,10 @@ export default function Index() {
     setSummary(null);
     setShowMonthly(false);
     setShowPartyWise(false);
+    if (clearMode) setMode(null);
   };
+
+  const term = mode ? TERMS[mode] : TERMS.input;
 
   return (
     <div className="min-h-screen bg-background transition-colors duration-500">
@@ -167,11 +175,21 @@ export default function Index() {
             </div>
             <div>
               <h1 className="text-lg font-bold tracking-tight">GST Reconciliation</h1>
-              <p className="text-xs opacity-70">Purchase Register ↔ GSTR-2B</p>
+              <p className="text-xs opacity-70">{term.subtitle}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            {mode && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleReset(true)}
+                className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
+              >
+                <Repeat className="w-3.5 h-3.5" /> Switch Mode
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -190,7 +208,7 @@ export default function Index() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleReset}
+                onClick={() => handleReset(false)}
                 className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Start Over
@@ -237,6 +255,9 @@ export default function Index() {
       </div>
 
       <main className="container mx-auto px-4 py-8 space-y-8 relative">
+        {!mode && <ModeSelector onSelect={setMode} />}
+        {mode && (<>
+
         {/* Upload */}
         {step === 'upload' && (
           <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -246,53 +267,53 @@ export default function Index() {
               </div>
               <h2 className="text-2xl font-bold tracking-tight">Upload Your Files</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Upload your Purchase Register and GSTR-2B data to begin intelligent reconciliation
+                Upload your {term.primaryBookLabel} and {term.govtLabel} to begin intelligent reconciliation
               </p>
             </div>
             <div className="grid md:grid-cols-2 gap-5">
               <FileUploadZone
-                label="Purchase Register"
-                description="Your books / Tally export"
+                label={term.primaryBookLabel}
+                description={term.primaryBookDesc}
                 onFileSelect={handlePrFile}
                 fileName={prFile?.name}
               />
               <FileUploadZone
-                label="GSTR-2B Data"
-                description="Downloaded from GST Portal"
+                label={term.govtLabel}
+                description={term.govtDesc}
                 onFileSelect={handleTwoBFile}
                 fileName={twoBFile?.name}
               />
               <FileUploadZone
-                label="Upload PR Debit Notes"
-                description="Optional — deducted from PR"
+                label={`Upload ${term.primaryShort} Debit Notes`}
+                description={`Optional — deducted from ${term.primaryShort}`}
                 onFileSelect={handlePrDnFile}
                 fileName={prDnFile?.name}
               />
               <FileUploadZone
-                label="Upload GSTR-2B Debit Notes"
-                description="Optional — deducted from 2B"
+                label={`Upload ${term.govtShort} Debit Notes`}
+                description={`Optional — deducted from ${term.govtShort}`}
                 onFileSelect={handleTwoBDnFile}
                 fileName={twoBDnFile?.name}
               />
             </div>
 
-            {/* Journal Registers */}
+            {/* Secondary books */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold">Journal Registers</h3>
-                  <p className="text-xs text-muted-foreground">Optional — combined with Purchase Register and compared to GSTR-2B</p>
+                  <h3 className="text-sm font-semibold">{term.secondaryBookLabel}s</h3>
+                  <p className="text-xs text-muted-foreground">{term.secondaryBookDesc}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={addJournal} className="gap-1.5">
-                  <Plus className="w-3.5 h-3.5" /> Add Journal Register
+                  <Plus className="w-3.5 h-3.5" /> Add {term.secondaryBookLabel}
                 </Button>
               </div>
               <div className="grid md:grid-cols-2 gap-5">
                 {journals.map((j, idx) => (
                   <div key={j.id} className="relative">
                     <FileUploadZone
-                      label={`Journal Register ${idx + 1}`}
-                      description="e.g. Journal entries for purchases"
+                      label={`${term.secondaryBookLabel} ${idx + 1}`}
+                      description={mode === 'output' ? 'e.g. additional sales book' : 'e.g. Journal entries for purchases'}
                       onFileSelect={(file) => handleJournalFile(j.id, file)}
                       fileName={j.file?.name}
                     />
@@ -301,7 +322,7 @@ export default function Index() {
                         type="button"
                         onClick={() => removeJournal(j.id)}
                         className="absolute top-2 right-2 w-7 h-7 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-                        aria-label="Remove journal register"
+                        aria-label="Remove book"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -339,32 +360,35 @@ export default function Index() {
             </div>
             <div className="grid gap-4">
               <ColumnMapper
-                title={`Purchase Register — ${prRows.length} rows`}
+                title={`${term.primaryBookLabel} — ${prRows.length} rows`}
                 headers={prHeaders}
                 mapping={prMapping}
                 onChange={setPrMapping}
-                labelOverrides={{ gstin: 'GST No.' }}
+                labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
+                requireTaxable={requireTaxable}
               />
               <ColumnMapper
-                title={`GSTR-2B — ${twoBRows.length} rows`}
+                title={`${term.govtLabel} — ${twoBRows.length} rows`}
                 headers={twoBHeaders}
                 mapping={twoBMapping}
                 onChange={setTwoBMapping}
-                labelOverrides={{ supplierName: 'Trade / Legal Name' }}
+                labelOverrides={{ supplierName: term.partyTradeLabel }}
+                requireTaxable={requireTaxable}
               />
               {journals.filter((j) => j.file).map((j, idx) => (
                 <ColumnMapper
                   key={j.id}
-                  title={`Journal Register ${idx + 1} — ${j.rows.length} rows`}
+                  title={`${term.secondaryBookLabel} ${idx + 1} — ${j.rows.length} rows`}
                   headers={j.headers}
                   mapping={j.mapping}
                   onChange={(m) => updateJournalMapping(j.id, m)}
-                  labelOverrides={{ gstin: 'GST No.' }}
+                  labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
+                  requireTaxable={requireTaxable}
                 />
               ))}
               {prDnFile && (
                 <ColumnMapper
-                  title={`PR Debit Notes — ${prDnRows.length} rows`}
+                  title={`${term.primaryShort} Debit Notes — ${prDnRows.length} rows`}
                   headers={prDnHeaders}
                   mapping={prDnMapping}
                   onChange={setPrDnMapping}
@@ -372,7 +396,7 @@ export default function Index() {
               )}
               {twoBDnFile && (
                 <ColumnMapper
-                  title={`GSTR-2B Debit Notes — ${twoBDnRows.length} rows`}
+                  title={`${term.govtShort} Debit Notes — ${twoBDnRows.length} rows`}
                   headers={twoBDnHeaders}
                   mapping={twoBDnMapping}
                   onChange={setTwoBDnMapping}
@@ -383,7 +407,7 @@ export default function Index() {
               <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
               <Button
                 onClick={handleReconcile}
-                disabled={!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping) || journals.some((j) => j.file && !isMappingComplete(j.mapping)) || processing}
+                disabled={!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable) || journals.some((j) => j.file && !isMappingComplete(j.mapping, requireTaxable)) || processing}
                 className="gap-2 shadow-xl shadow-primary/25 hover:shadow-2xl hover:shadow-primary/30 transition-all duration-300 hover:scale-[1.02]"
               >
                 {processing ? 'Processing...' : 'Run Reconciliation'} <ArrowRight className="w-4 h-4" />
@@ -397,9 +421,9 @@ export default function Index() {
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">Reconciliation Results</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{term.title} Results</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} at ITC risk
+                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} {term.riskLabel}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -456,7 +480,7 @@ export default function Index() {
                       pr: prDnRows.length ? toDN(prDnRows, prDnMapping) : undefined,
                       twoB: twoBDnRows.length ? toDN(twoBDnRows, twoBDnMapping) : undefined,
                     };
-                    exportMonthlyComparison(rows, 'Monthly_Comparison_Report.xlsx', dn);
+                    exportMonthlyComparison(rows, `${term.exportPrefix}_Monthly_Comparison_Report.xlsx`, dn);
                     toast.success('Monthly comparison exported', { description: `${rows.length} rows • Excel workbook ready.` });
                   }}
                   size="sm"
@@ -466,7 +490,7 @@ export default function Index() {
                 </Button>
                 <Button
                   onClick={() => {
-                    exportPartyWise(aggregateByParty(results), 'Party_Wise_Report.xlsx');
+                    exportPartyWise(aggregateByParty(results), `${term.exportPrefix}_Party_Wise_Report.xlsx`);
                     toast.success('Party-wise report exported', { description: 'Excel workbook ready in your downloads.' });
                   }}
                   size="sm"
@@ -518,6 +542,7 @@ export default function Index() {
             <ResultsCategoryTabs results={results} summary={summary} />
           </div>
         )}
+        </>)}
       </main>
     </div>
   );
