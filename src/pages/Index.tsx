@@ -124,8 +124,9 @@ export default function Index() {
       setSummary(sum);
       setStep('results');
       setProcessing(false);
+      const t = mode ? TERMS[mode] : TERMS.input;
       toast.success('Reconciliation complete', {
-        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} at ITC risk`,
+        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} ${t.riskLabel}`,
         icon: <CheckCircle2 className="w-4 h-4 text-success" />,
         duration: 5000,
       });
