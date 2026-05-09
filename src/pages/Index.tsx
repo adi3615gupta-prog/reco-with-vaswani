@@ -490,7 +490,7 @@ export default function Index() {
                 </Button>
                 <Button
                   onClick={() => {
-                    exportPartyWise(aggregateByParty(results), 'Party_Wise_Report.xlsx');
+                    exportPartyWise(aggregateByParty(results), `${term.exportPrefix}_Party_Wise_Report.xlsx`);
                     toast.success('Party-wise report exported', { description: 'Excel workbook ready in your downloads.' });
                   }}
                   size="sm"
