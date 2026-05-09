@@ -260,6 +260,7 @@ export function reconcile(
       cgstDiff,
       sgstDiff,
       igstDiff,
+      taxableDiff,
       remark: extraRemark,
       matchMethod,
     });
