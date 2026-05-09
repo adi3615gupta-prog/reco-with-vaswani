@@ -175,11 +175,21 @@ export default function Index() {
             </div>
             <div>
               <h1 className="text-lg font-bold tracking-tight">GST Reconciliation</h1>
-              <p className="text-xs opacity-70">Purchase Register ↔ GSTR-2B</p>
+              <p className="text-xs opacity-70">{term.subtitle}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            {mode && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleReset(true)}
+                className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
+              >
+                <Repeat className="w-3.5 h-3.5" /> Switch Mode
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -198,7 +208,7 @@ export default function Index() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleReset}
+                onClick={() => handleReset(false)}
                 className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Start Over
