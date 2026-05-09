@@ -480,7 +480,7 @@ export default function Index() {
                       pr: prDnRows.length ? toDN(prDnRows, prDnMapping) : undefined,
                       twoB: twoBDnRows.length ? toDN(twoBDnRows, twoBDnMapping) : undefined,
                     };
-                    exportMonthlyComparison(rows, 'Monthly_Comparison_Report.xlsx', dn);
+                    exportMonthlyComparison(rows, `${term.exportPrefix}_Monthly_Comparison_Report.xlsx`, dn);
                     toast.success('Monthly comparison exported', { description: `${rows.length} rows • Excel workbook ready.` });
                   }}
                   size="sm"
