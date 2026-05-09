@@ -297,23 +297,23 @@ export default function Index() {
               />
             </div>
 
-            {/* Journal Registers */}
+            {/* Secondary books */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold">Journal Registers</h3>
-                  <p className="text-xs text-muted-foreground">Optional — combined with Purchase Register and compared to GSTR-2B</p>
+                  <h3 className="text-sm font-semibold">{term.secondaryBookLabel}s</h3>
+                  <p className="text-xs text-muted-foreground">{term.secondaryBookDesc}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={addJournal} className="gap-1.5">
-                  <Plus className="w-3.5 h-3.5" /> Add Journal Register
+                  <Plus className="w-3.5 h-3.5" /> Add {term.secondaryBookLabel}
                 </Button>
               </div>
               <div className="grid md:grid-cols-2 gap-5">
                 {journals.map((j, idx) => (
                   <div key={j.id} className="relative">
                     <FileUploadZone
-                      label={`Journal Register ${idx + 1}`}
-                      description="e.g. Journal entries for purchases"
+                      label={`${term.secondaryBookLabel} ${idx + 1}`}
+                      description={mode === 'output' ? 'e.g. additional sales book' : 'e.g. Journal entries for purchases'}
                       onFileSelect={(file) => handleJournalFile(j.id, file)}
                       fileName={j.file?.name}
                     />
@@ -322,7 +322,7 @@ export default function Index() {
                         type="button"
                         onClick={() => removeJournal(j.id)}
                         className="absolute top-2 right-2 w-7 h-7 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-                        aria-label="Remove journal register"
+                        aria-label="Remove book"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
