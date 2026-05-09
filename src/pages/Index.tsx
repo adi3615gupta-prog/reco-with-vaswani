@@ -255,6 +255,9 @@ export default function Index() {
       </div>
 
       <main className="container mx-auto px-4 py-8 space-y-8 relative">
+        {!mode && <ModeSelector onSelect={setMode} />}
+        {mode && (<>
+
         {/* Upload */}
         {step === 'upload' && (
           <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
