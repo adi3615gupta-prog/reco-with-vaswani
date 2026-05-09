@@ -11,15 +11,18 @@ import { parseFile, detectColumnMapping, mapToRecords, exportMonthlyComparison, 
 import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
 import { aggregateByParty } from '@/lib/partyWise';
 import { PartyWiseReport } from '@/components/PartyWiseReport';
-import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2, Repeat } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { downloadUserGuide } from '@/lib/userGuide';
 import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
+import { ModeSelector } from '@/components/ModeSelector';
+import { TERMS, type ReconciliationMode } from '@/lib/mode';
 
 type Step = 'upload' | 'map' | 'results';
 
 export default function Index() {
+  const [mode, setMode] = useState<ReconciliationMode | null>(null);
   const [step, setStep] = useState<Step>('upload');
   const [prFile, setPrFile] = useState<File | null>(null);
   const [twoBFile, setTwoBFile] = useState<File | null>(null);
