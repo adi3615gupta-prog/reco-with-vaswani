@@ -1,4 +1,5 @@
 import type { ReconciliationResult } from './reconciliation';
+import { deriveItcEligibility, daysOldFrom, taxRatePct, posCompliance, rule37Warning, actionableRemark, isLateFiler } from './compliance';
 
 export interface PartyInvoiceRow {
   invoiceNoPR: string;
@@ -13,6 +14,14 @@ export interface PartyInvoiceRow {
   sgst2B: number;
   status: string;
   remark?: string;
+  // Compliance audit columns
+  itcEligibility?: string;
+  gstr1Status?: string;
+  filingDate?: string;
+  daysOld?: number | '';
+  taxRatePct?: number | '';
+  posCompliance?: string;
+  rule37Warning?: string;
 }
 
 export type PartyOverallStatus = 'All Matched' | 'Has Mismatches' | 'Has Missing';
@@ -80,6 +89,11 @@ export function aggregateByParty(results: ReconciliationResult[]): PartySummary[
     const pr = r.prRecord;
     const tb = r.twoBRecord;
 
+    const baseRec = pr || tb;
+    const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
+    const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
+    const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
+
     p.invoices.push({
       invoiceNoPR: pr?.invoiceNo || '',
       invoiceNo2B: tb?.invoiceNo || '',
@@ -92,7 +106,14 @@ export function aggregateByParty(results: ReconciliationResult[]): PartySummary[
       sgstPR: pr?.sgst ?? 0,
       sgst2B: tb?.sgst ?? 0,
       status: r.status,
-      remark: r.remark,
+      remark: actionableRemark(r.status, r.remark, lateFiler),
+      itcEligibility: deriveItcEligibility(baseRec?.supplierName),
+      gstr1Status: tb?.filingStatus ?? '',
+      filingDate: tb?.filingDate ?? '',
+      daysOld: days,
+      taxRatePct: taxRatePct(pr?.taxableValue ?? tb?.taxableValue, totalTax),
+      posCompliance: posCompliance(baseRec),
+      rule37Warning: rule37Warning(r.status, days),
     });
 
     p.totals.count++;

@@ -9,9 +9,14 @@ export interface InvoiceRecord {
   cgst: number;
   sgst: number;
   source: 'PR' | '2B';
+  sourceLabel?: string;
   cleanedInvoice?: string;
   normalizedDate?: Date;
   financialYear?: string;
+  // Optional compliance fields (for audit columns only)
+  taxableValue?: number;
+  filingStatus?: string;
+  filingDate?: string;
 }
 
 export type MatchStatus =

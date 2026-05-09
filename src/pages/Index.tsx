@@ -7,12 +7,15 @@ import { SummaryCards } from '@/components/SummaryCards';
 import { MonthlyBreakdown } from '@/components/MonthlyBreakdown';
 import { ResultsCategoryTabs } from '@/components/ResultsCategoryTabs';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { parseFile, detectColumnMapping, mapToRecords, exportMonthlyComparison, exportPartyWise, type ColumnMapping, type MonthlyComparisonRow } from '@/lib/fileParser';
+import { parseFile, detectColumnMapping, mapToRecords, exportMonthlyComparison, exportPartyWise, type ColumnMapping, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
 import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
 import { aggregateByParty } from '@/lib/partyWise';
 import { PartyWiseReport } from '@/components/PartyWiseReport';
-import { ArrowRight, RotateCcw, ShieldCheck, ChevronDown, FileSpreadsheet, Users, Upload, Map as MapIcon, BarChart3, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { downloadUserGuide } from '@/lib/userGuide';
+import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
 
 type Step = 'upload' | 'map' | 'results';
 
@@ -26,6 +29,36 @@ export default function Index() {
   const [twoBRows, setTwoBRows] = useState<Record<string, unknown>[]>([]);
   const [prMapping, setPrMapping] = useState<Partial<ColumnMapping>>({});
   const [twoBMapping, setTwoBMapping] = useState<Partial<ColumnMapping>>({});
+  // Debit Notes (optional)
+  const [prDnFile, setPrDnFile] = useState<File | null>(null);
+  const [twoBDnFile, setTwoBDnFile] = useState<File | null>(null);
+  const [prDnHeaders, setPrDnHeaders] = useState<string[]>([]);
+  const [twoBDnHeaders, setTwoBDnHeaders] = useState<string[]>([]);
+  const [prDnRows, setPrDnRows] = useState<Record<string, unknown>[]>([]);
+  const [twoBDnRows, setTwoBDnRows] = useState<Record<string, unknown>[]>([]);
+  const [prDnMapping, setPrDnMapping] = useState<Partial<ColumnMapping>>({});
+  const [twoBDnMapping, setTwoBDnMapping] = useState<Partial<ColumnMapping>>({});
+  // Journal Registers (multiple) — combined with PR for matching against 2B
+  type JournalEntry = {
+    id: string;
+    file: File | null;
+    headers: string[];
+    rows: Record<string, unknown>[];
+    mapping: Partial<ColumnMapping>;
+  };
+  const newJournal = (): JournalEntry => ({ id: Math.random().toString(36).slice(2), file: null, headers: [], rows: [], mapping: {} });
+  const [journals, setJournals] = useState<JournalEntry[]>([newJournal()]);
+
+  const handleJournalFile = useCallback(async (id: string, file: File) => {
+    const { headers, rows } = await parseFile(file);
+    setJournals((prev) => prev.map((j) => j.id === id ? { ...j, file, headers, rows, mapping: detectColumnMapping(headers) } : j));
+  }, []);
+  const updateJournalMapping = (id: string, mapping: Partial<ColumnMapping>) => {
+    setJournals((prev) => prev.map((j) => j.id === id ? { ...j, mapping } : j));
+  };
+  const addJournal = () => setJournals((prev) => [...prev, newJournal()]);
+  const removeJournal = (id: string) => setJournals((prev) => prev.filter((j) => j.id !== id));
+
   const [results, setResults] = useState<ReconciliationResult[]>([]);
   const [summary, setSummary] = useState<ReconciliationSummary | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -48,21 +81,50 @@ export default function Index() {
     setTwoBMapping(detectColumnMapping(headers));
   }, []);
 
+  const handlePrDnFile = useCallback(async (file: File) => {
+    setPrDnFile(file);
+    const { headers, rows } = await parseFile(file);
+    setPrDnHeaders(headers);
+    setPrDnRows(rows);
+    setPrDnMapping(detectColumnMapping(headers));
+  }, []);
+
+  const handleTwoBDnFile = useCallback(async (file: File) => {
+    setTwoBDnFile(file);
+    const { headers, rows } = await parseFile(file);
+    setTwoBDnHeaders(headers);
+    setTwoBDnRows(rows);
+    setTwoBDnMapping(detectColumnMapping(headers));
+  }, []);
+
   const handleProceedToMap = () => {
     if (prFile && twoBFile) setStep('map');
   };
 
   const handleReconcile = async () => {
     if (!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping)) return;
+    // Validate any uploaded journal mappings
+    const activeJournals = journals.filter((j) => j.file);
+    if (activeJournals.some((j) => !isMappingComplete(j.mapping))) return;
     setProcessing(true);
     setTimeout(() => {
-      const prRecords = mapToRecords(prRows, prMapping, 'PR');
-      const twoBRecords = mapToRecords(twoBRows, twoBMapping, '2B');
-      const res = reconcile(prRecords, twoBRecords);
+      const prRecords = mapToRecords(prRows, prMapping, 'PR', 'Purchase Register');
+      const journalRecords = activeJournals.flatMap((j, idx) =>
+        mapToRecords(j.rows, j.mapping as ColumnMapping, 'PR', j.file?.name || `Journal Register ${idx + 1}`)
+      );
+      const combinedPr = [...prRecords, ...journalRecords];
+      const twoBRecords = mapToRecords(twoBRows, twoBMapping, '2B', 'GSTR-2B');
+      const res = reconcile(combinedPr, twoBRecords);
+      const sum = getSummary(res);
       setResults(res);
-      setSummary(getSummary(res));
+      setSummary(sum);
       setStep('results');
       setProcessing(false);
+      toast.success('Reconciliation complete', {
+        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} at ITC risk`,
+        icon: <CheckCircle2 className="w-4 h-4 text-success" />,
+        duration: 5000,
+      });
     }, 100);
   };
 
@@ -76,6 +138,11 @@ export default function Index() {
     setTwoBRows([]);
     setPrMapping({});
     setTwoBMapping({});
+    setPrDnFile(null); setTwoBDnFile(null);
+    setPrDnHeaders([]); setTwoBDnHeaders([]);
+    setPrDnRows([]); setTwoBDnRows([]);
+    setPrDnMapping({}); setTwoBDnMapping({});
+    setJournals([newJournal()]);
     setResults([]);
     setSummary(null);
     setShowMonthly(false);
@@ -83,107 +150,109 @@ export default function Index() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 transition-colors duration-500">
-      {/* Subtle grid pattern background */}
-      <div className="fixed inset-0 pointer-events-none opacity-[0.02]" 
-        style={{ 
-          backgroundImage: 'linear-gradient(#64748b 1px, transparent 1px), linear-gradient(90deg, #64748b 1px, transparent 1px)',
-          backgroundSize: '40px 40px'
-        }} 
-      />
-      
-      <div className="flex min-h-screen relative">
-        {/* Modern Sidebar */}
-        <aside className="w-72 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-r border-slate-200/60 dark:border-slate-800/60 flex flex-col sticky top-0 h-screen">
-          {/* Logo Area */}
-          <div className="p-6 border-b border-slate-200/60 dark:border-slate-800/60">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
-                <ShieldCheck className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">RECO WITH</h1>
-                <p className="text-sm font-medium text-primary">VASWANI</p>
-              </div>
+    <div className="min-h-screen bg-background transition-colors duration-500">
+      {/* Ambient background glow */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-[40%] -left-[20%] w-[60%] h-[60%] rounded-full bg-primary/[0.03] blur-3xl" />
+        <div className="absolute -bottom-[30%] -right-[20%] w-[50%] h-[50%] rounded-full bg-info/[0.03] blur-3xl" />
+      </div>
+
+      {/* Header */}
+      <header className="gradient-header text-primary-foreground shadow-2xl relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDE4YzAtOS45NC04LjA2LTE4LTE4LTE4UzAgOC4wNiAwIDE4YzAgOS45NCA4LjA2IDE4IDE4IDE4czE4LTguMDYgMTgtMTgiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-50" />
+        <div className="container mx-auto px-4 py-5 flex items-center justify-between relative">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center ring-1 ring-white/20 shadow-lg">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight">GST Reconciliation</h1>
+              <p className="text-xs opacity-70">Purchase Register ↔ GSTR-2B</p>
             </div>
           </div>
-
-          {/* Navigation Steps */}
-          <nav className="flex-1 p-4">
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">Progress</p>
-              {(['upload', 'map', 'results'] as Step[]).map((s, idx) => {
-                const labels = ['Upload Files', 'Map Columns', 'View Results'];
-                const icons = [Upload, MapIcon, BarChart3];
-                const Icon = icons[idx];
-                const isActive = s === step;
-                const isDone = (['upload', 'map', 'results'].indexOf(step)) > idx;
-                
-                return (
-                  <button
-                    key={s}
-                    disabled={!isDone && !isActive}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-300',
-                      isActive 
-                        ? 'bg-primary/10 text-primary shadow-sm' 
-                        : isDone 
-                          ? 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
-                          : 'text-slate-400 cursor-not-allowed'
-                    )}
-                  >
-                    <div className={cn(
-                      'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300',
-                      isActive 
-                        ? 'bg-primary text-white shadow-md' 
-                        : isDone 
-                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                    )}>
-                      {isDone ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
-                    </div>
-                    <span className="flex-1 text-left">{labels[idx]}</span>
-                    {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                  </button>
-                );
-              })}
-            </div>
-          </nav>
-
-          {/* Footer Actions */}
-          <div className="p-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
+          <div className="flex items-center gap-2">
             <ThemeToggle />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                downloadUserGuide();
+                toast.success('User guide downloaded', {
+                  description: 'Vaswani-Return-User-Guide.pdf saved to your downloads.',
+                  duration: 4000,
+                });
+              }}
+              className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> User Guide
+            </Button>
             {step !== 'upload' && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={handleReset}
-                className="w-full gap-2 text-slate-600 dark:text-slate-400"
+                className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
               >
-                <RotateCcw className="w-4 h-4" /> Start Over
+                <RotateCcw className="w-3.5 h-3.5" /> Start Over
               </Button>
             )}
           </div>
-        </aside>
+        </div>
+      </header>
 
-        {/* Main Content */}
-        <main className="flex-1 p-8 overflow-auto">
+      {/* Step indicators */}
+      <div className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center gap-1 py-2.5">
+            {(['upload', 'map', 'results'] as Step[]).map((s, idx) => {
+              const labels = ['Upload Files', 'Map Columns', 'View Results'];
+              const isActive = s === step;
+              const isDone = (['upload', 'map', 'results'].indexOf(step)) > idx;
+              return (
+                <div key={s} className="flex items-center gap-1">
+                  {idx > 0 && (
+                    <div className={cn(
+                      'w-10 h-0.5 mx-1 rounded-full transition-colors duration-500',
+                      isDone ? 'bg-success' : 'bg-border'
+                    )} />
+                  )}
+                  <div className={cn(
+                    'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-500',
+                    isActive ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20' :
+                    isDone ? 'bg-success/10 text-success' : 'text-muted-foreground'
+                  )}>
+                    <span className={cn(
+                      'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-500',
+                      isActive ? 'bg-white/20' : isDone ? 'bg-success/20' : 'bg-muted'
+                    )}>
+                      {isDone ? '✓' : idx + 1}
+                    </span>
+                    {labels[idx]}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <main className="container mx-auto px-4 py-8 space-y-8 relative">
         {/* Upload */}
         {step === 'upload' && (
-          <div className="max-w-4xl animate-in fade-in slide-in-from-right-4 duration-500">
-            {/* Header */}
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Upload Files</h2>
-              <p className="text-slate-500 dark:text-slate-400">
-                Upload your Purchase Register and GSTR-2B data to begin reconciliation
+          <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="text-center space-y-3">
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
+                <Sparkles className="w-7 h-7 text-primary" />
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight">Upload Your Files</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Upload your Purchase Register and GSTR-2B data to begin intelligent reconciliation
               </p>
             </div>
-
-            {/* Upload Cards */}
-            <div className="grid md:grid-cols-2 gap-6 mb-8">
+            <div className="grid md:grid-cols-2 gap-5">
               <FileUploadZone
                 label="Purchase Register"
-                description="Upload your books or Tally export"
+                description="Your books / Tally export"
                 onFileSelect={handlePrFile}
                 fileName={prFile?.name}
               />
@@ -193,87 +262,131 @@ export default function Index() {
                 onFileSelect={handleTwoBFile}
                 fileName={twoBFile?.name}
               />
+              <FileUploadZone
+                label="Upload PR Debit Notes"
+                description="Optional — deducted from PR"
+                onFileSelect={handlePrDnFile}
+                fileName={prDnFile?.name}
+              />
+              <FileUploadZone
+                label="Upload GSTR-2B Debit Notes"
+                description="Optional — deducted from 2B"
+                onFileSelect={handleTwoBDnFile}
+                fileName={twoBDnFile?.name}
+              />
             </div>
 
-            {/* Info Card */}
-            <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur border-slate-200/60 dark:border-slate-700/60 mb-8">
-              <CardContent className="p-5 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                </div>
+            {/* Journal Registers */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-semibold text-slate-900 dark:text-white mb-1">Expected Columns</h4>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Supplier Name, GSTIN, Invoice No, Invoice Date, Invoice Value, Taxable Value, IGST, CGST, SGST. 
-                    The app auto-detects columns from your headers.
-                  </p>
+                  <h3 className="text-sm font-semibold">Journal Registers</h3>
+                  <p className="text-xs text-muted-foreground">Optional — combined with Purchase Register and compared to GSTR-2B</p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Action Button */}
+                <Button type="button" variant="outline" size="sm" onClick={addJournal} className="gap-1.5">
+                  <Plus className="w-3.5 h-3.5" /> Add Journal Register
+                </Button>
+              </div>
+              <div className="grid md:grid-cols-2 gap-5">
+                {journals.map((j, idx) => (
+                  <div key={j.id} className="relative">
+                    <FileUploadZone
+                      label={`Journal Register ${idx + 1}`}
+                      description="e.g. Journal entries for purchases"
+                      onFileSelect={(file) => handleJournalFile(j.id, file)}
+                      fileName={j.file?.name}
+                    />
+                    {journals.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeJournal(j.id)}
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                        aria-label="Remove journal register"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
             {prFile && twoBFile && (
-              <div className="flex justify-end animate-in fade-in zoom-in-95 duration-300">
-                <Button 
-                  onClick={handleProceedToMap} 
-                  size="lg" 
-                  className="gap-2 px-8 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
-                >
-                  Continue to Mapping <ArrowRight className="w-4 h-4" />
+              <div className="flex justify-center animate-in fade-in zoom-in-95 duration-300">
+                <Button onClick={handleProceedToMap} size="lg" className="gap-2 shadow-xl shadow-primary/25 hover:shadow-2xl hover:shadow-primary/30 transition-all duration-300 hover:scale-[1.02]">
+                  Continue to Column Mapping <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>
             )}
+            <Card className="bg-muted/30 border-dashed glass-card">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Expected columns:</strong> Supplier Name, GSTIN, Invoice No, Invoice Date, Invoice Value, Taxable Value, IGST, CGST, SGST.
+                  The app auto-detects columns from your headers. You can adjust mapping in the next step.
+                </p>
+              </CardContent>
+            </Card>
           </div>
         )}
 
         {/* Column Mapping */}
         {step === 'map' && (
-          <div className="max-w-4xl animate-in fade-in slide-in-from-right-4 duration-500">
-            {/* Header */}
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Map Columns</h2>
-              <p className="text-slate-500 dark:text-slate-400">
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">Map Your Columns</h2>
+              <p className="text-muted-foreground">
                 Verify or adjust column mappings. Fields marked with * are required.
               </p>
             </div>
-
-            {/* Mappers */}
-            <div className="space-y-6 mb-8">
+            <div className="grid gap-4">
               <ColumnMapper
                 title={`Purchase Register — ${prRows.length} rows`}
                 headers={prHeaders}
                 mapping={prMapping}
                 onChange={setPrMapping}
+                labelOverrides={{ gstin: 'GST No.' }}
               />
               <ColumnMapper
                 title={`GSTR-2B — ${twoBRows.length} rows`}
                 headers={twoBHeaders}
                 mapping={twoBMapping}
                 onChange={setTwoBMapping}
+                labelOverrides={{ supplierName: 'Trade / Legal Name' }}
               />
+              {journals.filter((j) => j.file).map((j, idx) => (
+                <ColumnMapper
+                  key={j.id}
+                  title={`Journal Register ${idx + 1} — ${j.rows.length} rows`}
+                  headers={j.headers}
+                  mapping={j.mapping}
+                  onChange={(m) => updateJournalMapping(j.id, m)}
+                  labelOverrides={{ gstin: 'GST No.' }}
+                />
+              ))}
+              {prDnFile && (
+                <ColumnMapper
+                  title={`PR Debit Notes — ${prDnRows.length} rows`}
+                  headers={prDnHeaders}
+                  mapping={prDnMapping}
+                  onChange={setPrDnMapping}
+                />
+              )}
+              {twoBDnFile && (
+                <ColumnMapper
+                  title={`GSTR-2B Debit Notes — ${twoBDnRows.length} rows`}
+                  headers={twoBDnHeaders}
+                  mapping={twoBDnMapping}
+                  onChange={setTwoBDnMapping}
+                />
+              )}
             </div>
-
-            {/* Actions */}
-            <div className="flex justify-between items-center pt-4 border-t border-slate-200 dark:border-slate-800">
-              <Button variant="ghost" onClick={() => setStep('upload')} className="text-slate-600 dark:text-slate-400">
-                ← Back to Upload
-              </Button>
+            <div className="flex justify-center gap-3">
+              <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
               <Button
                 onClick={handleReconcile}
-                disabled={!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping) || processing}
-                size="lg"
-                className="gap-2 px-8 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
+                disabled={!isMappingComplete(prMapping) || !isMappingComplete(twoBMapping) || journals.some((j) => j.file && !isMappingComplete(j.mapping)) || processing}
+                className="gap-2 shadow-xl shadow-primary/25 hover:shadow-2xl hover:shadow-primary/30 transition-all duration-300 hover:scale-[1.02]"
               >
-                {processing ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    Run Reconciliation <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
+                {processing ? 'Processing...' : 'Run Reconciliation'} <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
           </div>
@@ -281,119 +394,131 @@ export default function Index() {
 
         {/* Results */}
         {step === 'results' && summary && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-            {/* Header */}
-            <div className="mb-8">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div>
-                  <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Results</h2>
-                  <p className="text-slate-500 dark:text-slate-400">
-                    {summary.total} records processed • {summary.perfectMatch} perfect matches • {summary.valueMismatch} value mismatches • {summary.invoiceMissing + summary.unmatchedVendor} at ITC risk
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    onClick={() => {
-                      const rows: MonthlyComparisonRow[] = results.map((r) => {
-                        const pr = r.prRecord;
-                        const tb = r.twoBRecord;
-                        const totalDiff = (r.cgstDiff !== undefined || r.sgstDiff !== undefined || r.igstDiff !== undefined)
-                          ? +(Math.abs(r.cgstDiff ?? 0) + Math.abs(r.sgstDiff ?? 0) + Math.abs(r.igstDiff ?? 0)).toFixed(2)
-                          : '';
-                        return {
-                          partyTally: pr?.supplierName || '',
-                          gstinTally: pr?.gstin || '',
-                          invoiceTally: pr?.invoiceNo || '',
-                          cgstTally: pr?.cgst ?? '',
-                          sgstTally: pr?.sgst ?? '',
-                          igstTally: pr?.igst ?? '',
-                          partyCmp: tb?.supplierName || '',
-                          gstinCmp: tb?.gstin || '',
-                          invoiceCmp: tb?.invoiceNo || '',
-                          cgstCmp: tb?.cgst ?? '',
-                          sgstCmp: tb?.sgst ?? '',
-                          igstCmp: tb?.igst ?? '',
-                          status: r.status,
-                          totalDiff,
-                        };
-                      });
-                      exportMonthlyComparison(rows, 'Monthly_Comparison_Report.xlsx');
-                    }}
-                    variant="outline"
-                    className="gap-2 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" /> Export Monthly
-                  </Button>
-                  <Button
-                    onClick={() => exportPartyWise(aggregateByParty(results), 'Party_Wise_Report.xlsx')}
-                    variant="outline"
-                    className="gap-2 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  >
-                    <Users className="w-4 h-4" /> Export Party-wise
-                  </Button>
-                </div>
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">Reconciliation Results</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} at ITC risk
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    const rows: MonthlyComparisonRow[] = results.map((r) => {
+                      const pr = r.prRecord;
+                      const tb = r.twoBRecord;
+                      const totalDiff = (r.cgstDiff !== undefined || r.sgstDiff !== undefined || r.igstDiff !== undefined)
+                        ? +(Math.abs(r.cgstDiff ?? 0) + Math.abs(r.sgstDiff ?? 0) + Math.abs(r.igstDiff ?? 0)).toFixed(2)
+                        : '';
+                      const baseRec = pr || tb;
+                      const taxableForRate = pr?.taxableValue ?? tb?.taxableValue;
+                      const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
+                      const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
+                      const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
+                      return {
+                        partyTally: pr?.supplierName || '',
+                        gstinTally: pr?.gstin || '',
+                        invoiceTally: pr?.invoiceNo || '',
+                        cgstTally: pr?.cgst ?? '',
+                        sgstTally: pr?.sgst ?? '',
+                        igstTally: pr?.igst ?? '',
+                        partyCmp: tb?.supplierName || '',
+                        gstinCmp: tb?.gstin || '',
+                        invoiceCmp: tb?.invoiceNo || '',
+                        cgstCmp: tb?.cgst ?? '',
+                        sgstCmp: tb?.sgst ?? '',
+                        igstCmp: tb?.igst ?? '',
+                        status: r.status,
+                        totalDiff,
+                        dateTally: pr?.invoiceDate || '',
+                        dateCmp: tb?.invoiceDate || '',
+                        itcEligibility: deriveItcEligibility(baseRec?.supplierName),
+                        gstr1Status: tb?.filingStatus ?? '',
+                        filingDate: tb?.filingDate ?? '',
+                        daysOld: days,
+                        taxRatePct: taxRatePct(taxableForRate, totalTax),
+                        posCompliance: posCompliance(pr || tb),
+                        rule37Warning: rule37Warning(r.status, days),
+                        remark: actionableRemark(r.status, r.remark, lateFiler),
+                      };
+                    });
+                    const toDN = (
+                      rs: Record<string, unknown>[],
+                      m: Partial<ColumnMapping>
+                    ): DebitNoteRecord[] => rs.map((row) => ({
+                      invoiceDate: m.invoiceDate ? String(row[m.invoiceDate] ?? '') : '',
+                      cgst: m.cgst ? Number(row[m.cgst]) || 0 : 0,
+                      sgst: m.sgst ? Number(row[m.sgst]) || 0 : 0,
+                      igst: m.igst ? Number(row[m.igst]) || 0 : 0,
+                    }));
+                    const dn = {
+                      pr: prDnRows.length ? toDN(prDnRows, prDnMapping) : undefined,
+                      twoB: twoBDnRows.length ? toDN(twoBDnRows, twoBDnMapping) : undefined,
+                    };
+                    exportMonthlyComparison(rows, 'Monthly_Comparison_Report.xlsx', dn);
+                    toast.success('Monthly comparison exported', { description: `${rows.length} rows • Excel workbook ready.` });
+                  }}
+                  size="sm"
+                  className="gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> Export Monthly Comparison Report
+                </Button>
+                <Button
+                  onClick={() => {
+                    exportPartyWise(aggregateByParty(results), 'Party_Wise_Report.xlsx');
+                    toast.success('Party-wise report exported', { description: 'Excel workbook ready in your downloads.' });
+                  }}
+                  size="sm"
+                  variant="secondary"
+                  className="gap-2 shadow-lg"
+                >
+                  <Users className="w-4 h-4" /> Export Party-wise Report
+                </Button>
               </div>
             </div>
-
             <SummaryCards summary={summary} />
 
-            {/* Expandable Sections */}
-            <div className="space-y-4 mt-8">
-              {/* Monthly toggle */}
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur rounded-xl border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
-                <button
-                  onClick={() => setShowMonthly(!showMonthly)}
-                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-300"
-                >
-                  <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-primary" /> Month-wise Breakdown
-                  </span>
-                  <ChevronDown className={cn(
-                    'w-5 h-5 text-slate-400 transition-transform duration-300',
-                    showMonthly && 'rotate-180'
-                  )} />
-                </button>
-                {showMonthly && (
-                  <div className="border-t border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="p-5">
-                      <MonthlyBreakdown results={results} />
-                    </div>
-                  </div>
-                )}
+            {/* Monthly toggle */}
+            <button
+              onClick={() => setShowMonthly(!showMonthly)}
+              className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl bg-card border border-border hover:bg-muted/40 transition-all duration-300 group"
+            >
+              <span className="text-sm font-semibold">Month-wise Breakdown</span>
+              <ChevronDown className={cn(
+                'w-4 h-4 text-muted-foreground transition-transform duration-300',
+                showMonthly && 'rotate-180'
+              )} />
+            </button>
+            {showMonthly && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <MonthlyBreakdown results={results} />
               </div>
+            )}
 
-              {/* Party-wise toggle */}
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur rounded-xl border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
-                <button
-                  onClick={() => setShowPartyWise(!showPartyWise)}
-                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-300"
-                >
-                  <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Users className="w-5 h-5 text-primary" /> Party-wise Reconciliation
-                  </span>
-                  <ChevronDown className={cn(
-                    'w-5 h-5 text-slate-400 transition-transform duration-300',
-                    showPartyWise && 'rotate-180'
-                  )} />
-                </button>
-                {showPartyWise && (
-                  <div className="border-t border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="p-5">
-                      <PartyWiseReport results={results} />
-                    </div>
-                  </div>
-                )}
+            {/* Party-wise toggle */}
+            <button
+              onClick={() => setShowPartyWise(!showPartyWise)}
+              className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl bg-card border border-border hover:bg-muted/40 transition-all duration-300 group"
+            >
+              <span className="text-sm font-semibold flex items-center gap-2">
+                <Users className="w-4 h-4 text-primary" /> Party-wise Reconciliation
+              </span>
+              <ChevronDown className={cn(
+                'w-4 h-4 text-muted-foreground transition-transform duration-300',
+                showPartyWise && 'rotate-180'
+              )} />
+            </button>
+            {showPartyWise && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <PartyWiseReport results={results} />
               </div>
-            </div>
+            )}
 
-            {/* Results Tabs */}
-            <div className="mt-8">
-              <ResultsCategoryTabs results={results} summary={summary} />
-            </div>
+            <ResultsCategoryTabs results={results} summary={summary} />
           </div>
         )}
-        </main>
-      </div>
+      </main>
     </div>
   );
 }

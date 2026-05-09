@@ -9,6 +9,7 @@ import { Download, Search, Info } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
 import { exportToXlsx } from '@/lib/fileParser';
+import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
 import { cn } from '@/lib/utils';
 
 interface ResultsTableProps {
@@ -76,6 +77,11 @@ export function ResultsTable({ results }: ResultsTableProps) {
     const exportData = filtered.map((r) => {
       const pr = r.prRecord;
       const tb = r.twoBRecord;
+      const baseRec = pr || tb;
+      const taxableForRate = pr?.taxableValue ?? tb?.taxableValue;
+      const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
+      const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
+      const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
       return {
         Status: r.status,
         GSTIN: pr?.gstin || tb?.gstin || '',
@@ -91,7 +97,14 @@ export function ResultsTable({ results }: ResultsTableProps) {
         'SGST (PR)': pr?.sgst ?? '',
         'SGST (2B)': tb?.sgst ?? '',
         'GST Diff': r.gstDiff ?? '',
-        'Remark': r.remark ?? '',
+        'ITC Eligibility': deriveItcEligibility(baseRec?.supplierName),
+        'GSTR-1 Status': tb?.filingStatus ?? '',
+        'Filing Date': tb?.filingDate ?? '',
+        'Days Old': days,
+        'Tax Rate %': taxRatePct(taxableForRate, totalTax),
+        'POS Compliance': posCompliance(pr || tb),
+        'Rule 37 Warning': rule37Warning(r.status, days),
+        'Remark': actionableRemark(r.status, r.remark, lateFiler),
       };
     });
     exportToXlsx(exportData, 'GST_Reconciliation.xlsx');

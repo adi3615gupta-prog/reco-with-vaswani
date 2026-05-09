@@ -7,6 +7,7 @@ interface ColumnMapperProps {
   headers: string[];
   mapping: Partial<ColumnMapping>;
   onChange: (mapping: Partial<ColumnMapping>) => void;
+  labelOverrides?: Partial<Record<keyof ColumnMapping, string>>;
 }
 
 const FIELD_LABELS: Record<keyof ColumnMapping, string> = {
@@ -17,11 +18,15 @@ const FIELD_LABELS: Record<keyof ColumnMapping, string> = {
   igst: 'IGST',
   cgst: 'CGST',
   sgst: 'SGST',
+  taxableValue: 'Taxable Value (optional)',
+  filingStatus: 'GSTR-1 Status (optional)',
+  filingDate: 'Filing Date (optional)',
 };
 
 const REQUIRED_FIELDS: (keyof ColumnMapping)[] = ['gstin', 'invoiceNo'];
 
-export function ColumnMapper({ title, headers, mapping, onChange }: ColumnMapperProps) {
+export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides }: ColumnMapperProps) {
+  const labelFor = (f: keyof ColumnMapping) => labelOverrides?.[f] ?? FIELD_LABELS[f];
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -32,7 +37,7 @@ export function ColumnMapper({ title, headers, mapping, onChange }: ColumnMapper
           {(Object.keys(FIELD_LABELS) as (keyof ColumnMapping)[]).map((field) => (
             <div key={field}>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                {FIELD_LABELS[field]}
+                {labelFor(field)}
                 {REQUIRED_FIELDS.includes(field) && <span className="text-destructive ml-0.5">*</span>}
               </label>
               <Select
