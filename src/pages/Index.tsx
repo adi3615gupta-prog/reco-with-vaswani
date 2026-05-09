@@ -267,31 +267,31 @@ export default function Index() {
               </div>
               <h2 className="text-2xl font-bold tracking-tight">Upload Your Files</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Upload your Purchase Register and GSTR-2B data to begin intelligent reconciliation
+                Upload your {term.primaryBookLabel} and {term.govtLabel} to begin intelligent reconciliation
               </p>
             </div>
             <div className="grid md:grid-cols-2 gap-5">
               <FileUploadZone
-                label="Purchase Register"
-                description="Your books / Tally export"
+                label={term.primaryBookLabel}
+                description={term.primaryBookDesc}
                 onFileSelect={handlePrFile}
                 fileName={prFile?.name}
               />
               <FileUploadZone
-                label="GSTR-2B Data"
-                description="Downloaded from GST Portal"
+                label={term.govtLabel}
+                description={term.govtDesc}
                 onFileSelect={handleTwoBFile}
                 fileName={twoBFile?.name}
               />
               <FileUploadZone
-                label="Upload PR Debit Notes"
-                description="Optional — deducted from PR"
+                label={`Upload ${term.primaryShort} Debit Notes`}
+                description={`Optional — deducted from ${term.primaryShort}`}
                 onFileSelect={handlePrDnFile}
                 fileName={prDnFile?.name}
               />
               <FileUploadZone
-                label="Upload GSTR-2B Debit Notes"
-                description="Optional — deducted from 2B"
+                label={`Upload ${term.govtShort} Debit Notes`}
+                description={`Optional — deducted from ${term.govtShort}`}
                 onFileSelect={handleTwoBDnFile}
                 fileName={twoBDnFile?.name}
               />
