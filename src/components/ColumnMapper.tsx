@@ -8,6 +8,7 @@ interface ColumnMapperProps {
   mapping: Partial<ColumnMapping>;
   onChange: (mapping: Partial<ColumnMapping>) => void;
   labelOverrides?: Partial<Record<keyof ColumnMapping, string>>;
+  requireTaxable?: boolean;
 }
 
 const FIELD_LABELS: Record<keyof ColumnMapping, string> = {
@@ -18,15 +19,20 @@ const FIELD_LABELS: Record<keyof ColumnMapping, string> = {
   igst: 'IGST',
   cgst: 'CGST',
   sgst: 'SGST',
-  taxableValue: 'Taxable Value (optional)',
+  taxableValue: 'Taxable Value',
   filingStatus: 'GSTR-1 Status (optional)',
   filingDate: 'Filing Date (optional)',
 };
 
-const REQUIRED_FIELDS: (keyof ColumnMapping)[] = ['gstin', 'invoiceNo'];
-
-export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides }: ColumnMapperProps) {
-  const labelFor = (f: keyof ColumnMapping) => labelOverrides?.[f] ?? FIELD_LABELS[f];
+export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides, requireTaxable }: ColumnMapperProps) {
+  const required: (keyof ColumnMapping)[] = requireTaxable
+    ? ['gstin', 'invoiceNo', 'taxableValue']
+    : ['gstin', 'invoiceNo'];
+  const baseLabel = (f: keyof ColumnMapping) => {
+    if (f === 'taxableValue' && !requireTaxable) return 'Taxable Value (optional)';
+    return FIELD_LABELS[f];
+  };
+  const labelFor = (f: keyof ColumnMapping) => labelOverrides?.[f] ?? baseLabel(f);
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -38,7 +44,7 @@ export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides
             <div key={field}>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
                 {labelFor(field)}
-                {REQUIRED_FIELDS.includes(field) && <span className="text-destructive ml-0.5">*</span>}
+                {required.includes(field) && <span className="text-destructive ml-0.5">*</span>}
               </label>
               <Select
                 value={mapping[field] || ''}
@@ -62,7 +68,9 @@ export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides
   );
 }
 
-export function isMappingComplete(mapping: Partial<ColumnMapping>): mapping is ColumnMapping {
-  const required: (keyof ColumnMapping)[] = ['gstin', 'invoiceNo'];
+export function isMappingComplete(mapping: Partial<ColumnMapping>, requireTaxable = false): mapping is ColumnMapping {
+  const required: (keyof ColumnMapping)[] = requireTaxable
+    ? ['gstin', 'invoiceNo', 'taxableValue']
+    : ['gstin', 'invoiceNo'];
   return required.every((f) => mapping[f] && mapping[f] !== '__none__');
 }
