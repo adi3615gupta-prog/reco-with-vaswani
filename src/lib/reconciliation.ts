@@ -44,6 +44,7 @@ export interface ReconciliationResult {
   cgstDiff?: number;
   sgstDiff?: number;
   igstDiff?: number;
+  taxableDiff?: number;
   remark?: string;
   matchMethod?: 'GSTIN' | 'Name (Fuzzy)';
 }
