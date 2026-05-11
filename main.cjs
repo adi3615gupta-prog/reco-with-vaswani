@@ -18,37 +18,17 @@ function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
-  // Try to load the React app with correct path resolution
+  // Try to load the React app with reliable path resolution
   let indexPath;
   
-  // Check if we're in development or production
   if (process.env.NODE_ENV === 'development') {
     // Development: load from dist folder
     indexPath = path.join(__dirname, 'dist', 'index.html');
   } else {
-    // Production: try different possible paths
-    const possiblePaths = [
-      path.join(__dirname, 'dist', 'index.html'),  // Standard path
-      path.join(__dirname, '..', 'app', 'dist', 'index.html'),  // In resources folder
-      path.join(process.resourcesPath, 'app', 'dist', 'index.html'),  // Using resourcesPath
-      path.join(__dirname, 'index.html'),  // Fallback
-    ];
-    
-    // Find the first path that exists
-    for (const testPath of possiblePaths) {
-      console.log('Checking path:', testPath);
-      if (require('fs').existsSync(testPath)) {
-        indexPath = testPath;
-        console.log('Found index.html at:', indexPath);
-        break;
-      }
-    }
-    
-    // If no path found, use the first one as fallback
-    if (!indexPath) {
-      indexPath = possiblePaths[0];
-      console.log('No valid path found, using fallback:', indexPath);
-    }
+    // Production: use app.getPath for reliable location
+    const appPath = app.getPath('exe');
+    const appDir = path.dirname(appPath);
+    indexPath = path.join(appDir, 'resources', 'app', 'dist', 'index.html');
   }
   
   console.log('Loading app from:', indexPath);
@@ -57,8 +37,30 @@ function createWindow() {
   mainWindow.loadFile(indexPath).catch(err => {
     console.error('Failed to load index.html:', err);
     
-    // Show error page with details
-    mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Path: ' + indexPath + '</p><p>Error: ' + err.message + '</p></body></html>');
+    // Try fallback paths
+    const fallbackPaths = [
+      path.join(__dirname, 'dist', 'index.html'),
+      path.join(__dirname, '..', 'app', 'dist', 'index.html'),
+      path.join(process.resourcesPath, 'app', 'dist', 'index.html')
+    ];
+    
+    let loaded = false;
+    for (const fallbackPath of fallbackPaths) {
+      console.log('Trying fallback path:', fallbackPath);
+      mainWindow.loadFile(fallbackPath).then(() => {
+        console.log('Successfully loaded from:', fallbackPath);
+        loaded = true;
+      }).catch(e => {
+        console.log('Failed to load from:', fallbackPath, e);
+      });
+      
+      if (loaded) break;
+    }
+    
+    if (!loaded) {
+      console.error('All paths failed');
+      mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Check console for details.</p></body></html>');
+    }
   });
 
   // Always open DevTools for debugging
