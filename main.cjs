@@ -18,25 +18,47 @@ function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
-  // Try to load the React app with multiple methods
-  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  // Try to load the React app with correct path resolution
+  let indexPath;
+  
+  // Check if we're in development or production
+  if (process.env.NODE_ENV === 'development') {
+    // Development: load from dist folder
+    indexPath = path.join(__dirname, 'dist', 'index.html');
+  } else {
+    // Production: try different possible paths
+    const possiblePaths = [
+      path.join(__dirname, 'dist', 'index.html'),  // Standard path
+      path.join(__dirname, '..', 'app', 'dist', 'index.html'),  // In resources folder
+      path.join(process.resourcesPath, 'app', 'dist', 'index.html'),  // Using resourcesPath
+      path.join(__dirname, 'index.html'),  // Fallback
+    ];
+    
+    // Find the first path that exists
+    for (const testPath of possiblePaths) {
+      console.log('Checking path:', testPath);
+      if (require('fs').existsSync(testPath)) {
+        indexPath = testPath;
+        console.log('Found index.html at:', indexPath);
+        break;
+      }
+    }
+    
+    // If no path found, use the first one as fallback
+    if (!indexPath) {
+      indexPath = possiblePaths[0];
+      console.log('No valid path found, using fallback:', indexPath);
+    }
+  }
   
   console.log('Loading app from:', indexPath);
   
-  // First try loading from file
+  // Load the app
   mainWindow.loadFile(indexPath).catch(err => {
     console.error('Failed to load index.html:', err);
     
-    // Try loading from Vite dev server as fallback
-    console.log('Trying to load from Vite dev server...');
-    mainWindow.loadURL('http://localhost:5173').then(() => {
-      console.log('Successfully loaded from Vite dev server');
-    }).catch(e => {
-      console.error('Failed to load from Vite dev server:', e);
-      
-      // Last resort: show error page
-      mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Check console for details.</p></body></html>');
-    });
+    // Show error page with details
+    mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Path: ' + indexPath + '</p><p>Error: ' + err.message + '</p></body></html>');
   });
 
   // Always open DevTools for debugging
