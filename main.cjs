@@ -69,8 +69,10 @@ async function createWindow() {
     mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px;"><h1 style="color: #e74c3c;">Application Loading Failed</h1><p style="color: #666;">Could not load the application files.</p><p style="color: #666;">Please check the console for details.</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
   }
 
-  // Always open DevTools for debugging
-  mainWindow.webContents.openDevTools();
+  // Open DevTools only in development (remove for production)
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.webContents.openDevTools();
+  }
   
   // Log any web content errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -79,6 +81,13 @@ async function createWindow() {
   
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('Web content loaded successfully');
+    // Inject a visible error logger
+    mainWindow.webContents.executeJavaScript(`
+      window.onerror = function(msg, url, line, col, error) {
+        document.body.innerHTML += '<div style="color:red; padding:20px; font-family:Arial;"><h3>JavaScript Error:</h3><p>' + msg + '</p><p>at line ' + line + '</p></div>';
+        return false;
+      };
+    `);
   });
 }
 
