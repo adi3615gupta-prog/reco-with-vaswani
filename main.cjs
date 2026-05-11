@@ -18,13 +18,38 @@ function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
-  // Load the built React app
-  mainWindow.loadFile('dist/index.html');
+  // Try to load the React app with multiple methods
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  
+  console.log('Loading app from:', indexPath);
+  
+  // First try loading from file
+  mainWindow.loadFile(indexPath).catch(err => {
+    console.error('Failed to load index.html:', err);
+    
+    // Try loading from Vite dev server as fallback
+    console.log('Trying to load from Vite dev server...');
+    mainWindow.loadURL('http://localhost:5173').then(() => {
+      console.log('Successfully loaded from Vite dev server');
+    }).catch(e => {
+      console.error('Failed to load from Vite dev server:', e);
+      
+      // Last resort: show error page
+      mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Check console for details.</p></body></html>');
+    });
+  });
 
-  // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools();
-  }
+  // Always open DevTools for debugging
+  mainWindow.webContents.openDevTools();
+  
+  // Log any web content errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Web content failed to load:', errorCode, errorDescription);
+  });
+  
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Web content loaded successfully');
+  });
 }
 
 app.whenReady().then(() => {
