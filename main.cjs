@@ -6,7 +6,7 @@ const { autoUpdater } = require('electron-updater');
 autoUpdater.logger = require('electron-log');
 autoUpdater.logger.transports.file.level = 'info';
 
-function createWindow() {
+async function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
