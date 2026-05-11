@@ -1,10 +1,87 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
+const http = require('http');
+const fs = require('fs');
 
 // Auto-updater logging
 autoUpdater.logger = require('electron-log');
 autoUpdater.logger.transports.file.level = 'info';
+
+let server = null;
+let serverPort = 8080;
+
+function startLocalServer() {
+  return new Promise((resolve, reject) => {
+    const distPath = path.join(__dirname, 'dist');
+    
+    // Check if dist folder exists
+    if (!fs.existsSync(distPath)) {
+      reject(new Error('dist folder not found'));
+      return;
+    }
+    
+    const server = http.createServer((req, res) => {
+      let filePath = path.join(distPath, req.url === '/' ? 'index.html' : req.url);
+      
+      // Get file extension
+      const extname = String(path.extname(filePath)).toLowerCase();
+      
+      // Content type map
+      const mimeTypes = {
+        '.html': 'text/html',
+        '.js': 'text/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'application/font-woff',
+        '.woff2': 'application/font-woff2',
+        '.ttf': 'application/font-ttf',
+        '.eot': 'application/vnd.ms-fontobject',
+        '.otf': 'application/font-otf'
+      };
+      
+      const contentType = mimeTypes[extname] || 'application/octet-stream';
+      
+      fs.readFile(filePath, (error, content) => {
+        if (error) {
+          if (error.code === 'ENOENT') {
+            res.writeHead(404, { 'Content-Type': 'text/html' });
+            res.end('<h1>404 - File Not Found</h1>', 'utf-8');
+          } else {
+            res.writeHead(500);
+            res.end('Server Error: ' + error.code, 'utf-8');
+          }
+        } else {
+          res.writeHead(200, { 'Content-Type': contentType });
+          res.end(content, 'utf-8');
+        }
+      });
+    });
+    
+    // Try to start server on port 8080, increment if taken
+    function tryStart(port) {
+      server.listen(port, () => {
+        console.log(`Local server running on http://localhost:${port}`);
+        resolve({ server, port });
+      });
+      
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && port < 8090) {
+          tryStart(port + 1);
+        } else {
+          reject(err);
+        }
+      });
+    }
+    
+    tryStart(serverPort);
+  });
+}
 
 async function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -18,62 +95,23 @@ async function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
-  // Load the React app with simple, reliable approach
-  console.log('Current working directory:', __dirname);
-  console.log('Environment:', process.env.NODE_ENV || 'production');
-  
-  // Try different paths for index.html
-  const pathsToTry = [
-    // Development paths
-    path.join(__dirname, 'dist', 'index.html'),
-    path.join(__dirname, 'index.html'),
+  // Start local HTTP server and load app
+  try {
+    console.log('Starting local HTTP server...');
+    const { server: httpServer, port } = await startLocalServer();
+    server = httpServer;
+    serverPort = port;
     
-    // Packaged app paths (asar)
-    path.join(__dirname, '..', 'app', 'dist', 'index.html'),
-    path.join(process.resourcesPath, 'app', 'dist', 'index.html'),
-    path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+    console.log(`Loading app from http://localhost:${port}`);
+    await mainWindow.loadURL(`http://localhost:${port}`);
+    console.log('App loaded successfully');
+  } catch (error) {
+    console.error('Failed to start server:', error);
     
-    // Additional fallback paths
-    path.join(app.getPath('exe'), '..', 'resources', 'app', 'dist', 'index.html'),
-    path.join(app.getPath('exe'), '..', 'resources', 'app.asar', 'dist', 'index.html'),
-    path.join(app.getAppPath(), 'dist', 'index.html')
-  ];
-  
-  let loadedSuccessfully = false;
-  
-  // Try each path until one works
-  for (const indexPath of pathsToTry) {
-    console.log('Trying to load from:', indexPath);
-    
-    try {
-      // Check if file exists
-      if (require('fs').existsSync(indexPath)) {
-        console.log('File exists at:', indexPath);
-        
-        // Try to load it
-        await mainWindow.loadFile(indexPath);
-        console.log('Successfully loaded from:', indexPath);
-        loadedSuccessfully = true;
-        break;
-      } else {
-        console.log('File does not exist at:', indexPath);
-      }
-    } catch (error) {
-      console.log('Failed to load from:', indexPath, error.message);
-    }
-  }
-  
-  // If all paths failed, show error page
-  if (!loadedSuccessfully) {
-    console.error('All paths failed to load');
-    mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px;"><h1 style="color: #e74c3c;">Application Loading Failed</h1><p style="color: #666;">Could not load the application files.</p><p style="color: #666;">Please check the console for details.</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
+    // Fallback: show error page
+    mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px; background: #f0f0f0;"><h1 style="color: #e74c3c;">Application Failed to Start</h1><p style="color: #666;">Could not start the local server to load the application.</p><p style="color: #999;">Error: ' + error.message + '</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
   }
 
-  // Open DevTools only in development (remove for production)
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools();
-  }
-  
   // Log any web content errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Web content failed to load:', errorCode, errorDescription);
@@ -81,13 +119,6 @@ async function createWindow() {
   
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('Web content loaded successfully');
-    // Inject a visible error logger
-    mainWindow.webContents.executeJavaScript(`
-      window.onerror = function(msg, url, line, col, error) {
-        document.body.innerHTML += '<div style="color:red; padding:20px; font-family:Arial;"><h3>JavaScript Error:</h3><p>' + msg + '</p><p>at line ' + line + '</p></div>';
-        return false;
-      };
-    `);
   });
 }
 
@@ -124,6 +155,10 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 app.on('window-all-closed', () => {
+  // Close server before quitting
+  if (server) {
+    server.close();
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -132,5 +167,12 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+
+app.on('before-quit', () => {
+  // Close server before quitting
+  if (server) {
+    server.close();
   }
 });
