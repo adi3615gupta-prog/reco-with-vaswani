@@ -18,49 +18,80 @@ function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
-  // Try to load the React app with reliable path resolution
-  let indexPath;
+  // Load the React app using a local web server
+  const { spawn } = require('child_process');
+  const http = require('http');
+  const fs = require('fs');
   
-  if (process.env.NODE_ENV === 'development') {
-    // Development: load from dist folder
-    indexPath = path.join(__dirname, 'dist', 'index.html');
-  } else {
-    // Production: use app.getPath for reliable location
-    const appPath = app.getPath('exe');
-    const appDir = path.dirname(appPath);
-    indexPath = path.join(appDir, 'resources', 'app', 'dist', 'index.html');
-  }
+  console.log('Starting local web server for app...');
   
-  console.log('Loading app from:', indexPath);
+  // Start a simple web server to serve the dist folder
+  let server;
+  let port = 8080;
   
-  // Load the app
-  mainWindow.loadFile(indexPath).catch(err => {
-    console.error('Failed to load index.html:', err);
-    
-    // Try fallback paths
-    const fallbackPaths = [
-      path.join(__dirname, 'dist', 'index.html'),
-      path.join(__dirname, '..', 'app', 'dist', 'index.html'),
-      path.join(process.resourcesPath, 'app', 'dist', 'index.html')
-    ];
-    
-    let loaded = false;
-    for (const fallbackPath of fallbackPaths) {
-      console.log('Trying fallback path:', fallbackPath);
-      mainWindow.loadFile(fallbackPath).then(() => {
-        console.log('Successfully loaded from:', fallbackPath);
-        loaded = true;
-      }).catch(e => {
-        console.log('Failed to load from:', fallbackPath, e);
+  function startServer() {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const filePath = path.join(__dirname, 'dist', req.url === '/' ? 'index.html' : req.url);
+        
+        fs.readFile(filePath, (err, data) => {
+          if (err) {
+            res.writeHead(404);
+            res.end('Not found');
+            return;
+          }
+          
+          const ext = path.extname(filePath);
+          const contentType = ext === '.css' ? 'text/css' : 
+                           ext === '.js' ? 'application/javascript' : 
+                           'text/html';
+          
+          res.writeHead(200, { 'Content-Type': contentType });
+          res.end(data);
+        });
       });
       
-      if (loaded) break;
-    }
+      server.listen(port, () => {
+        console.log(`Local server running on http://localhost:${port}`);
+        resolve(server);
+      });
+      
+      server.on('error', () => {
+        port++;
+        if (port < 8090) {
+          startServer().then(resolve);
+        } else {
+          reject(new Error('Could not start server'));
+        }
+      });
+    });
+  }
+  
+  // Start server and then load the app
+  startServer().then((serverInstance) => {
+    server = serverInstance;
     
-    if (!loaded) {
-      console.error('All paths failed');
-      mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Check console for details.</p></body></html>');
-    }
+    // Wait a moment for server to start
+    setTimeout(() => {
+      console.log('Loading app from local server...');
+      mainWindow.loadURL(`http://localhost:${port}`).catch(err => {
+        console.error('Failed to load from local server:', err);
+        
+        // Fallback: try loading from file directly
+        mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')).catch(fileErr => {
+          console.error('Failed to load from file:', fileErr);
+          mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Try restarting the app.</p></body></html>');
+        });
+      });
+    }, 1000);
+  }).catch(err => {
+    console.error('Failed to start server:', err);
+    
+    // Fallback to file loading
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')).catch(fileErr => {
+      console.error('Failed to load from file:', fileErr);
+      mainWindow.loadURL('data:text/html,<html><body><h1>App Loading Failed</h1><p>Could not load the application.</p><p>Try restarting the app.</p></body></html>');
+    });
   });
 
   // Always open DevTools for debugging
