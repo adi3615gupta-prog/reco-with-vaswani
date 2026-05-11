@@ -24,10 +24,19 @@ async function createWindow() {
   
   // Try different paths for index.html
   const pathsToTry = [
+    // Development paths
     path.join(__dirname, 'dist', 'index.html'),
     path.join(__dirname, 'index.html'),
+    
+    // Packaged app paths (asar)
+    path.join(__dirname, '..', 'app', 'dist', 'index.html'),
     path.join(process.resourcesPath, 'app', 'dist', 'index.html'),
-    path.join(__dirname, '..', 'dist', 'index.html')
+    path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+    
+    // Additional fallback paths
+    path.join(app.getPath('exe'), '..', 'resources', 'app', 'dist', 'index.html'),
+    path.join(app.getPath('exe'), '..', 'resources', 'app.asar', 'dist', 'index.html'),
+    path.join(app.getAppPath(), 'dist', 'index.html')
   ];
   
   let loadedSuccessfully = false;
