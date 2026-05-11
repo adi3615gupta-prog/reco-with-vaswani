@@ -18,8 +18,20 @@ function createWindow() {
     icon: path.join(__dirname, 'public/icon.png')
   });
 
+  // Determine the correct path for index.html
+  let indexPath;
+  if (process.env.NODE_ENV === 'development') {
+    // Development: load from dist folder
+    indexPath = path.join(__dirname, 'dist', 'index.html');
+  } else {
+    // Production: check if dist exists, otherwise use app.asar path
+    const distPath = path.join(__dirname, 'dist', 'index.html');
+    const asarPath = path.join(process.resourcesPath, 'app', 'dist', 'index.html');
+    indexPath = require('fs').existsSync(distPath) ? distPath : asarPath;
+  }
+
   // Load the built React app
-  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  mainWindow.loadFile(indexPath);
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
