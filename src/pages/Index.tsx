@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, ArrowRight, Plus, Sparkles, Building2, FileSpreadsheet } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Plus, Sparkles, Building2, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { Progress } from '@/components/ui/progress';
@@ -11,6 +11,7 @@ import { MonthlyBreakdown } from '@/components/MonthlyBreakdown';
 import { PartyWiseReport } from '@/components/PartyWiseReport';
 import { ModeSelector } from '@/components/ModeSelector';
 import { ModeSwitcher } from '@/components/ModeSwitcher';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { TERMS, type ReconciliationMode } from '@/lib/mode';
 import { parseFile, detectColumnMapping, mapToRecords, type ColumnMapping, type DebitNoteRecord, exportMonthlyComparison, exportPartyWise, type MonthlyComparisonRow } from '@/lib/fileParser';
 import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
@@ -238,14 +239,17 @@ export default function Index() {
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808025_1px,transparent_1px),linear-gradient(to_bottom,#80808025_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
           
           {/* Rich Violet/Fuchsia Floating Glowing Orbs */}
-          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/30 blur-[120px] animate-pulse [animation-duration:8s]" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/30 blur-[140px] animate-pulse [animation-duration:12s]" />
-          <div className="absolute top-[30%] left-[40%] w-[50vw] h-[50vw] rounded-full bg-blue-600/20 blur-[120px] animate-pulse [animation-duration:10s]" />
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/40 dark:bg-violet-600/20 blur-[120px] animate-pulse [animation-duration:8s]" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/40 dark:bg-fuchsia-600/20 blur-[140px] animate-pulse [animation-duration:12s]" />
+          <div className="absolute top-[30%] left-[40%] w-[50vw] h-[50vw] rounded-full bg-blue-600/30 dark:bg-blue-600/15 blur-[120px] animate-pulse [animation-duration:10s]" />
 
           {/* Pulsing Stars */}
           <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-violet-500 rounded-full blur-[1px] animate-ping [animation-duration:3s]" />
           <div className="absolute top-1/3 right-1/4 w-3 h-3 bg-fuchsia-500 rounded-full blur-[2px] animate-ping [animation-duration:4s] [animation-delay:1s]" />
           <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 bg-blue-500 rounded-full blur-[1px] animate-ping [animation-duration:5s] [animation-delay:2s]" />
+        </div>
+        <div className="absolute top-6 right-6 z-50">
+          <ThemeToggle />
         </div>
         <ModeSelector onSelect={setMode} />
       </div>
@@ -260,9 +264,9 @@ export default function Index() {
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10 bg-background">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808020_1px,transparent_1px),linear-gradient(to_bottom,#80808020_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
         
-        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/25 blur-[120px] animate-pulse [animation-duration:7s]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/25 blur-[120px] animate-pulse [animation-duration:11s] [animation-delay:2s]" />
-        <div className="absolute top-[30%] left-[40%] w-[40vw] h-[40vw] rounded-full bg-blue-600/20 blur-[120px] animate-pulse [animation-duration:9s] [animation-delay:4s]" />
+        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/40 dark:bg-violet-600/20 blur-[120px] animate-pulse [animation-duration:7s]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/40 dark:bg-fuchsia-600/20 blur-[120px] animate-pulse [animation-duration:11s] [animation-delay:2s]" />
+        <div className="absolute top-[30%] left-[40%] w-[40vw] h-[40vw] rounded-full bg-blue-600/30 dark:bg-blue-600/15 blur-[120px] animate-pulse [animation-duration:9s] [animation-delay:4s]" />
       </div>
 
       <header className="gradient-header text-primary-foreground shadow-lg relative overflow-hidden border-b border-white/10 animate-in fade-in slide-in-from-top-8 duration-700 ease-out">
@@ -284,7 +288,11 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button onClick={() => handleReset(false)} size="sm" className="gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-sm transition-all shadow-none">
+              <RotateCcw className="w-4 h-4" /> Reset Files
+            </Button>
             <ModeSwitcher currentMode={mode} onSwitch={() => handleReset(true)} />
+            <ThemeToggle />
           </div>
         </div>
       </header>
