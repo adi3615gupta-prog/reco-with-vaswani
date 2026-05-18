@@ -78,29 +78,33 @@ export function posCompliance(rec?: InvoiceRecord): string {
 export function rule37Warning(status: MatchStatus, days: number | ''): string {
   if (typeof days !== 'number') return '';
   const isMatched = status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)';
-  const isMissing2B = status === 'Invoice Missing' || status === 'Missing in 2B' || status === 'Unmatched Vendor';
+  const isMissing2B = status === 'Not in 2B' || status === 'Missing in 2B' || status === 'Unmatched Vendor';
   if ((isMatched || isMissing2B) && days > 150) return `⚠ ${days} days — Rule 37 (180-day) deadline approaching`;
   return '';
 }
 
-export function actionableRemark(status: MatchStatus, baseRemark?: string, lateFiler?: boolean): string {
+export function actionableRemark(status: MatchStatus, baseRemark?: string, lateFiler?: boolean, mode: 'input' | 'output' = 'input'): string {
   const parts: string[] = [];
   if (baseRemark) parts.push(baseRemark);
   switch (status) {
-    case 'Invoice Missing':
+    case 'Not in 2B':
     case 'Missing in 2B':
     case 'Unmatched Vendor':
-      parts.push('Follow up with Vendor / Hold GST Payment.');
+      parts.push(mode === 'output' ? 'File in next GSTR-1 / amend return.' : 'Follow up with Vendor / Hold GST Payment.');
+      break;
+    case 'Not in Books':
+    case 'Missing in PR':
+      parts.push(mode === 'output' ? 'Possible unrecorded sale — verify with customer.' : 'Possible vendor entry — verify and book in PR.');
       break;
     case 'Value Mismatch':
     case 'Mismatch':
-      parts.push('Verify Taxable Value with Vendor.');
+      parts.push(mode === 'output' ? 'Verify Taxable Value & tax with Customer.' : 'Verify Taxable Value with Vendor.');
       break;
     case 'Perfect Match':
     case 'Matched':
     case 'Matched (Rounded)':
     case 'Matched (Diff Date)':
-      if (lateFiler) parts.push('Matched (Late Filer) — Check GSTR-3B filing before claiming.');
+      if (lateFiler && mode === 'input') parts.push('Matched (Late Filer) — Check GSTR-3B filing before claiming.');
       break;
     default:
       break;

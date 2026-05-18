@@ -1,24 +1,21 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { ShieldCheck, ArrowRight, Plus, Sparkles, Building2, FileSpreadsheet } from 'lucide-react';
+import { toast } from 'sonner';
 import { FileUploadZone } from '@/components/FileUploadZone';
+import { Progress } from '@/components/ui/progress';
 import { ColumnMapper, isMappingComplete } from '@/components/ColumnMapper';
+import { ResultsCategoryTabs } from '@/components/ResultsCategoryTabs';
 import { SummaryCards } from '@/components/SummaryCards';
 import { MonthlyBreakdown } from '@/components/MonthlyBreakdown';
-import { ResultsCategoryTabs } from '@/components/ResultsCategoryTabs';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { parseFile, detectColumnMapping, mapToRecords, exportMonthlyComparison, exportPartyWise, type ColumnMapping, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
-import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
-import { aggregateByParty } from '@/lib/partyWise';
 import { PartyWiseReport } from '@/components/PartyWiseReport';
-import { ArrowRight, RotateCcw, ShieldCheck, Sparkles, ChevronDown, FileSpreadsheet, Users, Plus, X, BookOpen, CheckCircle2, Repeat } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { downloadUserGuide } from '@/lib/userGuide';
-import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
 import { ModeSelector } from '@/components/ModeSelector';
 import { ModeSwitcher } from '@/components/ModeSwitcher';
 import { TERMS, type ReconciliationMode } from '@/lib/mode';
+import { parseFile, detectColumnMapping, mapToRecords, type ColumnMapping, type DebitNoteRecord, exportMonthlyComparison, exportPartyWise, type MonthlyComparisonRow } from '@/lib/fileParser';
+import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '@/lib/reconciliation';
+import { aggregateByParty } from '@/lib/partyWise';
+import { cn } from '@/lib/utils';
 
 type Step = 'upload' | 'map' | 'results';
 
@@ -34,7 +31,7 @@ export default function Index() {
             label: 'Download',
             onClick: () => electronAPI.downloadUpdate(),
           },
-          duration: 10000, // Keep visible for 10 seconds
+          duration: 10000,
         });
       });
 
@@ -45,7 +42,7 @@ export default function Index() {
             label: 'Restart Now',
             onClick: () => electronAPI.restartApp(),
           },
-          duration: 100000, // Keep visible until they interact
+          duration: 100000,
         });
       });
     }
@@ -53,196 +50,246 @@ export default function Index() {
 
   const [mode, setMode] = useState<ReconciliationMode | null>(null);
   const [step, setStep] = useState<Step>('upload');
+  const [processing, setProcessing] = useState(false);
+  const [progressValue, setProgressValue] = useState(0);
+  const [companyName, setCompanyName] = useState<string>('');
+
   const [prFile, setPrFile] = useState<File | null>(null);
   const [twoBFile, setTwoBFile] = useState<File | null>(null);
-  const [prHeaders, setPrHeaders] = useState<string[]>([]);
-  const [twoBHeaders, setTwoBHeaders] = useState<string[]>([]);
-  const [prRows, setPrRows] = useState<Record<string, unknown>[]>([]);
-  const [twoBRows, setTwoBRows] = useState<Record<string, unknown>[]>([]);
-  const [prMapping, setPrMapping] = useState<Partial<ColumnMapping>>({});
-  const [twoBMapping, setTwoBMapping] = useState<Partial<ColumnMapping>>({});
-  // Debit Notes (optional)
+  const [journals, setJournals] = useState<{ file: File; mapping: Partial<ColumnMapping>; headers: string[] }[]>([]);
+  
   const [prDnFile, setPrDnFile] = useState<File | null>(null);
   const [twoBDnFile, setTwoBDnFile] = useState<File | null>(null);
   const [prDnHeaders, setPrDnHeaders] = useState<string[]>([]);
   const [twoBDnHeaders, setTwoBDnHeaders] = useState<string[]>([]);
-  const [prDnRows, setPrDnRows] = useState<Record<string, unknown>[]>([]);
-  const [twoBDnRows, setTwoBDnRows] = useState<Record<string, unknown>[]>([]);
   const [prDnMapping, setPrDnMapping] = useState<Partial<ColumnMapping>>({});
   const [twoBDnMapping, setTwoBDnMapping] = useState<Partial<ColumnMapping>>({});
-  // Journal Registers (multiple) — combined with PR for matching against 2B
-  type JournalEntry = {
-    id: string;
-    file: File | null;
-    headers: string[];
-    rows: Record<string, unknown>[];
-    mapping: Partial<ColumnMapping>;
-  };
-  const newJournal = (): JournalEntry => ({ id: Math.random().toString(36).slice(2), file: null, headers: [], rows: [], mapping: {} });
-  const [journals, setJournals] = useState<JournalEntry[]>([newJournal()]);
+  const [parsedDebitNotes, setParsedDebitNotes] = useState<{ pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] }>({ pr: [], twoB: [] });
 
-  const handleJournalFile = useCallback(async (id: string, file: File) => {
-    const { headers, rows } = await parseFile(file);
-    setJournals((prev) => prev.map((j) => j.id === id ? { ...j, file, headers, rows, mapping: detectColumnMapping(headers) } : j));
-  }, []);
-  const updateJournalMapping = (id: string, mapping: Partial<ColumnMapping>) => {
-    setJournals((prev) => prev.map((j) => j.id === id ? { ...j, mapping } : j));
-  };
-  const addJournal = () => setJournals((prev) => [...prev, newJournal()]);
-  const removeJournal = (id: string) => setJournals((prev) => prev.filter((j) => j.id !== id));
+  const [prHeaders, setPrHeaders] = useState<string[]>([]);
+  const [twoBHeaders, setTwoBHeaders] = useState<string[]>([]);
 
-  const [results, setResults] = useState<ReconciliationResult[]>([]);
+  const [prMapping, setPrMapping] = useState<Partial<ColumnMapping>>({});
+  const [twoBMapping, setTwoBMapping] = useState<Partial<ColumnMapping>>({});
+
+  const [results, setResults] = useState<ReconciliationResult[] | null>(null);
   const [summary, setSummary] = useState<ReconciliationSummary | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const [showMonthly, setShowMonthly] = useState(false);
-  const [showPartyWise, setShowPartyWise] = useState(false);
 
-  const handlePrFile = useCallback(async (file: File) => {
-    setPrFile(file);
-    const { headers, rows } = await parseFile(file);
+  const handleReset = (full = false) => {
+    if (full) setMode(null);
+    setStep('upload');
+    setPrFile(null);
+    setTwoBFile(null);
+    setJournals([]);
+    setResults(null);
+    setSummary(null);
+    setPrMapping({});
+    setTwoBMapping({});
+    setPrDnFile(null);
+    setTwoBDnFile(null);
+    setPrDnMapping({});
+    setTwoBDnMapping({});
+  };
+
+  const handlePrUpload = async (f: File) => {
+    setPrFile(f);
+    const { headers } = await parseFile(f);
     setPrHeaders(headers);
-    setPrRows(rows);
     setPrMapping(detectColumnMapping(headers));
-  }, []);
+  };
 
-  const handleTwoBFile = useCallback(async (file: File) => {
-    setTwoBFile(file);
-    const { headers, rows } = await parseFile(file);
+  const handleTwoBUpload = async (f: File) => {
+    setTwoBFile(f);
+    const { headers } = await parseFile(f);
     setTwoBHeaders(headers);
-    setTwoBRows(rows);
     setTwoBMapping(detectColumnMapping(headers));
-  }, []);
+  };
 
-  const handlePrDnFile = useCallback(async (file: File) => {
-    setPrDnFile(file);
-    const { headers, rows } = await parseFile(file);
+  const handleJournalUpload = async (files: File[]) => {
+    const newJournals = await Promise.all(
+      files.map(async (f) => {
+        const { headers } = await parseFile(f);
+        return { file: f, headers, mapping: detectColumnMapping(headers) };
+      })
+    );
+    setJournals((prev) => [...prev, ...newJournals]);
+  };
+
+  const handlePrDnUpload = async (f: File) => {
+    setPrDnFile(f);
+    const { headers } = await parseFile(f);
     setPrDnHeaders(headers);
-    setPrDnRows(rows);
     setPrDnMapping(detectColumnMapping(headers));
-  }, []);
+  };
 
-  const handleTwoBDnFile = useCallback(async (file: File) => {
-    setTwoBDnFile(file);
-    const { headers, rows } = await parseFile(file);
+  const handleTwoBDnUpload = async (f: File) => {
+    setTwoBDnFile(f);
+    const { headers } = await parseFile(f);
     setTwoBDnHeaders(headers);
-    setTwoBDnRows(rows);
     setTwoBDnMapping(detectColumnMapping(headers));
-  }, []);
+  };
+
+  const removeJournal = (idx: number) => {
+    setJournals((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const handleProceedToMap = () => {
     if (prFile && twoBFile) setStep('map');
   };
 
-  const requireTaxable = mode === 'output';
   const handleReconcile = async () => {
-    if (!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable)) return;
-    // Validate any uploaded journal mappings
-    const activeJournals = journals.filter((j) => j.file);
-    if (activeJournals.some((j) => !isMappingComplete(j.mapping, requireTaxable))) return;
     setProcessing(true);
-    setTimeout(() => {
-      const prRecords = mapToRecords(prRows, prMapping, 'PR', 'Purchase Register');
-      const journalRecords = activeJournals.flatMap((j, idx) =>
-        mapToRecords(j.rows, j.mapping as ColumnMapping, 'PR', j.file?.name || `Journal Register ${idx + 1}`)
-      );
-      const combinedPr = [...prRecords, ...journalRecords];
-      const twoBRecords = mapToRecords(twoBRows, twoBMapping, '2B', 'GSTR-2B');
-      const res = reconcile(combinedPr, twoBRecords);
-      const sum = getSummary(res);
+    setProgressValue(5);
+    try {
+      await new Promise((r) => setTimeout(r, 100)); // Yield to UI
+
+      const prParsed = await parseFile(prFile!);
+      const prRecs = mapToRecords(prParsed.rows, prMapping as ColumnMapping, 'PR', mode === 'input' ? 'Purchase Register' : 'Sales Register');
+      setProgressValue(25);
+      await new Promise((r) => setTimeout(r, 50));
+
+      const twoBParsed = await parseFile(twoBFile!);
+      const twoBRecs = mapToRecords(twoBParsed.rows, twoBMapping as ColumnMapping, '2B', mode === 'input' ? 'GSTR-2B' : 'GSTR-1');
+      setProgressValue(45);
+      await new Promise((r) => setTimeout(r, 50));
+
+      for (const j of journals) {
+        const jParsed = await parseFile(j.file);
+        const jRecs = mapToRecords(jParsed.rows, j.mapping as ColumnMapping, 'PR', mode === 'input' ? 'Journal' : 'Sales Book');
+        prRecs.push(...jRecs);
+      }
+      setProgressValue(60);
+      await new Promise((r) => setTimeout(r, 50));
+      
+      const parsedPrDn: DebitNoteRecord[] = [];
+      const parsedTwoBDn: DebitNoteRecord[] = [];
+      if (prDnFile) {
+        const parsed = await parseFile(prDnFile);
+        const recs = mapToRecords(parsed.rows, prDnMapping as ColumnMapping, 'PR');
+        parsedPrDn.push(...recs.map(r => ({ invoiceDate: r.invoiceDate, cgst: r.cgst, sgst: r.sgst, igst: r.igst })));
+      }
+      if (twoBDnFile) {
+        const parsed = await parseFile(twoBDnFile);
+        const recs = mapToRecords(parsed.rows, twoBDnMapping as ColumnMapping, '2B');
+        parsedTwoBDn.push(...recs.map(r => ({ invoiceDate: r.invoiceDate, cgst: r.cgst, sgst: r.sgst, igst: r.igst })));
+      }
+      setParsedDebitNotes({ pr: parsedPrDn, twoB: parsedTwoBDn });
+      setProgressValue(75);
+      await new Promise((r) => setTimeout(r, 150));
+
+      const res = reconcile(prRecs, twoBRecs, mode as 'input' | 'output');
+      setProgressValue(95);
+      await new Promise((r) => setTimeout(r, 150));
+
       setResults(res);
-      setSummary(sum);
+      setSummary(getSummary(res));
+      setProgressValue(100);
+      await new Promise((r) => setTimeout(r, 200));
+
       setStep('results');
+    } catch (err) {
+      console.error(err);
+      toast.error('Reconciliation failed', { description: 'An error occurred while processing the files.' });
+    } finally {
       setProcessing(false);
-      const t = mode ? TERMS[mode] : TERMS.input;
-      toast.success('Reconciliation complete', {
-        description: `${sum.total} records processed • ${sum.perfectMatch} perfect match • ${sum.invoiceMissing + sum.unmatchedVendor} ${t.riskLabel}`,
-        icon: <CheckCircle2 className="w-4 h-4 text-success" />,
-        duration: 5000,
-      });
-    }, 100);
+      setProgressValue(0);
+    }
   };
 
-  const handleReset = (clearMode = false) => {
-    setStep('upload');
-    setPrFile(null);
-    setTwoBFile(null);
-    setPrHeaders([]);
-    setTwoBHeaders([]);
-    setPrRows([]);
-    setTwoBRows([]);
-    setPrMapping({});
-    setTwoBMapping({});
-    setPrDnFile(null); setTwoBDnFile(null);
-    setPrDnHeaders([]); setTwoBDnHeaders([]);
-    setPrDnRows([]); setTwoBDnRows([]);
-    setPrDnMapping({}); setTwoBDnMapping({});
-    setJournals([newJournal()]);
-    setResults([]);
-    setSummary(null);
-    setShowMonthly(false);
-    setShowPartyWise(false);
-    if (clearMode) setMode(null);
-  };
+  const handleExportMonthly = useCallback(() => {
+    if (!results) return;
+    const exportRows: MonthlyComparisonRow[] = results.map((r) => {
+      const pr = r.prRecord;
+      const tb = r.twoBRecord;
+      return {
+        partyTally: pr?.supplierName || '',
+        gstinTally: pr?.gstin || '',
+        invoiceTally: pr?.invoiceNo || '',
+        cgstTally: pr?.cgst || 0,
+        sgstTally: pr?.sgst || 0,
+        igstTally: pr?.igst || 0,
+        dateTally: pr?.invoiceDate || '',
+        partyCmp: tb?.supplierName || '',
+        gstinCmp: tb?.gstin || '',
+        invoiceCmp: tb?.invoiceNo || '',
+        cgstCmp: tb?.cgst || 0,
+        sgstCmp: tb?.sgst || 0,
+        igstCmp: tb?.igst || 0,
+        dateCmp: tb?.invoiceDate || '',
+        status: r.status,
+        totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+      };
+    });
+    exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', parsedDebitNotes, companyName);
+  }, [results, parsedDebitNotes, companyName]);
 
-  const term = mode ? TERMS[mode] : TERMS.input;
+  const handleExportParty = useCallback(() => {
+    if (!results) return;
+    exportPartyWise(aggregateByParty(results), 'Party_Wise_Report.xlsx', companyName);
+  }, [results, companyName]);
+
+  if (!mode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-background">
+        {/* Dynamic Animated Background */}
+        <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none -z-10">
+          <div className="absolute inset-0 bg-background" />
+          
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808025_1px,transparent_1px),linear-gradient(to_bottom,#80808025_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+          
+          {/* Rich Violet/Fuchsia Floating Glowing Orbs */}
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/30 blur-[120px] animate-pulse [animation-duration:8s]" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/30 blur-[140px] animate-pulse [animation-duration:12s]" />
+          <div className="absolute top-[30%] left-[40%] w-[50vw] h-[50vw] rounded-full bg-blue-600/20 blur-[120px] animate-pulse [animation-duration:10s]" />
+
+          {/* Pulsing Stars */}
+          <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-violet-500 rounded-full blur-[1px] animate-ping [animation-duration:3s]" />
+          <div className="absolute top-1/3 right-1/4 w-3 h-3 bg-fuchsia-500 rounded-full blur-[2px] animate-ping [animation-duration:4s] [animation-delay:1s]" />
+          <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 bg-blue-500 rounded-full blur-[1px] animate-ping [animation-duration:5s] [animation-delay:2s]" />
+        </div>
+        <ModeSelector onSelect={setMode} />
+      </div>
+    );
+  }
+
+  const term = TERMS[mode];
+  const requireTaxable = mode === 'output';
 
   return (
     <div className="min-h-screen bg-background transition-colors duration-500">
-      {/* Ambient background glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10 bg-background">
-        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-primary/[0.05] blur-[120px] animate-pulse [animation-duration:7s]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-info/[0.05] blur-[120px] animate-pulse [animation-duration:11s] [animation-delay:2s]" />
-        <div className="absolute top-[30%] left-[40%] w-[40vw] h-[40vw] rounded-full bg-success/[0.03] blur-[120px] animate-pulse [animation-duration:9s] [animation-delay:4s]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808020_1px,transparent_1px),linear-gradient(to_bottom,#80808020_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
+        
+        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-600/25 blur-[120px] animate-pulse [animation-duration:7s]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-fuchsia-600/25 blur-[120px] animate-pulse [animation-duration:11s] [animation-delay:2s]" />
+        <div className="absolute top-[30%] left-[40%] w-[40vw] h-[40vw] rounded-full bg-blue-600/20 blur-[120px] animate-pulse [animation-duration:9s] [animation-delay:4s]" />
       </div>
 
-      {/* Header */}
       <header className="gradient-header text-primary-foreground shadow-lg relative overflow-hidden border-b border-white/10 animate-in fade-in slide-in-from-top-8 duration-700 ease-out">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDE4YzAtOS45NC04LjA2LTE4LTE4LTE4UzAgOC4wNiAwIDE4YzAgOS45NCA4LjA2IDE4IDE4IDE4czE4LTguMDYgMTgtMTgiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-50" />
         <div className="container mx-auto px-4 py-5 flex items-center justify-between relative">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center ring-1 ring-white/30 shadow-[0_0_20px_rgba(255,255,255,0.15)]">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center ring-1 ring-white/30 shadow-[0_0_20px_rgba(255,255,255,0.15)] overflow-hidden">
+              <img 
+                src="./icon.png" 
+                alt="Logo" 
+                className="w-8 h-8 object-contain drop-shadow-md hover:scale-105 transition-transform duration-300" 
+                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }}
+              />
+              <ShieldCheck className="w-6 h-6 hidden" />
             </div>
             <div>
               <h1 className="text-xl font-extrabold tracking-tight">GST Reconciliation</h1>
               <p className="text-xs opacity-70">{term.subtitle}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            {mode && (
-              <ModeSwitcher currentMode={mode} onSwitch={() => handleReset(true)} />
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                downloadUserGuide();
-                toast.success('User guide downloaded', {
-                  description: 'Vaswani-Return-User-Guide.pdf saved to your downloads.',
-                  duration: 4000,
-                });
-              }}
-              className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
-            >
-              <BookOpen className="w-3.5 h-3.5" /> User Guide
-            </Button>
-            {step !== 'upload' && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleReset(false)}
-                className="gap-2 bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm"
-              >
-                <RotateCcw className="w-3.5 h-3.5" /> Start Over
-              </Button>
-            )}
+          <div className="flex items-center gap-3">
+            <ModeSwitcher currentMode={mode} onSwitch={() => handleReset(true)} />
           </div>
         </div>
       </header>
 
-      {/* Step indicators */}
-      <div className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
+      <div className="border-b bg-background/80 backdrop-blur-xl sticky top-0 z-30 supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4">
           <div className="flex items-center gap-1 py-2.5">
             {(['upload', 'map', 'results'] as Step[]).map((s, idx) => {
@@ -253,18 +300,20 @@ export default function Index() {
                 <div key={s} className="flex items-center gap-1">
                   {idx > 0 && (
                     <div className={cn(
-                      'w-10 h-0.5 mx-1 rounded-full transition-colors duration-500',
+                      'w-12 h-0.5 mx-2 rounded-full transition-colors duration-700',
                       isDone ? 'bg-success' : 'bg-border'
                     )} />
                   )}
                   <div className={cn(
-                    'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-500',
-                    isActive ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20' :
-                    isDone ? 'bg-success/10 text-success' : 'text-muted-foreground'
-                  )}>
+                    'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-500',
+                    isActive ? 'bg-primary text-primary-foreground shadow-[0_0_20px_-3px_rgba(var(--primary),0.4)] ring-2 ring-primary/30 ring-offset-2 ring-offset-background' :
+                    isDone ? 'bg-success/15 text-success hover:bg-success/20 cursor-pointer' : 'text-muted-foreground hover:text-foreground cursor-pointer'
+                  )}
+                  onClick={() => isDone && setStep(s)}
+                  >
                     <span className={cn(
-                      'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-500',
-                      isActive ? 'bg-white/20' : isDone ? 'bg-success/20' : 'bg-muted'
+                      'w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all duration-500',
+                      isActive ? 'bg-white/25 text-white' : isDone ? 'bg-success/25 text-success-foreground' : 'bg-muted text-muted-foreground'
                     )}>
                       {isDone ? '✓' : idx + 1}
                     </span>
@@ -277,295 +326,197 @@ export default function Index() {
         </div>
       </div>
 
-      <main className="container mx-auto px-4 py-8 space-y-8 relative">
-        {!mode && <ModeSelector onSelect={setMode} />}
-        {mode && (<>
-
-        {/* Upload */}
+      <main className="container mx-auto px-4 py-8">
         {step === 'upload' && (
-          <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
-                <Sparkles className="w-7 h-7 text-primary" />
+          <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-card/60 backdrop-blur-xl border border-white/10 shadow-lg rounded-2xl p-6 mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 className="w-5 h-5 text-primary" />
+                <h3 className="font-bold text-foreground text-lg tracking-tight">Company Details</h3>
               </div>
-              <h2 className="text-2xl font-bold tracking-tight">Upload Your Files</h2>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Upload your {term.primaryBookLabel} and {term.govtLabel} to begin intelligent reconciliation
-              </p>
+              <p className="text-xs text-muted-foreground mb-4">Enter the name of the company to automatically brand your exported professional reports.</p>
+              <input
+                type="text"
+                placeholder="e.g. Acme Corporation Ltd."
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="flex h-11 w-full max-w-md rounded-xl border border-input bg-background/50 px-4 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              />
             </div>
-            <div className="grid md:grid-cols-2 gap-5">
+
+            <div className="grid md:grid-cols-2 gap-6">
               <FileUploadZone
                 label={term.primaryBookLabel}
                 description={term.primaryBookDesc}
-                onFileSelect={handlePrFile}
+                onFileSelect={handlePrUpload}
                 fileName={prFile?.name}
               />
               <FileUploadZone
                 label={term.govtLabel}
                 description={term.govtDesc}
-                onFileSelect={handleTwoBFile}
+                onFileSelect={handleTwoBUpload}
                 fileName={twoBFile?.name}
               />
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-6 pt-2">
               <FileUploadZone
-                label={`Upload ${term.primaryShort} Debit Notes`}
-                description={`Optional — deducted from ${term.primaryShort}`}
-                onFileSelect={handlePrDnFile}
+                label={`Optional: ${term.primaryShort} Debit Notes`}
+                description="Upload to adjust monthly totals"
+                onFileSelect={handlePrDnUpload}
                 fileName={prDnFile?.name}
               />
               <FileUploadZone
-                label={`Upload ${term.govtShort} Debit Notes`}
-                description={`Optional — deducted from ${term.govtShort}`}
-                onFileSelect={handleTwoBDnFile}
+                label={`Optional: ${term.govtShort} Debit/Credit Notes`}
+                description="Upload to adjust monthly totals"
+                onFileSelect={handleTwoBDnUpload}
                 fileName={twoBDnFile?.name}
               />
             </div>
-
-            {/* Secondary books */}
-            <div className="space-y-3">
+            
+            <div className="space-y-4 pt-4 border-t border-border/50">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold">{term.secondaryBookLabel}s</h3>
                   <p className="text-xs text-muted-foreground">{term.secondaryBookDesc}</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={addJournal} className="gap-1.5">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md transition-colors">
+                  <input type="file" accept=".csv,.xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files?.length) handleJournalUpload(Array.from(files)); e.target.value = ''; }} className="hidden" />
                   <Plus className="w-3.5 h-3.5" /> Add {term.secondaryBookLabel}
-                </Button>
+                </label>
               </div>
-              <div className="grid md:grid-cols-2 gap-5">
-                {journals.map((j, idx) => (
-                  <div key={j.id} className="relative">
-                    <FileUploadZone
-                      label={`${term.secondaryBookLabel} ${idx + 1}`}
-                      description={mode === 'output' ? 'e.g. additional sales book' : 'e.g. Journal entries for purchases'}
-                      onFileSelect={(file) => handleJournalFile(j.id, file)}
-                      fileName={j.file?.name}
-                    />
-                    {journals.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeJournal(j.id)}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-                        aria-label="Remove book"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              
+              {journals.length > 0 && (
+                <div className="grid gap-3">
+                  {journals.map((j, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg border bg-card/50">
+                      <span className="text-sm font-medium">{j.file.name}</span>
+                      <Button variant="ghost" size="sm" onClick={() => removeJournal(idx)} className="text-destructive h-8 px-2">Remove</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
             {prFile && twoBFile && (
-              <div className="flex justify-center animate-in fade-in zoom-in-95 duration-300">
+              <div className="flex justify-center pt-6 animate-in fade-in zoom-in-95 duration-300">
                 <Button onClick={handleProceedToMap} size="lg" className="h-12 px-8 text-base font-semibold gap-2 shadow-[0_0_30px_-5px_rgba(var(--primary),0.4)] hover:shadow-[0_0_40px_-5px_rgba(var(--primary),0.6)] transition-all duration-300 hover:scale-[1.02]">
                   Continue to Column Mapping <ArrowRight className="w-5 h-5 ml-1" />
                 </Button>
               </div>
             )}
-            <Card className="bg-muted/30 border-dashed glass-card">
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">Expected columns:</strong> Supplier Name, GSTIN, Invoice No, Invoice Date, Invoice Value, Taxable Value, IGST, CGST, SGST.
-                  The app auto-detects columns from your headers. You can adjust mapping in the next step.
-                </p>
-              </CardContent>
-            </Card>
           </div>
         )}
 
-        {/* Column Mapping */}
         {step === 'map' && (
-          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold tracking-tight">Map Your Columns</h2>
-              <p className="text-muted-foreground">
-                Verify or adjust column mappings. Fields marked with * are required.
-              </p>
-            </div>
-            <div className="grid gap-4">
+          <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+            <ColumnMapper
+              title={`Map ${term.primaryBookLabel} Columns`}
+              headers={prHeaders}
+              mapping={prMapping}
+              onChange={setPrMapping}
+              requireTaxable={requireTaxable}
+              labelOverrides={{ supplierName: term.partyLabel }}
+            />
+            
+            {journals.map((j, idx) => (
               <ColumnMapper
-                title={`${term.primaryBookLabel} — ${prRows.length} rows`}
-                headers={prHeaders}
-                mapping={prMapping}
-                onChange={setPrMapping}
-                labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
+                key={idx}
+                title={`Map ${term.secondaryBookLabel} (${j.file.name}) Columns`}
+                headers={j.headers}
+                mapping={j.mapping}
+                onChange={(newMap) => {
+                  const newJ = [...journals];
+                  newJ[idx].mapping = newMap;
+                  setJournals(newJ);
+                }}
                 requireTaxable={requireTaxable}
+                labelOverrides={{ supplierName: term.partyLabel }}
               />
+            ))}
+
+            <ColumnMapper
+              title={`Map ${term.govtLabel} Columns`}
+              headers={twoBHeaders}
+              mapping={twoBMapping}
+              onChange={setTwoBMapping}
+              requireTaxable={requireTaxable}
+              labelOverrides={{ supplierName: term.partyLabel, filingStatus: 'Filing Period (optional)' }}
+            />
+
+            {prDnFile && (
               <ColumnMapper
-                title={`${term.govtLabel} — ${twoBRows.length} rows`}
-                headers={twoBHeaders}
-                mapping={twoBMapping}
-                onChange={setTwoBMapping}
-                labelOverrides={{ supplierName: term.partyTradeLabel }}
-                requireTaxable={requireTaxable}
+                title={`Map ${term.primaryShort} Debit Notes Columns`}
+                headers={prDnHeaders}
+                mapping={prDnMapping}
+                onChange={setPrDnMapping}
+                requireTaxable={false}
               />
-              {journals.filter((j) => j.file).map((j, idx) => (
-                <ColumnMapper
-                  key={j.id}
-                  title={`${term.secondaryBookLabel} ${idx + 1} — ${j.rows.length} rows`}
-                  headers={j.headers}
-                  mapping={j.mapping}
-                  onChange={(m) => updateJournalMapping(j.id, m)}
-                  labelOverrides={{ gstin: 'GST No.', supplierName: term.partyLabel + ' Name' }}
-                  requireTaxable={requireTaxable}
-                />
-              ))}
-              {prDnFile && (
-                <ColumnMapper
-                  title={`${term.primaryShort} Debit Notes — ${prDnRows.length} rows`}
-                  headers={prDnHeaders}
-                  mapping={prDnMapping}
-                  onChange={setPrDnMapping}
-                />
-              )}
-              {twoBDnFile && (
-                <ColumnMapper
-                  title={`${term.govtShort} Debit Notes — ${twoBDnRows.length} rows`}
-                  headers={twoBDnHeaders}
-                  mapping={twoBDnMapping}
-                  onChange={setTwoBDnMapping}
-                />
-              )}
+            )}
+            
+            {twoBDnFile && (
+              <ColumnMapper
+                title={`Map ${term.govtShort} Debit Notes Columns`}
+                headers={twoBDnHeaders}
+                mapping={twoBDnMapping}
+                onChange={setTwoBDnMapping}
+                requireTaxable={false}
+              />
+            )}
+
+            <div className="flex justify-end pt-6 border-t border-border/50">
+              {(() => { const dnValid = (!prDnFile || isMappingComplete(prDnMapping, false)) && (!twoBDnFile || isMappingComplete(twoBDnMapping, false)); return (
+                processing ? (
+                  <div className="w-full sm:max-w-md ml-auto space-y-2 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="flex justify-between text-sm font-semibold text-primary px-1">
+                      <span className="animate-pulse">Analyzing & Reconciling...</span>
+                      <span className="tabular-nums">{progressValue}%</span>
+                    </div>
+                    <Progress value={progressValue} className="h-2.5 w-full bg-primary/20" />
+                  </div>
+                ) : (
+                  <Button
+                    onClick={handleReconcile}
+                    disabled={!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable) || journals.some((j) => !isMappingComplete(j.mapping, requireTaxable)) || !dnValid || processing}
+                    className="h-12 px-8 text-base font-semibold gap-2 shadow-[0_0_30px_-5px_rgba(var(--primary),0.4)] hover:shadow-[0_0_40px_-5px_rgba(var(--primary),0.6)] transition-all duration-300 hover:scale-[1.02]"
+                  >
+                    Run Reconciliation <Sparkles className="w-5 h-5 ml-1" />
+                  </Button>
+                )
+              ); })()}
             </div>
-            <div className="flex justify-center gap-3">
-              <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
-              <Button
-                onClick={handleReconcile}
-                disabled={!isMappingComplete(prMapping, requireTaxable) || !isMappingComplete(twoBMapping, requireTaxable) || journals.some((j) => j.file && !isMappingComplete(j.mapping, requireTaxable)) || processing}
-                className="h-11 px-6 text-base font-semibold gap-2 shadow-[0_0_30px_-5px_rgba(var(--primary),0.4)] hover:shadow-[0_0_40px_-5px_rgba(var(--primary),0.6)] transition-all duration-300 hover:scale-[1.02]"
-              >
-                {processing ? 'Processing...' : 'Run Reconciliation'} <Sparkles className="w-4 h-4 ml-1" />
+          </div>
+        )}
+
+        {step === 'results' && results && summary && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            {companyName && (
+              <div className="flex flex-col items-center justify-center pt-2 pb-6 border-b border-white/5 animate-in fade-in zoom-in-95 duration-700">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 text-primary mb-4 ring-1 ring-primary/20 shadow-inner">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-foreground text-center">{companyName}</h2>
+                <p className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mt-2">{term.title} Report</p>
+              </div>
+            )}
+            
+            <div className="flex flex-wrap items-center justify-center gap-4 mb-8 pt-2 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
+              <Button onClick={handleExportMonthly} className="gap-2 shadow-lg shadow-primary/10 hover:shadow-xl hover:shadow-primary/20 transition-all hover:-translate-y-0.5 border border-primary/20 bg-card/60 backdrop-blur-md" variant="secondary" size="lg">
+                <FileSpreadsheet className="w-5 h-5 text-success" /> Export Monthly Report
+              </Button>
+              <Button onClick={handleExportParty} className="gap-2 shadow-lg shadow-primary/10 hover:shadow-xl hover:shadow-primary/20 transition-all hover:-translate-y-0.5 border border-primary/20 bg-card/60 backdrop-blur-md" variant="secondary" size="lg">
+                <FileSpreadsheet className="w-5 h-5 text-info" /> Export Party-wise Report
               </Button>
             </div>
-          </div>
-        )}
-
-        {/* Results */}
-        {step === 'results' && summary && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight">{term.title} Results</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {summary.total} records processed • {summary.perfectMatch} perfect • {summary.valueMismatch} value mismatch • {summary.invoiceMissing + summary.unmatchedVendor} {term.riskLabel}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => {
-                    const rows: MonthlyComparisonRow[] = results.map((r) => {
-                      const pr = r.prRecord;
-                      const tb = r.twoBRecord;
-                      const totalDiff = (r.cgstDiff !== undefined || r.sgstDiff !== undefined || r.igstDiff !== undefined)
-                        ? +(Math.abs(r.cgstDiff ?? 0) + Math.abs(r.sgstDiff ?? 0) + Math.abs(r.igstDiff ?? 0)).toFixed(2)
-                        : '';
-                      const baseRec = pr || tb;
-                      const taxableForRate = pr?.taxableValue ?? tb?.taxableValue;
-                      const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
-                      const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
-                      const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
-                      return {
-                        partyTally: pr?.supplierName || '',
-                        gstinTally: pr?.gstin || '',
-                        invoiceTally: pr?.invoiceNo || '',
-                        cgstTally: pr?.cgst ?? '',
-                        sgstTally: pr?.sgst ?? '',
-                        igstTally: pr?.igst ?? '',
-                        partyCmp: tb?.supplierName || '',
-                        gstinCmp: tb?.gstin || '',
-                        invoiceCmp: tb?.invoiceNo || '',
-                        cgstCmp: tb?.cgst ?? '',
-                        sgstCmp: tb?.sgst ?? '',
-                        igstCmp: tb?.igst ?? '',
-                        status: r.status,
-                        totalDiff,
-                        dateTally: pr?.invoiceDate || '',
-                        dateCmp: tb?.invoiceDate || '',
-                        itcEligibility: deriveItcEligibility(baseRec?.supplierName),
-                        gstr1Status: tb?.filingStatus ?? '',
-                        filingDate: tb?.filingDate ?? '',
-                        daysOld: days,
-                        taxRatePct: taxRatePct(taxableForRate, totalTax),
-                        posCompliance: posCompliance(pr || tb),
-                        rule37Warning: rule37Warning(r.status, days),
-                        remark: actionableRemark(r.status, r.remark, lateFiler),
-                      };
-                    });
-                    const toDN = (
-                      rs: Record<string, unknown>[],
-                      m: Partial<ColumnMapping>
-                    ): DebitNoteRecord[] => rs.map((row) => ({
-                      invoiceDate: m.invoiceDate ? String(row[m.invoiceDate] ?? '') : '',
-                      cgst: m.cgst ? Number(row[m.cgst]) || 0 : 0,
-                      sgst: m.sgst ? Number(row[m.sgst]) || 0 : 0,
-                      igst: m.igst ? Number(row[m.igst]) || 0 : 0,
-                    }));
-                    const dn = {
-                      pr: prDnRows.length ? toDN(prDnRows, prDnMapping) : undefined,
-                      twoB: twoBDnRows.length ? toDN(twoBDnRows, twoBDnMapping) : undefined,
-                    };
-                    exportMonthlyComparison(rows, `${term.exportPrefix}_Monthly_Comparison_Report.xlsx`, dn);
-                    toast.success('Monthly comparison exported', { description: `${rows.length} rows • Excel workbook ready.` });
-                  }}
-                  size="sm"
-                  className="gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30"
-                >
-                  <FileSpreadsheet className="w-4 h-4" /> Export Monthly Comparison Report
-                </Button>
-                <Button
-                  onClick={() => {
-                    exportPartyWise(aggregateByParty(results), `${term.exportPrefix}_Party_Wise_Report.xlsx`);
-                    toast.success('Party-wise report exported', { description: 'Excel workbook ready in your downloads.' });
-                  }}
-                  size="sm"
-                  variant="secondary"
-                  className="gap-2 shadow-lg"
-                >
-                  <Users className="w-4 h-4" /> Export Party-wise Report
-                </Button>
-              </div>
-            </div>
+            
             <SummaryCards summary={summary} />
-
-            {/* Monthly toggle */}
-            <button
-              onClick={() => setShowMonthly(!showMonthly)}
-              className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl bg-card border border-border hover:bg-muted/40 transition-all duration-300 group"
-            >
-              <span className="text-sm font-semibold">Month-wise Breakdown</span>
-              <ChevronDown className={cn(
-                'w-4 h-4 text-muted-foreground transition-transform duration-300',
-                showMonthly && 'rotate-180'
-              )} />
-            </button>
-            {showMonthly && (
-              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                <MonthlyBreakdown results={results} />
-              </div>
-            )}
-
-            {/* Party-wise toggle */}
-            <button
-              onClick={() => setShowPartyWise(!showPartyWise)}
-              className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl bg-card border border-border hover:bg-muted/40 transition-all duration-300 group"
-            >
-              <span className="text-sm font-semibold flex items-center gap-2">
-                <Users className="w-4 h-4 text-primary" /> Party-wise Reconciliation
-              </span>
-              <ChevronDown className={cn(
-                'w-4 h-4 text-muted-foreground transition-transform duration-300',
-                showPartyWise && 'rotate-180'
-              )} />
-            </button>
-            {showPartyWise && (
-              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                <PartyWiseReport results={results} />
-              </div>
-            )}
-
-            <ResultsCategoryTabs results={results} summary={summary} />
+            <ResultsCategoryTabs results={results} summary={summary} companyName={companyName} mode={mode as 'input' | 'output'} />
+            <div className="grid lg:grid-cols-2 gap-6">
+              <PartyWiseReport results={results} companyName={companyName} mode={mode as 'input' | 'output'} />
+              <MonthlyBreakdown results={results} debitNotes={parsedDebitNotes} companyName={companyName} />
+            </div>
           </div>
         )}
-        </>)}
       </main>
     </div>
   );

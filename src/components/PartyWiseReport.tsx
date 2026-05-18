@@ -4,13 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, Search, ArrowUpDown } from 'lucide-react';
+import { ChevronDown, Search, ArrowUpDown, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { aggregateByParty, type PartySummary } from '@/lib/partyWise';
+import { exportPartyWise } from '@/lib/fileParser';
 import type { ReconciliationResult } from '@/lib/reconciliation';
 
 interface Props {
   results: ReconciliationResult[];
+  companyName: string;
+  mode?: 'input' | 'output';
 }
 
 const fmt = (n: number) =>
@@ -31,12 +34,12 @@ function statusStrip(status: PartySummary['overall']) {
 function rowStatusColor(status: string) {
   if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)') return 'text-success';
   if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-warning';
-  if (status === 'Missing in PR') return 'text-info';
+  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-info';
   return 'text-destructive';
 }
 
-export function PartyWiseReport({ results }: Props) {
-  const parties = useMemo(() => aggregateByParty(results), [results]);
+export function PartyWiseReport({ results, companyName, mode = 'input' }: Props) {
+  const parties = useMemo(() => aggregateByParty(results, mode), [results, mode]);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'diff'>('name');
 
@@ -68,15 +71,20 @@ export function PartyWiseReport({ results }: Props) {
             className="pl-9"
           />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setSortBy(sortBy === 'name' ? 'diff' : 'name')}
-          className="gap-2"
-        >
-          <ArrowUpDown className="w-3.5 h-3.5" />
-          Sort: {sortBy === 'name' ? 'Name' : 'Total Diff (desc)'}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSortBy(sortBy === 'name' ? 'diff' : 'name')}
+            className="gap-2 shrink-0"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            Sort
+          </Button>
+          <Button onClick={() => exportPartyWise(parties, 'Party_Wise_Report.xlsx', companyName)} variant="outline" size="sm" className="gap-2 shrink-0">
+            <Download className="w-4 h-4" /> Export
+          </Button>
+        </div>
       </div>
 
       <div className="text-xs text-muted-foreground">
@@ -125,7 +133,7 @@ function PartyCard({ party }: { party: PartySummary }) {
                   </span>
                 )}
                 {party.totals.missingInPR > 0 && (
-                  <span className="text-[11px] text-info">{party.totals.missingInPR} missing in PR</span>
+                  <span className="text-[11px] text-info">{party.totals.missingInPR} not in books</span>
                 )}
               </div>
             </div>

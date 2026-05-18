@@ -61,19 +61,26 @@ export function mapToRecords(
   source: 'PR' | '2B',
   sourceLabel?: string
 ): InvoiceRecord[] {
+  const safeNum = (val: unknown): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const n = parseFloat(String(val).replace(/[₹,\s]/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+
   return rows.map((row) => {
     const rec: InvoiceRecord = {
       supplierName: String(row[mapping.supplierName] || ''),
       gstin: String(row[mapping.gstin] || ''),
       invoiceNo: String(row[mapping.invoiceNo] || ''),
       invoiceDate: String(row[mapping.invoiceDate] || ''),
-      igst: Number(row[mapping.igst]) || 0,
-      cgst: Number(row[mapping.cgst]) || 0,
-      sgst: Number(row[mapping.sgst]) || 0,
+      igst: safeNum(row[mapping.igst]),
+      cgst: safeNum(row[mapping.cgst]),
+      sgst: safeNum(row[mapping.sgst]),
       source,
       ...(sourceLabel ? { sourceLabel } : {}),
     };
-    if (mapping.taxableValue) rec.taxableValue = Number(row[mapping.taxableValue]) || 0;
+    if (mapping.taxableValue) rec.taxableValue = safeNum(row[mapping.taxableValue]);
     if (mapping.filingStatus) rec.filingStatus = String(row[mapping.filingStatus] || '');
     if (mapping.filingDate) rec.filingDate = String(row[mapping.filingDate] || '');
     return rec;
@@ -92,6 +99,7 @@ const STATUS_STYLES: Record<string, StatusStyle> = {
   'Mismatch':               { headerFill: 'D97706', headerFont: 'FFFFFF', rowFill: 'FEF3C7' },
   'Missing in 2B':          { headerFill: 'DC2626', headerFont: 'FFFFFF', rowFill: 'FEE2E2' },
   'Missing in PR':          { headerFill: '2563EB', headerFont: 'FFFFFF', rowFill: 'DBEAFE' },
+  'Not in Books':           { headerFill: '2563EB', headerFont: 'FFFFFF', rowFill: 'DBEAFE' },
   'Possible Match':         { headerFill: '6B7280', headerFont: 'FFFFFF', rowFill: 'F3F4F6' },
   'Name Matched (No GSTIN)':{ headerFill: 'B45309', headerFont: 'FFFFFF', rowFill: 'FEF3C7' },
   'Wrong GSTIN':            { headerFill: 'B91C1C', headerFont: 'FFFFFF', rowFill: 'FEE2E2' },
@@ -142,11 +150,119 @@ function autoFitCols(headers: string[], data: (string | number)[][]): { wch: num
   });
 }
 
+// Inserts a high-end corporate header into the first two rows of any worksheet
+function addCorporateHeader(ws: XLSX.WorkSheet, colCount: number, companyName: string | undefined, reportName: string) {
+  const comp = (companyName || 'GST Reconciliation').toUpperCase();
+  const title = `${comp} - ${reportName.toUpperCase()}`;
+  const subtitle = `Report Generated on: ${new Date().toLocaleString('en-IN')} | Powered by Vaswani Return`;
+
+  XLSX.utils.sheet_add_aoa(ws, [[title], [subtitle]], { origin: 'A1' });
+
+  if (!ws['!merges']) ws['!merges'] = [];
+  ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } });
+  ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } });
+
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][0] = { hpt: 30 };
+  ws['!rows'][1] = { hpt: 18 };
+
+  const tAddr = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[tAddr]) {
+    ws[tAddr].s = { fill: { fgColor: { rgb: '0F172A' } }, font: { sz: 14, color: { rgb: 'F8FAFC' }, bold: true }, alignment: { horizontal: 'center', vertical: 'center' } };
+  }
+  const sAddr = XLSX.utils.encode_cell({ r: 1, c: 0 });
+  if (ws[sAddr]) {
+    ws[sAddr].s = { fill: { fgColor: { rgb: '1E293B' } }, font: { sz: 10, color: { rgb: '94A3B8' }, italic: true }, alignment: { horizontal: 'center', vertical: 'center' } };
+  }
+}
+
+function appendExecutiveSummary(
+  wb: XLSX.WorkBook,
+  companyName: string | undefined,
+  reportName: string,
+  stats: { label: string; value: string | number }[],
+  breakdown?: { label: string; value: string | number }[]
+) {
+  const wsCover = XLSX.utils.aoa_to_sheet([]);
+  addCorporateHeader(wsCover, 5, companyName, reportName);
+  
+  const coverRows: any[][] = [];
+  coverRows.push(['REPORT PARAMETERS', '', '']);
+  coverRows.push(['Company Name', '', companyName || 'Not Provided']);
+  coverRows.push(['Report Generated', '', new Date().toLocaleString('en-IN')]);
+  for (const st of stats) {
+    coverRows.push([st.label, '', st.value]);
+  }
+  
+  if (breakdown && breakdown.length > 0) {
+    coverRows.push(['', '', '']);
+    coverRows.push(['STATUS BREAKDOWN', '', 'RECORD COUNT']);
+    for (const b of breakdown) {
+      coverRows.push([b.label, '', b.value]);
+    }
+  }
+  
+  XLSX.utils.sheet_add_aoa(wsCover, coverRows, { origin: 'B4' });
+  wsCover['!cols'] = [{ wch: 5 }, { wch: 35 }, { wch: 15 }, { wch: 20 }, { wch: 5 }];
+  
+  const coverStartRow = 3;
+  for (let i = 0; i < coverRows.length; i++) {
+    const r = coverStartRow + i;
+    const isSection = coverRows[i][0] === 'REPORT PARAMETERS' || coverRows[i][0] === 'STATUS BREAKDOWN';
+    const isEmpty = coverRows[i][0] === '';
+    
+    for (let c = 1; c <= 3; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!wsCover[addr] && !isEmpty) wsCover[addr] = { t: 's', v: '' };
+      if (!wsCover[addr]) continue;
+      
+      const val = coverRows[i][c - 1];
+      const isNum = typeof val === 'number'; 
+      
+      wsCover[addr].s = {
+        font: {
+          bold: isSection || c === 3 || isNum,
+          color: { rgb: isSection ? 'FFFFFF' : '1F2937' },
+          sz: isSection ? 12 : 11
+        },
+        fill: isSection ? { fgColor: { rgb: '0F172A' } } : { fgColor: { rgb: i % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+        alignment: {
+          vertical: 'center',
+          horizontal: isSection ? (c === 3 && val ? 'right' : 'left') : (c === 3 || isNum ? 'right' : 'left')
+        },
+        border: isSection 
+          ? { top: { style: 'thin', color: { rgb: '0F172A' } }, bottom: { style: 'thin', color: { rgb: '0F172A' } } }
+          : { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } }
+      };
+      
+      if (!wsCover['!rows']) wsCover['!rows'] = [];
+      wsCover['!rows'][r] = { hpt: isSection ? 24 : 20 };
+    }
+    
+    if (isSection) {
+      if (!wsCover['!merges']) wsCover['!merges'] = [];
+      if (coverRows[i][0] === 'STATUS BREAKDOWN') {
+        wsCover['!merges'].push({ s: { r, c: 1 }, e: { r, c: 2 } });
+      } else {
+        wsCover['!merges'].push({ s: { r, c: 1 }, e: { r, c: 3 } });
+      }
+    } else if (!isEmpty) {
+      if (!wsCover['!merges']) wsCover['!merges'] = [];
+      wsCover['!merges'].push({ s: { r, c: 1 }, e: { r, c: 2 } });
+    }
+  }
+
+  if (!wsCover['!views']) wsCover['!views'] = [];
+  wsCover['!views'].push({ showGridLines: false });
+
+  XLSX.utils.book_append_sheet(wb, wsCover, 'Executive Summary');
+}
+
 function applySheetStyles(
   ws: XLSX.WorkSheet,
   style: StatusStyle,
   rowCount: number,
-  opts?: { dateCols?: number[]; numberCols?: number[]; colWidths?: { wch: number }[] }
+  opts?: { dateCols?: number[]; numberCols?: number[]; colWidths?: { wch: number }[]; startRow?: number }
 ) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
   const colCount = range.e.c + 1;
@@ -157,10 +273,14 @@ function applySheetStyles(
 
   const dateCols = new Set(opts?.dateCols ?? []);
   const numberCols = new Set(opts?.numberCols ?? []);
+  const startRow = opts?.startRow ?? 0;
+  
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][startRow] = { hpt: 24 };
 
   // Header row
   for (let c = 0; c <= range.e.c; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: startRow, c });
     if (!ws[addr]) continue;
     ws[addr].s = {
       fill: { fgColor: { rgb: style.headerFill } },
@@ -173,8 +293,9 @@ function applySheetStyles(
   // Data rows
   for (let r = 1; r <= rowCount; r++) {
     const isEven = r % 2 === 0;
+    ws['!rows'][startRow + r] = { hpt: 20 };
     for (let c = 0; c <= range.e.c; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
+      const addr = XLSX.utils.encode_cell({ r: startRow + r, c });
       if (!ws[addr]) continue;
 
       // Reformat dates as standardized string
@@ -204,7 +325,7 @@ function applySheetStyles(
 
 function buildSheetRows(records: Record<string, unknown>[]) {
   const cols = [
-    'Status', 'GSTIN', 'Supplier Name',
+    'Status', 'GSTIN (PR)', 'GSTIN (2B)', 'Supplier Name (PR)', 'Supplier Name (2B)',
     'Invoice No (PR)', 'Invoice No (2B)',
     'Invoice Date (PR)', 'Invoice Date (2B)',
     'IGST (PR)', 'IGST (2B)',
@@ -218,17 +339,37 @@ function buildSheetRows(records: Record<string, unknown>[]) {
   return { cols, data: records.map((r) => cols.map((c) => r[c] ?? '')) };
 }
 
-export function exportToXlsx(results: Record<string, unknown>[], filename: string) {
+export function exportToXlsx(results: Record<string, unknown>[], filename: string, companyName?: string) {
   const wb = XLSX.utils.book_new();
 
+  // Add Executive Summary
+  const counts: Record<string, number> = {};
+  let totalGSTDiff = 0;
+  for (const r of results) {
+    const st = String(r['Status'] || 'Unknown');
+    counts[st] = (counts[st] || 0) + 1;
+    totalGSTDiff += numVal(r['GST Diff']);
+  }
+  const breakdown = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([st, c]) => ({ label: st, value: c }));
+    
+  appendExecutiveSummary(wb, companyName, 'Reconciliation Summary', [
+    { label: 'Total Records Analysed', value: results.length },
+    { label: 'Net GST Difference', value: `₹${totalGSTDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+  ], breakdown);
+
   // 1. "All Records" summary sheet
-  const allWs = XLSX.utils.json_to_sheet(results);
+  const allWs = XLSX.utils.json_to_sheet(results, { origin: 'A3' });
+  addCorporateHeader(allWs, Object.keys(results[0] ?? {}).length, companyName, 'All Records');
   applySheetStyles(allWs, DEFAULT_STYLE, results.length, {
+    startRow: 2,
     colWidths: autoFitCols(
       Object.keys(results[0] ?? {}),
       results.map((r) => Object.values(r) as (string | number)[])
     ),
   });
+  allWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
   XLSX.utils.book_append_sheet(wb, allWs, 'All Records');
 
   // 2. One sheet per status category
@@ -243,8 +384,8 @@ export function exportToXlsx(results: Record<string, unknown>[], filename: strin
   // 'Missing in 2B' / 'Missing in PR' sheets if that party has a NET tax diff. ---
   const partyTotals = new Map<string, { d: number }>();
   const keyFor = (r: Record<string, unknown>): string => {
-    const g = String(r['GSTIN'] || '').toUpperCase().trim();
-    const n = String(r['Supplier Name'] || '').trim().toUpperCase();
+    const g = String(r['GSTIN (PR)'] || r['GSTIN (2B)'] || '').toUpperCase().trim();
+    const n = String(r['Supplier Name (PR)'] || r['Supplier Name (2B)'] || '').trim().toUpperCase();
     return g || `NAME::${n}`;
   };
   for (const r of results) {
@@ -265,24 +406,65 @@ export function exportToXlsx(results: Record<string, unknown>[], filename: strin
 
   for (const status of Object.keys(grouped)) {
     let rows = grouped[status];
-    if (status === 'Missing in 2B' || status === 'Missing in PR') {
+    if (status === 'Missing in 2B' || status === 'Not in 2B' || status === 'Missing in PR' || status === 'Not in Books') {
       rows = rows.filter(partyHasNetDiff);
       if (rows.length === 0) continue;
     }
     const { cols, data } = buildSheetRows(rows);
-    const ws = XLSX.utils.aoa_to_sheet([cols, ...data]);
+    const ws = XLSX.utils.aoa_to_sheet([]);
+    XLSX.utils.sheet_add_aoa(ws, [cols, ...data], { origin: 'A3' });
+    addCorporateHeader(ws, cols.length, companyName, `${status} Records`);
     const style = STATUS_STYLES[status] || DEFAULT_STYLE;
     applySheetStyles(ws, style, rows.length, {
-      dateCols: [5, 6],
-      numberCols: [7, 8, 9, 10, 11, 12, 13],
+      startRow: 2,
+      dateCols: [7, 8],
+      numberCols: [9, 10, 11, 12, 13, 14, 15],
       colWidths: autoFitCols(cols, data as (string | number)[][]),
     });
+    ws['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
     const sheetName = status.length > 31 ? status.slice(0, 31) : status;
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
 
+  // 4. Suggested GSTINs Sheet
+  const suggested: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+
+  for (const r of results) {
+    const gstinPR = String(r['GSTIN (PR)'] || '').trim();
+    const gstin2B = String(r['GSTIN (2B)'] || '').trim();
+    const partyPR = String(r['Supplier Name (PR)'] || '').trim();
+    const party2B = String(r['Supplier Name (2B)'] || '').trim();
+
+    if (gstin2B && gstinPR !== gstin2B && r['Status'] !== 'Unmatched Vendor' && r['Status'] !== 'Missing in PR') {
+      const key = `${partyPR}::${gstin2B}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        suggested.push({
+          'Party Name in Books': partyPR,
+          'Current GSTIN in Books': gstinPR || 'Missing',
+          'Suggested GSTIN (from Govt Data)': gstin2B,
+          'Party Name in Govt Data': party2B,
+          'Latest Match Status': r['Status'],
+          'Remark': r['Remark']
+        });
+      }
+    }
+  }
+
+  if (suggested.length > 0) {
+    const wsSugg = XLSX.utils.json_to_sheet(suggested, { origin: 'A3' });
+    addCorporateHeader(wsSugg, 6, companyName, 'Suggested GSTINs');
+    applySheetStyles(wsSugg, { headerFill: '6D28D9', headerFont: 'FFFFFF', rowFill: 'FFFFFF' }, suggested.length, {
+      startRow: 2,
+      colWidths: [{ wch: 35 }, { wch: 25 }, { wch: 30 }, { wch: 35 }, { wch: 20 }, { wch: 45 }]
+    });
+    wsSugg['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
+    XLSX.utils.book_append_sheet(wb, wsSugg, 'Suggested GSTINs');
+  }
+
   // 3. Party-wise sheets ('Party Summary' + 'Party Details') with internal hyperlinks
-  appendPartyWiseSheets(wb, results);
+  appendPartyWiseSheets(wb, results, companyName);
 
   XLSX.writeFile(wb, filename);
 }
@@ -298,10 +480,10 @@ type PartyAccum = {
 };
 
 const numVal = (v: unknown): number => {
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return Math.round(v * 100) / 100;
   if (typeof v === 'string' && v.trim() !== '') {
     const n = Number(v.replace(/,/g, ''));
-    return isNaN(n) ? 0 : n;
+    return isNaN(n) ? 0 : Math.round(n * 100) / 100;
   }
   return 0;
 };
@@ -312,12 +494,12 @@ function deriveOverallStatus(statuses: Set<string>): string {
   return 'All Matched';
 }
 
-function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknown>[]) {
+function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknown>[], companyName?: string) {
   // Group by GSTIN (fallback to Supplier Name)
   const map = new Map<string, PartyAccum>();
   for (const r of results) {
-    const gstin = String(r['GSTIN'] || '').toUpperCase().trim();
-    const party = String(r['Supplier Name'] || '').trim();
+    const gstin = String(r['GSTIN (PR)'] || r['GSTIN (2B)'] || '').toUpperCase().trim();
+    const party = String(r['Supplier Name (PR)'] || r['Supplier Name (2B)'] || '').trim();
     const key = gstin || `NAME::${party.toUpperCase()}`;
     if (!key) continue;
     let p = map.get(key);
@@ -348,7 +530,6 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
 
   // ---- Build 'Party Details' first so we know each party's anchor row ----
   const detailHeaders = [
-    'Party / Invoice', 'GSTIN',
     'Inv No (PR)', 'Inv No (2B)',
     'Date (PR)', 'Date (2B)',
     'CGST (PR)', 'CGST (2B)',
@@ -358,18 +539,25 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
   ];
   const detailRows: (string | number)[][] = [];
   const partyAnchorRow: number[] = []; // 1-indexed Excel row of each party's header
+  const merges: XLSX.Range[] = [];
+  const subtotalRowIdxs = new Set<number>();
+  const emptyRowIdxs = new Set<number>();
 
   for (const p of parties) {
     const overall = deriveOverallStatus(p.statuses);
-    // +2: header row is row 1, plus length so far gives next row index
-    partyAnchorRow.push(detailRows.length + 2);
-    detailRows.push([
-      p.party || '— No name —', p.gstin || '',
-      '', '', '', '', '', '', '', '', '', '', overall,
-    ]);
+    const startRowIdx = detailRows.length + 3; // Shifted by +3 because headers are at A3 (index 2)
+    partyAnchorRow.push(startRowIdx + 1); // 1-indexed for hyperlink
+    
+    const headerRow = Array(detailHeaders.length).fill('');
+    headerRow[0] = `SUPPLIER: ${p.party || '— No name —'}   |   GSTIN: ${p.gstin || '—'}`;
+    headerRow[detailHeaders.length - 2] = overall;
+    headerRow[detailHeaders.length - 1] = `${p.invoices.length} invoices`;
+    
+    merges.push({ s: { r: startRowIdx, c: 0 }, e: { r: startRowIdx, c: detailHeaders.length - 3 } });
+    detailRows.push(headerRow);
+
     for (const inv of p.invoices) {
       detailRows.push([
-        '', '',
         String(inv['Invoice No (PR)'] ?? ''),
         String(inv['Invoice No (2B)'] ?? ''),
         formatDateStr(inv['Invoice Date (PR)']),
@@ -380,20 +568,47 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
         String(inv['Status'] ?? ''),
       ]);
     }
-    detailRows.push([
-      'Subtotal', '', '', '', '', '',
-      +p.prCgst.toFixed(2), +p.cgst2B.toFixed(2),
-      +p.prSgst.toFixed(2), +p.sgst2B.toFixed(2),
-      +p.prIgst.toFixed(2), +p.igst2B.toFixed(2),
-      '',
-    ]);
-  }
 
-  const wsDetails = XLSX.utils.aoa_to_sheet([detailHeaders, ...detailRows]);
-  wsDetails['!cols'] = autoFitCols(detailHeaders, detailRows);
+    const subRow = Array(detailHeaders.length).fill('');
+    subRow[0] = 'SUBTOTAL';
+    subRow[4] = numVal(p.prCgst);
+    subRow[5] = numVal(p.cgst2B);
+    subRow[6] = numVal(p.prSgst);
+    subRow[7] = numVal(p.sgst2B);
+    subRow[8] = numVal(p.prIgst);
+    subRow[9] = numVal(p.igst2B);
+    
+    const totalDiff = (p.prCgst - p.cgst2B) + (p.prSgst - p.sgst2B) + (p.prIgst - p.igst2B);
+    subRow[10] = `Diff: ₹${Math.abs(totalDiff).toFixed(2)}`;
+    
+    const subRowIdx = detailRows.length + 3;
+    merges.push({ s: { r: subRowIdx, c: 0 }, e: { r: subRowIdx, c: 3 } });
+    subtotalRowIdxs.add(subRowIdx);
+    detailRows.push(subRow);
+    
+    emptyRowIdxs.add(detailRows.length + 3);
+    detailRows.push(Array(detailHeaders.length).fill(''));
+  }
+  if (detailRows.length > 0) detailRows.pop();
+
+  const wsDetails = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(wsDetails, [detailHeaders, ...detailRows], { origin: 'A3' });
+  addCorporateHeader(wsDetails, detailHeaders.length, companyName, 'Party Details');
+  if (!wsDetails['!merges']) wsDetails['!merges'] = [];
+  wsDetails['!merges'].push(...merges);
+  wsDetails['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
+  wsDetails['!cols'] = [
+    { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 12 }, { wch: 18 },
+  ];
+  
+  if (!wsDetails['!rows']) wsDetails['!rows'] = [];
+  wsDetails['!rows'][2] = { hpt: 24 };
+  
   // Style header
   for (let c = 0; c < detailHeaders.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!wsDetails[addr]) continue;
     wsDetails[addr].s = {
       fill: { fgColor: { rgb: '1E3A5F' } },
@@ -402,42 +617,49 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
       border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
     };
   }
-  // Style party header rows + invoice/subtotal rows
-  const anchorSet = new Set(partyAnchorRow.map((r) => r - 1)); // 0-indexed within detailRows
+  // Style party header rows, invoice rows, subtotal rows, and spacers
+  const headerRowSet = new Set(partyAnchorRow.map(r => r - 1));
   for (let r = 0; r < detailRows.length; r++) {
-    const excelRow = r + 1; // header occupies row 0
-    const isPartyHeader = anchorSet.has(r);
-    const isSubtotal = detailRows[r][0] === 'Subtotal';
-    const overall = isPartyHeader ? String(detailRows[r][12] || '') : '';
+    const excelRow = r + 3;
+    if (emptyRowIdxs.has(excelRow)) continue;
+    
+    const isPartyHeader = headerRowSet.has(excelRow);
+    const isSubtotal = subtotalRowIdxs.has(excelRow);
+    wsDetails['!rows'][excelRow] = { hpt: isPartyHeader || isSubtotal ? 22 : 20 };
+
+    const overall = isPartyHeader ? String(detailRows[r][detailHeaders.length - 2] || '') : '';
     const headerFill = PARTY_STATUS_HEADER[overall] || '1E3A5F';
+    
     for (let c = 0; c < detailHeaders.length; c++) {
       const addr = XLSX.utils.encode_cell({ r: excelRow, c });
       if (!wsDetails[addr]) continue;
-      const isNumCol = c >= 6 && c <= 11;
+      
+      const isNumCol = c >= 4 && c <= 9;
       if (isNumCol && !isPartyHeader) {
         wsDetails[addr].t = 'n';
         wsDetails[addr].z = '0.00';
       }
+      
       if (isPartyHeader) {
         wsDetails[addr].s = {
           fill: { fgColor: { rgb: headerFill } },
           font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-          alignment: { vertical: 'center', horizontal: c >= 6 && c <= 11 ? 'right' : 'left' },
+          alignment: { vertical: 'center', horizontal: c >= detailHeaders.length - 2 ? 'right' : 'left' },
         };
       } else if (isSubtotal) {
         wsDetails[addr].s = {
           fill: { fgColor: { rgb: 'F3F4F6' } },
           font: { sz: 10, bold: true },
-          alignment: { vertical: 'center', horizontal: c >= 6 && c <= 11 ? 'right' : 'left' },
-          border: { top: { style: 'thin', color: { rgb: 'D1D5DB' } } },
+          alignment: { vertical: 'center', horizontal: isNumCol ? 'right' : 'left' },
+          border: { top: { style: 'thin', color: { rgb: 'D1D5DB' } }, bottom: { style: 'thin', color: { rgb: 'D1D5DB' } } },
           numFmt: isNumCol ? '0.00' : undefined,
         };
       } else {
         wsDetails[addr].s = {
           fill: { fgColor: { rgb: 'FFFFFF' } },
           font: { sz: 10 },
-          alignment: { vertical: 'center', horizontal: c >= 6 && c <= 11 ? 'right' : 'left' },
-          border: { bottom: { style: 'hair', color: { rgb: 'E5E7EB' } } },
+          alignment: { vertical: 'center', horizontal: isNumCol ? 'right' : 'left' },
+          border: { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } },
           numFmt: isNumCol ? '0.00' : undefined,
         };
       }
@@ -454,12 +676,18 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
     +(p.prSgst - p.sgst2B).toFixed(2),
     +(p.prIgst - p.igst2B).toFixed(2),
   ]);
-  const wsSummary = XLSX.utils.aoa_to_sheet([sumHeaders, ...sumData]);
+  const wsSummary = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(wsSummary, [sumHeaders, ...sumData], { origin: 'A3' });
+  addCorporateHeader(wsSummary, sumHeaders.length, companyName, 'Party Summary');
   wsSummary['!cols'] = autoFitCols(sumHeaders, sumData as (string | number)[][]);
+  wsSummary['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
+
+  if (!wsSummary['!rows']) wsSummary['!rows'] = [];
+  wsSummary['!rows'][2] = { hpt: 24 };
 
   // Header style
   for (let c = 0; c < sumHeaders.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!wsSummary[addr]) continue;
     wsSummary[addr].s = {
       fill: { fgColor: { rgb: '1E3A5F' } },
@@ -471,8 +699,10 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
 
   // Data rows + hyperlinks on the Party Name cell
   for (let i = 0; i < parties.length; i++) {
-    const excelRow = i + 1;
+    const excelRow = i + 3;
     const anchor = partyAnchorRow[i]; // 1-indexed Excel row in Party Details
+    wsSummary['!rows'][excelRow] = { hpt: 20 };
+    
     for (let c = 0; c < sumHeaders.length; c++) {
       const addr = XLSX.utils.encode_cell({ r: excelRow, c });
       if (!wsSummary[addr]) continue;
@@ -484,7 +714,7 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
         fill: { fgColor: { rgb: excelRow % 2 === 0 ? 'F9FAFB' : 'FFFFFF' } },
         font: { sz: 10 },
         alignment: { vertical: 'center', horizontal: c >= 2 ? 'right' : 'left' },
-        border: { bottom: { style: 'hair', color: { rgb: 'E5E7EB' } } },
+        border: { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } },
         numFmt: c >= 2 ? '0.00' : undefined,
       };
       wsSummary[addr].s = baseStyle;
@@ -500,7 +730,7 @@ function appendPartyWiseSheets(wb: XLSX.WorkBook, results: Record<string, unknow
         fill: { fgColor: { rgb: excelRow % 2 === 0 ? 'F9FAFB' : 'FFFFFF' } },
         font: { sz: 10, color: { rgb: '1D4ED8' }, underline: true },
         alignment: { vertical: 'center', horizontal: 'left' },
-        border: { bottom: { style: 'hair', color: { rgb: 'E5E7EB' } } },
+        border: { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } },
       };
     }
   }
@@ -548,9 +778,27 @@ export interface DebitNoteRecord {
 export function exportMonthlyComparison(
   rows: MonthlyComparisonRow[],
   filename: string,
-  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] }
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName?: string
 ) {
   const wb = XLSX.utils.book_new();
+
+  // Add Executive Summary
+  const counts: Record<string, number> = {};
+  let totalDiff = 0;
+  for (const r of rows) {
+    counts[r.status] = (counts[r.status] || 0) + 1;
+    totalDiff += numVal(r.totalDiff);
+  }
+  const breakdown = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([st, c]) => ({ label: st, value: c }));
+    
+  appendExecutiveSummary(wb, companyName, 'Monthly Comparison', [
+    { label: 'Total Records Analysed', value: rows.length },
+    { label: 'Net Tax Difference', value: `₹${totalDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+  ], breakdown);
+
   const headers = [
     'Party Name (Tally)', 'GST No (Tally)', 'Invoice No (Tally)',
     'CGST (Tally)', 'SGST (Tally)', 'IGST (Tally)',
@@ -567,7 +815,9 @@ export function exportMonthlyComparison(
     r.itcEligibility ?? '', r.gstr1Status ?? '', r.filingDate ?? '',
     r.daysOld ?? '', r.taxRatePct ?? '', r.posCompliance ?? '', r.rule37Warning ?? '', r.remark ?? '',
   ]);
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const ws = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws, [headers, ...data], { origin: 'A3' });
+  addCorporateHeader(ws, headers.length, companyName, 'Monthly Comparison');
 
   // Column widths
   ws['!cols'] = [
@@ -576,6 +826,10 @@ export function exportMonthlyComparison(
     { wch: 18 }, { wch: 16 },
     { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 30 }, { wch: 36 },
   ];
+  ws['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
+
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][2] = { hpt: 24 };
 
   // Header style: split Tally (blue) and Comparison (teal)
   const headerStyle = (fill: string) => ({
@@ -585,7 +839,7 @@ export function exportMonthlyComparison(
     border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
   });
   for (let c = 0; c < headers.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!ws[addr]) continue;
     let fill = '1E3A5F';
     if (c >= 6 && c < 12) fill = '0D7A5F';
@@ -599,16 +853,18 @@ export function exportMonthlyComparison(
   const statusFill: Record<string, string> = {
     'Perfect Match': 'E6F5ED',
     'Value Mismatch': 'FEF3C7',
-    'Invoice Missing': 'FEE2E2',
+    'Not in 2B': 'FEE2E2',
     'Unmatched Vendor': 'FEE2E2',
     'Missing in PR': 'DBEAFE',
+    'Not in Books': 'DBEAFE',
   };
 
   for (let r = 1; r <= rows.length; r++) {
     const status = rows[r - 1].status;
     const tint = statusFill[status] || (r % 2 === 0 ? 'F9FAFB' : 'FFFFFF');
+    ws['!rows'][r + 2] = { hpt: 20 };
     for (let c = 0; c < headers.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
+      const addr = XLSX.utils.encode_cell({ r: r + 2, c });
       if (!ws[addr]) continue;
       ws[addr].s = {
         fill: { fgColor: { rgb: tint } },
@@ -690,15 +946,22 @@ export function exportMonthlyComparison(
     +(gt.prIgst - gt.igst2B).toFixed(2),
   ]);
 
-  const pwWs = XLSX.utils.aoa_to_sheet([pwHeaders, ...pwData]);
+  const pwWs = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(pwWs, [pwHeaders, ...pwData], { origin: 'A3' });
+  addCorporateHeader(pwWs, pwHeaders.length, companyName, 'Party-wise Summary');
+  pwWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
   pwWs['!cols'] = [
     { wch: 18 }, { wch: 32 },
     { wch: 12 }, { wch: 12 }, { wch: 12 },
     { wch: 12 }, { wch: 12 }, { wch: 12 },
     { wch: 16 }, { wch: 16 }, { wch: 16 },
   ];
+  
+  if (!pwWs['!rows']) pwWs['!rows'] = [];
+  pwWs['!rows'][2] = { hpt: 24 };
+  
   for (let c = 0; c < pwHeaders.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!pwWs[addr]) continue;
     let fill = '1E3A5F';
     if (c >= 2 && c <= 4) fill = '1E3A5F';
@@ -714,8 +977,9 @@ export function exportMonthlyComparison(
   const lastRow = pwData.length;
   for (let r = 1; r <= lastRow; r++) {
     const isTotal = r === lastRow;
+    pwWs['!rows'][r + 2] = { hpt: 20 };
     for (let c = 0; c < pwHeaders.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
+      const addr = XLSX.utils.encode_cell({ r: r + 2, c });
       if (!pwWs[addr]) continue;
       pwWs[addr].s = {
         fill: { fgColor: { rgb: isTotal ? 'E5E7EB' : (r % 2 === 0 ? 'F9FAFB' : 'FFFFFF') } },
@@ -749,11 +1013,11 @@ export function exportMonthlyComparison(
     for (const r of rows) {
       const pi = parseMonthFY(r.dateTally);
       if (pi >= 0) {
-        prGross[pi].cgst += num(r.cgstTally); prGross[pi].sgst += num(r.sgstTally); prGross[pi].igst += num(r.igstTally);
+        prGross[pi].cgst += numVal(r.cgstTally); prGross[pi].sgst += numVal(r.sgstTally); prGross[pi].igst += numVal(r.igstTally);
       }
       const ti = parseMonthFY(r.dateCmp);
       if (ti >= 0) {
-        tbGross[ti].cgst += num(r.cgstCmp); tbGross[ti].sgst += num(r.sgstCmp); tbGross[ti].igst += num(r.igstCmp);
+        tbGross[ti].cgst += numVal(r.cgstCmp); tbGross[ti].sgst += numVal(r.sgstCmp); tbGross[ti].igst += numVal(r.igstCmp);
       }
     }
     for (const dn of (debitNotes?.pr ?? [])) {
@@ -787,12 +1051,14 @@ export function exportMonthlyComparison(
     // 20..31: 12 months
     // 32: TOTAL
     const ROWS = 33;
-    const grid: (string | number | null)[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    const SHIFT = 2;
+    const grid: (string | number | null)[][] = Array.from({ length: ROWS + SHIFT }, () => Array(COLS).fill(null));
     const merges: XLSX.Range[] = [];
 
     const colStarts = [0, TABLE_W + GAP, (TABLE_W + GAP) * 2]; // 0, 6, 12
 
     const fillTable = (titleRow: number, hdrRow: number, dataStart: number, totalRow: number, startCol: number, title: string, data: MAgg[]) => {
+      titleRow += SHIFT; hdrRow += SHIFT; dataStart += SHIFT; totalRow += SHIFT;
       grid[titleRow][startCol] = title;
       merges.push({ s: { r: titleRow, c: startCol }, e: { r: titleRow, c: startCol + TABLE_W - 1 } });
       grid[hdrRow][startCol] = 'Month';
@@ -835,7 +1101,10 @@ export function exportMonthlyComparison(
     fillTable(18, 19, 20, 32, colStarts[2], 'TOTAL PURCHASE AS PER TALLY', prNet);
 
     const mtcWs = XLSX.utils.aoa_to_sheet(grid as (string | number)[][]);
-    mtcWs['!merges'] = merges;
+    addCorporateHeader(mtcWs, COLS, companyName, 'Monthly Tax Comparison');
+    if (!mtcWs['!merges']) mtcWs['!merges'] = [];
+    mtcWs['!merges'].push(...merges);
+    mtcWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4, topLeftCell: 'A5' }];
     mtcWs['!cols'] = Array.from({ length: COLS }, (_, c) => {
       // gap cols
       if (c === TABLE_W || c === TABLE_W * 2 + GAP) return { wch: 3 };
@@ -851,16 +1120,20 @@ export function exportMonthlyComparison(
     const colOffsetIn = (c: number) => c - colStarts[tableForCol(c)];
 
     const sectionMap = (r: number): { titleRow: number; hdrRow: number; totalRow: number; titles: string[]; mainRow: number } | null => {
-      if (r >= 0 && r <= 15) return { mainRow: 0, titleRow: 1, hdrRow: 2, totalRow: 15, titles: ['Purchase','AS PER GSTR-2B','DIFFERENCE'] };
-      if (r >= 17 && r <= 32) return { mainRow: 17, titleRow: 18, hdrRow: 19, totalRow: 32, titles: ['PURCHASE','DEBIT NOTE','TOTAL PURCHASE AS PER TALLY'] };
+      const shiftedR = r - SHIFT;
+      if (shiftedR >= 0 && shiftedR <= 15) return { mainRow: 0+SHIFT, titleRow: 1+SHIFT, hdrRow: 2+SHIFT, totalRow: 15+SHIFT, titles: ['Purchase','AS PER GSTR-2B','DIFFERENCE'] };
+      if (shiftedR >= 17 && shiftedR <= 32) return { mainRow: 17+SHIFT, titleRow: 18+SHIFT, hdrRow: 19+SHIFT, totalRow: 32+SHIFT, titles: ['PURCHASE','DEBIT NOTE','TOTAL PURCHASE AS PER TALLY'] };
       return null;
     };
 
-    for (let r = 0; r < ROWS; r++) {
+    for (let r = 0; r < ROWS + SHIFT; r++) {
+      if (!mtcWs['!rows']) mtcWs['!rows'] = [];
+      
       for (let c = 0; c < COLS; c++) {
         const addr = XLSX.utils.encode_cell({ r, c });
-        // Separator row 16: paint all cells
-        if (r === 16) {
+        if (r < SHIFT) continue; // corporate header rows
+        // Separator row 16+SHIFT: paint all cells
+        if (r === 16 + SHIFT) {
           if (!mtcWs[addr]) mtcWs[addr] = { t: 's', v: '' };
           mtcWs[addr].s = { fill: { fgColor: { rgb: '111827' } } };
           continue;
@@ -868,6 +1141,7 @@ export function exportMonthlyComparison(
         if (!mtcWs[addr]) continue;
         const sec = sectionMap(r);
         if (!sec) continue;
+        mtcWs['!rows'][r] = { hpt: r === sec.mainRow ? 26 : (r === sec.titleRow || r === sec.hdrRow ? 24 : 20) };
         if (r === sec.mainRow) {
           mtcWs[addr].s = {
             fill: { fgColor: { rgb: '0F172A' } },
@@ -910,7 +1184,7 @@ export function exportMonthlyComparison(
     }
     // Set row height for separator
     if (!mtcWs['!rows']) mtcWs['!rows'] = [];
-    mtcWs['!rows'][16] = { hpt: 8 };
+    mtcWs['!rows'][16 + SHIFT] = { hpt: 8 };
 
     XLSX.utils.book_append_sheet(wb, mtcWs, 'Monthly Tax Comparison');
   }
@@ -942,15 +1216,15 @@ export function exportMonthlyComparison(
     for (const r of rows) {
       const prIdx = parseMonth(r.dateTally);
       if (prIdx >= 0) {
-        pr[prIdx].cgst += num(r.cgstTally);
-        pr[prIdx].sgst += num(r.sgstTally);
-        pr[prIdx].igst += num(r.igstTally);
+        pr[prIdx].cgst += numVal(r.cgstTally);
+        pr[prIdx].sgst += numVal(r.sgstTally);
+        pr[prIdx].igst += numVal(r.igstTally);
       }
       const tbIdx = parseMonth(r.dateCmp);
       if (tbIdx >= 0) {
-        tb[tbIdx].cgst += num(r.cgstCmp);
-        tb[tbIdx].sgst += num(r.sgstCmp);
-        tb[tbIdx].igst += num(r.igstCmp);
+        tb[tbIdx].cgst += numVal(r.cgstCmp);
+        tb[tbIdx].sgst += numVal(r.sgstCmp);
+        tb[tbIdx].igst += numVal(r.igstCmp);
       }
     }
 
@@ -960,7 +1234,8 @@ export function exportMonthlyComparison(
     // Build AOA grid: 3 tables of 4 cols each, separated by 1 blank col -> 14 cols
     const COLS = 4 * 3 + 2; // 14
     const rowsCount = 1 + 1 + 12 + 1; // title, header, 12 months, total
-    const grid: (string | number | null)[][] = Array.from({ length: rowsCount }, () => Array(COLS).fill(null));
+    const SHIFT = 2;
+    const grid: (string | number | null)[][] = Array.from({ length: rowsCount + SHIFT }, () => Array(COLS).fill(null));
 
     const tables: { startCol: number; title: string; monthHdr: string; data: MAgg[] }[] = [
       { startCol: 0, title: '2B', monthHdr: 'MONTHS', data: tb },
@@ -970,22 +1245,22 @@ export function exportMonthlyComparison(
 
     const merges: XLSX.Range[] = [];
     for (const t of tables) {
-      grid[0][t.startCol] = t.title;
-      merges.push({ s: { r: 0, c: t.startCol }, e: { r: 0, c: t.startCol + 3 } });
-      grid[1][t.startCol] = t.monthHdr;
-      grid[1][t.startCol + 1] = 'CGST';
-      grid[1][t.startCol + 2] = 'SGST';
-      grid[1][t.startCol + 3] = 'IGST';
+      grid[0 + SHIFT][t.startCol] = t.title;
+      merges.push({ s: { r: 0 + SHIFT, c: t.startCol }, e: { r: 0 + SHIFT, c: t.startCol + 3 } });
+      grid[1 + SHIFT][t.startCol] = t.monthHdr;
+      grid[1 + SHIFT][t.startCol + 1] = 'CGST';
+      grid[1 + SHIFT][t.startCol + 2] = 'SGST';
+      grid[1 + SHIFT][t.startCol + 3] = 'IGST';
       let tc = 0, ts = 0, ti = 0;
       for (let i = 0; i < 12; i++) {
-        const row = 2 + i;
+        const row = 2 + SHIFT + i;
         grid[row][t.startCol] = FY_MONTHS[i];
         grid[row][t.startCol + 1] = r2(t.data[i].cgst);
         grid[row][t.startCol + 2] = r2(t.data[i].sgst);
         grid[row][t.startCol + 3] = r2(t.data[i].igst);
         tc += t.data[i].cgst; ts += t.data[i].sgst; ti += t.data[i].igst;
       }
-      const totalRow = 2 + 12;
+      const totalRow = 2 + 12 + SHIFT;
       grid[totalRow][t.startCol] = 'TOTAL';
       grid[totalRow][t.startCol + 1] = r2(tc);
       grid[totalRow][t.startCol + 2] = r2(ts);
@@ -993,28 +1268,35 @@ export function exportMonthlyComparison(
     }
 
     const mWs = XLSX.utils.aoa_to_sheet(grid as (string | number)[][]);
-    mWs['!merges'] = merges;
+    addCorporateHeader(mWs, COLS, companyName, 'Monthly Tax Comparison FY');
+    if (!mWs['!merges']) mWs['!merges'] = [];
+    mWs['!merges'].push(...merges);
+    mWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4, topLeftCell: 'A5' }];
     mWs['!cols'] = Array.from({ length: COLS }, (_, c) => ({ wch: (c === 4 || c === 9) ? 3 : (c % 5 === 0 ? 14 : 13) }));
 
     const titleFills: Record<string, string> = { '2B': '0D7A5F', 'JV+Purchase': '1E3A5F', 'Difference': 'B45309' };
-    const totalRowIdx = 2 + 12;
+    const totalRowIdx = 2 + 12 + SHIFT;
 
-    for (let r = 0; r < rowsCount; r++) {
+    for (let r = 0; r < rowsCount + SHIFT; r++) {
+      if (!mWs['!rows']) mWs['!rows'] = [];
+      mWs['!rows'][r] = { hpt: r === 0 + SHIFT ? 26 : (r === 1 + SHIFT ? 24 : 20) };
+      
       for (let c = 0; c < COLS; c++) {
         const addr = XLSX.utils.encode_cell({ r, c });
         if (!mWs[addr]) continue;
+        if (r < SHIFT) continue;
         const inGap = (c === 4 || c === 9);
         if (inGap) continue;
         const tableIdx = c < 4 ? 0 : c < 9 ? 1 : 2;
         const table = tables[tableIdx];
-        if (r === 0) {
+        if (r === 0 + SHIFT) {
           mWs[addr].s = {
             fill: { fgColor: { rgb: titleFills[table.title] } },
             font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 12 },
             alignment: { horizontal: 'center', vertical: 'center' },
             border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
           };
-        } else if (r === 1) {
+        } else if (r === 1 + SHIFT) {
           mWs[addr].s = {
             fill: { fgColor: { rgb: '374151' } },
             font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
@@ -1056,13 +1338,29 @@ const PARTY_STATUS_HEADER: Record<string, string> = {
   'Has Missing': 'B91C1C',
 };
 
-export function exportPartyWise(parties: PartySummary[], filename: string) {
+export function exportPartyWise(parties: PartySummary[], filename: string, companyName?: string) {
   const wb = XLSX.utils.book_new();
+
+  // Add Executive Summary
+  const counts: Record<string, number> = {};
+  let totalDiff = 0;
+  for (const p of parties) {
+    counts[p.overall] = (counts[p.overall] || 0) + 1;
+    totalDiff += p.totals.totalDiff;
+  }
+  const breakdown = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([st, c]) => ({ label: st, value: c }));
+    
+  appendExecutiveSummary(wb, companyName, 'Party-wise Summary', [
+    { label: 'Total Parties Analysed', value: parties.length },
+    { label: 'Net Tax Difference', value: `₹${totalDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+  ], breakdown);
 
   // ---- Sheet 1: Party Summary ----
   const summaryHeaders = [
     'Party Name', 'GSTIN', 'Invoices',
-    'Perfect', 'Mismatch', 'Inv Missing', 'Unmatched Vendor', 'Missing in PR',
+    'Perfect', 'Mismatch', 'Inv Missing', 'Unmatched Vendor', 'Not in Books',
     'IGST (PR)', 'IGST (2B)', 'IGST Diff',
     'CGST (PR)', 'CGST (2B)', 'CGST Diff',
     'SGST (PR)', 'SGST (2B)', 'SGST Diff',
@@ -1098,7 +1396,10 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
     +grand.totalDiff.toFixed(2), '',
   ];
 
-  const ws1 = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryData, totalsRow]);
+  const ws1 = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws1, [summaryHeaders, ...summaryData, totalsRow], { origin: 'A3' });
+  addCorporateHeader(ws1, summaryHeaders.length, companyName, 'Party Summary');
+  ws1['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
   ws1['!cols'] = [
     { wch: 30 }, { wch: 18 }, { wch: 9 },
     { wch: 9 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 14 },
@@ -1108,9 +1409,12 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
     { wch: 12 }, { wch: 16 },
   ];
 
+  if (!ws1['!rows']) ws1['!rows'] = [];
+  ws1['!rows'][2] = { hpt: 24 };
+
   // Header style
   for (let c = 0; c < summaryHeaders.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!ws1[addr]) continue;
     ws1[addr].s = {
       fill: { fgColor: { rgb: '1E3A5F' } },
@@ -1124,8 +1428,9 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
   for (let r = 1; r <= parties.length; r++) {
     const overall = parties[r - 1].overall;
     const fill = PARTY_STATUS_FILL[overall] || 'FFFFFF';
+    ws1['!rows'][r + 2] = { hpt: 20 };
     for (let c = 0; c < summaryHeaders.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
+      const addr = XLSX.utils.encode_cell({ r: r + 2, c });
       if (!ws1[addr]) continue;
       ws1[addr].s = {
         fill: { fgColor: { rgb: fill } },
@@ -1137,7 +1442,7 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
   }
 
   // Grand total row
-  const totalsRowIdx = parties.length + 1;
+  const totalsRowIdx = parties.length + 3;
   for (let c = 0; c < summaryHeaders.length; c++) {
     const addr = XLSX.utils.encode_cell({ r: totalsRowIdx, c });
     if (!ws1[addr]) continue;
@@ -1153,7 +1458,6 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
 
   // ---- Sheet 2: Party Details ----
   const detailHeaders = [
-    'Party / Invoice', 'GSTIN',
     'Inv No (PR)', 'Inv No (2B)',
     'Date (PR)', 'Date (2B)',
     'IGST (PR)', 'IGST (2B)',
@@ -1165,27 +1469,31 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
     'Remark',
   ];
   const NUM_DETAIL_COLS = detailHeaders.length;
-  const blanks = (n: number) => Array.from({ length: n }, () => '');
   const detailRows: (string | number)[][] = [];
   const partyHeaderRowIdxs: { idx: number; status: string }[] = [];
+  const merges: XLSX.Range[] = [];
+  const subtotalRowIdxs = new Set<number>();
+  const emptyRowIdxs = new Set<number>();
 
   for (const p of parties) {
-    partyHeaderRowIdxs.push({ idx: detailRows.length + 1, status: p.overall });
-    const headerRow: (string | number)[] = [
-      p.partyName || '— No name —', p.gstin || '',
-      '', '', '', '', '', '', '', '', '', '', p.overall,
-    ];
-    while (headerRow.length < NUM_DETAIL_COLS - 1) headerRow.push('');
-    headerRow.push(`${p.totals.count} invoices`);
+    const startRowIdx = detailRows.length + 3;
+    partyHeaderRowIdxs.push({ idx: startRowIdx, status: p.overall });
+    
+    const headerRow: (string | number)[] = Array(NUM_DETAIL_COLS).fill('');
+    headerRow[0] = `SUPPLIER: ${p.partyName || '— No name —'}   |   GSTIN: ${p.gstin || '—'}`;
+    headerRow[NUM_DETAIL_COLS - 2] = p.overall;
+    headerRow[NUM_DETAIL_COLS - 1] = `${p.totals.count} invoices`;
+    
+    merges.push({ s: { r: startRowIdx, c: 0 }, e: { r: startRowIdx, c: NUM_DETAIL_COLS - 3 } });
     detailRows.push(headerRow);
+    
     for (const inv of p.invoices) {
       detailRows.push([
-        '', '',
         inv.invoiceNoPR, inv.invoiceNo2B,
         inv.invoiceDatePR, inv.invoiceDate2B,
-        inv.igstPR, inv.igst2B,
-        inv.cgstPR, inv.cgst2B,
-        inv.sgstPR, inv.sgst2B,
+        numVal(inv.igstPR), numVal(inv.igst2B),
+        numVal(inv.cgstPR), numVal(inv.cgst2B),
+        numVal(inv.sgstPR), numVal(inv.sgst2B),
         inv.status,
         inv.itcEligibility ?? '', inv.gstr1Status ?? '', inv.filingDate ?? '',
         (inv.daysOld ?? '') as string | number,
@@ -1194,30 +1502,46 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
         inv.remark || '',
       ]);
     }
-    // per-party totals row
-    const subRow: (string | number)[] = [
-      'Subtotal', '', '', '', '', '',
-      p.totals.igstPR, p.totals.igst2B,
-      p.totals.cgstPR, p.totals.cgst2B,
-      p.totals.sgstPR, p.totals.sgst2B,
-      '',
-    ];
-    while (subRow.length < NUM_DETAIL_COLS - 1) subRow.push('');
-    subRow.push(`Diff ₹${p.totals.totalDiff.toFixed(2)}`);
+    
+    const subRow: (string | number)[] = Array(NUM_DETAIL_COLS).fill('');
+    subRow[0] = 'SUBTOTAL';
+    subRow[4] = numVal(p.totals.igstPR);
+    subRow[5] = numVal(p.totals.igst2B);
+    subRow[6] = numVal(p.totals.cgstPR);
+    subRow[7] = numVal(p.totals.cgst2B);
+    subRow[8] = numVal(p.totals.sgstPR);
+    subRow[9] = numVal(p.totals.sgst2B);
+    subRow[10] = `Diff: ₹${p.totals.totalDiff.toFixed(2)}`;
+    
+    const subRowIdx = detailRows.length + 3;
+    merges.push({ s: { r: subRowIdx, c: 0 }, e: { r: subRowIdx, c: 3 } });
+    subtotalRowIdxs.add(subRowIdx);
     detailRows.push(subRow);
+    
+    emptyRowIdxs.add(detailRows.length + 3);
+    detailRows.push(Array(NUM_DETAIL_COLS).fill(''));
   }
+  if (detailRows.length > 0) detailRows.pop();
 
-  const ws2 = XLSX.utils.aoa_to_sheet([detailHeaders, ...detailRows]);
+  const ws2 = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws2, [detailHeaders, ...detailRows], { origin: 'A3' });
+  addCorporateHeader(ws2, detailHeaders.length, companyName, 'Party Details');
+  if (!ws2['!merges']) ws2['!merges'] = [];
+  ws2['!merges'].push(...merges);
+  ws2['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3, topLeftCell: 'A4' }];
   ws2['!cols'] = [
-    { wch: 28 }, { wch: 18 },
     { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 },
     { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
     { wch: 18 },
     { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 30 },
     { wch: 36 },
   ];
+  
+  if (!ws2['!rows']) ws2['!rows'] = [];
+  ws2['!rows'][2] = { hpt: 24 };
+  
   for (let c = 0; c < detailHeaders.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
     if (!ws2[addr]) continue;
     ws2[addr].s = {
       fill: { fgColor: { rgb: '1E3A5F' } },
@@ -1235,23 +1559,36 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
       ws2[addr].s = {
         fill: { fgColor: { rgb: headerFill } },
         font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-        alignment: { vertical: 'center', horizontal: c >= 6 && c <= 11 ? 'right' : 'left' },
+        alignment: { vertical: 'center', horizontal: c >= NUM_DETAIL_COLS - 2 ? 'right' : 'left' },
       };
     }
   }
-  // style remaining cells (invoice + subtotal rows)
-  const headerRowSet = new Set(partyHeaderRowIdxs.map((x) => x.idx));
+  // style remaining cells (invoice rows, subtotal rows, and spacers)
+  const headerRowSet = new Set(partyHeaderRowIdxs.map(x => x.idx));
   for (let r = 1; r <= detailRows.length; r++) {
-    if (headerRowSet.has(r)) continue;
-    const isSubtotal = detailRows[r - 1][0] === 'Subtotal';
+    const excelRow = r + 2;
+    if (headerRowSet.has(excelRow)) continue;
+    if (emptyRowIdxs.has(excelRow)) continue;
+    
+    const isSubtotal = subtotalRowIdxs.has(excelRow);
+    ws2['!rows'][excelRow] = { hpt: isSubtotal ? 22 : 20 };
+
     for (let c = 0; c < detailHeaders.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
+      const addr = XLSX.utils.encode_cell({ r: excelRow, c });
       if (!ws2[addr]) continue;
+      
+      const isNumCol = c >= 4 && c <= 9;
+      if (isNumCol && !isSubtotal) {
+        ws2[addr].t = 'n';
+        ws2[addr].z = '0.00';
+      }
+      
       ws2[addr].s = {
         fill: { fgColor: { rgb: isSubtotal ? 'F3F4F6' : 'FFFFFF' } },
         font: { sz: 10, bold: isSubtotal },
-        alignment: { vertical: 'center', horizontal: c >= 6 && c <= 11 ? 'right' : 'left' },
-        border: { bottom: { style: 'hair', color: { rgb: 'E5E7EB' } } },
+        alignment: { vertical: 'center', horizontal: isNumCol ? 'right' : 'left' },
+        border: { bottom: { style: 'hair', color: { rgb: 'E5E7EB' } }, top: isSubtotal ? { style: 'thin', color: { rgb: 'D1D5DB' } } : undefined },
+        numFmt: isNumCol ? '0.00' : undefined,
       };
     }
   }
@@ -1259,4 +1596,3 @@ export function exportPartyWise(parties: PartySummary[], filename: string) {
   XLSX.utils.book_append_sheet(wb, ws2, 'Party Details');
   XLSX.writeFile(wb, filename);
 }
-

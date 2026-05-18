@@ -60,7 +60,7 @@ function pickPartyKey(r: ReconciliationResult): { key: string; name: string; gst
   return { key, name, gstin };
 }
 
-export function aggregateByParty(results: ReconciliationResult[]): PartySummary[] {
+export function aggregateByParty(results: ReconciliationResult[], mode: 'input' | 'output' = 'input'): PartySummary[] {
   const map = new Map<string, PartySummary>();
 
   for (const r of results) {
@@ -106,14 +106,14 @@ export function aggregateByParty(results: ReconciliationResult[]): PartySummary[
       sgstPR: pr?.sgst ?? 0,
       sgst2B: tb?.sgst ?? 0,
       status: r.status,
-      remark: actionableRemark(r.status, r.remark, lateFiler),
-      itcEligibility: deriveItcEligibility(baseRec?.supplierName),
+      remark: actionableRemark(r.status, r.remark, lateFiler, mode),
+      itcEligibility: mode === 'output' ? '—' : deriveItcEligibility(baseRec?.supplierName),
       gstr1Status: tb?.filingStatus ?? '',
       filingDate: tb?.filingDate ?? '',
       daysOld: days,
       taxRatePct: taxRatePct(pr?.taxableValue ?? tb?.taxableValue, totalTax),
       posCompliance: posCompliance(baseRec),
-      rule37Warning: rule37Warning(r.status, days),
+      rule37Warning: mode === 'output' ? '—' : rule37Warning(r.status, days),
     });
 
     p.totals.count++;
@@ -129,10 +129,11 @@ export function aggregateByParty(results: ReconciliationResult[]): PartySummary[
         p.totals.perfectMatch++; break;
       case 'Value Mismatch': case 'Mismatch':
         p.totals.valueMismatch++; break;
-      case 'Invoice Missing': case 'Missing in 2B':
+      case 'Not in 2B': case 'Missing in 2B':
         p.totals.invoiceMissing++; break;
       case 'Unmatched Vendor':
         p.totals.unmatchedVendor++; break;
+      case 'Not in Books':
       case 'Missing in PR':
         p.totals.missingInPR++; break;
     }

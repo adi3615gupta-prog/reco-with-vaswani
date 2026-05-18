@@ -1,11 +1,16 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 import type { ReconciliationResult } from '@/lib/reconciliation';
+import { exportMonthlyComparison, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
 import { cn } from '@/lib/utils';
 
 interface MonthlyBreakdownProps {
   results: ReconciliationResult[];
+  debitNotes?: { pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] };
+  companyName: string;
 }
 
 interface MonthData {
@@ -60,7 +65,7 @@ function countColor(val: number, type: 'good' | 'warn' | 'bad' | 'info') {
 const hCls = "text-right text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap";
 const cCls = "text-right tabular-nums text-xs";
 
-export function MonthlyBreakdown({ results }: MonthlyBreakdownProps) {
+export function MonthlyBreakdown({ results, debitNotes, companyName }: MonthlyBreakdownProps) {
   const monthlyData = useMemo(() => {
     const map = new Map<string, MonthData>();
 
@@ -105,8 +110,8 @@ export function MonthlyBreakdown({ results }: MonthlyBreakdownProps) {
           const entry = getOrCreate(mk.label, mk.sortKey);
           if (r.status === 'Perfect Match' || r.status === 'Matched' || r.status === 'Matched (Rounded)') entry.matched++;
           else if (r.status === 'Value Mismatch' || r.status === 'Mismatch') entry.mismatch++;
-          else if (r.status === 'Invoice Missing' || r.status === 'Unmatched Vendor' || r.status === 'Missing in 2B') entry.missingIn2B++;
-          else if (r.status === 'Missing in PR') entry.missingInPR++;
+          else if (r.status === 'Not in 2B' || r.status === 'Unmatched Vendor' || r.status === 'Missing in 2B') entry.missingIn2B++;
+          else if (r.status === 'Not in Books' || r.status === 'Missing in PR') entry.missingInPR++;
         }
       }
     }
@@ -167,10 +172,39 @@ export function MonthlyBreakdown({ results }: MonthlyBreakdownProps) {
     twoBIgst: totals.twoBIgst, twoBCgst: totals.twoBCgst, twoBSgst: totals.twoBSgst,
   } as MonthData;
 
+  const handleExport = () => {
+    const exportRows: MonthlyComparisonRow[] = results.map((r) => {
+      const pr = r.prRecord;
+      const tb = r.twoBRecord;
+      return {
+        partyTally: pr?.supplierName || '',
+        gstinTally: pr?.gstin || '',
+        invoiceTally: pr?.invoiceNo || '',
+        cgstTally: pr?.cgst || 0,
+        sgstTally: pr?.sgst || 0,
+        igstTally: pr?.igst || 0,
+        dateTally: pr?.invoiceDate || '',
+        partyCmp: tb?.supplierName || '',
+        gstinCmp: tb?.gstin || '',
+        invoiceCmp: tb?.invoiceNo || '',
+        cgstCmp: tb?.cgst || 0,
+        sgstCmp: tb?.sgst || 0,
+        igstCmp: tb?.igst || 0,
+        dateCmp: tb?.invoiceDate || '',
+        status: r.status,
+        totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+      };
+    });
+    exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', debitNotes, companyName);
+  };
+
   return (
     <Card className="glass-card bg-card/60 backdrop-blur-xl border-white/10 shadow-2xl overflow-hidden">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <CardTitle className="text-base">Month-wise Breakdown</CardTitle>
+        <Button onClick={handleExport} variant="outline" size="sm" className="gap-2">
+          <Download className="w-4 h-4" /> Export Report
+        </Button>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">

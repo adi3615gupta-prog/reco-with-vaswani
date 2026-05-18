@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 interface ResultsCategoryTabsProps {
   results: ReconciliationResult[];
   summary: ReconciliationSummary;
+  companyName: string;
+  mode?: 'input' | 'output';
 }
 
 type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR';
@@ -30,8 +32,10 @@ function getExportData(results: ReconciliationResult[]) {
     const tb = r.twoBRecord;
     return {
       Status: r.status,
-      GSTIN: pr?.gstin || tb?.gstin || '',
-      'Supplier Name': pr?.supplierName || tb?.supplierName || '',
+      'GSTIN (PR)': pr?.gstin || '',
+      'GSTIN (2B)': tb?.gstin || '',
+      'Supplier Name (PR)': pr?.supplierName || '',
+      'Supplier Name (2B)': tb?.supplierName || '',
       'Invoice No (PR)': pr?.invoiceNo || '',
       'Invoice No (2B)': tb?.invoiceNo || '',
       'Invoice Date (PR)': pr?.invoiceDate || '',
@@ -48,16 +52,16 @@ function getExportData(results: ReconciliationResult[]) {
   });
 }
 
-export function ResultsCategoryTabs({ results, summary }: ResultsCategoryTabsProps) {
+export function ResultsCategoryTabs({ results, summary, companyName, mode = 'input' }: ResultsCategoryTabsProps) {
   const [active, setActive] = useState<CategoryKey>('all');
 
   const categories: Category[] = [
     { key: 'all', label: 'All Records', icon: LayoutGrid, statuses: [], count: summary.total, color: 'text-primary', activeColor: 'bg-primary text-primary-foreground shadow-lg shadow-primary/25' },
-    { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match'], count: summary.perfectMatch, color: 'text-success', activeColor: 'bg-success text-success-foreground shadow-lg shadow-success/25' },
+    { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, color: 'text-success', activeColor: 'bg-success text-success-foreground shadow-lg shadow-success/25' },
     { key: 'valueMismatch', label: 'Value Mismatch', icon: AlertTriangle, statuses: ['Value Mismatch'], count: summary.valueMismatch, color: 'text-warning', activeColor: 'bg-warning text-warning-foreground shadow-lg shadow-warning/25' },
-    { key: 'invoiceMissing', label: 'Invoice Missing', icon: XCircle, statuses: ['Invoice Missing'], count: summary.invoiceMissing, color: 'text-destructive', activeColor: 'bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25' },
+    { key: 'invoiceMissing', label: 'Not in 2B', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-destructive', activeColor: 'bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25' },
     { key: 'unmatchedVendor', label: 'Unmatched Vendor', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-destructive', activeColor: 'bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25' },
-    { key: 'missingPR', label: 'Missing in PR', icon: FileText, statuses: ['Missing in PR'], count: summary.missingInPR, color: 'text-info', activeColor: 'bg-info text-info-foreground shadow-lg shadow-info/25' },
+    { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-info', activeColor: 'bg-info text-info-foreground shadow-lg shadow-info/25' },
   ];
 
   const filteredResults = active === 'all'
@@ -67,7 +71,7 @@ export function ResultsCategoryTabs({ results, summary }: ResultsCategoryTabsPro
   const handleExportCategory = () => {
     const cat = categories.find((c) => c.key === active);
     const fileName = `GST_Reconciliation_${cat?.label.replace(/\s/g, '_') || 'All'}.xlsx`;
-    exportToXlsx(getExportData(filteredResults), fileName);
+    exportToXlsx(getExportData(filteredResults), fileName, companyName);
   };
 
   return (
@@ -115,7 +119,7 @@ export function ResultsCategoryTabs({ results, summary }: ResultsCategoryTabsPro
 
       {/* Filtered results table */}
       {filteredResults.length > 0 ? (
-        <ResultsTable results={filteredResults} />
+        <ResultsTable results={filteredResults} companyName={companyName} mode={mode} />
       ) : (
         <Card className="glass-card">
           <CardContent className="py-16 text-center">

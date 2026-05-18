@@ -14,10 +14,12 @@ import { cn } from '@/lib/utils';
 
 interface ResultsTableProps {
   results: ReconciliationResult[];
+  companyName: string;
+  mode?: 'input' | 'output';
 }
 
 const ALL_STATUSES: MatchStatus[] = [
-  'Perfect Match', 'Value Mismatch', 'Invoice Missing', 'Unmatched Vendor', 'Missing in PR',
+  'Perfect Match', 'Value Mismatch', 'Not in 2B', 'Unmatched Vendor', 'Not in Books',
 ];
 
 function fmt(n?: number) {
@@ -34,12 +36,13 @@ function getRowAccent(status: MatchStatus): string {
     case 'Value Mismatch':
     case 'Mismatch':
       return 'bg-warning/[0.04]';
-    case 'Invoice Missing':
+    case 'Not in 2B':
     case 'Missing in 2B':
       return 'bg-destructive/[0.04]';
     case 'Unmatched Vendor':
     case 'Wrong GSTIN':
       return 'bg-destructive/[0.05]';
+    case 'Not in Books':
     case 'Missing in PR':
       return 'bg-info/[0.03]';
     case 'Name Matched (No GSTIN)':
@@ -50,7 +53,7 @@ function getRowAccent(status: MatchStatus): string {
   }
 }
 
-export function ResultsTable({ results }: ResultsTableProps) {
+export function ResultsTable({ results, companyName, mode = 'input' }: ResultsTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
@@ -84,8 +87,10 @@ export function ResultsTable({ results }: ResultsTableProps) {
       const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
       return {
         Status: r.status,
-        GSTIN: pr?.gstin || tb?.gstin || '',
-        'Supplier Name': pr?.supplierName || tb?.supplierName || '',
+        'GSTIN (PR)': pr?.gstin || '',
+        'GSTIN (2B)': tb?.gstin || '',
+        'Supplier Name (PR)': pr?.supplierName || '',
+        'Supplier Name (2B)': tb?.supplierName || '',
         'Invoice No (PR)': pr?.invoiceNo || '',
         'Invoice No (2B)': tb?.invoiceNo || '',
         'Invoice Date (PR)': pr?.invoiceDate || '',
@@ -97,17 +102,17 @@ export function ResultsTable({ results }: ResultsTableProps) {
         'SGST (PR)': pr?.sgst ?? '',
         'SGST (2B)': tb?.sgst ?? '',
         'GST Diff': r.gstDiff ?? '',
-        'ITC Eligibility': deriveItcEligibility(baseRec?.supplierName),
+        'ITC Eligibility': mode === 'output' ? '—' : deriveItcEligibility(baseRec?.supplierName),
         'GSTR-1 Status': tb?.filingStatus ?? '',
         'Filing Date': tb?.filingDate ?? '',
         'Days Old': days,
         'Tax Rate %': taxRatePct(taxableForRate, totalTax),
         'POS Compliance': posCompliance(pr || tb),
-        'Rule 37 Warning': rule37Warning(r.status, days),
-        'Remark': actionableRemark(r.status, r.remark, lateFiler),
+        'Rule 37 Warning': mode === 'output' ? '—' : rule37Warning(r.status, days),
+        'Remark': actionableRemark(r.status, r.remark, lateFiler, mode),
       };
     });
-    exportToXlsx(exportData, 'GST_Reconciliation.xlsx');
+    exportToXlsx(exportData, 'GST_Reconciliation.xlsx', companyName);
   };
 
   return (
@@ -169,7 +174,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
                   const pr = r.prRecord;
                   const tb = r.twoBRecord;
                   const diffVal = r.gstDiff;
-                  const diffColor = diffVal !== undefined && diffVal > 1
+                  const diffColor = diffVal !== undefined && Math.abs(diffVal) > 1
                     ? 'text-destructive font-semibold'
                     : diffVal !== undefined && diffVal === 0
                       ? 'text-success'

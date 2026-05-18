@@ -28,7 +28,7 @@ export const TERMS: Record<ReconciliationMode, ModeTerminology> = {
     subtitle: 'Purchase Register ↔ GSTR-2B',
     primaryBookLabel: 'Purchase Register',
     primaryBookDesc: 'Your books / Tally export',
-    secondaryBookLabel: 'Journal Register',
+    secondaryBookLabel: 'Journal Voucher',
     secondaryBookDesc: 'Optional — combined with Purchase Register and compared to GSTR-2B',
     govtLabel: 'GSTR-2B Data',
     govtDesc: 'Downloaded from GST Portal',

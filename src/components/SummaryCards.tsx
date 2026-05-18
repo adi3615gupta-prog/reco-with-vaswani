@@ -12,9 +12,9 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
     { label: 'Total Records', value: summary.total, icon: BarChart3, iconColor: 'text-primary', bgAccent: 'bg-primary/10', borderAccent: 'border-l-primary', glowColor: 'hover:shadow-primary/10' },
     { label: 'Perfect Match', value: summary.perfectMatch, icon: CheckCircle2, iconColor: 'text-success', bgAccent: 'bg-success/10', borderAccent: 'border-l-success', glowColor: 'hover:shadow-success/10' },
     { label: 'Value Mismatch', value: summary.valueMismatch, icon: AlertTriangle, iconColor: 'text-warning', bgAccent: 'bg-warning/10', borderAccent: 'border-l-warning', glowColor: 'hover:shadow-warning/10' },
-    { label: 'Invoice Missing', value: summary.invoiceMissing, icon: XCircle, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
+    { label: 'Not in 2B', value: summary.invoiceMissing, icon: XCircle, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
     { label: 'Unmatched Vendor', value: summary.unmatchedVendor, icon: UserX, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
-    { label: 'Missing in PR', value: summary.missingInPR, icon: FileText, iconColor: 'text-info', bgAccent: 'bg-info/10', borderAccent: 'border-l-info', glowColor: 'hover:shadow-info/10' },
+    { label: 'Not in Books', value: summary.missingInPR, icon: FileText, iconColor: 'text-info', bgAccent: 'bg-info/10', borderAccent: 'border-l-info', glowColor: 'hover:shadow-info/10' },
     { label: 'Name-Matched Vendors', value: summary.nameMatched, icon: HelpCircle, iconColor: 'text-warning', bgAccent: 'bg-warning/10', borderAccent: 'border-l-warning', glowColor: 'hover:shadow-warning/10' },
     { label: 'Wrong GSTIN', value: summary.wrongGstin, icon: ShieldAlert, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
   ];
