@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, ArrowRight, Plus, Sparkles, Building2, FileSpreadsheet, RotateCcw } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Plus, Sparkles, Building2, FileSpreadsheet, RotateCcw, CloudDownload } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { Progress } from '@/components/ui/progress';
@@ -25,29 +25,53 @@ export default function Index() {
   useEffect(() => {
     const electronAPI = (window as any).electronAPI;
     if (electronAPI) {
-      electronAPI.onUpdateAvailable(() => {
+      electronAPI.onUpdateAvailable((info: any) => {
+        setCheckingUpdates(false);
+        setUpdateAvailable(true);
+        setUpdateVersion(info?.version || '');
         toast('A new update is available!', {
-          description: 'Click below to start downloading the latest version.',
-          action: {
-            label: 'Download',
-            onClick: () => electronAPI.downloadUpdate(),
-          },
+          description: `Version ${info?.version || ''} will download automatically.`,
           duration: 10000,
         });
       });
 
-      electronAPI.onUpdateDownloaded(() => {
+      electronAPI.onUpdateDownloaded((info: any) => {
+        setUpdateDownloaded(true);
+        setUpdateVersion(info?.version || '');
         toast.success('Update Ready', {
-          description: 'The app will restart to apply the new update.',
+          description: `Version ${info?.version || ''} is ready to install.`,
           action: {
-            label: 'Restart Now',
+            label: 'Install',
             onClick: () => electronAPI.restartApp(),
           },
           duration: 100000,
         });
       });
+
+      electronAPI.onDownloadProgress((progressObj: any) => {
+        if (progressObj?.percent != null) {
+          setCheckingUpdates(true);
+        }
+      });
     }
   }, []);
+
+  const handleCheckForUpdates = () => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI) return;
+    setCheckingUpdates(true);
+    electronAPI.checkForUpdates();
+    toast('Checking for updates...', {
+      description: 'Looking for the latest app version from GitHub.',
+      duration: 5000,
+    });
+  };
+
+  const handleInstallUpdate = () => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI) return;
+    electronAPI.restartApp();
+  };
 
   const [mode, setMode] = useState<ReconciliationMode | null>(null);
   const [step, setStep] = useState<Step>('upload');
@@ -75,6 +99,10 @@ export default function Index() {
 
   const [results, setResults] = useState<ReconciliationResult[] | null>(null);
   const [summary, setSummary] = useState<ReconciliationSummary | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState('');
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   const handleReset = (full = false) => {
     if (full) setMode(null);
@@ -287,8 +315,16 @@ export default function Index() {
               <p className="text-xs opacity-70">{term.subtitle}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={() => handleReset(false)} size="sm" className="gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-sm transition-all shadow-none">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button onClick={handleCheckForUpdates} size="sm" variant="secondary" className="gap-2">
+              <CloudDownload className="w-4 h-4" /> Check Updates
+            </Button>
+            {updateDownloaded && (
+              <Button onClick={handleInstallUpdate} size="sm" className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+                <CloudDownload className="w-4 h-4" /> Install Update
+              </Button>
+            )}
+            <Button onClick={() => handleReset(false)} size="sm" className="gap-2 bg-background/80 hover:bg-background/95 text-foreground border border-input/40 dark:bg-white/15 dark:hover:bg-white/25 dark:text-white dark:border-white/20 backdrop-blur-sm transition-all shadow-none">
               <RotateCcw className="w-4 h-4" /> Reset Files
             </Button>
             <ModeSwitcher currentMode={mode} onSwitch={() => handleReset(true)} />

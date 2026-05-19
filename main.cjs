@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const http = require('http');
@@ -7,9 +7,17 @@ const fs = require('fs');
 // Auto-updater logging
 autoUpdater.logger = require('electron-log');
 autoUpdater.logger.transports.file.level = 'info';
+autoUpdater.autoInstallOnAppQuit = true;
 
 let server = null;
 let serverPort = 8080;
+let mainWindow = null;
+
+const sendUpdateStatus = (channel, payload) => {
+  if (mainWindow?.webContents) {
+    mainWindow.webContents.send(channel, payload);
+  }
+};
 
 function startLocalServer() {
   return new Promise((resolve, reject) => {
@@ -84,7 +92,7 @@ function startLocalServer() {
 }
 
 async function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -92,29 +100,47 @@ async function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, 'public/icon.png')
+    icon: path.join(__dirname, 'public/icon.png'),
+    backgroundColor: '#090d18'
   });
 
-  // Start local HTTP server and load app
-  try {
+  const isPackaged = app.isPackaged;
+  const startApp = async () => {
+    if (isPackaged) {
+      const indexPath = path.join(__dirname, 'dist', 'index.html');
+      console.log(`Loading packaged app from file://${indexPath}`);
+      await mainWindow.loadURL(`file://${indexPath}`);
+      console.log('Packaged app loaded successfully');
+      return;
+    }
+
     console.log('Starting local HTTP server...');
     const { server: httpServer, port } = await startLocalServer();
     server = httpServer;
     serverPort = port;
-    
+
     console.log(`Loading app from http://localhost:${port}`);
     await mainWindow.loadURL(`http://localhost:${port}`);
     console.log('App loaded successfully');
+  };
+
+  try {
+    await startApp();
   } catch (error) {
-    console.error('Failed to start server:', error);
-    
-    // Fallback: show error page
-    mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px; background: #f0f0f0;"><h1 style="color: #e74c3c;">Application Failed to Start</h1><p style="color: #666;">Could not start the local server to load the application.</p><p style="color: #999;">Error: ' + error.message + '</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
+    console.error('Failed to start app:', error);
+    mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px; background: #f0f0f0;"><h1 style="color: #e74c3c;">Application Failed to Start</h1><p style="color: #666;">Could not load the application.</p><p style="color: #999;">Error: ' + error.message + '</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
   }
 
-  // Log any web content errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Web content failed to load:', errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('crashed', () => {
+    console.error('Web contents crashed');
+  });
+  
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    console.log(`Renderer console [${level}]: ${message}`);
   });
   
   mainWindow.webContents.on('did-finish-load', () => {
@@ -131,27 +157,45 @@ app.whenReady().then(() => {
   }, 3000);
 });
 
+ipcMain.handle('check_for_updates', () => {
+  return autoUpdater.checkForUpdates();
+});
+
+ipcMain.handle('download_update', () => {
+  return autoUpdater.downloadUpdate();
+});
+
+ipcMain.handle('restart_app', () => {
+  autoUpdater.quitAndInstall();
+});
+
 // Auto-updater events
-autoUpdater.on('update-available', () => {
+autoUpdater.on('update-available', (info) => {
+  sendUpdateStatus('update_available', info);
   dialog.showMessageBox({
     type: 'info',
     title: 'Update Available',
-    message: 'A new version is available. It will be downloaded in the background.',
+    message: `A new version (${info.version}) is available. It will be downloaded in the background.`,
     buttons: ['OK']
   });
 });
 
-autoUpdater.on('update-downloaded', () => {
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus('update_downloaded', info);
   dialog.showMessageBox({
     type: 'info',
     title: 'Update Ready',
-    message: 'Update downloaded. The application will restart to apply updates.',
+    message: `Version ${info.version} has been downloaded. Restart the app to install it.`,
     buttons: ['Restart Now', 'Later']
   }).then((result) => {
     if (result.response === 0) {
       autoUpdater.quitAndInstall();
     }
   });
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  sendUpdateStatus('download_progress', progressObj);
 });
 
 app.on('window-all-closed', () => {

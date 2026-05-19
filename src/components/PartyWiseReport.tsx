@@ -61,7 +61,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input' }: Props)
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -71,7 +71,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input' }: Props)
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -82,7 +82,31 @@ export function PartyWiseReport({ results, companyName, mode = 'input' }: Props)
             Sort
           </Button>
           <Button onClick={() => exportPartyWise(parties, 'Party_Wise_Report.xlsx', companyName)} variant="outline" size="sm" className="gap-2 shrink-0">
-            <Download className="w-4 h-4" /> Export
+            <Download className="w-4 h-4" /> Export All
+          </Button>
+          <Button
+            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Not_in_2B.xlsx', companyName, ['Not in 2B', 'Missing in 2B', 'Unmatched Vendor'])}
+            variant="outline"
+            size="sm"
+            className="gap-2 shrink-0"
+          >
+            <Download className="w-4 h-4" /> Export Not in 2B
+          </Button>
+          <Button
+            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Not_in_Books.xlsx', companyName, ['Not in Books', 'Missing in PR'])}
+            variant="outline"
+            size="sm"
+            className="gap-2 shrink-0"
+          >
+            <Download className="w-4 h-4" /> Export Not in Books
+          </Button>
+          <Button
+            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Value_Mismatch.xlsx', companyName, ['Value Mismatch', 'Mismatch'])}
+            variant="outline"
+            size="sm"
+            className="gap-2 shrink-0"
+          >
+            <Download className="w-4 h-4" /> Export Value Mismatch
           </Button>
         </div>
       </div>

@@ -15,9 +15,8 @@ export function ModeSwitcher({ currentMode, onSwitch }: ModeSwitcherProps) {
     <button
       onClick={onSwitch}
       className={cn(
-        "flex items-center gap-2 px-3.5 py-1.5 rounded-full border transition-all duration-300",
-        "bg-white/15 text-white border-white/20 hover:bg-white/25 backdrop-blur-sm shadow-[0_0_15px_rgba(255,255,255,0.1)]",
-        "hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] hover:scale-105 active:scale-95 text-sm font-medium"
+        "flex items-center gap-2 px-3.5 py-1.5 rounded-full border transition-all duration-300 text-sm font-medium active:scale-95",
+        "bg-background/80 text-foreground border-input hover:bg-background/95 dark:bg-white/15 dark:text-white dark:border-white/20 dark:hover:bg-white/25 backdrop-blur-sm shadow-[0_0_15px_rgba(0,0,0,0.08)] dark:shadow-[0_0_15px_rgba(255,255,255,0.08)] hover:shadow-[0_0_25px_rgba(0,0,0,0.12)] dark:hover:shadow-[0_0_25px_rgba(255,255,255,0.12)] hover:scale-105"
       )}
       title={`Switch to ${TERMS[otherMode].title}`}
     >

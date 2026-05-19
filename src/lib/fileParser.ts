@@ -1338,13 +1338,73 @@ const PARTY_STATUS_HEADER: Record<string, string> = {
   'Has Missing': 'B91C1C',
 };
 
-export function exportPartyWise(parties: PartySummary[], filename: string, companyName?: string) {
+export function exportPartyWise(parties: PartySummary[], filename: string, companyName?: string, statusFilter?: string[]) {
+  const filteredParties = statusFilter && statusFilter.length > 0
+    ? parties
+        .map((p) => {
+          const invoices = p.invoices.filter((inv) => statusFilter.includes(inv.status));
+          if (!invoices.length) return null;
+          const totals = invoices.reduce(
+            (acc, inv) => {
+              acc.count += 1;
+              acc.igstPR += inv.igstPR;
+              acc.cgstPR += inv.cgstPR;
+              acc.sgstPR += inv.sgstPR;
+              acc.igst2B += inv.igst2B;
+              acc.cgst2B += inv.cgst2B;
+              acc.sgst2B += inv.sgst2B;
+              if (inv.status === 'Perfect Match' || inv.status === 'Matched' || inv.status === 'Matched (Rounded)') acc.perfectMatch += 1;
+              if (inv.status === 'Value Mismatch' || inv.status === 'Mismatch') acc.valueMismatch += 1;
+              if (inv.status === 'Not in 2B' || inv.status === 'Missing in 2B') acc.invoiceMissing += 1;
+              if (inv.status === 'Unmatched Vendor') acc.unmatchedVendor += 1;
+              if (inv.status === 'Not in Books' || inv.status === 'Missing in PR') acc.missingInPR += 1;
+              return acc;
+            },
+            {
+              count: 0, perfectMatch: 0, valueMismatch: 0, invoiceMissing: 0,
+              unmatchedVendor: 0, missingInPR: 0,
+              igstPR: 0, cgstPR: 0, sgstPR: 0,
+              igst2B: 0, cgst2B: 0, sgst2B: 0,
+              igstDiff: 0, cgstDiff: 0, sgstDiff: 0, totalDiff: 0,
+            }
+          );
+
+          totals.igstDiff = +(totals.igstPR - totals.igst2B).toFixed(2);
+          totals.cgstDiff = +(totals.cgstPR - totals.cgst2B).toFixed(2);
+          totals.sgstDiff = +(totals.sgstPR - totals.sgst2B).toFixed(2);
+          totals.totalDiff = +(
+            Math.abs(totals.igstDiff) + Math.abs(totals.cgstDiff) + Math.abs(totals.sgstDiff)
+          ).toFixed(2);
+          totals.igstPR = +totals.igstPR.toFixed(2);
+          totals.cgstPR = +totals.cgstPR.toFixed(2);
+          totals.sgstPR = +totals.sgstPR.toFixed(2);
+          totals.igst2B = +totals.igst2B.toFixed(2);
+          totals.cgst2B = +totals.cgst2B.toFixed(2);
+          totals.sgst2B = +totals.sgst2B.toFixed(2);
+
+          const overall: PartyOverallStatus =
+            totals.invoiceMissing + totals.unmatchedVendor + totals.missingInPR > 0
+              ? 'Has Missing'
+              : totals.valueMismatch > 0
+              ? 'Has Mismatches'
+              : 'All Matched';
+
+          return {
+            ...p,
+            invoices,
+            totals,
+            overall,
+          };
+        })
+        .filter(Boolean) as PartySummary[]
+    : parties;
+
   const wb = XLSX.utils.book_new();
 
   // Add Executive Summary
   const counts: Record<string, number> = {};
   let totalDiff = 0;
-  for (const p of parties) {
+  for (const p of filteredParties) {
     counts[p.overall] = (counts[p.overall] || 0) + 1;
     totalDiff += p.totals.totalDiff;
   }
