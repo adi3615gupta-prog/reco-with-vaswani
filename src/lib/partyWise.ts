@@ -56,9 +56,8 @@ function normalizePartyName(name: string): string {
   if (!name) return '';
   return name
     .toUpperCase()
-    .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, '')
-    .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
-    .replace(/[^A-Z0-9]/g, '')
+    .replace(/[^A-Z0-9]/g, '') // Strip ALL special characters and spaces first
+    .replace(/(MS|MR|MRS|SHREE|SHRI|PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISE|ENTERPRISES|TRADER|TRADERS|INDUSTRY|INDUSTRIES|AGENCY|AGENCIES|BROTHER|BROTHERS|BROS|SONS|ASSOCIATE|ASSOCIATES|AND)/g, '')
     .trim();
 }
 
@@ -99,7 +98,7 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
     const rec = r.prRecord || r.twoBRecord;
     const gstin = (rec?.gstin || '').toUpperCase().trim();
     const name = rec?.supplierName || '';
-    const normalizedName = normalizePartyName(name);
+    const normalizedName = r.canonicalPartyName || normalizePartyName(name);
     let key = gstin || normalizedName || `UNKNOWN-${++unknownIndex}`;
 
     if (!gstin && normalizedName && nameIndex.has(normalizedName)) {
