@@ -31,11 +31,17 @@ function statusStrip(status: PartySummary['overall']) {
   return 'from-destructive/40 via-destructive/20 to-transparent';
 }
 
+function statusBadgeClass(status: PartySummary['overall']) {
+  if (status === 'All Matched') return 'np-badge-green';
+  if (status === 'Has Mismatches') return 'np-badge-sky';
+  return 'np-badge-red';
+}
+
 function rowStatusColor(status: string) {
-  if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)') return 'text-success';
-  if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-warning';
-  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-info';
-  return 'text-destructive';
+  if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)') return 'text-[var(--np-green)]';
+  if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-yellow-500';
+  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-[#A87EE8]';
+  return 'text-[var(--np-red)]';
 }
 
 export function PartyWiseReport({ results, companyName, mode = 'input' }: Props) {
@@ -60,67 +66,34 @@ export function PartyWiseReport({ results, companyName, mode = 'input' }: Props)
   }, [parties, search, sortBy]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by party name or GSTIN…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+    <div className="dash-card overflow-hidden silk-reveal" style={{ animationDelay: '300ms' }}>
+      <div className="dash-topbar">
+        <div className="flex items-center gap-4">
+           <div className="dash-dots"><span style={{background:'#3DCC8E'}}></span><span style={{background:'#F0A030'}}></span></div>
+           <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Party-wise Intelligence ({filtered.length})</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setSortBy(sortBy === 'name' ? 'diff' : 'name')}
-            className="gap-2 shrink-0"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            Sort
-          </Button>
-          <Button onClick={() => exportPartyWise(parties, 'Party_Wise_Report.xlsx', companyName)} variant="outline" size="sm" className="gap-2 shrink-0">
-            <Download className="w-4 h-4" /> Export All
-          </Button>
-          <Button
-            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Not_in_2B.xlsx', companyName, ['Not in 2B', 'Missing in 2B', 'Unmatched Vendor'])}
-            variant="outline"
-            size="sm"
-            className="gap-2 shrink-0"
-          >
-            <Download className="w-4 h-4" /> Export Not in 2B
-          </Button>
-          <Button
-            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Not_in_Books.xlsx', companyName, ['Not in Books', 'Missing in PR'])}
-            variant="outline"
-            size="sm"
-            className="gap-2 shrink-0"
-          >
-            <Download className="w-4 h-4" /> Export Not in Books
-          </Button>
-          <Button
-            onClick={() => exportPartyWise(parties, 'Party_Wise_Report_Value_Mismatch.xlsx', companyName, ['Value Mismatch', 'Mismatch'])}
-            variant="outline"
-            size="sm"
-            className="gap-2 shrink-0"
-          >
-            <Download className="w-4 h-4" /> Export Value Mismatch
-          </Button>
+        <div className="flex items-center gap-3">
+          <div className="relative w-48 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--np-text3)] group-focus-within:text-[var(--np-sky)] transition-colors" />
+            <input
+              placeholder="Search party..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-8 bg-[var(--np-bg3)]/50 border border-[var(--np-border2)] rounded-md pl-9 pr-4 text-[11px] text-[var(--np-text)] focus:outline-none focus:border-[var(--np-sky)] transition-all"
+            />
+          </div>
+          <button onClick={() => setSortBy(sortBy === 'name' ? 'diff' : 'name')} className="btn-np-outline !py-1.5 !px-3">
+            <ArrowUpDown className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        {filtered.length} {filtered.length === 1 ? 'party' : 'parties'}
-      </div>
-
-      <div className="space-y-2">
+      <div className="divide-y divide-[var(--np-border)]">
         {filtered.map((p) => (
           <PartyCard key={p.key} party={p} />
         ))}
         {filtered.length === 0 && (
-          <div className="text-center text-sm text-muted-foreground py-12">No parties match your search.</div>
+          <div className="p-24 text-center text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest italic">No matches in repository</div>
         )}
       </div>
     </div>
@@ -131,99 +104,66 @@ function PartyCard({ party }: { party: PartySummary }) {
   const [open, setOpen] = useState(false);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="rounded-xl border border-white/10 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-xl hover:border-primary/40 hover:-translate-y-0.5">
-        <div className={cn('h-1 bg-gradient-to-r', statusStrip(party.overall))} />
-        <CollapsibleTrigger asChild>
-          <button className="w-full flex items-center justify-between gap-4 px-4 py-3 hover:bg-muted/40 transition-colors text-left">
+      <CollapsibleTrigger asChild>
+        <button className="w-full flex items-center justify-between gap-6 px-6 py-5 hover:bg-white/[0.02] transition-all group text-left">
+          <div className="min-w-0 flex-1 flex items-center gap-6">
+            <div className={cn("w-2 h-2 rounded-full", party.overall === 'All Matched' ? 'bg-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'bg-yellow-500' : 'bg-[var(--np-red)]')} />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold truncate">{party.partyName || '— No name —'}</span>
-                <span className="text-xs text-muted-foreground font-mono">{party.gstin || 'No GSTIN'}</span>
+              <div className="flex items-center gap-3">
+                <span className="font-extrabold text-[13px] text-white truncate uppercase tracking-wide group-hover:text-[var(--np-sky)] transition-colors">{party.partyName || '— UNNAMED COUNTERPARTY —'}</span>
+                <span className="np-badge np-badge-muted">{party.gstin || 'NO GSTIN'}</span>
               </div>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <Badge variant="outline" className={cn('text-[10px]', statusBadge(party.overall))}>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest">{party.totals.count} Invoices</span>
+                {party.totals.totalDiff !== 0 && (
+                  <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">₹{fmt(party.totals.totalDiff)} Variance</span>
+                )}
+                <span className={cn("text-[9px] font-black uppercase tracking-[0.2em]", party.overall === 'All Matched' ? 'text-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'text-yellow-500' : 'text-[var(--np-red)]')}>
                   {party.overall}
-                </Badge>
-                <span className="text-[11px] text-muted-foreground">{party.totals.count} invoices</span>
-                {party.totals.perfectMatch > 0 && (
-                  <span className="text-[11px] text-success">{party.totals.perfectMatch} matched</span>
-                )}
-                {party.totals.valueMismatch > 0 && (
-                  <span className="text-[11px] text-warning">{party.totals.valueMismatch} mismatch</span>
-                )}
-                {(party.totals.invoiceMissing + party.totals.unmatchedVendor) > 0 && (
-                  <span className="text-[11px] text-destructive">
-                    {party.totals.invoiceMissing + party.totals.unmatchedVendor} missing in 2B
-                  </span>
-                )}
-                {party.totals.missingInPR > 0 && (
-                  <span className="text-[11px] text-info">{party.totals.missingInPR} not in books</span>
-                )}
+                </span>
               </div>
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Diff</div>
-              <div className={cn(
-                'font-mono font-semibold tabular-nums',
-                party.totals.totalDiff > 1 ? 'text-warning' : 'text-success'
-              )}>
-                ₹{fmt(party.totals.totalDiff)}
-              </div>
-            </div>
-            <ChevronDown className={cn('w-4 h-4 text-muted-foreground transition-transform shrink-0', open && 'rotate-180')} />
-          </button>
-        </CollapsibleTrigger>
-
-        <CollapsibleContent>
-          <div className="border-t border-border bg-muted/20 overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Inv (PR)</TableHead>
-                  <TableHead className="text-xs">Inv (2B)</TableHead>
-                  <TableHead className="text-xs">Date (PR)</TableHead>
-                  <TableHead className="text-xs">Date (2B)</TableHead>
-                  <TableHead className="text-xs text-right">IGST PR</TableHead>
-                  <TableHead className="text-xs text-right">IGST 2B</TableHead>
-                  <TableHead className="text-xs text-right">CGST PR</TableHead>
-                  <TableHead className="text-xs text-right">CGST 2B</TableHead>
-                  <TableHead className="text-xs text-right">SGST PR</TableHead>
-                  <TableHead className="text-xs text-right">SGST 2B</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {party.invoices.map((inv, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs">{inv.invoiceNoPR || '—'}</TableCell>
-                    <TableCell className="font-mono text-xs">{inv.invoiceNo2B || '—'}</TableCell>
-                    <TableCell className="text-xs">{inv.invoiceDatePR || '—'}</TableCell>
-                    <TableCell className="text-xs">{inv.invoiceDate2B || '—'}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.igstPR)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.igst2B)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.cgstPR)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.cgst2B)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.sgstPR)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(inv.sgst2B)}</TableCell>
-                    <TableCell className={cn('text-xs font-medium', rowStatusColor(inv.status))}>{inv.status}</TableCell>
-                  </TableRow>
-                ))}
-                {/* Totals row */}
-                <TableRow className="bg-muted/50 font-semibold">
-                  <TableCell colSpan={4} className="text-xs">Totals</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.igstPR)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.igst2B)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.cgstPR)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.cgst2B)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.sgstPR)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-xs">{fmt(party.totals.sgst2B)}</TableCell>
-                  <TableCell className="text-xs">Diff ₹{fmt(party.totals.totalDiff)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
           </div>
-        </CollapsibleContent>
-      </div>
+          <ChevronDown className={cn('w-4 h-4 text-[var(--np-text3)] transition-transform duration-500 group-hover:text-[var(--np-sky)]', open && 'rotate-180')} />
+        </button>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent>
+        <div className="bg-[var(--np-bg3)]/30 border-t border-[var(--np-border)] p-1 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="np-table !bg-transparent border-none">
+              <thead>
+                <tr className="!bg-transparent border-none">
+                  <th className="!py-2 !px-4 !text-[9px]">Invoice (PR)</th>
+                  <th className="!py-2 !px-4 !text-[9px]">Invoice (2B)</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">IGST PR</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">IGST 2B</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">CGST PR</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">CGST 2B</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">SGST PR</th>
+                  <th className="!py-2 !px-4 !text-[9px] text-right">SGST 2B</th>
+                  <th className="!py-2 !px-4 !text-[9px]">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {party.invoices.map((inv, i) => (
+                  <tr key={i} className="!bg-transparent border-none last:border-b-0">
+                    <td className="!py-2 !px-4 font-mono !text-[10px]">{inv.invoiceNoPR || '—'}</td>
+                    <td className="!py-2 !px-4 font-mono !text-[10px]">{inv.invoiceNo2B || '—'}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.igstPR)}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.igst2B)}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.cgstPR)}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.cgst2B)}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.sgstPR)}</td>
+                    <td className="!py-2 !px-4 text-right tabular-nums !text-[10px]">{fmt(inv.sgst2B)}</td>
+                    <td className={cn('!py-2 !px-4 font-bold !text-[9px] uppercase tracking-widest', rowStatusColor(inv.status))}>{inv.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CollapsibleContent>
     </Collapsible>
   );
 }

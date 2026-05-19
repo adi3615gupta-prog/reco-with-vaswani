@@ -1,0 +1,1 @@
+const { app, BrowserWindow } = require('electron'); app.whenReady().then(() => { const win = new BrowserWindow({ webPreferences: { preload: __dirname + '/bad_preload.js' } }); win.loadURL('data:text/html,hello'); });

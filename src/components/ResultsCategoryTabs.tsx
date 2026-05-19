@@ -56,12 +56,12 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
   const [active, setActive] = useState<CategoryKey>('all');
 
   const categories: Category[] = [
-    { key: 'all', label: 'All Records', icon: LayoutGrid, statuses: [], count: summary.total, color: 'text-primary', activeColor: 'bg-primary text-primary-foreground shadow-lg shadow-primary/25' },
-    { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, color: 'text-success', activeColor: 'bg-success text-success-foreground shadow-lg shadow-success/25' },
-    { key: 'valueMismatch', label: 'Value Mismatch', icon: AlertTriangle, statuses: ['Value Mismatch'], count: summary.valueMismatch, color: 'text-warning', activeColor: 'bg-warning text-warning-foreground shadow-lg shadow-warning/25' },
-    { key: 'invoiceMissing', label: 'Not in 2B', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-destructive', activeColor: 'bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25' },
-    { key: 'unmatchedVendor', label: 'Unmatched Vendor', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-destructive', activeColor: 'bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25' },
-    { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-info', activeColor: 'bg-info text-info-foreground shadow-lg shadow-info/25' },
+    { key: 'all', label: 'All Records', icon: LayoutGrid, statuses: [], count: summary.total, color: 'text-[var(--np-sky)]', activeColor: 'active' },
+    { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, color: 'text-[var(--np-green)]', activeColor: 'active' },
+    { key: 'valueMismatch', label: 'Value Mismatch', icon: AlertTriangle, statuses: ['Value Mismatch'], count: summary.valueMismatch, color: 'text-yellow-500', activeColor: 'active' },
+    { key: 'invoiceMissing', label: 'Not in 2B/Govt', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-[var(--np-red)]', activeColor: 'active' },
+    { key: 'unmatchedVendor', label: 'Unmatched Vendor', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-[var(--np-red)]', activeColor: 'active' },
+    { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-[#A87EE8]', activeColor: 'active' },
   ];
 
   const filteredResults = active === 'all'
@@ -75,62 +75,61 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
   };
 
   return (
-    <div className="space-y-5">
-      {/* Category buttons */}
-      <Card className="glass-card overflow-hidden bg-card/40 backdrop-blur-xl border-white/10 shadow-xl">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Filter by Category</CardTitle>
-            <Button onClick={handleExportCategory} variant="outline" size="sm" className="gap-2">
-              <Download className="w-4 h-4" /> Export {categories.find(c => c.key === active)?.label}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {categories.map((cat) => {
-              const isActive = active === cat.key;
-              const Icon = cat.icon;
-              return (
-                <button
-                  key={cat.key}
-                  onClick={() => setActive(cat.key)}
-                  className={cn(
-                    'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-500 border',
-                    isActive
-                      ? cn(cat.activeColor, 'border-transparent scale-[1.02] shadow-[0_0_20px_-5px_currentColor]')
-                      : 'bg-background/50 backdrop-blur-md border-border hover:bg-muted/80 hover:shadow-md hover:-translate-y-0.5'
-                  )}
-                >
-                  <Icon className={cn('w-4 h-4', !isActive && cat.color)} />
-                  <span>{cat.label}</span>
-                  <span className={cn(
-                    'ml-1 px-2 py-0.5 rounded-full text-xs font-bold tabular-nums',
-                    isActive ? 'bg-white/20' : 'bg-muted text-muted-foreground'
-                  )}>
-                    {cat.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+    <div className="flex flex-col lg:flex-row gap-8 items-start">
+      {/* Sidebar Filters */}
+      <div className="dash-card w-full lg:w-72 shrink-0 silk-reveal overflow-hidden">
+        <div className="dash-topbar bg-[var(--np-bg3)]">
+          <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Audit Filters</span>
+          <LayoutGrid className="w-3.5 h-3.5 text-[var(--np-sky)]" />
+        </div>
+        <div className="flex flex-col">
+          {categories.map((cat) => {
+            const isActive = active === cat.key;
+            const Icon = cat.icon;
+            return (
+              <button
+                key={cat.key}
+                onClick={() => setActive(cat.key)}
+                className={cn(
+                  'flex items-center justify-between px-6 py-4 transition-all duration-300 border-b border-[var(--np-border)] last:border-0 group',
+                  isActive ? 'bg-[var(--np-sky)]/10 text-[var(--np-sky)]' : 'text-[var(--np-text3)] hover:bg-white/[0.02] hover:text-[var(--np-text2)]'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={cn('w-4 h-4 transition-transform duration-300 group-hover:scale-110', !isActive && cat.color)} />
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{cat.label}</span>
+                </div>
+                <span className={cn(
+                  'text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-md transition-all',
+                  isActive ? 'bg-[var(--np-sky)] text-white shadow-[0_0_10px_rgba(74,158,232,0.5)]' : 'bg-white/5 text-[var(--np-text3)]'
+                )}>
+                  {cat.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="p-4 bg-[var(--np-bg3)]/50">
+           <button onClick={handleExportCategory} className="btn-np-outline w-full gap-2 !py-2.5 text-[10px] uppercase tracking-widest font-bold">
+              <Download className="w-3.5 h-3.5" /> Export List
+           </button>
+        </div>
+      </div>
 
-      {/* Filtered results table */}
-      {filteredResults.length > 0 ? (
-        <ResultsTable results={filteredResults} companyName={companyName} mode={mode} />
-      ) : (
-        <Card className="glass-card">
-          <CardContent className="py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
-              <LayoutGrid className="w-8 h-8 text-muted-foreground/50" />
+      {/* Main Table Area */}
+      <div className="flex-1 w-full silk-reveal" style={{ animationDelay: '200ms' }}>
+        {filteredResults.length > 0 ? (
+          <ResultsTable results={filteredResults} companyName={companyName} mode={mode} />
+        ) : (
+          <div className="dash-card py-24 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-6 ring-1 ring-white/10">
+              <LayoutGrid className="w-8 h-8 text-[var(--np-text3)] opacity-30" />
             </div>
-            <p className="text-muted-foreground font-medium">No records in this category</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Select a different category to view records</p>
-          </CardContent>
-        </Card>
-      )}
+            <h3 className="text-sm font-bold text-[var(--np-text2)] uppercase tracking-[0.2em]">No Audit Trails</h3>
+            <p className="text-xs text-[var(--np-text3)] mt-2">No records match the selected audit filter.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

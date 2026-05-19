@@ -2,8 +2,6 @@ import { useState, useMemo } from 'react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Download, Search, Info } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
@@ -32,36 +30,33 @@ function getRowAccent(status: MatchStatus): string {
     case 'Perfect Match':
     case 'Matched':
     case 'Matched (Rounded)':
+    case 'Matched (Diff Date)':
       return '';
     case 'Value Mismatch':
     case 'Mismatch':
-      return 'bg-warning/[0.04]';
+      return 'bg-yellow-500/10';
     case 'Not in 2B':
     case 'Missing in 2B':
-      return 'bg-destructive/[0.04]';
+      return 'bg-[var(--np-red)]/10';
     case 'Unmatched Vendor':
     case 'Wrong GSTIN':
-      return 'bg-destructive/[0.05]';
+      return 'bg-[var(--np-red)]/15';
     case 'Not in Books':
     case 'Missing in PR':
-      return 'bg-info/[0.03]';
+      return 'bg-indigo-400/10';
     case 'Name Matched (No GSTIN)':
     case 'Name Mismatch':
-      return 'bg-warning/[0.03]';
+      return 'bg-yellow-500/10';
     default:
       return '';
   }
 }
 
 export function ResultsTable({ results, companyName, mode = 'input' }: ResultsTableProps) {
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {
     let data = results;
-    if (statusFilter !== 'all') {
-      data = data.filter((r) => r.status === statusFilter);
-    }
     if (search.trim()) {
       const q = search.toLowerCase();
       data = data.filter((r) => {
@@ -74,163 +69,115 @@ export function ResultsTable({ results, companyName, mode = 'input' }: ResultsTa
       });
     }
     return data;
-  }, [results, statusFilter, search]);
-
-  const handleExport = () => {
-    const exportData = filtered.map((r) => {
-      const pr = r.prRecord;
-      const tb = r.twoBRecord;
-      const baseRec = pr || tb;
-      const taxableForRate = pr?.taxableValue ?? tb?.taxableValue;
-      const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
-      const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
-      const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
-      return {
-        Status: r.status,
-        'GSTIN (PR)': pr?.gstin || '',
-        'GSTIN (2B)': tb?.gstin || '',
-        'Supplier Name (PR)': pr?.supplierName || '',
-        'Supplier Name (2B)': tb?.supplierName || '',
-        'Invoice No (PR)': pr?.invoiceNo || '',
-        'Invoice No (2B)': tb?.invoiceNo || '',
-        'Invoice Date (PR)': pr?.invoiceDate || '',
-        'Invoice Date (2B)': tb?.invoiceDate || '',
-        'IGST (PR)': pr?.igst ?? '',
-        'IGST (2B)': tb?.igst ?? '',
-        'CGST (PR)': pr?.cgst ?? '',
-        'CGST (2B)': tb?.cgst ?? '',
-        'SGST (PR)': pr?.sgst ?? '',
-        'SGST (2B)': tb?.sgst ?? '',
-        'GST Diff': r.gstDiff ?? '',
-        'ITC Eligibility': mode === 'output' ? '—' : deriveItcEligibility(baseRec?.supplierName),
-        'GSTR-1 Status': tb?.filingStatus ?? '',
-        'Filing Date': tb?.filingDate ?? '',
-        'Days Old': days,
-        'Tax Rate %': taxRatePct(taxableForRate, totalTax),
-        'POS Compliance': posCompliance(pr || tb),
-        'Rule 37 Warning': mode === 'output' ? '—' : rule37Warning(r.status, days),
-        'Remark': actionableRemark(r.status, r.remark, lateFiler, mode),
-      };
-    });
-    exportToXlsx(exportData, 'GST_Reconciliation.xlsx', companyName);
-  };
+  }, [results, search]);
 
   return (
     <TooltipProvider delayDuration={150}>
-    <Card className="glass-card bg-card/60 backdrop-blur-xl border-white/10 shadow-2xl overflow-hidden">
-      <CardHeader className="pb-3">
-        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-          <CardTitle className="text-base">Detailed Results</CardTitle>
-          <div className="flex gap-2 items-center flex-1 sm:flex-none sm:justify-end">
-            <div className="relative flex-1 sm:flex-none sm:w-56">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search GSTIN, Invoice, Supplier..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px] h-9 text-sm">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {ALL_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={handleExport} variant="outline" size="sm" className="gap-2 shrink-0">
-              <Download className="w-4 h-4" /> Export
-            </Button>
-          </div>
+    <div className="dash-card overflow-hidden">
+      <div className="dash-topbar">
+        <div className="flex items-center gap-4">
+           <div className="dash-dots"><span style={{background:'#4A9EE8'}}></span><span style={{background:'#3DCC8E'}}></span></div>
+           <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Audit Trails ({filtered.length})</span>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-[180px] text-[11px] uppercase tracking-wider font-semibold">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold">GSTIN</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold">Supplier</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold">Invoice (PR)</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold">Invoice (2B)</TableHead>
-                <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold">GST Diff</TableHead>
-                <TableHead className="min-w-[200px] text-[11px] uppercase tracking-wider font-semibold">Remark</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                    No records found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtered.slice(0, 200).map((r, i) => {
-                  const pr = r.prRecord;
-                  const tb = r.twoBRecord;
-                  const diffVal = r.gstDiff;
-                  const diffColor = diffVal !== undefined && Math.abs(diffVal) > 1
-                    ? 'text-destructive font-semibold'
-                    : diffVal !== undefined && diffVal === 0
-                      ? 'text-success'
-                      : 'text-muted-foreground';
-                  const isMismatch = (r.status === 'Value Mismatch' || r.status === 'Mismatch') && pr && tb;
-                  return (
-                    <TableRow key={i} className={cn('transition-colors', getRowAccent(r.status))}>
-                      <TableCell><StatusBadge status={r.status} /></TableCell>
-                      <TableCell className="font-mono text-xs">{pr?.gstin || tb?.gstin || '—'}</TableCell>
-                      <TableCell className="max-w-[160px] truncate text-sm">{pr?.supplierName || tb?.supplierName}</TableCell>
-                      <TableCell className="font-mono text-xs">{pr?.invoiceNo || '—'}</TableCell>
-                      <TableCell className="font-mono text-xs">{tb?.invoiceNo || '—'}</TableCell>
-                      <TableCell className={cn('text-right tabular-nums text-xs', diffColor)}>
-                        {isMismatch ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button className={cn('inline-flex items-center gap-1 underline decoration-dotted underline-offset-2', diffColor)}>
-                                {fmt(diffVal!)} <Info className="w-3 h-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="text-xs">
-                              <div className="font-semibold mb-1.5">Tax Difference (PR − 2B)</div>
-                              <div className="grid grid-cols-[auto,1fr,auto] gap-x-3 gap-y-0.5 tabular-nums">
-                                <div className="text-muted-foreground">CGST</div>
-                                <div className="text-right">{fmt(pr!.cgst)} − {fmt(tb!.cgst)}</div>
-                                <div className={cn('text-right font-semibold', Math.abs(r.cgstDiff ?? 0) > 1 ? 'text-warning' : '')}>{fmt(r.cgstDiff ?? 0)}</div>
-                                <div className="text-muted-foreground">SGST</div>
-                                <div className="text-right">{fmt(pr!.sgst)} − {fmt(tb!.sgst)}</div>
-                                <div className={cn('text-right font-semibold', Math.abs(r.sgstDiff ?? 0) > 1 ? 'text-warning' : '')}>{fmt(r.sgstDiff ?? 0)}</div>
-                                <div className="text-muted-foreground">IGST</div>
-                                <div className="text-right">{fmt(pr!.igst)} − {fmt(tb!.igst)}</div>
-                                <div className={cn('text-right font-semibold', Math.abs(r.igstDiff ?? 0) > 1 ? 'text-warning' : '')}>{fmt(r.igstDiff ?? 0)}</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          diffVal !== undefined ? fmt(diffVal) : '—'
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[250px] truncate" title={r.remark}>
-                        {r.remark || '—'}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+        <div className="relative w-64 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--np-text3)] group-focus-within:text-[var(--np-sky)] transition-colors" />
+          <input
+            placeholder="Search records..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-8 bg-[var(--np-bg3)]/50 border border-[var(--np-border2)] rounded-md pl-9 pr-4 text-[11px] text-[var(--np-text)] focus:outline-none focus:border-[var(--np-sky)] transition-all"
+          />
         </div>
-        {filtered.length > 200 && (
-          <div className="p-3 text-center text-xs text-muted-foreground border-t bg-muted/20">
-            Showing 200 of {filtered.length} records. Export to see all.
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="np-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>GSTIN</th>
+              <th>Counterparty</th>
+              <th>Invoice (Books)</th>
+              <th>Invoice (Govt)</th>
+              <th className="text-right">Variance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center py-24 text-[var(--np-text3)] italic uppercase tracking-widest text-[10px]">
+                  No matching audit trails found
+                </td>
+              </tr>
+            ) : (
+              filtered.slice(0, 150).map((r, i) => {
+                const pr = r.prRecord;
+                const tb = r.twoBRecord;
+                const diffVal = r.gstDiff;
+                const diffColor = diffVal !== undefined && Math.abs(diffVal) > 1
+                  ? 'text-[var(--np-red)]'
+                  : diffVal !== undefined && diffVal === 0
+                    ? 'text-[var(--np-green)]'
+                    : 'text-[var(--np-text3)]';
+                const isMismatch = (r.status === 'Value Mismatch' || r.status === 'Mismatch') && pr && tb;
+                
+                return (
+                  <tr key={i} className={cn('group', getRowAccent(r.status))}>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td className="font-mono text-[11px] tracking-tight">{pr?.gstin || tb?.gstin || '—'}</td>
+                    <td className="max-w-[180px] truncate font-bold text-[12px] text-[var(--np-text)]">{pr?.supplierName || tb?.supplierName}</td>
+                    <td className="font-mono text-[11px]">{pr?.invoiceNo || '—'}</td>
+                    <td className="font-mono text-[11px]">{tb?.invoiceNo || '—'}</td>
+                    <td className={cn('text-right tabular-nums text-[12px] font-bold', diffColor)}>
+                      {isMismatch ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button className={cn('inline-flex items-center gap-1 underline decoration-dotted underline-offset-4', diffColor)}>
+                              {fmt(diffVal!)} <Info className="w-3 h-3 opacity-50" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" className="bg-[var(--np-bg2)] border-[var(--np-border)] p-4 shadow-2xl rounded-xl">
+                            <div className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest mb-3">Variance Analysis</div>
+                            <div className="grid grid-cols-3 gap-x-6 gap-y-2 text-[11px] tabular-nums">
+                              <span className="text-[var(--np-text3)]">Component</span>
+                              <span className="text-right text-[var(--np-text3)]">Books</span>
+                              <span className="text-right text-[var(--np-text3)]">Govt</span>
+                              
+                              <span className="text-white font-medium">IGST</span>
+                              <span className="text-right">{fmt(pr!.igst)}</span>
+                              <span className="text-right">{fmt(tb!.igst)}</span>
+                              
+                              <span className="text-white font-medium">CGST</span>
+                              <span className="text-right">{fmt(pr!.cgst)}</span>
+                              <span className="text-right">{fmt(tb!.cgst)}</span>
+                              
+                              <span className="text-white font-medium">SGST</span>
+                              <span className="text-right">{fmt(pr!.sgst)}</span>
+                              <span className="text-right">{fmt(tb!.sgst)}</span>
+                              
+                              <div className="col-span-3 h-[1px] bg-white/5 my-1" />
+                              <span className="text-[var(--np-sky)] font-bold">TOTAL</span>
+                              <span className="col-span-2 text-right text-[var(--np-sky)] font-bold">{fmt(diffVal!)}</span>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        diffVal !== undefined ? fmt(diffVal) : '—'
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      {filtered.length > 150 && (
+        <div className="p-4 text-center border-t border-[var(--np-border)] bg-[var(--np-bg3)]/30">
+          <p className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-[0.2em]">Viewing 150 of {filtered.length} audit entries • Export for full ledger</p>
+        </div>
+      )}
+    </div>
     </TooltipProvider>
   );
 }

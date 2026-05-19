@@ -1,13 +1,63 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
-const { autoUpdater } = require('electron-updater');
 const http = require('http');
 const fs = require('fs');
 
-// Auto-updater logging
-autoUpdater.logger = require('electron-log');
-autoUpdater.logger.transports.file.level = 'info';
-autoUpdater.autoInstallOnAppQuit = true;
+// Fix for white screen / "Not an electron process" errors
+if (process.env.ELECTRON_RUN_AS_NODE) {
+  console.log('Unsetting ELECTRON_RUN_AS_NODE to fix process initialization...');
+  delete process.env.ELECTRON_RUN_AS_NODE;
+}
+
+// Global reference for updater
+let autoUpdater = null;
+
+function initializeUpdater() {
+  try {
+    const { autoUpdater: updater } = require('electron-updater');
+    autoUpdater = updater;
+    autoUpdater.logger = require('electron-log');
+    autoUpdater.logger.transports.file.level = 'info';
+    autoUpdater.autoInstallOnAppQuit = true;
+    
+    // Auto-updater events
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err);
+    });
+
+    autoUpdater.on('update-available', (info) => {
+      sendUpdateStatus('update_available', info);
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Available',
+        message: `A new version (${info.version}) is available. It will be downloaded in the background.`,
+        buttons: ['OK']
+      });
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      sendUpdateStatus('update_downloaded', info);
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message: 'A new version has been downloaded. Restart the application to apply the update.',
+        buttons: ['Restart Now', 'Later']
+      }).then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+    });
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      sendUpdateStatus('download_progress', progressObj);
+    });
+
+    console.log('Auto-updater initialized successfully');
+  } catch (err) {
+    console.error('Failed to initialize auto-updater:', err);
+  }
+}
 
 let server = null;
 let serverPort = 8080;
@@ -78,7 +128,7 @@ function startLocalServer() {
         resolve({ server, port });
       });
       
-      server.on('error', (err) => {
+      server.once('error', (err) => {
         if (err.code === 'EADDRINUSE' && port < 8090) {
           tryStart(port + 1);
         } else {
@@ -151,51 +201,42 @@ async function createWindow() {
 app.whenReady().then(() => {
   createWindow();
   
+  // Initialize updater after window is ready
+  initializeUpdater();
+  
   // Check for updates after window opens
-  setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify();
-  }, 3000);
+  if (autoUpdater) {
+    setTimeout(() => {
+      try {
+        autoUpdater.checkForUpdatesAndNotify().catch(err => {
+          console.error('Error checking for updates:', err);
+        });
+      } catch (err) {
+        console.error('Synchronous error checking for updates:', err);
+      }
+    }, 3000);
+  }
 });
 
 ipcMain.handle('check_for_updates', () => {
-  return autoUpdater.checkForUpdates();
+  if (!autoUpdater) return null;
+  try {
+    return autoUpdater.checkForUpdates();
+  } catch (err) {
+    console.error('Error in manual update check:', err);
+    return null;
+  }
 });
 
 ipcMain.handle('download_update', () => {
+  if (!autoUpdater) return null;
   return autoUpdater.downloadUpdate();
 });
 
 ipcMain.handle('restart_app', () => {
-  autoUpdater.quitAndInstall();
-});
-
-// Auto-updater events
-autoUpdater.on('update-available', (info) => {
-  sendUpdateStatus('update_available', info);
-  dialog.showMessageBox({
-    type: 'info',
-    title: 'Update Available',
-    message: `A new version (${info.version}) is available. It will be downloaded in the background.`,
-    buttons: ['OK']
-  });
-});
-
-autoUpdater.on('update-downloaded', (info) => {
-  sendUpdateStatus('update_downloaded', info);
-  dialog.showMessageBox({
-    type: 'info',
-    title: 'Update Ready',
-    message: `Version ${info.version} has been downloaded. Restart the app to install it.`,
-    buttons: ['Restart Now', 'Later']
-  }).then((result) => {
-    if (result.response === 0) {
-      autoUpdater.quitAndInstall();
-    }
-  });
-});
-
-autoUpdater.on('download-progress', (progressObj) => {
-  sendUpdateStatus('download_progress', progressObj);
+  if (autoUpdater) {
+    autoUpdater.quitAndInstall();
+  }
 });
 
 app.on('window-all-closed', () => {

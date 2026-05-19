@@ -1,4 +1,3 @@
-import { Card, CardContent } from '@/components/ui/card';
 import { CheckCircle2, AlertTriangle, XCircle, HelpCircle, FileText, UserX, ShieldAlert, BarChart3 } from 'lucide-react';
 import type { ReconciliationSummary } from '@/lib/reconciliation';
 import { cn } from '@/lib/utils';
@@ -8,42 +7,60 @@ interface SummaryCardsProps {
 }
 
 export function SummaryCards({ summary }: SummaryCardsProps) {
+  const total = summary.total || 1; // prevent divide by zero
+  
   const cards = [
-    { label: 'Total Records', value: summary.total, icon: BarChart3, iconColor: 'text-primary', bgAccent: 'bg-primary/10', borderAccent: 'border-l-primary', glowColor: 'hover:shadow-primary/10' },
-    { label: 'Perfect Match', value: summary.perfectMatch, icon: CheckCircle2, iconColor: 'text-success', bgAccent: 'bg-success/10', borderAccent: 'border-l-success', glowColor: 'hover:shadow-success/10' },
-    { label: 'Value Mismatch', value: summary.valueMismatch, icon: AlertTriangle, iconColor: 'text-warning', bgAccent: 'bg-warning/10', borderAccent: 'border-l-warning', glowColor: 'hover:shadow-warning/10' },
-    { label: 'Not in 2B', value: summary.invoiceMissing, icon: XCircle, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
-    { label: 'Unmatched Vendor', value: summary.unmatchedVendor, icon: UserX, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
-    { label: 'Not in Books', value: summary.missingInPR, icon: FileText, iconColor: 'text-info', bgAccent: 'bg-info/10', borderAccent: 'border-l-info', glowColor: 'hover:shadow-info/10' },
-    { label: 'Name-Matched Vendors', value: summary.nameMatched, icon: HelpCircle, iconColor: 'text-warning', bgAccent: 'bg-warning/10', borderAccent: 'border-l-warning', glowColor: 'hover:shadow-warning/10' },
-    { label: 'Wrong GSTIN', value: summary.wrongGstin, icon: ShieldAlert, iconColor: 'text-destructive', bgAccent: 'bg-destructive/10', borderAccent: 'border-l-destructive', glowColor: 'hover:shadow-destructive/10' },
+    { label: 'Total Volume', value: summary.total, icon: BarChart3, color: 'var(--np-sky)', border: 'rgba(74,158,232,0.2)' },
+    { label: 'Perfect Match', value: summary.perfectMatch, icon: CheckCircle2, color: 'var(--np-green)', border: 'rgba(61,204,142,0.2)' },
+    { label: 'Value Mismatch', value: summary.valueMismatch, icon: AlertTriangle, color: '#F0A030', border: 'rgba(240,160,48,0.2)' },
+    { label: 'Not in 2B/Govt', value: summary.invoiceMissing, icon: XCircle, color: 'var(--np-red)', border: 'rgba(232,90,90,0.2)' },
+    { label: 'Unmatched Vendor', value: summary.unmatchedVendor, icon: UserX, color: 'var(--np-red)', border: 'rgba(232,90,90,0.2)' },
+    { label: 'Not in Books', value: summary.missingInPR, icon: FileText, color: '#A87EE8', border: 'rgba(168,126,232,0.2)' },
+    { label: 'Name Matches', value: (summary.nameMatched || 0), icon: HelpCircle, color: '#F0A030', border: 'rgba(240,160,48,0.2)' },
+    { label: 'Wrong GSTIN', value: (summary.wrongGstin || 0), icon: ShieldAlert, color: 'var(--np-red)', border: 'rgba(232,90,90,0.2)' },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-      {cards.map((c, i) => (
-        <Card
-          key={c.label}
-          className={cn(
-            'border-l-4 overflow-hidden transition-all duration-500 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] hover:-translate-y-1.5 hover:scale-[1.03] cursor-default group animate-in fade-in zoom-in-95 fill-mode-both bg-card/60 backdrop-blur-xl border-y border-r border-white/10',
-            c.borderAccent, c.glowColor
-          )}
-          style={{ animationDelay: `${i * 50}ms` }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110',
-                c.bgAccent
-              )}>
-                <c.icon className={cn('w-5 h-5', c.iconColor)} />
-              </div>
-              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{c.value}</p>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+      {cards.map((c, i) => {
+        const pct = (c.value / total) * 100;
+        return (
+          <div
+            key={c.label}
+            className="dash-card group silk-reveal h-full flex flex-col"
+            style={{ animationDelay: `${i * 100}ms` }}
+          >
+            <div className="dash-topbar" style={{ background: `linear-gradient(90deg, ${c.border} 0%, transparent 100%)` }}>
+              <span className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest">{c.label}</span>
+              <c.icon className="w-3.5 h-3.5" style={{ color: c.color }} />
             </div>
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{c.label}</p>
-          </CardContent>
-        </Card>
-      ))}
+            
+            <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
+              <div>
+                <div className="text-3xl font-extrabold text-white tracking-tight">
+                  {c.value.toLocaleString('en-IN')}
+                </div>
+                <div className="text-[10px] font-bold uppercase tracking-widest mt-1" style={{ color: c.color }}>
+                  {pct.toFixed(1)}% Contribution
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest">
+                  <span>Relative Volume</span>
+                  <span>{Math.round(pct)}%</span>
+                </div>
+                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full transition-all duration-1000 ease-[var(--np-silk)]" 
+                    style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: c.color }} 
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

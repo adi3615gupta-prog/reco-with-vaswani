@@ -1,0 +1,1 @@
+const { app, dialog } = require('electron'); try { const { autoUpdater } = require('electron-updater'); app.whenReady().then(() => { autoUpdater.checkForUpdatesAndNotify().catch(e => { console.error('Error:', e); app.quit(); }); }); } catch (e) { console.error('Error:', e); app.quit(); }

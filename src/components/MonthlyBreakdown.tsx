@@ -141,29 +141,25 @@ export function MonthlyBreakdown({ results, debitNotes, companyName }: MonthlyBr
     const igstDiff = m.prIgst - m.twoBIgst;
     const cgstDiff = m.prCgst - m.twoBCgst;
     const sgstDiff = m.prSgst - m.twoBSgst;
-    const rowCls = isTotal ? 'bg-muted/30 hover:bg-muted/30 font-semibold border-t-2 border-border' : 'hover:bg-muted/20';
+    const rowCls = isTotal ? 'bg-[var(--np-bg3)] font-bold border-t-2 border-[var(--np-sky)]/30' : '';
 
     return (
-      <TableRow key={isTotal ? 'total' : m.sortKey} className={rowCls}>
-        <TableCell className="font-medium text-sm sticky left-0 bg-inherit z-10">{isTotal ? 'Total' : m.month}</TableCell>
-        {/* IGST */}
-        <TableCell className={cCls}>{fmt(m.prIgst)}</TableCell>
-        <TableCell className={cCls}>{fmt(m.twoBIgst)}</TableCell>
-        <TableCell className={cn(cCls, 'font-semibold', diffColor(igstDiff))}>{fmt(igstDiff)}</TableCell>
-        {/* CGST */}
-        <TableCell className={cCls}>{fmt(m.prCgst)}</TableCell>
-        <TableCell className={cCls}>{fmt(m.twoBCgst)}</TableCell>
-        <TableCell className={cn(cCls, 'font-semibold', diffColor(cgstDiff))}>{fmt(cgstDiff)}</TableCell>
-        {/* SGST */}
-        <TableCell className={cCls}>{fmt(m.prSgst)}</TableCell>
-        <TableCell className={cCls}>{fmt(m.twoBSgst)}</TableCell>
-        <TableCell className={cn(cCls, 'font-semibold', diffColor(sgstDiff))}>{fmt(sgstDiff)}</TableCell>
-        {/* Counts */}
-        <TableCell className={cn('text-center tabular-nums text-xs', countColor(m.matched, 'good'))}>{m.matched}</TableCell>
-        <TableCell className={cn('text-center tabular-nums text-xs', countColor(m.mismatch, 'warn'))}>{m.mismatch || '—'}</TableCell>
-        <TableCell className={cn('text-center tabular-nums text-xs', countColor(m.missingIn2B, 'bad'))}>{m.missingIn2B || '—'}</TableCell>
-        <TableCell className={cn('text-center tabular-nums text-xs', countColor(m.missingInPR, 'info'))}>{m.missingInPR || '—'}</TableCell>
-      </TableRow>
+      <tr key={isTotal ? 'total' : m.sortKey} className={rowCls}>
+        <td className="font-bold text-white text-[12px]">{isTotal ? 'Grand Total' : m.month}</td>
+        <td className={cCls}>{fmt(m.prIgst)}</td>
+        <td className={cCls}>{fmt(m.twoBIgst)}</td>
+        <td className={cn(cCls, 'font-bold', diffColor(igstDiff))}>{fmt(igstDiff)}</td>
+        <td className={cCls}>{fmt(m.prCgst)}</td>
+        <td className={cCls}>{fmt(m.twoBCgst)}</td>
+        <td className={cn(cCls, 'font-bold', diffColor(cgstDiff))}>{fmt(cgstDiff)}</td>
+        <td className={cCls}>{fmt(m.prSgst)}</td>
+        <td className={cCls}>{fmt(m.twoBSgst)}</td>
+        <td className={cn(cCls, 'font-bold', diffColor(sgstDiff))}>{fmt(sgstDiff)}</td>
+        <td className={cn('text-center tabular-nums text-[12px]', countColor(m.matched, 'good'))}>{m.matched}</td>
+        <td className={cn('text-center tabular-nums text-[12px]', countColor(m.mismatch, 'warn'))}>{m.mismatch || '—'}</td>
+        <td className={cn('text-center tabular-nums text-[12px]', countColor(m.missingIn2B, 'bad'))}>{m.missingIn2B || '—'}</td>
+        <td className={cn('text-center tabular-nums text-[12px]', countColor(m.missingInPR, 'info'))}>{m.missingInPR || '—'}</td>
+      </tr>
     );
   };
 
@@ -199,49 +195,48 @@ export function MonthlyBreakdown({ results, debitNotes, companyName }: MonthlyBr
   };
 
   return (
-    <Card className="glass-card bg-card/60 backdrop-blur-xl border-white/10 shadow-2xl overflow-hidden">
-      <CardHeader className="pb-3 flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Month-wise Breakdown</CardTitle>
-        <Button onClick={handleExport} variant="outline" size="sm" className="gap-2">
-          <Download className="w-4 h-4" /> Export Report
-        </Button>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table>
-      <TableHeader>
-              {/* Group header row */}
-              <TableRow className="bg-muted/50 hover:bg-muted/50 border-b-0">
-                <TableHead rowSpan={2} className="text-[10px] uppercase tracking-wider font-semibold align-bottom border-r border-border">Month</TableHead>
-                <TableHead colSpan={3} className="text-center text-[10px] uppercase tracking-wider font-semibold border-r border-border text-orange-500 dark:text-orange-400">IGST</TableHead>
-                <TableHead colSpan={3} className="text-center text-[10px] uppercase tracking-wider font-semibold border-r border-border text-blue-500 dark:text-blue-400">CGST</TableHead>
-                <TableHead colSpan={3} className="text-center text-[10px] uppercase tracking-wider font-semibold border-r border-border text-violet-500 dark:text-violet-400">SGST</TableHead>
-                <TableHead colSpan={4} className="text-center text-[10px] uppercase tracking-wider font-semibold">Status Counts</TableHead>
-              </TableRow>
-              {/* Sub-header row */}
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className={hCls}>PR</TableHead>
-                <TableHead className={hCls}>2B</TableHead>
-                <TableHead className={cn(hCls, 'border-r border-border')}>Diff</TableHead>
-                <TableHead className={hCls}>PR</TableHead>
-                <TableHead className={hCls}>2B</TableHead>
-                <TableHead className={cn(hCls, 'border-r border-border')}>Diff</TableHead>
-                <TableHead className={hCls}>PR</TableHead>
-                <TableHead className={hCls}>2B</TableHead>
-                <TableHead className={cn(hCls, 'border-r border-border')}>Diff</TableHead>
-                <TableHead className="text-center text-[10px] uppercase tracking-wider font-semibold">✓</TableHead>
-                <TableHead className="text-center text-[10px] uppercase tracking-wider font-semibold">⚠</TableHead>
-                <TableHead className="text-center text-[10px] uppercase tracking-wider font-semibold">✗2B</TableHead>
-                <TableHead className="text-center text-[10px] uppercase tracking-wider font-semibold">✗PR</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {monthlyData.map((m) => renderRow(m))}
-              {renderRow(totalRow, true)}
-            </TableBody>
-          </Table>
+    <div className="dash-card overflow-hidden silk-reveal" style={{ animationDelay: '400ms' }}>
+      <div className="dash-topbar">
+        <div className="flex items-center gap-4">
+           <div className="dash-dots"><span style={{background:'#A87EE8'}}></span><span style={{background:'#7EC8F0'}}></span></div>
+           <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Monthly Variance Matrix</span>
         </div>
-      </CardContent>
-    </Card>
+        <button onClick={handleExport} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold">
+          <Download className="w-3.5 h-3.5" /> Full Report
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="np-table">
+          <thead>
+            <tr>
+              <th rowSpan={2} className="border-r border-[var(--np-border)]">Period</th>
+              <th colSpan={3} className="text-center border-r border-[var(--np-border)] text-[var(--np-sky)]">IGST Matrix</th>
+              <th colSpan={3} className="text-center border-r border-[var(--np-border)] text-[var(--np-green)]">CGST Matrix</th>
+              <th colSpan={3} className="text-center border-r border-[var(--np-border)] text-[#A87EE8]">SGST Matrix</th>
+              <th colSpan={4} className="text-center">Audit Counts</th>
+            </tr>
+            <tr>
+              <th className="text-right">Books</th>
+              <th className="text-right">Govt</th>
+              <th className="text-right border-r border-[var(--np-border)]">Diff</th>
+              <th className="text-right">Books</th>
+              <th className="text-right">Govt</th>
+              <th className="text-right border-r border-[var(--np-border)]">Diff</th>
+              <th className="text-right">Books</th>
+              <th className="text-right">Govt</th>
+              <th className="text-right border-r border-[var(--np-border)]">Diff</th>
+              <th className="text-center">✓</th>
+              <th className="text-center">⚠</th>
+              <th className="text-center">✗G</th>
+              <th className="text-center">✗B</th>
+            </tr>
+          </thead>
+          <tbody>
+            {monthlyData.map((m) => renderRow(m))}
+            {renderRow(totalRow, true)}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

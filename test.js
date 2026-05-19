@@ -1,0 +1,1 @@
+console.log(require('electron').app ? 'app exists' : 'app is missing'); process.exit(0);

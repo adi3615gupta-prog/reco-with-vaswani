@@ -1,5 +1,6 @@
 import type { ReconciliationResult } from './reconciliation';
 import { deriveItcEligibility, daysOldFrom, taxRatePct, posCompliance, rule37Warning, actionableRemark, isLateFiler } from './compliance';
+import { normalizePartyName } from './reconciliation';
 
 export interface PartyInvoiceRow {
   invoiceNoPR: string;
@@ -52,15 +53,6 @@ export interface PartySummary {
   overall: PartyOverallStatus;
 }
 
-function normalizePartyName(name: string): string {
-  if (!name) return '';
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '') // Strip ALL special characters and spaces first
-    .replace(/(MS|MR|MRS|SHREE|SHRI|PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISE|ENTERPRISES|TRADER|TRADERS|INDUSTRY|INDUSTRIES|AGENCY|AGENCIES|BROTHER|BROTHERS|BROS|SONS|ASSOCIATE|ASSOCIATES|AND)/g, '')
-    .trim();
-}
-
 function createParty(key: string, partyName: string, gstin: string): PartySummary {
   return {
     key,
@@ -99,32 +91,37 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
     const gstin = (rec?.gstin || '').toUpperCase().trim();
     const name = rec?.supplierName || '';
     const normalizedName = r.canonicalPartyName || normalizePartyName(name);
-    let key = gstin || normalizedName || `UNKNOWN-${++unknownIndex}`;
+    
+    let key = gstin ? gstin : (normalizedName ? `NAME::${normalizedName}` : `UNKNOWN::${++unknownIndex}`);
 
     if (!gstin && normalizedName && nameIndex.has(normalizedName)) {
       key = nameIndex.get(normalizedName)!;
     }
-
     if (gstin && normalizedName && nameIndex.has(normalizedName) && nameIndex.get(normalizedName) !== gstin) {
       const existingKey = nameIndex.get(normalizedName)!;
-      if (existingKey !== gstin) {
-        if (map.has(existingKey) && !map.has(gstin)) {
+      if (existingKey !== gstin && (existingKey.startsWith('NAME::') || existingKey.startsWith('UNKNOWN::'))) {
+        if (map.has(existingKey)) {
           const existingParty = map.get(existingKey)!;
-          const newParty = createParty(gstin, existingParty.partyName || name, gstin);
+          let newParty = map.get(gstin);
+          if (!newParty) {
+            newParty = createParty(gstin, existingParty.partyName || name, gstin);
+            map.set(gstin, newParty);
+          }
           newParty.invoices.push(...existingParty.invoices);
-          map.set(gstin, newParty);
+          if (!newParty.partyName && existingParty.partyName) newParty.partyName = existingParty.partyName;
           map.delete(existingKey);
-        } else if (map.has(existingKey) && map.has(gstin)) {
-          mergePartySummaries(map, existingKey, gstin);
         }
+        nameIndex.set(normalizedName, gstin);
       }
       key = gstin;
     }
 
     if (!map.has(key)) {
       map.set(key, createParty(key, name, gstin));
+      if (normalizedName && (!nameIndex.has(normalizedName) || nameIndex.get(normalizedName)!.startsWith('NAME::'))) {
+        nameIndex.set(normalizedName, key);
+      }
     }
-    if (normalizedName) nameIndex.set(normalizedName, key);
 
     const party = map.get(key)!;
     if (!party.partyName && name) party.partyName = name;
@@ -170,11 +167,20 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
         acc.igst2B += inv.igst2B;
         acc.cgst2B += inv.cgst2B;
         acc.sgst2B += inv.sgst2B;
-        if (inv.status === 'Perfect Match' || inv.status === 'Matched' || inv.status === 'Matched (Rounded)') acc.perfectMatch += 1;
-        if (inv.status === 'Value Mismatch' || inv.status === 'Mismatch') acc.valueMismatch += 1;
-        if (inv.status === 'Not in 2B' || inv.status === 'Missing in 2B') acc.invoiceMissing += 1;
-        if (inv.status === 'Unmatched Vendor') acc.unmatchedVendor += 1;
-        if (inv.status === 'Not in Books' || inv.status === 'Missing in PR') acc.missingInPR += 1;
+        
+        const status = inv.status;
+        if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)') {
+          acc.perfectMatch += 1;
+        } else if (status === 'Not in 2B' || status === 'Missing in 2B') {
+          acc.invoiceMissing += 1;
+        } else if (status === 'Unmatched Vendor') {
+          acc.unmatchedVendor += 1;
+        } else if (status === 'Not in Books' || status === 'Missing in PR') {
+          acc.missingInPR += 1;
+        } else {
+          // Value Mismatch, Wrong GSTIN, Name Mismatch, etc.
+          acc.valueMismatch += 1;
+        }
         return acc;
       },
       {

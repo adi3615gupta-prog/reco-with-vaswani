@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { Upload, FileSpreadsheet, Check } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 interface FileUploadZoneProps {
@@ -9,9 +8,11 @@ interface FileUploadZoneProps {
   onFileSelect: (file: File) => void;
   accepted?: string;
   fileName?: string;
+  className?: string;
+  compact?: boolean;
 }
 
-export function FileUploadZone({ label, description, onFileSelect, accepted = '.csv,.xlsx,.xls', fileName }: FileUploadZoneProps) {
+export function FileUploadZone({ label, description, onFileSelect, accepted = '.csv,.xlsx,.xls', fileName, className, compact }: FileUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -33,46 +34,48 @@ export function FileUploadZone({ label, description, onFileSelect, accepted = '.
   );
 
   return (
-    <Card
+    <div
       className={cn(
-        'border-2 border-dashed transition-all duration-500 cursor-pointer group hover:-translate-y-1',
+        'dash-card border-2 border-dashed transition-all duration-300 cursor-pointer group flex flex-col',
         isDragging
-          ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10 scale-[1.02]'
+          ? 'border-[var(--np-sky)] bg-[var(--np-sky)]/5 shadow-2xl shadow-[var(--np-sky)]/10 scale-[1.01]'
           : fileName
-            ? 'border-success/40 bg-success/5 hover:border-success/60'
-            : 'border-border hover:border-primary/40 hover:bg-primary/[0.02] hover:shadow-sm'
+            ? 'border-[var(--np-green)]/30 bg-[var(--np-green)]/5'
+            : 'border-[var(--np-border2)] hover:border-[var(--np-sky)]/30',
+        className
       )}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
-      <CardContent className="flex flex-col items-center justify-center py-10 px-4">
-        <label className="cursor-pointer text-center w-full">
+      <div className={cn("p-6 flex flex-col items-center justify-center text-center", compact ? "py-4" : "py-10")}>
+        <label className="cursor-pointer w-full">
           <input type="file" accept={accepted} onChange={handleChange} className="hidden" />
           {fileName ? (
-            <>
-              <div className="mx-auto w-14 h-14 rounded-xl bg-success/10 flex items-center justify-center mb-3 ring-1 ring-success/20">
-                <Check className="w-7 h-7 text-success animate-in zoom-in duration-300" />
+            <div className="space-y-3">
+              <div className="mx-auto w-10 h-10 rounded-lg bg-[var(--np-green)]/10 flex items-center justify-center ring-1 ring-[var(--np-green)]/20 shadow-[0_0_15px_rgba(61,204,142,0.1)]">
+                <Check className="w-5 h-5 text-[var(--np-green)]" />
               </div>
-              <p className="font-semibold text-foreground">{label}</p>
-              <div className="flex items-center gap-2 justify-center mt-2 text-sm text-muted-foreground">
-                <FileSpreadsheet className="w-4 h-4 text-success/70" />
-                <span className="truncate max-w-[200px]">{fileName}</span>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-[var(--np-text)] uppercase tracking-widest">{label}</p>
+                <p className="text-[10px] font-medium text-[var(--np-green)] truncate max-w-[180px] mx-auto opacity-80">{fileName}</p>
               </div>
-              <p className="text-xs text-muted-foreground/60 mt-2">Click to replace</p>
-            </>
+              {!compact && <p className="text-[9px] font-bold text-[var(--np-text3)] uppercase tracking-[0.2em] mt-2 group-hover:text-[var(--np-sky)] transition-colors">Click to replace</p>}
+            </div>
           ) : (
-            <>
-              <div className="mx-auto w-14 h-14 rounded-xl bg-primary/8 flex items-center justify-center mb-3 ring-1 ring-primary/10 group-hover:ring-primary/30 transition-all duration-500 group-hover:scale-110 group-hover:-translate-y-1 group-hover:shadow-lg shadow-primary/20">
-                <Upload className="w-7 h-7 text-primary/70 transition-all duration-500 group-hover:text-primary group-hover:animate-bounce" />
+            <div className={cn("space-y-4", compact ? "space-y-2" : "space-y-4")}>
+              <div className="mx-auto w-10 h-10 rounded-lg bg-[var(--np-sky)]/10 flex items-center justify-center ring-1 ring-[var(--np-sky)]/20 transition-all duration-300 group-hover:scale-110 group-hover:bg-[var(--np-sky)]/20 group-hover:shadow-[0_0_20px_rgba(74,158,232,0.2)]">
+                <Upload className="w-5 h-5 text-[var(--np-sky)]" />
               </div>
-              <p className="font-semibold text-foreground">{label}</p>
-              <p className="text-sm text-muted-foreground mt-1">{description}</p>
-              <p className="text-xs text-muted-foreground/60 mt-3">CSV or XLSX • Drag & drop or click</p>
-            </>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-[var(--np-text)] uppercase tracking-widest">{label}</p>
+                {!compact && <p className="text-[10px] font-medium text-[var(--np-text3)]">{description}</p>}
+              </div>
+              {!compact && <p className="text-[9px] font-bold text-[var(--np-text3)] uppercase tracking-[0.2em] opacity-40">Drag & Drop or Click</p>}
+            </div>
           )}
         </label>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

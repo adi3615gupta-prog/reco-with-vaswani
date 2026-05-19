@@ -1,0 +1,1 @@
+const { app } = require('electron'); const { EventEmitter } = require('events'); app.whenReady().then(() => { setTimeout(() => { const e = new EventEmitter(); e.emit('error', new Error('Test EventEmitter Error')); }, 1000); });
