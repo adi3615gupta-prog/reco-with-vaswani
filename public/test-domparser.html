@@ -1,0 +1,57 @@
+// Test if DOMParser handles LEDGSTREGDETAILS.LIST tag name correctly
+const xmlStr = `<ENVELOPE>
+<LEDGER NAME="WINDAIR GAS SOLUTIONS LLP">
+  <PARENT TYPE="String">SUNDRY CREDITORS FACTORY</PARENT>
+  <LANGUAGENAME.LIST>
+    <NAME.LIST TYPE="String">
+      <NAME>WINDAIR GAS SOLUTIONS LLP</NAME>
+    </NAME.LIST>
+  </LANGUAGENAME.LIST>
+  <LEDGSTREGDETAILS.LIST>
+    <APPLICABLEFROM TYPE="Date">20190401</APPLICABLEFROM>
+    <GSTREGISTRATIONTYPE TYPE="String">Regular</GSTREGISTRATIONTYPE>
+    <PLACEOFSUPPLY TYPE="String">Maharashtra</PLACEOFSUPPLY>
+    <GSTIN TYPE="String">27AATFW3545J1ZG</GSTIN>
+  </LEDGSTREGDETAILS.LIST>
+</LEDGER>
+</ENVELOPE>`;
+
+// Test with browser DOMParser
+const parser = new DOMParser();
+const doc = parser.parseFromString(xmlStr, 'text/xml');
+
+const errorNode = doc.querySelector('parsererror');
+if (errorNode) {
+    console.error("Parse error:", errorNode.textContent);
+}
+
+const ledger = doc.getElementsByTagName('LEDGER')[0];
+console.log('LEDGER found:', !!ledger);
+console.log('NAME attr:', ledger?.getAttribute('NAME'));
+
+// Test getElementsByTagName with dots
+const regDetails = doc.getElementsByTagName('LEDGSTREGDETAILS.LIST');
+console.log('LEDGSTREGDETAILS.LIST count:', regDetails.length);
+
+if (regDetails.length > 0) {
+    const gstin = regDetails[0].getElementsByTagName('GSTIN')[0];
+    console.log('GSTIN from LEDGSTREGDETAILS:', gstin?.textContent);
+} else {
+    console.log('Trying without dot...');
+    // Maybe DOMParser treats dots differently
+    const allTags = [];
+    const walk = (node) => {
+        if (node.tagName) allTags.push(node.tagName);
+        for (const child of node.children || []) walk(child);
+    };
+    walk(doc.documentElement);
+    console.log('All tags found:', allTags);
+}
+
+// Direct GSTIN lookup
+const directGstin = ledger?.getElementsByTagName('GSTIN')[0];
+console.log('Direct GSTIN:', directGstin?.textContent);
+
+// PartyGSTIN lookup
+const partyGstin = ledger?.getElementsByTagName('PARTYGSTIN')[0];
+console.log('PARTYGSTIN:', partyGstin?.textContent);

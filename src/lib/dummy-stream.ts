@@ -1,2 +1,2 @@
-export const Readable = null;
-export default {};
+export class Readable {}
+export default { Readable };

@@ -8,4 +8,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('check_for_updates'),
   downloadUpdate: () => ipcRenderer.invoke('download_update'),
   restartApp: () => ipcRenderer.invoke('restart_app'),
+  
+  // Tally Integration
+  fetchTallyData: (port, xmlPayload) => ipcRenderer.invoke('fetch_tally_data', { port, xmlPayload }),
+
+  // Generic Invoke for IPC handles
+  invoke: (channel, data) => ipcRenderer.invoke(channel, data)
 });

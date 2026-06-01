@@ -77,25 +77,43 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "pop-in": {
+          "0%": { opacity: "0", transform: "scale(0.95) translateY(10px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+        "tracking-in": {
+          "0%": { letterSpacing: "-0.5em", opacity: "0" },
+          "40%": { opacity: "0.6" },
+          "100%": { letterSpacing: "normal", opacity: "1" },
+        },
+        "signature": {
+          "0%": { opacity: "0", transform: "rotate(-5deg) scale(0.9)" },
+          "100%": { opacity: "1", transform: "rotate(-5deg) scale(1)" },
+        },
+        "slow-reveal": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "progress-fill": {
+          "0%": { width: "0%" },
+          "100%": { width: "100%" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pop-in": "pop-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        "tracking-in": "tracking-in 1.2s cubic-bezier(0.215, 0.610, 0.355, 1.000) both",
+        "signature": "signature 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        "slow-reveal": "slow-reveal 1.5s ease-out both",
+        "progress-fill": "progress-fill 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
       },
     },
   },

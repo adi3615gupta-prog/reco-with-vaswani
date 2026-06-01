@@ -36,42 +36,42 @@ export function FileUploadZone({ label, description, onFileSelect, accepted = '.
   return (
     <div
       className={cn(
-        'dash-card border-2 border-dashed transition-all duration-300 cursor-pointer group flex flex-col',
+        'rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer flex flex-col relative overflow-hidden group',
         isDragging
-          ? 'border-[var(--np-sky)] bg-[var(--np-sky)]/5 shadow-2xl shadow-[var(--np-sky)]/10 scale-[1.01]'
+          ? 'border-blue-500 bg-blue-500/10 shadow-2xl shadow-blue-500/20 scale-[1.02]'
           : fileName
-            ? 'border-[var(--np-green)]/30 bg-[var(--np-green)]/5'
-            : 'border-[var(--np-border2)] hover:border-[var(--np-sky)]/30',
+            ? 'border-emerald-500/40 bg-emerald-500/10 shadow-lg'
+            : 'border-slate-800 bg-slate-900/30 hover:bg-slate-800/50 hover:border-blue-500/40 shadow-sm',
         className
       )}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
-      <div className={cn("p-6 flex flex-col items-center justify-center text-center", compact ? "py-4" : "py-10")}>
-        <label className="cursor-pointer w-full">
+      <div className={cn("p-6 flex flex-col items-center justify-center text-center relative z-10 w-full h-full", compact ? "py-6" : "py-12")}>
+        <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center">
           <input type="file" accept={accepted} onChange={handleChange} className="hidden" />
           {fileName ? (
-            <div className="space-y-3">
-              <div className="mx-auto w-10 h-10 rounded-lg bg-[var(--np-green)]/10 flex items-center justify-center ring-1 ring-[var(--np-green)]/20 shadow-[0_0_15px_rgba(61,204,142,0.1)]">
-                <Check className="w-5 h-5 text-[var(--np-green)]" />
+            <div className="space-y-4 w-full px-4">
+              <div className="mx-auto w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.15)] group-hover:scale-110 transition-transform">
+                <Check className="w-6 h-6 text-emerald-400" />
               </div>
-              <div className="space-y-1">
-                <p className="text-[11px] font-bold text-[var(--np-text)] uppercase tracking-widest">{label}</p>
-                <p className="text-[10px] font-medium text-[var(--np-green)] truncate max-w-[180px] mx-auto opacity-80">{fileName}</p>
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold text-white/90">{label}</p>
+                <p className="text-xs font-medium text-emerald-400/90 truncate w-full">{fileName}</p>
               </div>
-              {!compact && <p className="text-[9px] font-bold text-[var(--np-text3)] uppercase tracking-[0.2em] mt-2 group-hover:text-[var(--np-sky)] transition-colors">Click to replace</p>}
+              {!compact && <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-3 group-hover:text-blue-400 transition-colors">Click to replace file</p>}
             </div>
           ) : (
-            <div className={cn("space-y-4", compact ? "space-y-2" : "space-y-4")}>
-              <div className="mx-auto w-10 h-10 rounded-lg bg-[var(--np-sky)]/10 flex items-center justify-center ring-1 ring-[var(--np-sky)]/20 transition-all duration-300 group-hover:scale-110 group-hover:bg-[var(--np-sky)]/20 group-hover:shadow-[0_0_20px_rgba(74,158,232,0.2)]">
-                <Upload className="w-5 h-5 text-[var(--np-sky)]" />
+            <div className={cn("space-y-5", compact ? "space-y-3" : "space-y-5")}>
+              <div className="mx-auto w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center border border-slate-700/50 transition-all duration-300 group-hover:scale-110 group-hover:bg-blue-500/20 group-hover:border-blue-500/30 group-hover:shadow-[0_0_25px_rgba(59,130,246,0.2)]">
+                <Upload className="w-6 h-6 text-slate-400 group-hover:text-blue-400 transition-colors" />
               </div>
               <div className="space-y-1">
-                <p className="text-[11px] font-bold text-[var(--np-text)] uppercase tracking-widest">{label}</p>
-                {!compact && <p className="text-[10px] font-medium text-[var(--np-text3)]">{description}</p>}
+                <p className="text-sm font-semibold text-white/90 group-hover:text-white transition-colors">{label}</p>
+                {!compact && <p className="text-xs font-medium text-slate-400 max-w-[200px] mx-auto leading-relaxed">{description}</p>}
               </div>
-              {!compact && <p className="text-[9px] font-bold text-[var(--np-text3)] uppercase tracking-[0.2em] opacity-40">Drag & Drop or Click</p>}
+              {!compact && <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest opacity-60">Drag & Drop or Click</p>}
             </div>
           )}
         </label>

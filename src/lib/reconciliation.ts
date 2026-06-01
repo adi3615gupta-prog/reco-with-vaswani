@@ -26,6 +26,7 @@ export type MatchStatus =
   | 'Not in 2B'
   | 'Unmatched Vendor'
   | 'Not in Books'
+  | 'Tax Type Error'
   // Legacy / sub-case statuses (kept for compatibility with existing UI tabs):
   | 'Matched'
   | 'Matched (Rounded)'
@@ -47,7 +48,19 @@ export interface ReconciliationResult {
   igstDiff?: number;
   taxableDiff?: number;
   remark?: string;
-  matchMethod?: 'GSTIN' | 'Name (Exact)' | 'Name (Fuzzy)';
+  matchMethod?: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)';
+}
+
+export interface GstinIssue {
+  id: string;
+  supplierName: string;
+  source: 'PR' | '2B';
+  originalGstin: string;
+  currentGstin: string;
+  suggestedGstin?: string;
+  suggestedName?: string;
+  issueType: string;
+  relatedParties?: string[];
 }
 
 export interface ReconciliationSummary {
@@ -57,6 +70,7 @@ export interface ReconciliationSummary {
   invoiceMissing: number;
   unmatchedVendor: number;
   missingInPR: number;
+  taxTypeError: number;
   // Back-compat aliases used by existing UI:
   matched: number;
   matchedRounded: number;
@@ -159,6 +173,8 @@ export function reconcile(
   const twoBByGstin = new Map<string, number[]>();
   // Group 2B records by Exact Normalized Name for Step-2 lookup
   const twoBByNormName = new Map<string, number[]>();
+  // Group 2B records by PAN (Middle 10 chars of GSTIN) for cross-state matching
+  const twoBByPan = new Map<string, number[]>();
   
   for (let j = 0; j < twoB.length; j++) {
     const g = twoB[j].gstin;
@@ -166,6 +182,12 @@ export function reconcile(
     if (!twoBByGstin.has(g)) twoBByGstin.set(g, []);
     twoBByGstin.get(g)!.push(j);
     
+    if (g.length >= 14) {
+      const pan = g.slice(2, 12);
+      if (!twoBByPan.has(pan)) twoBByPan.set(pan, []);
+      twoBByPan.get(pan)!.push(j);
+    }
+
     const norm = normalizePartyName(twoB[j].supplierName);
     if (norm) {
       if (!twoBByNormName.has(norm)) twoBByNormName.set(norm, []);
@@ -210,16 +232,39 @@ export function reconcile(
     const bookName = isOut ? 'Sales' : 'PR';
 
     const pNorm = normalizePartyName(p.supplierName);
+    const pPan = p.gstin && p.gstin.length >= 14 ? p.gstin.slice(2, 12) : null;
 
     if (p.gstin && twoBByGstin.has(p.gstin)) {
       candidateIdxs = twoBByGstin.get(p.gstin)!;
       matchMethod = 'GSTIN';
+    } else if (pPan && twoBByPan.has(pPan)) {
+      candidateIdxs = twoBByPan.get(pPan)!;
+      matchMethod = 'PAN';
+      vendorRemark = `Cross-State / PAN Match. ${bookName} GSTIN: "${p.gstin}" vs ${govtName} GSTIN: "${twoB[candidateIdxs[0]].gstin}"`;
     } else if (pNorm && twoBByNormName.has(pNorm)) {
       candidateIdxs = twoBByNormName.get(pNorm)!;
       matchMethod = 'Name (Exact)';
       vendorRemark = `${partyType} matched by exact name (GSTIN missing/mismatch). ${bookName} GSTIN: "${p.gstin || '—'}"`;
     } else {
-      if (pNorm) {
+      // Try substring match before falling back to full fuzzy Fuse.js match
+      let foundSubstring = false;
+      if (pNorm && pNorm.length >= 5) {
+        const tempCandidates: number[] = [];
+        for (let j = 0; j < twoB.length; j++) {
+          const tNorm = normalizePartyName(twoB[j].supplierName);
+          if (tNorm && tNorm.length >= 5 && (pNorm.includes(tNorm) || tNorm.includes(pNorm))) {
+            tempCandidates.push(j);
+            foundSubstring = true;
+          }
+        }
+        if (foundSubstring && tempCandidates.length > 0) {
+          candidateIdxs = Array.from(new Set(tempCandidates));
+          matchMethod = 'Name (Fuzzy)';
+          vendorRemark = `${partyType} matched by name substring fallback (GSTIN missing/mismatch). ${bookName} GSTIN: "${p.gstin || '—'}"`;
+        }
+      }
+
+      if (!foundSubstring && pNorm && pNorm.length >= 4) {
         const hits = fuse.search(pNorm).filter((h) => (h.score ?? 1) <= 0.4);
         if (hits.length > 0) {
           candidateIdxs = hits.flatMap((h) => h.item.indices);
@@ -261,7 +306,10 @@ export function reconcile(
           pInv.startsWith(tInv) || pInv.endsWith(tInv) || 
           tInv.startsWith(pInv) || tInv.endsWith(pInv) ||
           (pNum && tNum && (pNum === tNum || pNum.startsWith(tNum) || pNum.endsWith(tNum) || tNum.startsWith(pNum) || tNum.endsWith(pNum)));
-        if (!isPartial) return false;
+        
+        // If there's any partial string or numeric match, link the invoices.
+        // Tax values will be verified in Step 3, triggering "Value Mismatch" if they don't match.
+        if (isPartial) return true;
         
         return Math.abs(p.igst - t.igst) <= tolerance && 
                Math.abs(p.cgst - t.cgst) <= tolerance && 
@@ -337,10 +385,14 @@ export function reconcile(
     const within =
       Math.abs(cgstDiff) <= tolerance &&
       Math.abs(sgstDiff) <= tolerance &&
-      Math.abs(igstDiff) <= tolerance &&
-      (taxableDiff === undefined || Math.abs(taxableDiff) <= tolerance);
+      Math.abs(igstDiff) <= tolerance;
 
     let status: MatchStatus = within ? 'Perfect Match' : 'Value Mismatch';
+
+    // Check for Tax Type Error (Mixed IGST with CGST/SGST)
+    if ((p.igst > 0 && (p.cgst > 0 || p.sgst > 0)) || (t.igst > 0 && (t.cgst > 0 || t.sgst > 0))) {
+      status = 'Tax Type Error';
+    }
 
     // Date-bypass: if amounts/invoice/GSTIN are a perfect match but invoice
     // dates differ, mark as 'Matched (Diff Date)' instead of splitting.
@@ -356,6 +408,10 @@ export function reconcile(
     let extraRemark = vendorRemark;
     if ((matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
       extraRemark = `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
+    }
+
+    if (within && taxableDiff !== undefined && Math.abs(taxableDiff) > tolerance) {
+      extraRemark = extraRemark ? `${extraRemark} | Taxable Value differs by ₹${taxableDiff}` : `Taxable Value differs by ₹${taxableDiff}`;
     }
 
     results.push({
@@ -466,10 +522,11 @@ export function getSummary(results: ReconciliationResult[]): ReconciliationSumma
   return {
     total: results.length,
     perfectMatch,
-    valueMismatch,
-    invoiceMissing,
-    unmatchedVendor,
-    missingInPR,
+    valueMismatch: results.filter((r) => r.status === 'Value Mismatch').length,
+    invoiceMissing: results.filter((r) => r.status === 'Not in 2B').length,
+    unmatchedVendor: results.filter((r) => r.status === 'Unmatched Vendor').length,
+    missingInPR: results.filter((r) => r.status === 'Missing in PR' || r.status === 'Not in Books').length,
+    taxTypeError: results.filter((r) => r.status === 'Tax Type Error').length,
     // Back-compat aliases for existing UI tabs / cards
     matched: perfectMatch,
     matchedRounded: 0,
@@ -480,4 +537,133 @@ export function getSummary(results: ReconciliationResult[]): ReconciliationSumma
     wrongGstin: results.filter((r) => r.remark?.startsWith('Wrong GSTIN')).length,
     nameMismatch: 0,
   };
+}
+
+export function detectGstinIssues(results: ReconciliationResult[]): { suggested: GstinIssue[]; conflicts: GstinIssue[] } {
+  const suggested: GstinIssue[] = [];
+  const conflicts: GstinIssue[] = [];
+  const seenSugg = new Set<string>();
+
+  // 1. Group records by normalized party name to catch missing/wrong GSTINs across unmatched invoices
+  const partyRecords = new Map<string, { prGstins: Set<string>; tbGstins: Set<string>; prNames: Set<string>; tbNames: Set<string>; }>();
+  for (const r of results) {
+    const pr = r.prRecord;
+    const tb = r.twoBRecord;
+    const prName = pr?.supplierName || '';
+    const tbName = tb?.supplierName || '';
+    const name = prName || tbName;
+    if (!name) continue;
+    const norm = normalizePartyName(name);
+    if (!partyRecords.has(norm)) {
+      partyRecords.set(norm, { prGstins: new Set(), tbGstins: new Set(), prNames: new Set(), tbNames: new Set() });
+    }
+    const grp = partyRecords.get(norm)!;
+    if (pr) {
+      if (pr.gstin) grp.prGstins.add(pr.gstin);
+      if (prName) grp.prNames.add(prName);
+    }
+    if (tb) {
+      if (tb.gstin) grp.tbGstins.add(tb.gstin);
+      if (tbName) grp.tbNames.add(tbName);
+    }
+  }
+
+  for (const [norm, grp] of partyRecords.entries()) {
+    const partyNameBooks = [...grp.prNames][0] || [...grp.tbNames][0] || '';
+    const partyNameGovt = [...grp.tbNames][0] || [...grp.prNames][0] || '';
+
+    if (grp.tbGstins.size > 0) {
+      // If there are no GSTINs in books, it's missing
+      if (grp.prGstins.size === 0) {
+        for (const gstin2B of grp.tbGstins) {
+          const key = `${partyNameBooks}::${gstin2B}`;
+          if (!seenSugg.has(key)) {
+            seenSugg.add(key);
+            suggested.push({
+              id: key,
+              supplierName: partyNameBooks,
+              source: 'PR',
+              originalGstin: '',
+              currentGstin: '',
+              suggestedGstin: gstin2B,
+              suggestedName: partyNameGovt,
+              issueType: 'Missing GSTIN',
+            });
+          }
+        }
+      } else {
+        // A GSTIN in Books is only wrong if it is NOT present in the GSTR-2B GSTINs for this party
+        for (const gstinPR of grp.prGstins) {
+          if (!grp.tbGstins.has(gstinPR)) {
+            // Find the best GSTR-2B GSTIN to suggest: preferably one with the same PAN
+            const panPR = gstinPR.length >= 12 ? gstinPR.slice(2, 12) : '';
+            let bestGstin = [...grp.tbGstins][0];
+            if (panPR) {
+              const matchingPan = [...grp.tbGstins].find((g) => g.length >= 12 && g.slice(2, 12) === panPR);
+              if (matchingPan) {
+                bestGstin = matchingPan;
+              }
+            }
+
+            const key = `${partyNameBooks}::${bestGstin}::from::${gstinPR}`;
+            if (!seenSugg.has(key)) {
+              seenSugg.add(key);
+              suggested.push({
+                id: key,
+                supplierName: partyNameBooks,
+                source: 'PR',
+                originalGstin: gstinPR,
+                currentGstin: gstinPR,
+                suggestedGstin: bestGstin,
+                suggestedName: partyNameGovt,
+                issueType: 'Wrong GSTIN',
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Conflicts: Same GSTIN mapped to multiple party names
+  const gstinMap = new Map<string, { prNames: Set<string>; tbNames: Set<string>; }>();
+  for (const r of results) {
+    const pr = r.prRecord;
+    const tb = r.twoBRecord;
+    const gstinPR = pr?.gstin || '';
+    const gstin2B = tb?.gstin || '';
+    const prName = pr?.supplierName || '';
+    const tbName = tb?.supplierName || '';
+
+    const addTo = (gst: string, src: 'pr' | 'tb', name: string) => {
+      if (!gst) return;
+      if (!gstinMap.has(gst)) gstinMap.set(gst, { prNames: new Set(), tbNames: new Set() });
+      if (name) gstinMap.get(gst)![`${src}Names`].add(name);
+    };
+
+    addTo(gstinPR, 'pr', prName);
+    addTo(gstin2B, 'tb', tbName);
+  }
+
+  const setsEqual = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every(x => b.has(x));
+
+  for (const [gstin, info] of gstinMap.entries()) {
+    const prCount = info.prNames.size;
+    const tbCount = info.tbNames.size;
+    const needsReview = prCount > 1 || tbCount > 1 || (prCount > 0 && tbCount > 0 && !setsEqual(info.prNames, info.tbNames));
+    
+    if (needsReview) {
+      conflicts.push({
+        id: `conflict::${gstin}`,
+        supplierName: [...info.prNames, ...info.tbNames].join(' | '),
+        source: 'PR',
+        originalGstin: gstin,
+        currentGstin: gstin,
+        issueType: 'Duplicate GSTIN',
+        relatedParties: [...new Set([...info.prNames, ...info.tbNames])],
+      });
+    }
+  }
+
+  return { suggested, conflicts };
 }

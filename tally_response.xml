@@ -1,0 +1,426 @@
+<ENVELOPE>
+ <GROUP>
+  <NAME>194C TDS Contractor</NAME>
+  <PARENT>TDS</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>194ITDS ON JCB</NAME>
+  <PARENT>TDS</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>194J TDS ON PROFESSIONAL FEES</NAME>
+  <PARENT>TDS</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>1 EMPLOYEE BENEFITS</NAME>
+  <PARENT>Indirect Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>2 FINANCE COST</NAME>
+  <PARENT>Indirect Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>3 DEPRECIATION</NAME>
+  <PARENT>Indirect Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>4 OTHER EXP</NAME>
+  <PARENT>Indirect Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ADVANCES TO EMPLOYEES</NAME>
+  <PARENT>Loans &amp; Advances (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ADVERTISEMENT AND SALES PROMOTION</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>AIR CONDISIONER</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Bank Accounts</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Bank OD A/c</NAME>
+  <PARENT>Loans (Liability)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>B. G. Shirke Construction Technology Pvt. Ltd.</NAME>
+  <PARENT>Sundry Debtors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Branch / Divisions</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Capital Account</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Cash-in-Hand</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>CGST</NAME>
+  <PARENT>ITC</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>CHAIR</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>COMPUTERS</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Consumable Purchase</NAME>
+  <PARENT>Purchase Accounts</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>CONSUMABLE SITE EXP</NAME>
+  <PARENT>SITE EXPENSES</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Current Assets</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Current Liabilities</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Deposits (Asset)</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Direct Expenses</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Direct Incomes</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Duties and Taxes</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ELECTRICAL FITTINGS</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ELECTRICITY EXPENSES</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ESIC</NAME>
+  <PARENT>Provisions</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Fixed Assets</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>FIXED ASSETS - OTHER</NAME>
+  <PARENT>PLANT &amp; MACHINERY</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>FIXED DEPOSITS - AXIS BANK</NAME>
+  <PARENT>Deposits (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>FURNITURE &amp; FIXTURES</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>GST</NAME>
+  <PARENT>Duties and Taxes</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>IGST</NAME>
+  <PARENT>ITC</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>IGST- PUR</NAME>
+  <PARENT>ITC</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Income Tax A/c</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Indirect Expenses</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Indirect Incomes</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>INSURANCE AND LIC EXP</NAME>
+  <PARENT>OFFICE &amp; ADMIN EXPENSES</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Investments</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ITC</NAME>
+  <PARENT>GST</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>KOHINOOR SHELTER 112 &amp; 113</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Loans &amp; Advances (Asset)</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Loans (Liability)</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>LW CESS AND TAX INT AND EXP</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Misc. Expenses (ASSET)</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>OFFICE &amp; ADMIN EXPENSES</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>OFFICE EQUIPMENTS</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>OUTPU GST</NAME>
+  <PARENT>GST</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>PETROL DIESEL AND TRAVELLING EXP</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>PLANT &amp; MACHINERY</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>PRINTING AND STATIONERY</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>PROFESSIONAL AND CONSULTING FEES</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Provident Fund</NAME>
+  <PARENT>Provisions</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Provisions</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>PT</NAME>
+  <PARENT>Duties and Taxes</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Purchase Accounts</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Purchase - Labour Charges</NAME>
+  <PARENT>Direct Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>RECONCILE - INPUT GST</NAME>
+  <PARENT>ITC</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Remuneration Payable Director</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Rent Office and Factory</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>RENT PROVISION</NAME>
+  <PARENT>Provisions</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>REPAIR AND MAINTENANCE</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>RESERVES AND SURPLUS</NAME>
+  <PARENT>Reserves &amp; Surplus</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Reserves &amp; Surplus</NAME>
+  <PARENT>Capital Account</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Retention Payable Vendors</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>RETENTION RECEIVABLE DEBTORS</NAME>
+  <PARENT>Loans &amp; Advances (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>ROOM RENT - SITE EXP</NAME>
+  <PARENT>SITE EXPENSES</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>RTO TAX CHALLAN AND INT</NAME>
+  <PARENT>Rent Office and Factory</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SALARY AND WAGES EXP</NAME>
+  <PARENT>1 EMPLOYEE BENEFITS</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Salary Payable Employee</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Salary Provision</NAME>
+  <PARENT>Provisions</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Sales Accounts</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Secured Loans</NAME>
+  <PARENT>Loans (Liability)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SECURITY DEPOSITS - OTHER</NAME>
+  <PARENT>Deposits (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SGST</NAME>
+  <PARENT>ITC</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SHARE CAPITAL</NAME>
+  <PARENT>Capital Account</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SITE EXPENSES</NAME>
+  <PARENT>Direct Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Site Expenses Employees</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Site Exp Labour Diesel Hire Charges</NAME>
+  <PARENT>Direct Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Software Intangible Assets</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>STAFF WELFARE EXPENSES</NAME>
+  <PARENT>1 EMPLOYEE BENEFITS</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Stock-in-Hand</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDIOTRS REFUND REQ</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Sundry Creditors</NAME>
+  <PARENT>Current Liabilities</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDITORS CIVIL</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDITORS FACTORY</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDITORS GARDEN</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDITORS OFFICE</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>SUNDRY CREDITORS PEB</NAME>
+  <PARENT>Sundry Creditors</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Sundry Debtors</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Suspense A/c</NAME>
+  <PARENT>&#4; Primary</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TDS</NAME>
+  <PARENT>Duties and Taxes</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TDS Receivable</NAME>
+  <PARENT>Current Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TELEPHONE AND INTERNET EXP</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TENDER DEPOSITE</NAME>
+  <PARENT>Deposits (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TENDER EMD - DEPOSITS</NAME>
+  <PARENT>Deposits (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TENDER EXPENSES</NAME>
+  <PARENT>4 OTHER EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TENDER - SECURITY DEPOSITS</NAME>
+  <PARENT>Deposits (Asset)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TESTING EQUIPMENT</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TRANSPORT CHARGES</NAME>
+  <PARENT>Direct Expenses</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>TRAVELLING EXPNESES</NAME>
+  <PARENT>PETROL DIESEL AND TRAVELLING EXP</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>Unsecured Loans</NAME>
+  <PARENT>Loans (Liability)</PARENT>
+ </GROUP>
+ <GROUP>
+  <NAME>VEHICLES</NAME>
+  <PARENT>Fixed Assets</PARENT>
+ </GROUP>
+</ENVELOPE>

@@ -1,6 +1,7 @@
 import { CheckCircle2, AlertTriangle, XCircle, HelpCircle, FileText, UserX, ShieldAlert, BarChart3 } from 'lucide-react';
 import type { ReconciliationSummary } from '@/lib/reconciliation';
 import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
 
 interface SummaryCardsProps {
   summary: ReconciliationSummary;
@@ -21,14 +22,26 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+    <motion.div 
+      initial="hidden"
+      animate="show"
+      variants={{
+        hidden: { opacity: 0 },
+        show: { opacity: 1, transition: { staggerChildren: 0.1 } }
+      }}
+      className="grid grid-cols-2 lg:grid-cols-4 gap-6"
+    >
       {cards.map((c, i) => {
         const pct = (c.value / total) * 100;
         return (
-          <div
+          <motion.div
             key={c.label}
-            className="dash-card group silk-reveal h-full flex flex-col"
-            style={{ animationDelay: `${i * 100}ms` }}
+            variants={{
+              hidden: { opacity: 0, scale: 0.9, y: 20 },
+              show: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+            }}
+            whileHover={{ scale: 1.05, y: -5, transition: { type: 'spring', stiffness: 400, damping: 10 } }}
+            className="dash-card group h-full flex flex-col shadow-lg cursor-default"
           >
             <div className="dash-topbar" style={{ background: `linear-gradient(90deg, ${c.border} 0%, transparent 100%)` }}>
               <span className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest">{c.label}</span>
@@ -58,9 +71,9 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         );
       })}
-    </div>
+    </motion.div>
   );
 }

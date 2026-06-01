@@ -1,12 +1,13 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.4.1",
+  "version": "1.4.33",
   "description": "RECO WITH VASWANI - Electron Application",
   "author": "adi3615gupta-prog",
   "main": "main.cjs",
   "type": "module",
   "scripts": {
+    "start": "concurrently \"node server.js\" \"vite --host\"",
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
@@ -14,8 +15,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:exe": "vite build && electron-builder -w",
-    "release": "vite build && electron-builder --publish always",
+    "obfuscate": "node obfuscate.cjs",
+    "build:exe": "npm run obfuscate && vite build && electron-builder -w -p always",
+    "release": "npm run obfuscate && vite build && electron-builder --publish always",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\""
   },
@@ -47,20 +49,29 @@
     "@radix-ui/react-toast": "^1.2.14",
     "@radix-ui/react-toggle": "^1.1.9",
     "@radix-ui/react-toggle-group": "^1.1.10",
-    "@radix-ui/react-tooltip": "^1.2.7",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.83.0",
+    "bcryptjs": "^2.4.3",
+    "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "cors": "^2.8.6",
     "date-fns": "^3.6.0",
     "electron-log": "^5.0.1",
-    "electron-updater": "^6.1.7",
+    "electron-updater": "^6.8.3",
     "embla-carousel-react": "^8.6.0",
+    "express": "^5.2.1",
+    "firebase": "^12.14.0",
+    "framer-motion": "^12.40.0",
     "fuse.js": "^7.3.0",
     "input-otp": "^1.4.2",
+    "javascript-obfuscator": "^5.4.3",
+    "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "playwright": "^1.60.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -69,6 +80,7 @@
     "react-router-dom": "^6.30.1",
     "recharts": "^2.15.4",
     "sonner": "^1.7.4",
+    "sqlite3": "^6.0.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
@@ -86,7 +98,8 @@
       "dist/",
       "main.cjs",
       "preload.js",
-      "public/"
+      "public/",
+      "server.obfuscated.js"
     ],
     "win": {
       "target": "nsis",
@@ -95,15 +108,16 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "adi3615gupta-prog",
-      "repo": "reco-with-vaswani",
-      "releaseType": "release",
-      "vPrefixedTagName": true
-    }
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "adi3615gupta-prog",
+        "repo": "reco-with-vaswani"
+      }
+    ]
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -116,8 +130,8 @@
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.2",
-    "electron": "^28.1.0",
-    "electron-builder": "^24.9.1",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",

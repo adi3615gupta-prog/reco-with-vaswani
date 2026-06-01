@@ -30,6 +30,8 @@ export type PartyOverallStatus = 'All Matched' | 'Has Mismatches' | 'Has Missing
 export interface PartySummary {
   key: string;
   partyName: string;
+  partyNamePR: string;
+  partyName2B: string;
   gstin: string;
   invoices: PartyInvoiceRow[];
   totals: {
@@ -53,10 +55,12 @@ export interface PartySummary {
   overall: PartyOverallStatus;
 }
 
-function createParty(key: string, partyName: string, gstin: string): PartySummary {
+function createParty(key: string, partyName: string, gstin: string, partyNamePR = '', partyName2B = ''): PartySummary {
   return {
     key,
     partyName,
+    partyNamePR,
+    partyName2B,
     gstin,
     invoices: [],
     totals: {
@@ -104,11 +108,13 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
           const existingParty = map.get(existingKey)!;
           let newParty = map.get(gstin);
           if (!newParty) {
-            newParty = createParty(gstin, existingParty.partyName || name, gstin);
+            newParty = createParty(gstin, existingParty.partyName || name, gstin, existingParty.partyNamePR, existingParty.partyName2B);
             map.set(gstin, newParty);
           }
           newParty.invoices.push(...existingParty.invoices);
           if (!newParty.partyName && existingParty.partyName) newParty.partyName = existingParty.partyName;
+          if (!newParty.partyNamePR && existingParty.partyNamePR) newParty.partyNamePR = existingParty.partyNamePR;
+          if (!newParty.partyName2B && existingParty.partyName2B) newParty.partyName2B = existingParty.partyName2B;
           map.delete(existingKey);
         }
         nameIndex.set(normalizedName, gstin);
@@ -116,8 +122,13 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
       key = gstin;
     }
 
+    const pr = r.prRecord;
+    const tb = r.twoBRecord;
+    const prName = pr?.supplierName || '';
+    const tbName = tb?.supplierName || '';
+
     if (!map.has(key)) {
-      map.set(key, createParty(key, name, gstin));
+      map.set(key, createParty(key, name, gstin, prName, tbName));
       if (normalizedName && (!nameIndex.has(normalizedName) || nameIndex.get(normalizedName)!.startsWith('NAME::'))) {
         nameIndex.set(normalizedName, key);
       }
@@ -125,10 +136,10 @@ export function aggregateByParty(results: ReconciliationResult[], mode: 'input' 
 
     const party = map.get(key)!;
     if (!party.partyName && name) party.partyName = name;
+    if (!party.partyNamePR && prName) party.partyNamePR = prName;
+    if (!party.partyName2B && tbName) party.partyName2B = tbName;
     if (!party.gstin && gstin) party.gstin = gstin;
 
-    const pr = r.prRecord;
-    const tb = r.twoBRecord;
     const baseRec = pr || tb;
     const days = daysOldFrom(pr?.invoiceDate || tb?.invoiceDate);
     const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);

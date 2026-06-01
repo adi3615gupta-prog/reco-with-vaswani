@@ -30,6 +30,10 @@ function getExportData(results: ReconciliationResult[]) {
   return results.map((r) => {
     const pr = r.prRecord;
     const tb = r.twoBRecord;
+    const taxablePR = pr?.taxableValue ?? tb?.taxableValue;
+    const taxable2B = tb?.taxableValue ?? pr?.taxableValue;
+    const invoiceValuePR = taxablePR !== undefined ? taxablePR + (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0) : '';
+    const invoiceValue2B = taxable2B !== undefined ? taxable2B + (tb?.igst ?? pr?.igst ?? 0) + (tb?.cgst ?? pr?.cgst ?? 0) + (tb?.sgst ?? pr?.sgst ?? 0) : '';
     return {
       Status: r.status,
       'GSTIN (PR)': pr?.gstin || '',
@@ -40,6 +44,10 @@ function getExportData(results: ReconciliationResult[]) {
       'Invoice No (2B)': tb?.invoiceNo || '',
       'Invoice Date (PR)': pr?.invoiceDate || '',
       'Invoice Date (2B)': tb?.invoiceDate || '',
+      'Taxable Value (PR)': taxablePR ?? '',
+      'Taxable Value (2B)': taxable2B ?? '',
+      'Invoice Value (PR)': invoiceValuePR,
+      'Invoice Value (2B)': invoiceValue2B,
       'IGST (PR)': pr?.igst ?? '',
       'IGST (2B)': tb?.igst ?? '',
       'CGST (PR)': pr?.cgst ?? '',
@@ -52,6 +60,8 @@ function getExportData(results: ReconciliationResult[]) {
   });
 }
 
+export type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'taxTypeError';
+
 export function ResultsCategoryTabs({ results, summary, companyName, mode = 'input' }: ResultsCategoryTabsProps) {
   const [active, setActive] = useState<CategoryKey>('all');
 
@@ -62,6 +72,7 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     { key: 'invoiceMissing', label: 'Not in 2B/Govt', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-[var(--np-red)]', activeColor: 'active' },
     { key: 'unmatchedVendor', label: 'Unmatched Vendor', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-[var(--np-red)]', activeColor: 'active' },
     { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-[#A87EE8]', activeColor: 'active' },
+    { key: 'taxTypeError', label: 'Tax Type Error', icon: AlertTriangle, statuses: ['Tax Type Error'], count: summary.taxTypeError || 0, color: 'text-orange-500', activeColor: 'active' },
   ];
 
   const filteredResults = active === 'all'

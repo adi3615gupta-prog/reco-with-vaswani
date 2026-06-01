@@ -1,0 +1,301 @@
+/**
+ * Example: How to use the Tally XML Parser
+ * This demonstrates both direct parsing and integration with React
+ */
+
+// ============================================================
+// DIRECT USAGE (Node.js / Server-side)
+// ============================================================
+
+import { decodeFileBuffer, parseTallyXML } from './src/lib/tallyXmlParser';
+import * as fs from 'fs';
+
+// Read a Tally XML file with automatic encoding detection
+async function convertTallyXmlToJson(filePath: string) {
+  const buffer = fs.readFileSync(filePath);
+  
+  // Auto-detect encoding (UTF-8, UTF-16 LE/BE)
+  const xmlText = decodeFileBuffer(buffer);
+  
+  // Parse the XML
+  const result = parseTallyXML(xmlText);
+  
+  console.log('Parsed successfully!');
+  console.log(`Company: ${result.companyInfo.name}`);
+  console.log(`Date Range: ${result.companyInfo.dateRange}`);
+  console.log(`Rows: ${result.rows.length}`);
+  console.log(`Columns: ${result.headers.join(' | ')}`);
+  
+  return result;
+}
+
+// Usage:
+// const data = await convertTallyXmlToJson('./debit_note_register.xml');
+
+// ============================================================
+// REACT COMPONENT USAGE (In Browser)
+// ============================================================
+
+import { useState } from 'react';
+import { decodeFileBuffer, parseTallyXML } from '../lib/tallyXmlParser';
+
+function MyCustomConverter() {
+  const [data, setData] = useState(null);
+
+  const handleFileSelect = async (file: File) => {
+    try {
+      // Step 1: Read file as binary
+      const buffer = await file.arrayBuffer();
+      
+      // Step 2: Detect encoding automatically
+      const xmlText = decodeFileBuffer(buffer);
+      
+      // Step 3: Parse XML
+      const parsed = parseTallyXML(xmlText);
+      
+      // Step 4: Use the data
+      setData(parsed);
+      
+      console.log(`✅ Parsed ${parsed.rows.length} rows`);
+    } catch (error) {
+      console.error('❌ Error:', error.message);
+    }
+  };
+
+  return (
+    <div>
+      <input 
+        type="file" 
+        accept=".xml"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileSelect(file);
+        }}
+      />
+      {data && (
+        <pre>{JSON.stringify(data, null, 2)}</pre>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// EXAMPLE: EXPECTED OUTPUT
+// ============================================================
+
+/*
+Input XML (from your example):
+============================================================
+<ENVELOPE>
+ <DBCFIXED>
+  <DBCDATE>25-Apr-25</DBCDATE>
+  <DBCPARTY>GREENVELI LANDSCAPE AND INDUSTRIL SERVICES</DBCPARTY>
+ </DBCFIXED>
+ <DBCVCHTYPE>Debit Note</DBCVCHTYPE>
+ <DBCVCHNO>2</DBCVCHNO>
+ <DBCVCHREF>DYP/DB/25-26/28</DBCVCHREF>
+ <DBCVCHREFDATE>25-Apr-25</DBCVCHREFDATE>
+ <DBCGSTIN>27ABBFG3231F1ZU</DBCGSTIN>
+ <DBCAMOUNT></DBCAMOUNT>
+ <DBCADDLCOST></DBCADDLCOST>
+ <DBCGROSSAMT>-97866.00</DBCGROSSAMT>
+ <DBCLEDAMT>82937.00</DBCLEDAMT>
+ <DBCLEDAMT>7464.33</DBCLEDAMT>
+ <DBCLEDAMT>7464.33</DBCLEDAMT>
+ <DBCLEDAMT>0.34</DBCLEDAMT>
+ <DBCLEDAMT></DBCLEDAMT>
+ <DBCLEDAMT></DBCLEDAMT>
+ ...more rows...
+</ENVELOPE>
+
+Output JSON:
+============================================================
+{
+  "companyInfo": {
+    "name": "DYP INFRAPROJECTS PVT.LTD.",
+    "addr1": "Kohinoor Majestic, 2nd Floor, Office No. 112 & 113,",
+    "addr2": "Plot No. 185/186, Behind Hyundai Showroom,",
+    "addr3": "Thermax Chowk, Chinchwad, Pune 411016",
+    "dateRange": "25-Apr-25 to 26-Apr-25"
+  },
+  "headers": [
+    "Date",
+    "Particulars",
+    "Voucher Type",
+    "Voucher No.",
+    "Voucher Ref. No.",
+    "Voucher Ref. Date",
+    "GSTIN/UIN",
+    "Value",
+    "Addi. Cost",
+    "Gross Total",
+    "Purchase - Labour",
+    "1 CGST @ 9% Input",
+    "2 SGST @ 9% Input",
+    "ROUND OFF",
+    "R - INPUT CGST @ 9%",
+    "R - INPUT SGST @ 9%"
+  ],
+  "rows": [
+    [
+      "25-Apr-25",
+      "GREENVELI LANDSCAPE AND INDUSTRIL SERVICES",
+      "Debit Note",
+      "2",
+      "DYP/DB/25-26/28",
+      "25-Apr-25",
+      "27ABBFG3231F1ZU",
+      "",
+      "",
+      "-97866.00",
+      "82937.00",
+      "7464.33",
+      "7464.33",
+      "0.34",
+      "",
+      ""
+    ],
+    [
+      "25-Apr-25",
+      "GREENVELI LANDSCAPE AND INDUSTRIL SERVICES",
+      "Debit Note",
+      "3",
+      "DYP/DB/25-26/29",
+      "25-Apr-25",
+      "27ABBFG3231F1ZU",
+      "",
+      "",
+      "-79185.00",
+      "67106.00",
+      "6039.54",
+      "6039.54",
+      "-0.08",
+      "",
+      ""
+    ],
+    // ... more rows ...
+  ]
+}
+
+Excel Output (formatted):
+============================================================
+Row 1: DYP INFRAPROJECTS PVT.LTD. [merged across all columns]
+Row 2: Kohinoor Majestic, 2nd Floor, Office No. 112 & 113, [merged]
+Row 3: Plot No. 185/186, Behind Hyundai Showroom, [merged]
+Row 4: Thermax Chowk, Chinchwad, Pune 411016 [merged]
+Row 5: Debit Note Register [merged]
+Row 6: 25-Apr-25 to 26-Apr-25 [merged]
+Row 7: Date | Particulars | Voucher Type | ... [HEADERS - gray background, bold]
+Row 8: 25-Apr-25 | GREENVELI LANDSCAPE... | Debit Note | 2 | ... [DATA]
+Row 9: 25-Apr-25 | GREENVELI LANDSCAPE... | Debit Note | 3 | ... [DATA]
+...
+Row N: [GRAND TOTAL ROW - bold, calculated sums for numeric columns]
+*/
+
+// ============================================================
+// HANDLING DIFFERENT ENCODINGS
+// ============================================================
+
+// The decodeFileBuffer function automatically handles:
+
+// 1. UTF-8 with BOM (0xEF 0xBB 0xBF)
+//    → Uses TextDecoder('utf-8')
+
+// 2. UTF-16 LE with BOM (0xFF 0xFE) - Most common for Tally
+//    → Uses TextDecoder('utf-16-le')
+
+// 3. UTF-16 BE with BOM (0xFE 0xFF)
+//    → Uses TextDecoder('utf-16-be')
+
+// 4. UTF-8 without BOM (default)
+//    → Uses TextDecoder('utf-8')
+//    → Falls back to UTF-16 LE if UTF-8 is invalid
+
+// Example manual encoding check:
+function getEncodingInfo(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    return 'UTF-16 LE (Tally default)';
+  } else if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    return 'UTF-16 BE';
+  } else if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return 'UTF-8 with BOM';
+  } else {
+    return 'UTF-8 (assumed, no BOM)';
+  }
+}
+
+// ============================================================
+// ERROR HANDLING
+// ============================================================
+
+async function convertSafelyWithErrorHandling(file: File) {
+  try {
+    const buffer = await file.arrayBuffer();
+    const xmlText = decodeFileBuffer(buffer);
+    
+    // Check encoding was detected
+    console.log(`✅ File detected and decoded`);
+    
+    const result = parseTallyXML(xmlText);
+    
+    // Validate parsing
+    if (!result.rows || result.rows.length === 0) {
+      console.warn('⚠️ Warning: No data rows found');
+    }
+    
+    console.log(`✅ Parsed ${result.rows.length} rows successfully`);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Conversion failed:', error.message);
+    
+    // Handle specific errors:
+    if (error.message.includes('Invalid XML')) {
+      console.error('   → File is not valid XML');
+    } else if (error.message.includes('No valid data')) {
+      console.error('   → File has no Tally data (check export format)');
+    } else if (error.message.includes('parsererror')) {
+      console.error('   → XML parsing failed (corrupt file?)');
+    }
+    
+    throw error;
+  }
+}
+
+// ============================================================
+// PERFORMANCE TIPS
+// ============================================================
+
+// For files with 10,000+ rows:
+// 1. Show a loading indicator
+// 2. Use requestIdleCallback for processing
+// 3. Break parsing into chunks if needed
+
+function parseWithProgress(xmlText: string, onProgress?: (percent: number) => void) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, "text/xml");
+  
+  // Report parsing start
+  onProgress?.(10);
+  
+  // Parse elements (async)
+  return new Promise((resolve, reject) => {
+    try {
+      const result = parseTallyXML(xmlText);
+      onProgress?.(100);
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+export {
+  convertTallyXmlToJson,
+  MyCustomConverter,
+  getEncodingInfo,
+  convertSafelyWithErrorHandling,
+  parseWithProgress
+};
