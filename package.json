@@ -123,7 +123,8 @@
       {
         "provider": "github",
         "owner": "adi3615gupta-prog",
-        "repo": "reco-with-vaswani"
+        "repo": "reco-with-vaswani",
+        "releaseType": "release"
       }
     ]
   },
