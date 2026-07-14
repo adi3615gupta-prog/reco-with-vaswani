@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { type ProcessedRow, exportToExcel } from "@/lib/gst-processor";
 import type { CompanyInfo } from "@/components/consolidation/CompanyInfoForm";
 import { toast } from "sonner";
-
-const getApiHost = () => localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1';
+import { getApiBase, getAuthToken } from '@/lib/api';
 
 interface FileResult {
   fileName: string;
@@ -35,7 +34,7 @@ const COLUMNS = [
 ] as const;
 
 function fmt(n: number) {
-  return n === 0 ? "—" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n === 0 ? "â€”" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function DataPreview({ files, company, onReset, onSendToReco }: DataPreviewProps) {
@@ -74,11 +73,11 @@ export function DataPreview({ files, company, onReset, onSendToReco }: DataPrevi
         records: allRows
       };
 
-      const res = await fetch(`http://${getApiHost()}:3001/api/consolidations`, {
+      const res = await fetch(`${getApiBase()}/api/consolidations`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionStorage.getItem('np_token')}`
+          'Authorization': `Bearer ${getAuthToken()}`
         },
         body: JSON.stringify(payload)
       });
@@ -257,3 +256,4 @@ export function DataPreview({ files, company, onReset, onSendToReco }: DataPrevi
     </div>
   );
 }
+

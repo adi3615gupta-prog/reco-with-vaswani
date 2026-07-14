@@ -3,7 +3,7 @@ import {
   Building2, BookOpen, Upload, Landmark, BarChart3, FileDown,
   ArrowRight, Search, ChevronDown, ChevronRight, Save, RotateCcw,
   AlertTriangle, CheckCircle2, Shield, Hash, FileText, Layers,
-  Eye, Filter, X, Info, Briefcase, User, BadgeCheck, ScrollText
+  Eye, Filter, X, Info, Briefcase, User, BadgeCheck, ScrollText, Lightbulb
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
@@ -56,6 +56,7 @@ const SIDEBAR_ITEMS: { key: SidebarSection; label: string; icon: React.ElementTy
 // MAIN COMPONENT
 // ===================================================================
 export default function FinancialStatements({ onBack }: Props) {
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [activeSection, setActiveSection] = useState<SidebarSection>('setup');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [masterCodes, setMasterCodes] = useState<MasterGroupCode[]>([]);
@@ -106,6 +107,41 @@ export default function FinancialStatements({ onBack }: Props) {
             Companies Act, 2013 Compliant
           </p>
         </div>
+      </div>
+
+      {/* Collapsible Quick Guide */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg max-w-6xl">
+        <button 
+          onClick={() => setShowQuickGuide(!showQuickGuide)} 
+          className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+            <Lightbulb className="w-4 h-4 text-yellow-400" />
+            Quick Schedule III User Guide
+          </span>
+          <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+        </button>
+        {showQuickGuide && (
+          <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <p><strong>Overview:</strong> Prepare audited Company Balance Sheets, P&L Statements, and Cash Flow packages compliant with Schedule III of the Companies Act, 2013.</p>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                <ol className="space-y-1.5 pl-4 list-decimal">
+                  <li><strong>Client Setup:</strong> Enter corporate metadata, auditor details, CIN, and signatory directors.</li>
+                  <li><strong>TB Import:</strong> Upload your raw Trial Balance and map accounts to the Schedule III codes.</li>
+                  <li><strong>Asset Block:</strong> Record fixed asset blocks and compute depreciation.</li>
+                  <li><strong>Preview & Export:</strong> Inspect generated financial statements and download the compiled Excel workbook.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Inputs & Outputs:</p>
+                <p className="mb-2"><strong>Required Inputs:</strong> Trial Balance spreadsheets, depreciation rates, and company metadata.</p>
+                <p><strong>Outputs Produced:</strong> Companies Act compliant Balance Sheets, Profit & Loss reports, and Notes to Accounts packages.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── CONTROL DASHBOARD BANNER ── */}

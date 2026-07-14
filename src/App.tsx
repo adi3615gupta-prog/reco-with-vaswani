@@ -4,10 +4,12 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/lib/authContext";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import LivePreviewWindow from "./pages/LivePreviewWindow.tsx";
 import TBImportFullscreen from "./pages/TBImportFullscreen.tsx";
+import IncomeTaxDashboard from "./pages/IncomeTaxDashboard.tsx";
 
 const queryClient = new QueryClient();
 
@@ -52,22 +54,25 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
 
 const App = () => (
   <GlobalErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <div className="min-h-screen bg-[var(--np-bg)] text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white">
-          <HashRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/live-preview" element={<LivePreviewWindow />} />
-              <Route path="/mapping-fullscreen" element={<TBImportFullscreen />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </HashRouter>
-        </div>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <div className="min-h-screen bg-[var(--np-bg)] text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white">
+            <HashRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/live-preview" element={<LivePreviewWindow />} />
+                <Route path="/mapping-fullscreen" element={<TBImportFullscreen />} />
+                <Route path="/income-tax-calculator" element={<IncomeTaxDashboard />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </HashRouter>
+          </div>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AuthProvider>
   </GlobalErrorBoundary>
 );
 

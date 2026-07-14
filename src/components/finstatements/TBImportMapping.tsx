@@ -245,8 +245,33 @@ export default function TBImportMapping({ onDataChanged, fullScreen = false }: P
     const safeNum = (val: unknown): number => {
       if (typeof val === 'number') return Math.round(val * 100) / 100;
       if (!val) return 0;
-      const n = parseFloat(String(val).replace(/[₹,\s]/g, ''));
-      return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+      let raw = String(val).trim().toUpperCase();
+      if (!raw) return 0;
+
+      let isCredit = false;
+      if (raw.endsWith('CR') || raw.endsWith('C')) {
+        isCredit = true;
+        raw = raw.replace(/CR|C$/, '');
+      } else if (raw.endsWith('DR') || raw.endsWith('D')) {
+        raw = raw.replace(/DR|D$/, '');
+      }
+
+      if (raw.startsWith('(') && raw.endsWith(')')) {
+        isCredit = true;
+        raw = raw.slice(1, -1);
+      }
+
+      if (raw.endsWith('-')) {
+        isCredit = true;
+        raw = raw.slice(0, -1);
+      }
+
+      const clean = raw.replace(/[₹,\s]/g, '');
+      const parsed = parseFloat(clean);
+      if (isNaN(parsed)) return 0;
+
+      const finalVal = isCredit ? -Math.abs(parsed) : parsed;
+      return Math.round(finalVal * 100) / 100;
     };
 
     const entries: TrialBalanceEntry[] = parsedRows
@@ -259,7 +284,7 @@ export default function TBImportMapping({ onDataChanged, fullScreen = false }: P
         
         primaryGroup = getFallbackPrimaryGroup(parentGroup, primaryGroup);
 
-        const mappedCode = resolveMappingCode(parentGroup, primaryGroup);
+        const mappedCode = resolveMappingCode(ledgerName, parentGroup, primaryGroup);
 
         let suggestedCode: number | undefined;
         let confidence: number | undefined;

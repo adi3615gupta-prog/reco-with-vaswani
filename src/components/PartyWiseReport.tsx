@@ -14,6 +14,7 @@ interface Props {
   results: ReconciliationResult[];
   companyName: string;
   mode?: 'input' | 'output';
+  debitNotes?: { pr?: any[]; twoB?: any[] };
 }
 
 const fmt = (n: number) =>
@@ -44,8 +45,8 @@ function rowStatusColor(status: string) {
   return 'text-[var(--np-red)]';
 }
 
-export function PartyWiseReport({ results, companyName, mode = 'input' }: Props) {
-  const parties = useMemo(() => aggregateByParty(results, mode), [results, mode]);
+export function PartyWiseReport({ results, companyName, mode = 'input', debitNotes }: Props) {
+  const parties = useMemo(() => aggregateByParty(results, debitNotes, mode), [results, debitNotes, mode]);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'diff'>('name');
 

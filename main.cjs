@@ -4,6 +4,30 @@ const http = require('http');
 const fs = require('fs');
 const { fork } = require('child_process');
 const os = require('os');
+const dns = require('dns');
+
+// Prioritize IPv4 for DNS resolution to avoid localhost lookup issues on Windows
+dns.setDefaultResultOrder('ipv4first');
+
+// Global logger to help diagnose startup failures
+let mainLogPath = null;
+function logMain(message) {
+  if (!mainLogPath) {
+    try {
+      mainLogPath = path.join(app.getPath('userData'), 'main.log');
+    } catch (e) {
+      console.error('Failed to get userData path for logMain:', e);
+      return;
+    }
+  }
+  try {
+    fs.appendFileSync(mainLogPath, `[${new Date().toISOString()}] ${message}\n`);
+    console.log(message);
+  } catch (e) {
+    console.error('Failed to write to main.log:', e);
+  }
+}
+
 
 // Fix for white screen / "Not an electron process" errors
 if (process.env.ELECTRON_RUN_AS_NODE) {
@@ -61,10 +85,56 @@ function initializeUpdater() {
   }
 }
 
-let server = null;
-let serverPort = 8080;
 let mainWindow = null;
 let backendProcess = null;
+let currentAppMode = 'server';
+const BACKEND_PORT = 3001; // Single port — Express serves both API and frontend
+
+function startBackendServer(serverJsPath) {
+  try {
+    logMain(`startBackendServer called with path: ${serverJsPath}`);
+    const logFilePath = path.join(app.getPath('userData'), 'backend.log');
+    const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+    
+    logStream.write(`\n--- Starting backend server process at ${new Date().toISOString()} ---\n`);
+    logStream.write(`Server path: ${serverJsPath}\n`);
+    logStream.write(`User data path: ${app.getPath('userData')}\n`);
+    logStream.write(`Node execPath: ${process.execPath}\n`);
+    logStream.write(`Process env keys count: ${Object.keys(process.env).length}\n`);
+
+    logMain('Forking backend process...');
+    backendProcess = fork(serverJsPath, [], {
+      env: { ...process.env, USER_DATA_PATH: app.getPath('userData') },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
+    });
+    logMain(`Backend process spawned with PID: ${backendProcess.pid}`);
+    
+    backendProcess.stdout.on('data', (data) => {
+      logStream.write(`[STDOUT] ${data}`);
+    });
+    
+    backendProcess.stderr.on('data', (data) => {
+      logStream.write(`[STDERR] ${data}`);
+    });
+
+    backendProcess.on('error', (err) => {
+      logMain(`Backend Process Error Event: ${err.message}`);
+      console.error('Backend Process Error:', err);
+      logStream.write(`[ERROR] Backend process error: ${err.stack || err.message || err}\n`);
+    });
+
+    backendProcess.on('close', (code, signal) => {
+      logMain(`Backend Process Close Event: code=${code}, signal=${signal}`);
+      logStream.write(`[CLOSE] Backend process closed with code ${code} and signal ${signal}\n`);
+    });
+
+    logMain('Started backend server process listeners successfully');
+  } catch (err) {
+    logMain(`Failed to fork backend process catch block: ${err.stack || err.message}`);
+    console.error('Failed to fork backend process:', err);
+  }
+}
+
 
 const sendUpdateStatus = (channel, payload) => {
   if (mainWindow?.webContents) {
@@ -72,117 +142,110 @@ const sendUpdateStatus = (channel, payload) => {
   }
 };
 
-function startLocalServer() {
+/**
+ * Wait for the Express backend server to be ready before loading the window.
+ * Polls the /api/ping endpoint until it responds.
+ */
+function waitForBackend(port, timeoutMs = 45000) {
+  logMain(`waitForBackend initiated. Port: ${port}, Timeout: ${timeoutMs}ms`);
   return new Promise((resolve, reject) => {
-    const distPath = path.join(__dirname, 'dist');
-    
-    // Check if dist folder exists
-    if (!fs.existsSync(distPath)) {
-      reject(new Error('dist folder not found'));
-      return;
-    }
-    
-    const server = http.createServer((req, res) => {
-      let filePath = path.join(distPath, req.url === '/' ? 'index.html' : req.url);
-      
-      // Get file extension
-      const extname = String(path.extname(filePath)).toLowerCase();
-      
-      // Content type map
-      const mimeTypes = {
-        '.html': 'text/html',
-        '.js': 'text/javascript',
-        '.css': 'text/css',
-        '.json': 'application/json',
-        '.png': 'image/png',
-        '.jpg': 'image/jpg',
-        '.gif': 'image/gif',
-        '.svg': 'image/svg+xml',
-        '.ico': 'image/x-icon',
-        '.woff': 'application/font-woff',
-        '.woff2': 'application/font-woff2',
-        '.ttf': 'application/font-ttf',
-        '.eot': 'application/vnd.ms-fontobject',
-        '.otf': 'application/font-otf'
-      };
-      
-      const contentType = mimeTypes[extname] || 'application/octet-stream';
-      
-      fs.readFile(filePath, (error, content) => {
-        if (error) {
-          if (error.code === 'ENOENT') {
-            res.writeHead(404, { 'Content-Type': 'text/html' });
-            res.end('<h1>404 - File Not Found</h1>', 'utf-8');
-          } else {
-            res.writeHead(500);
-            res.end('Server Error: ' + error.code, 'utf-8');
+    const startTime = Date.now();
+    let attempt = 0;
+    const check = () => {
+      attempt++;
+      logMain(`waitForBackend ping attempt #${attempt} to http://127.0.0.1:${port}/api/ping`);
+      const req = http.get(`http://127.0.0.1:${port}/api/ping`, { timeout: 1000 }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          logMain(`waitForBackend received status ${res.statusCode} from attempt #${attempt}`);
+          try {
+            const json = JSON.parse(data);
+            if (json.success) {
+              logMain(`waitForBackend connection successful on attempt #${attempt}!`);
+              resolve();
+              return;
+            }
+          } catch (e) {
+            logMain(`waitForBackend parsing failed on attempt #${attempt}: ${e.message}`);
           }
-        } else {
-          res.writeHead(200, { 'Content-Type': contentType });
-          res.end(content, 'utf-8');
-        }
+          retry();
+        });
       });
-    });
-    
-    // Try to start server on port 8080, increment if taken
-    function tryStart(port) {
-      server.listen(port, () => {
-        console.log(`Local server running on http://localhost:${port}`);
-        resolve({ server, port });
+      req.on('error', (err) => {
+        logMain(`waitForBackend ping error on attempt #${attempt}: ${err.message}`);
+        retry();
       });
-      
-      server.once('error', (err) => {
-        if (err.code === 'EADDRINUSE' && port < 8090) {
-          tryStart(port + 1);
-        } else {
-          reject(err);
-        }
+      req.on('timeout', () => {
+        logMain(`waitForBackend ping timeout on attempt #${attempt}`);
+        req.destroy();
+        retry();
       });
-    }
-    
-    tryStart(serverPort);
+    };
+    const retry = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > timeoutMs) {
+        logMain(`waitForBackend TIMED OUT after ${elapsed}ms`);
+        reject(new Error(`Backend did not start within ${timeoutMs}ms`));
+      } else {
+        setTimeout(check, 500);
+      }
+    };
+    check();
   });
 }
 
-async function createWindow() {
+async function createWindow(appMode = currentAppMode) {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true, // Re-enabled for security (was dangerously set to false)
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'public/icon.png'),
     backgroundColor: '#090d18'
   });
 
-  const isPackaged = app.isPackaged;
-  const startApp = async () => {
-    if (isPackaged) {
-      const indexPath = path.join(__dirname, 'dist', 'index.html');
-      console.log(`Loading packaged app from file://${indexPath}`);
-      await mainWindow.loadURL(`file://${indexPath}`);
-      console.log('Packaged app loaded successfully');
-      return;
-    }
-
-    console.log('Starting local HTTP server...');
-    const { server: httpServer, port } = await startLocalServer();
-    server = httpServer;
-    serverPort = port;
-
-    console.log(`Loading app from http://localhost:${port}`);
-    await mainWindow.loadURL(`http://localhost:${port}`);
-    console.log('App loaded successfully');
-  };
-
   try {
-    await startApp();
+    if (appMode !== 'client') {
+      logMain('createWindow: waiting for backend ready status...');
+      // Wait for the Express backend (started in app.whenReady) to be ready
+      await waitForBackend(BACKEND_PORT);
+      logMain(`Backend ready. Loading app from http://localhost:${BACKEND_PORT}`);
+      await mainWindow.loadURL(`http://localhost:${BACKEND_PORT}`);
+    } else {
+      logMain('createWindow: CLIENT mode. Loading index.html from local files...');
+      await mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
+    }
+    logMain('App loaded successfully');
   } catch (error) {
-    console.error('Failed to start app:', error);
-    mainWindow.loadURL('data:text/html,<html><body style="font-family: Arial; padding: 20px; background: #f0f0f0;"><h1 style="color: #e74c3c;">Application Failed to Start</h1><p style="color: #666;">Could not load the application.</p><p style="color: #999;">Error: ' + error.message + '</p><p style="color: #999;">Working directory: ' + __dirname + '</p></body></html>');
+    logMain(`Failed to start app: ${error.stack || error.message}`);
+    const logFilePath = path.join(app.getPath('userData'), 'backend.log');
+    const mainLogFilePath = path.join(app.getPath('userData'), 'main.log');
+    let logSnippet = 'No backend log file found.';
+    let mainLogSnippet = 'No main log file found.';
+    try {
+      if (fs.existsSync(logFilePath)) {
+        logSnippet = fs.readFileSync(logFilePath, 'utf8').slice(-1500); // last 1500 chars
+      }
+    } catch (e) {
+      logSnippet = `Could not read log file: ${e.message}`;
+    }
+    try {
+      if (fs.existsSync(mainLogFilePath)) {
+        mainLogSnippet = fs.readFileSync(mainLogFilePath, 'utf8').slice(-1500); // last 1500 chars
+      }
+    } catch (e) {
+      mainLogSnippet = `Could not read main log file: ${e.message}`;
+    }
+    dialog.showErrorBox(
+      'Application Failed to Start',
+      `Could not load the application.\n\nError: ${error.message}\nWorking directory: ${__dirname}\n\n--- ELECTRON MAIN LOGS ---\n${mainLogSnippet}\n\n--- BACKEND LOGS ---\n${logSnippet}`
+    );
+    app.quit();
   }
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -203,32 +266,44 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
-  createWindow();
+  logMain('app.whenReady triggered');
   
-  let serverJsPath = path.join(__dirname, 'server.obfuscated.js');
-  if (!fs.existsSync(serverJsPath)) {
+  let serverJsPath = path.join(__dirname, 'server.obfuscated.cjs');
+  logMain(`Checking for server.obfuscated.cjs at: ${serverJsPath}`);
+  let exists = fs.existsSync(serverJsPath);
+  logMain(`server.obfuscated.cjs exists: ${exists}`);
+  if (!exists) {
     serverJsPath = path.join(__dirname, 'server.js');
+    logMain(`Checking for server.js at: ${serverJsPath}`);
+    exists = fs.existsSync(serverJsPath);
+    logMain(`server.js exists: ${exists}`);
   }
-
-  console.log('Checking for server backend at:', serverJsPath);
   
   const modeFilePath = path.join(app.getPath('userData'), 'app_mode.json');
   let appMode = 'server';
   if (fs.existsSync(modeFilePath)) {
-    try { appMode = JSON.parse(fs.readFileSync(modeFilePath)).mode; } catch (e) {}
+    try { 
+      appMode = JSON.parse(fs.readFileSync(modeFilePath)).mode; 
+      logMain(`Loaded appMode from config: ${appMode}`);
+    } catch (e) {
+      logMain(`Error parsing app_mode.json: ${e.message}`);
+    }
+  } else {
+    logMain(`app_mode.json not found, defaulting appMode to: ${appMode}`);
+  }
+  
+  currentAppMode = appMode;
+
+  if (appMode !== 'client' && exists) {
+    logMain('Triggering startBackendServer...');
+    startBackendServer(serverJsPath);
+  } else if (appMode === 'client') {
+    logMain('Running in CLIENT mode. Backend server bypassed.');
+  } else {
+    logMain(`Error: Backend server script not found! Path check was: ${serverJsPath}`);
   }
 
-  if (appMode !== 'client' && fs.existsSync(serverJsPath)) {
-    backendProcess = fork(serverJsPath, [], {
-      env: { ...process.env, USER_DATA_PATH: app.getPath('userData') }
-    });
-    backendProcess.on('error', (err) => console.error('Backend Process Error:', err));
-    console.log('Started backend server process');
-  } else if (appMode === 'client') {
-    console.log('Running in CLIENT mode. Backend server bypassed.');
-  } else {
-    console.error('server.js not found at', serverJsPath);
-  }
+  createWindow(currentAppMode);
 
   // Initialize updater after window is ready
   initializeUpdater();
@@ -289,16 +364,13 @@ ipcMain.handle('set_app_mode', (event, mode) => {
   
   // Start backend if switching to server and it's not running
   if (mode === 'server' && !backendProcess) {
-    let serverJsPath = path.join(__dirname, 'server.obfuscated.js');
+    let serverJsPath = path.join(__dirname, 'server.obfuscated.cjs');
     if (!fs.existsSync(serverJsPath)) {
       serverJsPath = path.join(__dirname, 'server.js');
     }
     if (fs.existsSync(serverJsPath)) {
       console.log('Dynamically starting backend server process...');
-      backendProcess = fork(serverJsPath, [], {
-        env: { ...process.env, USER_DATA_PATH: app.getPath('userData') }
-      });
-      backendProcess.on('error', (err) => console.error('Backend Process Error:', err));
+      startBackendServer(serverJsPath);
     }
   }
   
@@ -453,10 +525,6 @@ ipcMain.handle('fetch_tally_data', async (event, { port = 9000, xmlPayload }) =>
 
 app.on('window-all-closed', () => {
   if (backendProcess) backendProcess.kill();
-  // Close server before quitting
-  if (server) {
-    server.close();
-  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -470,8 +538,4 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   if (backendProcess) backendProcess.kill();
-  // Close server before quitting
-  if (server) {
-    server.close();
-  }
 });

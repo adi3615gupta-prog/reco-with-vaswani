@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, User, Lock, EyeOff, Eye, ShieldBan, ShieldAlert, Trash2, Activity, Network, MonitorSmartphone, Globe, Clock, Video, MonitorPlay, MessageSquare, FileSearch, CloudDownload, LogOut, X, ArrowRight, Key, Unlock, Zap, Power, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Plus, User, Lock, EyeOff, Eye, ShieldBan, ShieldAlert, Trash2, Activity, Network, MonitorSmartphone, Globe, Clock, Video, MonitorPlay, MessageSquare, FileSearch, CloudDownload, LogOut, X, ArrowRight, Key, Unlock, Zap, Power, RefreshCw, Server, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-const getApiHost = () => localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1';
+import { getApiBase, getAuthToken } from '@/lib/api';
 
 export interface ActiveSession {
   id: string;
@@ -25,6 +25,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   const [activeTab, setActiveTab] = useState<'network' | 'audit' | 'analytics'>('network');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('user');
   const [showNewPass, setShowNewPass] = useState(false);
   const [managedUsers, setManagedUsers] = useState<{id: number, username: string, role: string}[]>([]);
   const [serialKeys, setSerialKeys] = useState<{id: number, key: string, is_active: number, device_id: string | null, key_type: string}[]>([]);
@@ -40,7 +41,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   const [isServerOffline, setIsServerOffline] = useState(false);
 
   const checkServerHealth = () => {
-    fetch(`http://${getApiHost()}:3001/api/network-info`, { method: 'GET', signal: AbortSignal.timeout(3000) })
+    fetch(`${getApiBase()}/api/network-info`, { method: 'GET', signal: AbortSignal.timeout(3000) })
       .then(res => {
          if (res.ok) setIsServerOffline(false);
          else setIsServerOffline(true);
@@ -49,31 +50,31 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   };
 
   const fetchDynamicData = () => {
-    fetch(`http://${getApiHost()}:3001/sessions`)
+    fetch(`${getApiBase()}/sessions`)
       .then(res => res.json())
       .then(data => {
         setActiveSessionsList(data.sessions || []);
         setBannedUsers(data.banned || {});
       }).catch(() => {});
 
-    fetch(`http://${getApiHost()}:3001/audit`)
+    fetch(`${getApiBase()}/audit`)
       .then(res => res.json())
       .then(data => setAuditLogs(Array.isArray(data) ? data : [])).catch(() => {});
 
-    fetch(`http://${getApiHost()}:3001/api/usage`)
+    fetch(`${getApiBase()}/api/usage`)
       .then(res => res.json())
       .then(data => setModuleUsage(Array.isArray(data) ? data : [])).catch(() => {});
   };
 
   const fetchStaticData = () => {
-    fetch(`http://${getApiHost()}:3001/api/users`, {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+    fetch(`${getApiBase()}/api/users`, {
+      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
     })
       .then(res => res.json())
       .then(data => setManagedUsers(Array.isArray(data) ? data : [])).catch(() => {});
       
-    fetch(`http://${getApiHost()}:3001/api/keys`, {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+    fetch(`${getApiBase()}/api/keys`, {
+      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
     })
       .then(res => res.json())
       .then(data => setSerialKeys(Array.isArray(data) ? data : [])).catch(() => {});
@@ -94,7 +95,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
     let viewerInt: NodeJS.Timeout;
     if (viewingUser) {
        viewerInt = setInterval(() => {
-          fetch(`http://${getApiHost()}:3001/screen/view/${viewingUser}`)
+          fetch(`${getApiBase()}/screen/view/${viewingUser}`)
           .then(res => res.json())
           .then(data => setScreenFrame(data.image)).catch(() => {});
        }, 1500);
@@ -124,13 +125,13 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
     if (!uname || !newPassword) return;
     
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/users`, {
+      const res = await fetch(`${getApiBase()}/api/users`, {
         method: 'POST', 
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionStorage.getItem('np_token')}`
+          'Authorization': `Bearer ${getAuthToken()}`
         },
-        body: JSON.stringify({ username: uname, password: newPassword, role: 'user' })
+        body: JSON.stringify({ username: uname, password: newPassword, role: newRole })
       });
       
       if (!res.ok) {
@@ -141,9 +142,10 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
       setNewUsername('');
       setNewPassword('');
-      toast.success(`User '${uname}' created successfully!`);
+      setNewRole('user');
+      toast.success(`User '${uname}' created successfully with role '${newRole}'!`);
       // Refresh user list immediately
-      const res2 = await fetch(`http://${getApiHost()}:3001/api/users`, { headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` } });
+      const res2 = await fetch(`${getApiBase()}/api/users`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
       const updatedUsers = await res2.json();
       if (!res2.ok) {
         toast.error(updatedUsers.error || 'Failed to fetch updated users');
@@ -158,8 +160,8 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   const handleToggleKey = async (key: string, currentStatus: number) => {
     const newStatus = currentStatus === 1 ? 0 : 1;
     try {
-      await fetch(`http://${getApiHost()}:3001/api/keys/${key}`, { 
-        method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+      await fetch(`${getApiBase()}/api/keys/${key}`, { 
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ is_active: newStatus })
       });
       setSerialKeys(prev => prev.map(k => k.key === key ? { ...k, is_active: newStatus } : k));
@@ -169,7 +171,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
   const handleUnbindKey = async (key: string) => {
     try {
-      await fetch(`http://${getApiHost()}:3001/api/keys/${key}/unbind`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` } });
+      await fetch(`${getApiBase()}/api/keys/${key}/unbind`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
       setSerialKeys(prev => prev.map(k => k.key === key ? { ...k, device_id: null } : k));
       toast.success(`Key unbound. It can now be used on a new PC.`);
     } catch (err) { toast.error('Failed to unbind key'); }
@@ -177,9 +179,9 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
   const handleRemoveUser = async (uname: string) => {
     try {
-      await fetch(`http://${getApiHost()}:3001/api/users/${uname}`, { 
+      await fetch(`${getApiBase()}/api/users/${uname}`, { 
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       setManagedUsers(prev => prev.filter(u => u.username !== uname));
       toast.success(`User '${uname}' removed successfully!`);
@@ -190,7 +192,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
   const handleBanToggle = (uname: string, currentlyBanned: boolean) => {
     const willBan = !currentlyBanned;
-    fetch(`http://${getApiHost()}:3001/ban`, {
+    fetch(`${getApiBase()}/ban`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: uname, isBanned: willBan })
     }).then(() => {
@@ -208,7 +210,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
       setAnydeskIds(newIds);
       localStorage.setItem('np_anydesk_ids', JSON.stringify(newIds));
     }
-    fetch(`http://${getApiHost()}:3001/launch-anydesk`, {
+    fetch(`${getApiBase()}/launch-anydesk`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address: anydeskId })
     }).then(() => toast.success(`Launching AnyDesk...`, { description: `Connecting to ${anydeskId}` }))
@@ -216,7 +218,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   };
 
   const handleViewScreen = (username: string) => {
-    fetch(`http://${getApiHost()}:3001/screen/request`, {
+    fetch(`${getApiBase()}/screen/request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username })
     }).then(() => { setViewingUser(username); toast.info(`Requesting screen from ${username}...`); }).catch(console.error);
@@ -225,7 +227,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   const handleSendMessage = (username: string) => {
     const message = window.prompt(`Enter the message to send to ${username}:`);
     if (!message || message.trim() === '') return;
-    fetch(`http://${getApiHost()}:3001/message/send`, {
+    fetch(`${getApiBase()}/message/send`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, message })
     }).then(res => { if (res.ok) toast.success(`Message sent to ${username}.`); else throw new Error('Error.'); })
@@ -251,8 +253,8 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
   const handleResetUsage = async (module_name: string) => {
     try {
-      await fetch(`http://${getApiHost()}:3001/api/usage/reset`, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+      await fetch(`${getApiBase()}/api/usage/reset`, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ module_name })
       });
       fetchDynamicData();
@@ -262,8 +264,8 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
 
   const handleToggleModule = async (module_name: string, current_enabled: number) => {
     try {
-      await fetch(`http://${getApiHost()}:3001/api/usage/toggle`, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+      await fetch(`${getApiBase()}/api/usage/toggle`, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ module_name, is_enabled: current_enabled === 1 ? 0 : 1 })
       });
       fetchDynamicData();
@@ -272,25 +274,25 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   };
 
   // Compute Analytics Data
-  const userActivity = auditLogs.reduce((acc, log) => {
-    acc[log.username] = (acc[log.username] || 0) + 1;
+  const userActivity = auditLogs.reduce<Record<string, number>>((acc, log) => {
+    acc[log.username] = (Number(acc[log.username]) || 0) + 1;
     return acc;
-  }, {} as Record<string, number>);
-  const mostActiveUsersData = Object.entries(userActivity).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+  }, {});
+  const mostActiveUsersData = Object.entries(userActivity).map(([name, count]) => ({ name, count: Number(count) })).sort((a, b) => b.count - a.count).slice(0, 5);
 
-  const moduleDistribution = auditLogs.reduce((acc, log) => {
+  const moduleDistribution = auditLogs.reduce<Record<string, number>>((acc, log) => {
     const modName = log.mode === 'input' ? 'Purchase' : log.mode === 'output' ? 'Sales' : log.mode || 'Other';
-    acc[modName] = (acc[modName] || 0) + 1;
+    acc[modName] = (Number(acc[modName]) || 0) + 1;
     return acc;
-  }, {} as Record<string, number>);
-  const moduleDistributionData = Object.entries(moduleDistribution).map(([name, value]) => ({ name, value }));
+  }, {});
+  const moduleDistributionData = Object.entries(moduleDistribution).map(([name, value]) => ({ name, value: Number(value) }));
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
-  const peakTimes = auditLogs.reduce((acc, log) => {
+  const peakTimes = auditLogs.reduce<Record<number, number>>((acc, log) => {
     const hour = new Date(log.timestamp).getHours();
-    acc[hour] = (acc[hour] || 0) + 1;
+    acc[hour] = (Number(acc[hour]) || 0) + 1;
     return acc;
-  }, {} as Record<number, number>);
+  }, {});
   const peakUsageData = Array.from({ length: 24 }).map((_, i) => ({
     time: `${i.toString().padStart(2, '0')}:00`,
     activity: peakTimes[i] || 0
@@ -299,14 +301,20 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   return (
     <>
     <style dangerouslySetInnerHTML={{__html: themeStyles}} />
-    <div className="dark min-h-screen flex flex-col items-center justify-center p-6 text-slate-100 font-sans antialiased relative overflow-hidden global-bg">
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none"></div>
+    <div className="dark min-h-screen flex flex-col items-center justify-center p-6 text-slate-100 font-sans antialiased relative overflow-hidden cinematic-bg">
+      {/* Cinematic Finance Background */}
+      <div className="absolute inset-0 z-0 pointer-events-none w-screen h-screen overflow-hidden">
+        <div className="absolute inset-0 finance-grid-bg opacity-100"></div>
+        <video src="./finance-bg.mp4" className="absolute inset-0 w-full h-full object-cover opacity-20" autoPlay muted loop playsInline />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#090d16]/80 via-[#090d16]/60 to-[#090d16]/95"></div>
+      </div>
+      <div className="absolute top-[10%] left-[15%] w-[450px] h-[450px] bg-blue-600/10 rounded-full blur-[140px] animate-pulse floating-shape pointer-events-none"></div>
+      <div className="absolute bottom-[15%] right-[15%] w-[450px] h-[450px] bg-purple-600/10 rounded-full blur-[140px] animate-pulse floating-shape pointer-events-none" style={{animationDelay: '3s', animationDuration: '10s'}}></div>
       
       <button onClick={handleLogout} className="absolute top-8 right-8 text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-xs transition-colors z-50">
         Log Out <LogOut className="w-4 h-4" />
       </button>
-      <div className="z-10 w-full max-w-6xl flex flex-col items-center animate-slow-reveal">
+      <div className="relative z-10 w-full max-w-6xl flex flex-col items-center animate-slow-reveal">
         <div className="mb-2 flex flex-col items-center justify-center">
           <ShieldCheck className="w-16 h-16 text-blue-500 drop-shadow-xl mb-4" />
           <div className={`px-4 py-1.5 rounded-full border flex items-center gap-2 transition-colors ${isServerOffline ? 'bg-rose-500/10 border-rose-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
@@ -323,6 +331,14 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
               <div className="space-y-4 mb-6">
                 <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="Username" className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 text-sm text-white focus:border-blue-500 outline-none" required /></div>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type={showNewPass ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password" className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-10 text-sm text-white focus:border-blue-500 outline-none" required /><button type="button" onClick={() => setShowNewPass(!showNewPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">{showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Assign Role</label>
+                  <select value={newRole} onChange={e => setNewRole(e.target.value)} className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-blue-500 outline-none">
+                    <option value="user">Standard User</option>
+                    <option value="Senior Auditor">Senior Auditor</option>
+                    <option value="Admin">Administrator</option>
+                  </select>
+                </div>
               </div>
               <button type="submit" className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2">Create Account <Plus className="w-4 h-4" /></button>
             </form>
@@ -331,7 +347,16 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Managed Users</h3>
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {managedUsers.map(({ username: uname, role }) => (
-                    <div key={uname} className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/50"><span className="text-sm font-bold text-slate-200">{uname}</span><div className="flex items-center gap-2"><button onClick={() => handleBanToggle(uname, !!bannedUsers[uname])} className={`p-1.5 rounded-md transition-colors ${bannedUsers[uname] ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20' : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'}`} title={bannedUsers[uname] ? "Unrestrict User" : "Restrict User"}>{bannedUsers[uname] ? <ShieldBan className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}</button><button onClick={() => handleRemoveUser(uname)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors" title="Delete User"><Trash2 className="w-4 h-4" /></button></div></div>
+                    <div key={uname} className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/50">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-200">{uname}</span>
+                        <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider mt-0.5">{role || 'user'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleBanToggle(uname, !!bannedUsers[uname])} className={`p-1.5 rounded-md transition-colors ${bannedUsers[uname] ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20' : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'}`} title={bannedUsers[uname] ? "Unrestrict User" : "Restrict User"}>{bannedUsers[uname] ? <ShieldBan className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}</button>
+                        <button onClick={() => handleRemoveUser(uname)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors" title="Delete User"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -343,7 +368,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
                     <Key className="w-4 h-4 text-amber-400" /> License Management
                  </h3>
-                 <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest mt-1.5">Strict Limit: 1 Server, 5 Clients</p>
+                 <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1.5">Limit: Unlimited Clients</p>
               </div>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {serialKeys.map(({ key, is_active, device_id, key_type }) => (
@@ -360,6 +385,39 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* GLOBAL NETWORK CARD */}
+            <div className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl shadow-2xl mt-6">
+              <div className="text-center mb-4">
+                 <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
+                    <Globe className="w-4 h-4 text-blue-400" /> Global Network
+                 </h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Expose Server to Internet</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={async () => {
+                  toast.info("Starting Global Tunnel...", { description: "Connecting to Cloudflare/Localtunnel network." });
+                  try {
+                    const res = await fetch(`${getApiBase()}/api/network/go-global`, { 
+                      method: 'POST', 
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` } 
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      toast.success("Server is now Global!", { description: `Public URL: ${data.url}` });
+                    } else {
+                      toast.error("Failed to start tunnel", { description: data.error });
+                    }
+                  } catch (err) {
+                    toast.error("Network error starting tunnel");
+                  }
+                }}
+                className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2"
+              >
+                Go Global <Globe className="w-4 h-4" />
+              </button>
             </div>
 
             {/* SOFTWARE UPDATES CARD */}

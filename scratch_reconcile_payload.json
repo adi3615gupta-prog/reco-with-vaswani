@@ -1,0 +1,201 @@
+{
+  "transactions": [
+    {
+      "date": "2025-04-01T00:00:00.000Z",
+      "partyName": "KRUSHNAI ENTERPRISES - PACHPUTE",
+      "partyPan": "CXYPP8651D",
+      "ledgerName": "Crane & Other M/C Hiring Charges",
+      "amount": 2000,
+      "actualTdsDeducted": 0,
+      "tdsLedgerName": "",
+      "parentGroup": "DIRECT EXPENSES",
+      "parentGroupPath": "DIRECT EXPENSES, \u0004 PRIMARY"
+    },
+    {
+      "date": "2025-04-01T00:00:00.000Z",
+      "partyName": "KRUSHANAI DEVELOPERS - PACHPUTE",
+      "partyPan": "CCMPP7772E",
+      "ledgerName": "Crane & Other M/C Hiring Charges",
+      "amount": 11500,
+      "actualTdsDeducted": 0,
+      "tdsLedgerName": "",
+      "parentGroup": "DIRECT EXPENSES",
+      "parentGroupPath": "DIRECT EXPENSES, \u0004 PRIMARY"
+    },
+    {
+      "date": "2025-04-01T00:00:00.000Z",
+      "partyName": "KRUSHANAI DEVELOPERS - PACHPUTE",
+      "partyPan": "CCMPP7772E",
+      "ledgerName": "Crane & Other M/C Hiring Charges",
+      "amount": 30667,
+      "actualTdsDeducted": 0,
+      "tdsLedgerName": "",
+      "parentGroup": "DIRECT EXPENSES",
+      "parentGroupPath": "DIRECT EXPENSES, \u0004 PRIMARY"
+    },
+    {
+      "date": "2025-04-01T00:00:00.000Z",
+      "partyName": "VISHAL ENTERPRISES - JADHAV",
+      "partyPan": "AMAPJ3689A",
+      "ledgerName": "Purchase - Labour Charges 18%",
+      "amount": 76800,
+      "actualTdsDeducted": 0,
+      "tdsLedgerName": "",
+      "parentGroup": "PURCHASE - LABOUR CHARGES",
+      "parentGroupPath": "PURCHASE - LABOUR CHARGES, DIRECT EXPENSES, \u0004 PRIMARY"
+    },
+    {
+      "date": "2025-04-01T00:00:00.000Z",
+      "partyName": "VISHAL ENTERPRISES - JADHAV",
+      "partyPan": "AMAPJ3689A",
+      "ledgerName": "Purchase - Labour Charges 18%",
+      "amount": 361731,
+      "actualTdsDeducted": 0,
+      "tdsLedgerName": "",
+      "parentGroup": "PURCHASE - LABOUR CHARGES",
+      "parentGroupPath": "PURCHASE - LABOUR CHARGES, DIRECT EXPENSES, \u0004 PRIMARY"
+    }
+  ],
+  "form26qRecords": [
+    {
+      "partyPan": "ASLPR 6237 P",
+      "partyName": "VIJAY ENTERPRISES",
+      "section": "",
+      "amountPaid": 10000,
+      "tdsDeducted": 100
+    },
+    {
+      "partyPan": "BUDPA 3038 A",
+      "partyName": "INDIA CONSTRUCTION",
+      "section": "",
+      "amountPaid": 431200,
+      "tdsDeducted": 4312
+    },
+    {
+      "partyPan": "ANHPD 1773 B",
+      "partyName": "RANJIT PANDURANG DESAI",
+      "section": "",
+      "amountPaid": 48700,
+      "tdsDeducted": 487
+    },
+    {
+      "partyPan": "AYOPM 2595 G",
+      "partyName": "KALPANA CONSTRUCTION",
+      "section": "",
+      "amountPaid": 220900,
+      "tdsDeducted": 2209
+    },
+    {
+      "partyPan": "AMAPJ 3689 A",
+      "partyName": "SUBHASH DIGAMBAR JADHAV",
+      "section": "",
+      "amountPaid": 662400,
+      "tdsDeducted": 6624
+    },
+    {
+      "partyPan": "EYZPS 5664 B",
+      "partyName": "ANSHIKA ENTERPRISES",
+      "section": "",
+      "amountPaid": 148600,
+      "tdsDeducted": 1486
+    },
+    {
+      "partyPan": "LXWPS 2245 B",
+      "partyName": "GOPAL SHARMA - CR",
+      "section": "",
+      "amountPaid": 271600,
+      "tdsDeducted": 2716
+    },
+    {
+      "partyPan": "BINPC 7318 D",
+      "partyName": "SHREE JAGAN BALU CHAVAN",
+      "section": "",
+      "amountPaid": 143200,
+      "tdsDeducted": 1432
+    },
+    {
+      "partyPan": "GHTPP 5055 E",
+      "partyName": "JAYESH SARAJU PASWAN",
+      "section": "",
+      "amountPaid": 134000,
+      "tdsDeducted": 1340
+    },
+    {
+      "partyPan": "FTWPP 2947 F",
+      "partyName": "RAJESH PASWAN",
+      "section": "",
+      "amountPaid": 325400,
+      "tdsDeducted": 3254
+    },
+    {
+      "partyPan": "DWKPS 6159 F",
+      "partyName": "SARVESH FABRICATORS",
+      "section": "",
+      "amountPaid": 234200,
+      "tdsDeducted": 2342
+    },
+    {
+      "partyPan": "BUDPA 3038 A",
+      "partyName": "INDIA CONSTRUCTION",
+      "section": "",
+      "amountPaid": 328600,
+      "tdsDeducted": 3286
+    },
+    {
+      "partyPan": "AUZPA 0369 F",
+      "partyName": "HIRA ENTERPRISES - SHAIKH",
+      "section": "",
+      "amountPaid": 38000,
+      "tdsDeducted": 380
+    },
+    {
+      "partyPan": "AUZPA 0369 F",
+      "partyName": "HIRA ENTERPRISES - SHAIKH",
+      "section": "",
+      "amountPaid": 151800,
+      "tdsDeducted": 1518
+    },
+    {
+      "partyPan": "DUMPR 0970 P",
+      "partyName": "AKENDRA RAM",
+      "section": "",
+      "amountPaid": 136900,
+      "tdsDeducted": 1369
+    },
+    {
+      "partyPan": "ATQPY 3326 G",
+      "partyName": "NITIN YADAV - AKLUJ",
+      "section": "",
+      "amountPaid": 88400,
+      "tdsDeducted": 884
+    },
+    {
+      "partyPan": "ETUPM 9083 G",
+      "partyName": "SANTOSH BHANUDAS MORE - AKLUJ",
+      "section": "",
+      "amountPaid": 94900,
+      "tdsDeducted": 949
+    },
+    {
+      "partyPan": "BDZPA 0883 L",
+      "partyName": "THE BHUMI LABOUR SUPPLIERS",
+      "section": "",
+      "amountPaid": 390500,
+      "tdsDeducted": 3905
+    },
+    {
+      "partyPan": "ADPFS 3379 A",
+      "partyName": "SHREE SWAMI ENGINEERS",
+      "section": "",
+      "amountPaid": 121000,
+      "tdsDeducted": 2420
+    },
+    {
+      "partyPan": "AFDFS 3811 D",
+      "partyName": "SIDDHIVINAYAK ENTERPRISES",
+      "section": "",
+      "amountPaid": 37650,
+      "tdsDeducted": 753
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, CheckCircle2, AlertTriangle, XCircle, FileText, UserX, LayoutGrid } from 'lucide-react';
@@ -12,9 +13,10 @@ interface ResultsCategoryTabsProps {
   summary: ReconciliationSummary;
   companyName: string;
   mode?: 'input' | 'output';
+  debitNotes?: { pr?: any[]; twoB?: any[] };
 }
 
-type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR';
+type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'taxTypeError';
 
 interface Category {
   key: CategoryKey;
@@ -60,9 +62,7 @@ function getExportData(results: ReconciliationResult[]) {
   });
 }
 
-export type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'taxTypeError';
-
-export function ResultsCategoryTabs({ results, summary, companyName, mode = 'input' }: ResultsCategoryTabsProps) {
+export function ResultsCategoryTabs({ results, summary, companyName, mode = 'input', debitNotes }: ResultsCategoryTabsProps) {
   const [active, setActive] = useState<CategoryKey>('all');
 
   const categories: Category[] = [
@@ -80,9 +80,15 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     : results.filter((r) => categories.find((c) => c.key === active)?.statuses.includes(r.status));
 
   const handleExportCategory = () => {
-    const cat = categories.find((c) => c.key === active);
-    const fileName = `GST_Reconciliation_${cat?.label.replace(/\s/g, '_') || 'All'}.xlsx`;
-    exportToXlsx(getExportData(filteredResults), fileName, companyName);
+    try {
+      const cat = categories.find((c) => c.key === active);
+      const fileName = `GST_Reconciliation_${cat?.label.replace(/\s/g, '_') || 'All'}.xlsx`;
+      exportToXlsx(getExportData(filteredResults), fileName, companyName, undefined, undefined, undefined, debitNotes);
+      toast.success(`Exported ${cat?.label || 'records'} successfully!`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   return (
@@ -128,7 +134,7 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
       </div>
 
       {/* Main Table Area */}
-      <div className="flex-1 w-full silk-reveal" style={{ animationDelay: '200ms' }}>
+      <div className="flex-1 min-w-0 w-full silk-reveal" style={{ animationDelay: '200ms' }}>
         {filteredResults.length > 0 ? (
           <ResultsTable results={filteredResults} companyName={companyName} mode={mode} />
         ) : (

@@ -12,7 +12,7 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
-const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements'];
+const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements', 'Forensic'];
 
 async function sync() {
     const officesSnap = await getDocs(collection(db, "offices"));
@@ -20,7 +20,7 @@ async function sync() {
         const officeId = o.id;
         for (let mod of defaultModules) {
             await setDoc(doc(db, 'module_usage', `${officeId}_${mod}`), { 
-                name: mod, is_enabled: 1, usage_count: 0, office_id: officeId 
+                name: mod, is_enabled: 1, usage_count: 0, office_id: officeId, module_name: mod
             }, { merge: true });
             console.log(`Synced ${officeId}_${mod}`);
         }

@@ -20,7 +20,7 @@ function ParticleField() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     let animationId: number;
-    let particles: { x: number; y: number; vx: number; vy: number; r: number; a: number; color: string }[] = [];
+    let particles: { x: number; y: number; vx: number; vy: number; size: number; a: number; color: string; char: string }[] = [];
 
     const colors = [
       'rgba(59,130,246,', // blue
@@ -28,6 +28,7 @@ function ParticleField() {
       'rgba(16,185,129,', // emerald
       'rgba(245,158,11,', // amber
     ];
+    const chars = ['₹', '₹', '%', '+', '-', '₹', 'GST', 'TAX', '₹'];
 
     const resize = () => {
       canvas.width = window.innerWidth;
@@ -40,11 +41,12 @@ function ParticleField() {
       particles = Array.from({ length: count }, () => ({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.25,
-        vy: (Math.random() - 0.5) * 0.15,
-        r: Math.random() * 1.8 + 0.4,
-        a: Math.random() * 0.4 + 0.05,
-        color: colors[Math.floor(Math.random() * colors.length)]
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3 - 0.2, // slight upward float for a stock ticker feel
+        size: Math.random() * 14 + 10, // font size
+        a: Math.random() * 0.3 + 0.05, // transparency
+        color: colors[Math.floor(Math.random() * colors.length)],
+        char: chars[Math.floor(Math.random() * chars.length)]
       }));
     };
 
@@ -53,31 +55,16 @@ function ParticleField() {
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
-        if (p.x < 0) p.x = canvas.width;
-        if (p.x > canvas.width) p.x = 0;
-        if (p.y < 0) p.y = canvas.height;
-        if (p.y > canvas.height) p.y = 0;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        
+        // Screen wrapping with a buffer to prevent popping
+        if (p.x < -50) p.x = canvas.width + 50;
+        if (p.x > canvas.width + 50) p.x = -50;
+        if (p.y < -50) p.y = canvas.height + 50;
+        if (p.y > canvas.height + 50) p.y = -50;
+        
+        ctx.font = `bold ${p.size}px "Inter", sans-serif`;
         ctx.fillStyle = `${p.color}${p.a})`;
-        ctx.fill();
-      }
-
-      // Draw subtle connection lines between close particles
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(100,140,200,${0.03 * (1 - dist / 120)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
+        ctx.fillText(p.char, p.x, p.y);
       }
       animationId = requestAnimationFrame(draw);
     };
@@ -420,8 +407,6 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-
         @keyframes float3D {
           0%, 100% { transform: translateY(0px) rotateX(2deg) rotateY(-1deg); }
           33% { transform: translateY(-8px) rotateX(-1deg) rotateY(2deg); }
@@ -430,6 +415,9 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
         .float-3d-hero {
           animation: float3D 8s ease-in-out infinite;
           transform-style: preserve-3d;
+        }
+        .float-3d-hero:hover {
+          animation-duration: 4s;
         }
 
         @keyframes gradientShift {
@@ -478,6 +466,20 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
           background: linear-gradient(90deg, transparent, rgba(59,130,246,0.15), transparent);
           animation: scanLine 8s linear infinite;
         }
+
+        .finance-grid-bg {
+          background-image: 
+            linear-gradient(to right, rgba(59, 130, 246, 0.15) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(59, 130, 246, 0.15) 1px, transparent 1px);
+          background-size: 60px 60px;
+          mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+          -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+          animation: gridScroll 20s linear infinite;
+        }
+        @keyframes gridScroll {
+          0% { background-position: 0 0; }
+          100% { background-position: 0 50px; }
+        }
       `}} />
 
       {/* FEEDBACK MODAL */}
@@ -495,7 +497,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.85, opacity: 0, y: 30 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="w-full max-w-md bg-slate-900/95 border border-slate-700 rounded-3xl p-8 shadow-2xl relative"
+              className="w-full max-w-md bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 rounded-3xl p-8 shadow-2xl relative"
               onClick={(e) => e.stopPropagation()}
             >
               <button onClick={() => setShowFeedbackModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
@@ -505,27 +507,27 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                 <div className="w-14 h-14 mx-auto bg-gradient-to-tr from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
                   <MessageSquare className="w-7 h-7 text-white" />
                 </div>
-                <h3 className="text-xl font-black text-white">Share Your Feedback</h3>
-                <p className="text-xs text-slate-400 mt-1">Help us improve RECO WITH VASWANI</p>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">Share Your Feedback</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Help us improve RECO WITH VASWANI</p>
               </div>
               <div className="space-y-5">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Your Name (Optional)</label>
-                  <input type="text" value={fbName} onChange={(e) => setFbName(e.target.value)} placeholder="Enter your name" className="w-full h-11 bg-slate-950/80 border border-slate-700 rounded-xl px-4 text-sm text-white focus:border-blue-500 outline-none transition-colors" />
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Your Name (Optional)</label>
+                  <input type="text" value={fbName} onChange={(e) => setFbName(e.target.value)} placeholder="Enter your name" className="w-full h-11 bg-slate-50 dark:bg-slate-950/80 border border-slate-300 dark:border-slate-700 rounded-xl px-4 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-colors" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Rating</label>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Rating</label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map(s => (
                       <button key={s} type="button" className="star-btn" onMouseEnter={() => setFbHoverRating(s)} onMouseLeave={() => setFbHoverRating(0)} onClick={() => setFbRating(s)}>
-                        <Star className={`w-7 h-7 ${(fbHoverRating || fbRating) >= s ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'}`} />
+                        <Star className={`w-7 h-7 ${(fbHoverRating || fbRating) >= s ? 'text-yellow-400 fill-yellow-400' : 'text-slate-300 dark:text-slate-600'}`} />
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Your Feedback</label>
-                  <textarea value={fbMessage} onChange={(e) => setFbMessage(e.target.value)} placeholder="Tell us what you think..." rows={4} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:border-blue-500 outline-none transition-colors resize-none" />
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Your Feedback</label>
+                  <textarea value={fbMessage} onChange={(e) => setFbMessage(e.target.value)} placeholder="Tell us what you think..." rows={4} className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-colors resize-none" />
                 </div>
                 <button onClick={handleSubmitFeedback} disabled={!fbMessage.trim()} className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-black text-sm transition-all shadow-lg shadow-blue-600/20 hover:scale-[1.02] flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed">
                   Submit Feedback <Send className="w-4 h-4" />
@@ -536,7 +538,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
         )}
       </AnimatePresence>
 
-      <div className="min-h-screen bg-[#090d16] text-[#E4EEF8] select-none relative overflow-x-hidden">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-[#E4EEF8] select-none relative overflow-x-hidden">
 
         {/* PARTICLE CANVAS */}
         <ParticleField />
@@ -557,19 +559,19 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-slate-800/60 pb-8"
+            className="flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-slate-200 dark:border-slate-800/60 pb-8"
           >
             <div className="flex items-center gap-3 text-center sm:text-left">
-              <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden shadow-lg glow-pulse">
-                <img src="./logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+              <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shadow-lg glow-pulse">
+                <img src="./logo.png" alt="Logo" className="w-8 h-8 object-contain dark:invert-0 invert" />
               </div>
               <div>
-                <h1 className="text-2xl font-black text-white tracking-tight">RECO WITH VASWANI</h1>
-                <p className="text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold mt-0.5 font-mono">GST Compliance & Automation Suite</p>
+                <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">RECO WITH VASWANI</h1>
+                <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-[0.25em] font-bold mt-0.5 font-mono">GST Compliance & Automation Suite</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => setShowFeedbackModal(true)} className="px-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-purple-500/30 text-xs font-bold text-slate-300 hover:text-purple-300 uppercase tracking-wider transition-all flex items-center gap-2">
+              <button onClick={() => setShowFeedbackModal(true)} className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:border-purple-500/30 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-purple-500 dark:hover:text-purple-300 uppercase tracking-wider transition-all flex items-center gap-2 shadow-sm dark:shadow-none">
                 <MessageSquare className="w-3.5 h-3.5" /> Feedback
               </button>
               <button onClick={onNext} className="btn-np-primary text-xs uppercase tracking-widest gap-2 flex items-center justify-center py-2.5 px-6 shadow-lg shadow-blue-500/10 hover:scale-[1.03] transition-transform duration-300">
@@ -581,7 +583,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
           {/* ═══════════ HERO SECTION (3D FLOATING) ═══════════ */}
           <motion.div
             style={{ y: heroY, scale: heroScale }}
-            className="grid lg:grid-cols-12 gap-10 items-center bg-slate-900/25 border border-slate-800/40 rounded-3xl p-10 backdrop-blur-xl shadow-2xl glow-pulse relative overflow-hidden"
+            className="grid lg:grid-cols-12 gap-10 items-center bg-white/50 dark:bg-slate-900/25 border border-slate-200 dark:border-slate-800/40 rounded-3xl p-10 backdrop-blur-xl shadow-2xl glow-pulse relative overflow-hidden"
           >
             {/* Decorative grid lines */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-3xl">
@@ -602,7 +604,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
 
               {/* 3D FLOATING TITLE */}
               <div className="float-3d-hero">
-                <h2 className="text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
+                <h2 className="text-3xl md:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
                   Enterprise-Grade<br />
                   <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent gradient-animate">
                     GST Compliance Automation
@@ -610,11 +612,11 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                 </h2>
               </div>
 
-              <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
                 Built for Chartered Accountants, Tax Consultants, and finance professionals who demand accuracy, speed, and security. RECO WITH VASWANI runs 100% offline on your local network — your data never leaves your premises.
               </p>
 
-              <div className="flex flex-wrap gap-4 text-xs font-mono text-slate-400 pt-2">
+              <div className="flex flex-wrap gap-4 text-xs font-mono text-slate-500 dark:text-slate-400 pt-2">
                 {[
                   { icon: <Laptop className="w-4 h-4 text-blue-400" />, text: '100% Offline' },
                   { icon: <Zap className="w-4 h-4 text-yellow-400" />, text: 'Sub-500ms Processing' },
@@ -625,7 +627,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 + i * 0.12, duration: 0.5 }}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/40 border border-slate-800/60"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/60 shadow-sm dark:shadow-none"
                   >
                     {badge.icon} {badge.text}
                   </motion.span>
@@ -640,28 +642,35 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               className="lg:col-span-5 relative flex items-center justify-center p-8 hidden lg:flex"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.06] to-purple-500/[0.06] blur-3xl rounded-full orb-float" />
-              <div className="relative text-center space-y-6 float-3d-hero" style={{ animationDelay: '-2s' }}>
-                <div className="relative">
-                  <FileSpreadsheet className="w-32 h-32 text-blue-500/25 mx-auto drop-shadow-[0_0_40px_rgba(59,130,246,0.12)]" />
-                  <motion.div
-                    animate={{ y: [0, -8, 0], rotate: [0, 5, 0] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                    className="absolute -top-3 -right-3 w-11 h-11 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center"
-                  >
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  </motion.div>
-                  <motion.div
-                    animate={{ y: [0, 6, 0], rotate: [0, -3, 0] }}
-                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                    className="absolute -bottom-1 -left-3 w-9 h-9 bg-blue-500/20 border border-blue-500/30 rounded-lg flex items-center justify-center"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-blue-400" />
-                  </motion.div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em] font-bold">On-Premise Only</p>
-                  <p className="text-[9px] text-slate-600">Your data. Your servers. Your control.</p>
-                </div>
+              <div className="relative float-3d-hero w-full max-w-[480px]" style={{ animationDelay: '-2s' }}>
+                 <div className="relative w-full rounded-[2rem] border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 backdrop-blur-xl overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)] flex flex-col">
+                   
+                   <div className="relative w-full aspect-video">
+                     <div className="absolute inset-0 finance-grid-bg opacity-60 z-0 pointer-events-none"></div>
+                     <video 
+                       src="./finance-bg.mp4" 
+                       className="absolute inset-0 w-full h-full object-cover opacity-70 mix-blend-screen"
+                       autoPlay muted loop playsInline 
+                     />
+                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent z-10 pointer-events-none"></div>
+                     
+                     <motion.div animate={{ y: [0, -8, 0], rotate: [0, 5, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }} className="absolute top-6 right-6 w-12 h-12 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center z-20 backdrop-blur-md shadow-lg">
+                       <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                     </motion.div>
+                     <motion.div animate={{ y: [0, 6, 0], rotate: [0, -3, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }} className="absolute top-20 -left-4 w-10 h-10 bg-blue-500/20 border border-blue-500/30 rounded-xl flex items-center justify-center z-20 backdrop-blur-md shadow-lg">
+                       <ShieldCheck className="w-5 h-5 text-blue-400" />
+                     </motion.div>
+                   </div>
+
+                   <div className="relative z-20 p-6 text-left w-full border-t border-slate-200 dark:border-slate-700/50 bg-slate-50/90 dark:bg-slate-900/60">
+                     <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-mono text-blue-400 uppercase tracking-[0.3em] font-bold">Live Environment</p>
+                       <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center animate-pulse"><Database className="w-3.5 h-3.5 text-blue-400" /></div>
+                     </div>
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight mb-2">Data streams<br/>synchronized</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">On-premise infrastructure securely processing 100,000+ rows instantly.</p>
+                   </div>
+                 </div>
               </div>
             </motion.div>
           </motion.div>
@@ -672,8 +681,8 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest">
                 <Settings className="w-3.5 h-3.5" /> Complete Tool Suite
               </div>
-              <h2 className="text-3xl font-black text-white">6 Powerful Modules, One Platform</h2>
-              <p className="text-sm text-slate-400 max-w-2xl mx-auto">Each tool is engineered to solve a specific, high-pain compliance problem. Here's exactly what each one does, the problems it eliminates, and how it saves you hours every week.</p>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-white">6 Powerful Modules, One Platform</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">Each tool is engineered to solve a specific, high-pain compliance problem. Here's exactly what each one does, the problems it eliminates, and how it saves you hours every week.</p>
             </div>
           </ScrollReveal>
 
@@ -683,9 +692,9 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               const c = colorMap[tool.color];
               return (
                 <ScrollReveal key={idx} delay={0.08}>
-                  <TiltCard className="bg-slate-950/40 border border-slate-800/50 rounded-3xl overflow-hidden shadow-xl hover:shadow-2xl">
+                  <TiltCard className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/50 rounded-3xl overflow-hidden shadow-xl hover:shadow-2xl">
                     {/* Tool Header */}
-                    <div className={`p-8 bg-gradient-to-r ${tool.gradient} border-b border-slate-800/40`}>
+                    <div className={`p-8 bg-gradient-to-r ${tool.gradient} border-b border-slate-200 dark:border-slate-800/40`}>
                       <div className="flex items-start gap-5">
                         <Iso3DIcon color={tool.color} imageSrc={tool.image} />
                         <div className="flex-1">
@@ -693,8 +702,8 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                             <span className={`text-[10px] font-black ${c.text} uppercase tracking-widest`}>{tool.num}</span>
                             <span className="w-8 h-px bg-slate-700"></span>
                           </div>
-                          <h3 className="text-xl font-black text-white">{tool.title}</h3>
-                          <p className="text-sm text-slate-300 leading-relaxed mt-3 max-w-3xl">{tool.description}</p>
+                          <h3 className="text-xl font-black text-slate-900 dark:text-white">{tool.title}</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-3 max-w-3xl">{tool.description}</p>
                         </div>
                       </div>
                     </div>
@@ -709,7 +718,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                         </div>
                         <ul className="space-y-2.5">
                           {tool.functions.map((f, i) => (
-                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-300 leading-relaxed">
+                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                               <CheckCircle2 className={`w-3.5 h-3.5 ${c.text} flex-shrink-0 mt-0.5`} />
                               {f}
                             </li>
@@ -725,7 +734,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                         </div>
                         <ul className="space-y-2.5">
                           {tool.problems.map((p, i) => (
-                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-400 leading-relaxed">
+                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-500/60 flex-shrink-0 mt-1.5"></span>
                               {p}
                             </li>
@@ -741,7 +750,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                         </div>
                         <ul className="space-y-2.5">
                           {tool.solutions.map((s, i) => (
-                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-300 leading-relaxed">
+                            <li key={i} className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
                               {s}
                             </li>
@@ -757,10 +766,10 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
 
           {/* ═══════════ FEEDBACK CTA ═══════════ */}
           <ScrollReveal>
-            <div className="text-center bg-gradient-to-r from-blue-500/5 via-purple-500/10 to-blue-500/5 border border-slate-800/50 rounded-3xl p-10 space-y-4">
+            <div className="text-center bg-white dark:bg-transparent bg-gradient-to-r from-blue-500/5 via-purple-500/10 to-blue-500/5 border border-slate-200 dark:border-slate-800/50 rounded-3xl p-10 space-y-4 shadow-sm dark:shadow-none">
               <MessageSquare className="w-10 h-10 text-purple-400 mx-auto" />
-              <h3 className="text-xl font-black text-white">We Value Your Opinion</h3>
-              <p className="text-sm text-slate-400 max-w-md mx-auto">Your feedback shapes the future of RECO WITH VASWANI. Tell us what you love and what we can improve.</p>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">We Value Your Opinion</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">Your feedback shapes the future of RECO WITH VASWANI. Tell us what you love and what we can improve.</p>
               <button onClick={() => setShowFeedbackModal(true)} className="mt-2 px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-sm uppercase tracking-wider transition-all shadow-lg shadow-purple-500/20 hover:scale-[1.02] flex items-center gap-2 mx-auto">
                 <Star className="w-4 h-4" /> Share Your Feedback
               </button>
@@ -772,8 +781,8 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
             <ScrollReveal>
               <div className="space-y-6">
                 <div className="text-center space-y-2">
-                  <h3 className="text-xl font-black text-white">What Our Users Say</h3>
-                  <p className="text-xs text-slate-400">Real feedback from professionals using RECO WITH VASWANI</p>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">What Our Users Say</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Real feedback from professionals using RECO WITH VASWANI</p>
                 </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {feedbackList.slice(0, 9).map((fb, i) => (
@@ -783,18 +792,18 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={{ once: true }}
                       transition={{ delay: i * 0.08, duration: 0.5 }}
-                      className="p-5 bg-slate-900/40 border border-slate-800/50 rounded-2xl space-y-3 hover:border-slate-700/60 transition-colors"
+                      className="p-5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50 rounded-2xl space-y-3 hover:border-slate-300 dark:hover:border-slate-700/60 transition-colors shadow-sm dark:shadow-none"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-white">{fb.name}</span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">{fb.name}</span>
                         <span className="text-[9px] text-slate-500 font-mono">{fb.date}</span>
                       </div>
                       <div className="flex gap-0.5">
                         {[1, 2, 3, 4, 5].map(s => (
-                          <Star key={s} className={`w-3.5 h-3.5 ${fb.rating >= s ? 'text-yellow-400 fill-yellow-400' : 'text-slate-700'}`} />
+                          <Star key={s} className={`w-3.5 h-3.5 ${fb.rating >= s ? 'text-yellow-400 fill-yellow-400' : 'text-slate-200 dark:text-slate-700'}`} />
                         ))}
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed italic">"{fb.message}"</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic">"{fb.message}"</p>
                     </motion.div>
                   ))}
                 </div>
@@ -804,10 +813,10 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
 
           {/* ═══════════ CTA + BOTTOM NEXT BUTTON ═══════════ */}
           <ScrollReveal>
-            <div className="border-t border-slate-800/50 pt-10 flex flex-col sm:flex-row items-center justify-between gap-6 bg-slate-900/20 p-8 rounded-3xl">
+            <div className="border-t border-slate-200 dark:border-slate-800/50 pt-10 flex flex-col sm:flex-row items-center justify-between gap-6 bg-slate-100/50 dark:bg-slate-900/20 p-8 rounded-3xl">
               <div className="text-center sm:text-left space-y-2">
-                <h4 className="text-lg font-black text-white">Ready to Transform Your Practice?</h4>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-md">Activate your license key and start processing compliance data in minutes. No cloud dependency. No learning curve.</p>
+                <h4 className="text-lg font-black text-slate-900 dark:text-white">Ready to Transform Your Practice?</h4>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-md">Activate your license key and start processing compliance data in minutes. No cloud dependency. No learning curve.</p>
               </div>
               <button onClick={onNext} className="btn-np-primary h-12 text-xs uppercase tracking-widest gap-2 flex items-center justify-center py-3 px-8 shadow-lg shadow-blue-600/10 hover:scale-[1.02] transition-transform duration-300 flex-shrink-0">
                 Get Started <ChevronRight className="w-4 h-4" />
@@ -817,41 +826,41 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
 
           {/* ═══════════ CONTACT FOOTER ═══════════ */}
           <ScrollReveal>
-            <footer className="border-t border-slate-800/40 pt-10 pb-4 space-y-6">
+            <footer className="border-t border-slate-200 dark:border-slate-800/40 pt-10 pb-4 space-y-6">
               <div className="grid sm:grid-cols-3 gap-8">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden">
-                      <img src="./logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                    <div className="w-8 h-8 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden">
+                      <img src="./logo.png" alt="Logo" className="w-5 h-5 object-contain dark:invert-0 invert" />
                     </div>
-                    <span className="text-sm font-black text-white">RECO WITH VASWANI</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">RECO WITH VASWANI</span>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-relaxed">Professional GST compliance and automation suite for Chartered Accountants, Tax Consultants, and finance professionals across India.</p>
                 </div>
                 <div className="space-y-3">
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quick Links</h5>
                   <ul className="space-y-2">
-                    <li><button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-xs text-slate-400 hover:text-white transition-colors">Back to Top</button></li>
-                    <li><button onClick={() => setShowFeedbackModal(true)} className="text-xs text-slate-400 hover:text-white transition-colors">Give Feedback</button></li>
-                    <li><button onClick={onNext} className="text-xs text-slate-400 hover:text-white transition-colors">Activate License</button></li>
+                    <li><button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Back to Top</button></li>
+                    <li><button onClick={() => setShowFeedbackModal(true)} className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Give Feedback</button></li>
+                    <li><button onClick={onNext} className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Activate License</button></li>
                   </ul>
                 </div>
                 <div className="space-y-3">
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact Us</h5>
                   <ul className="space-y-2.5">
-                    <li className="flex items-center gap-2.5 text-xs text-slate-300">
+                    <li className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300">
                       <Phone className="w-3.5 h-3.5 text-blue-400" /> +91 1234567890
                     </li>
-                    <li className="flex items-center gap-2.5 text-xs text-slate-300">
+                    <li className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300">
                       <Mail className="w-3.5 h-3.5 text-purple-400" /> abc@gmail.com
                     </li>
-                    <li className="flex items-center gap-2.5 text-xs text-slate-300">
+                    <li className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300">
                       <MapPin className="w-3.5 h-3.5 text-emerald-400" /> India
                     </li>
                   </ul>
                 </div>
               </div>
-              <div className="border-t border-slate-800/40 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="border-t border-slate-200 dark:border-slate-800/40 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <p className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.2em]">© {new Date().getFullYear()} RECO WITH VASWANI. All rights reserved.</p>
                 <div className="flex items-center gap-4 text-[9px] text-slate-600">
                   <span>Contact: +91 1234567890</span>

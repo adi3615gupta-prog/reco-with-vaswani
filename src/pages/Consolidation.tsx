@@ -4,7 +4,7 @@ import { FileUploadZone } from "@/components/consolidation/FileUploadZone";
 import { ColumnMapper } from "@/components/consolidation/ColumnMapper";
 import { DataPreview } from "@/components/consolidation/DataPreview";
 import { CompanyInfoForm, type CompanyInfo } from "@/components/consolidation/CompanyInfoForm";
-import { Database, Trash2, Building2 } from "lucide-react";
+import { Database, Trash2, Building2, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 import {
   type ParsedFile,
@@ -12,14 +12,14 @@ import {
   type ProcessedRow,
   processData,
 } from "@/lib/gst-processor";
-
-const getApiHost = () => localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1';
+import { getApiBase, getAuthToken } from '@/lib/api';
 
 interface ConsolidationProps {
   onSendToReco?: (companyName: string) => void;
 }
 
 export default function Consolidation({ onSendToReco }: ConsolidationProps = {}) {
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [step, setStep] = useState(0);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [parsedFiles, setParsedFiles] = useState<ParsedFile[]>([]);
@@ -29,8 +29,8 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
   const [networkConsolidations, setNetworkConsolidations] = useState<{id: string, company_name: string, timestamp: number}[]>([]);
 
   useEffect(() => {
-    fetch(`http://${getApiHost()}:3001/api/consolidations`, {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+    fetch(`${getApiBase()}/api/consolidations`, {
+      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
     })
     .then(res => res.json())
     .then(data => {
@@ -41,7 +41,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
 
   const handleCompany = useCallback(async (info: CompanyInfo) => {
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/usage/increment`, {
+      const res = await fetch(`${getApiBase()}/api/usage/increment`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ module_name: 'Consolidator' })
       });
@@ -119,8 +119,8 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
   const handleLoadWorkspace = async (c: {id: string, company_name: string}) => {
     const toastId = toast.loading("Loading workspace...");
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/consolidations/${c.id}`, {
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+      const res = await fetch(`${getApiBase()}/api/consolidations/${c.id}`, {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
@@ -172,6 +172,41 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
           </p>
         </div>
 
+        {/* Collapsible Quick Guide */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg max-w-4xl mx-auto mb-8">
+          <button 
+            onClick={() => setShowQuickGuide(!showQuickGuide)} 
+            className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+          >
+            <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+              <Lightbulb className="w-4 h-4 text-yellow-400" />
+              Quick Consolidator User Guide
+            </span>
+            <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+          </button>
+          {showQuickGuide && (
+            <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+              <p><strong>Overview:</strong> Merge multi-branch purchase or sales ledgers exported from Tally/ERP into a unified, consolidated sheet.</p>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                  <ol className="space-y-1.5 pl-4 list-decimal">
+                    <li><strong>Company Info:</strong> Enter the target company name, GSTIN (15 characters), and date ranges.</li>
+                    <li><strong>Upload Ledgers:</strong> Drag and drop your multiple ledger spreadsheets.</li>
+                    <li><strong>Map Ledgers:</strong> Verify column mappings for each ledger (particulars, GSTIN, CGST/SGST/IGST).</li>
+                    <li><strong>Preview & Export:</strong> Review the consolidated preview and download the Excel output.</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-300 mb-1.5">Inputs & Outputs:</p>
+                  <p className="mb-2"><strong>Required Inputs:</strong> Organization details, and at least two Excel files (purchase/sales registers) containing supplier details and transaction amounts.</p>
+                  <p><strong>Outputs Produced:</strong> Unified consolidated registers and raw SQLite tables saved to the server database.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <Stepper currentStep={step} />
 
         {step === 0 && (
@@ -192,9 +227,9 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
                           e.stopPropagation();
                           if (window.confirm("Delete this workspace permanently from the server?")) {
                             try {
-                              await fetch(`http://${getApiHost()}:3001/api/consolidations/${c.id}`, {
+                              await fetch(`${getApiBase()}/api/consolidations/${c.id}`, {
                                 method: 'DELETE',
-                                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+                                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
                               });
                               setNetworkConsolidations(prev => prev.filter(item => item.id !== c.id));
                               toast.success("Consolidation deleted from server");

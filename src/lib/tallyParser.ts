@@ -76,34 +76,35 @@ const parseTallyAmount = (val: string | null): number => {
 };
 
 // Automatic mapping dictionary linking common Tally primary/parent groups to Schedule III Codes
+// Automatic mapping dictionary linking common Tally primary/parent groups to Schedule III Codes
 export const AUTO_MAPPING_DICT: Record<string, number> = {
-  'Trade Receivables': 1111,
+  'Trade Receivables': 1112,
   'Sundry Debtors': 1112,
-  'Sundry Creditors': 2031,
-  'Trade Payables': 2031,
+  'Sundry Creditors': 2212,
+  'Trade Payables': 2212,
   'Bank Accounts': 1122,
   'Cash-in-Hand': 1121,
   'Cash': 1121,
-  'Duties & Taxes': 2041,
+  'Duties & Taxes': 2232,
   'Fixed Assets': 1003,
   'Sales Accounts': 3001,
   'Purchase Accounts': 4001,
   'Direct Expenses': 4021,
   'Indirect Expenses': 4061,
   'Capital Account': 2001,
-  'Reserves & Surplus': 2011,
-  'Provisions': 2051,
-  'Loans (Liability)': 2021,
-  'Unsecured Loans': 2021,
-  'Secured Loans': 2021,
+  'Reserves & Surplus': 2013,
+  'Provisions': 2243,
+  'Loans (Liability)': 2101,
+  'Unsecured Loans': 2102,
+  'Secured Loans': 2101,
   'Investments': 1041,
-  'Loans & Advances (Asset)': 1051,
-  'Suspense A/c': 2061,
+  'Loans & Advances (Asset)': 1052,
+  'Suspense A/c': 2233,
   'Current Assets': 1152,
-  'Current Liabilities': 2061,
-  'Direct Incomes': 3001,
-  'Indirect Incomes': 3011,
-  'Misc. Expenses (ASSET)': 1081,
+  'Current Liabilities': 2233,
+  'Direct Incomes': 3003,
+  'Indirect Incomes': 3015,
+  'Misc. Expenses (ASSET)': 1082,
   'Stock-in-Hand': 1101,
   'Closing Stock': 1101,
 };
@@ -195,7 +196,21 @@ export const getFallbackPrimaryGroup = (parentGroup: string, existingPrimary: st
 };
 
 // Helper to auto-map based on parent or primary group
-export const resolveMappingCode = (parentGroup: string, primaryGroup: string): number | null => {
+export const resolveMappingCode = (ledgerName: string, parentGroup: string, primaryGroup: string): number | null => {
+  const name = ledgerName.toUpperCase().trim();
+  
+  // Specific Statutory & Corporate Mappings
+  if (name.includes('GST PAYABLE')) return 2232;
+  if (name.includes('TDS PAYABLE')) return 2232;
+  if (name.includes('PROVIDENT FUND PAYABLE') || name.includes('PF PAYABLE')) return 2232;
+  if (name.includes('ESIC PAYABLE') || name.includes('ESI PAYABLE')) return 2232;
+  if (name.includes('DIRECTOR') && name.includes('SALARY PAYABLE')) return 2241;
+  if (name.includes('SALARY PAYABLE') || name.includes('SALARIES PAYABLE')) return 2241;
+  if (name.includes('RETENTION PAYABLE')) return 2212;
+  if (name.includes('BUILDING ACCOUNT') || name === 'BUILDINGS' || name === 'BUILDING') return 1002;
+  if (name.includes('PLANT AND EQUIPMENT') || name.includes('PLANT & EQUIPMENT') || name === 'PLANT AND MACHINERY') return 1003;
+  if (name.includes('FURNITURE AND FIXTURES') || name.includes('FURNITURE & FIXTURES') || name.includes('FURNITURE & FITTING')) return 1004;
+
   if (AUTO_MAPPING_DICT[parentGroup]) return AUTO_MAPPING_DICT[parentGroup];
   if (AUTO_MAPPING_DICT[primaryGroup]) return AUTO_MAPPING_DICT[primaryGroup];
   return null;
@@ -262,7 +277,7 @@ export const parseTallyCollectionsToTrialBalance = (groupXmlStr: string, ledgerX
 
     if (cyBal === 0 && pyBal === 0) return;
 
-    const mappedCode = resolveMappingCode(parentName, primaryGroup);
+    const mappedCode = resolveMappingCode(ledgerName, parentName, primaryGroup);
 
     let suggestedCode: number | undefined;
     let confidence: number | undefined;

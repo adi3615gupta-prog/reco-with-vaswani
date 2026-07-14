@@ -1,65 +1,44 @@
 export type ReconciliationMode = 'input' | 'output';
 
-export interface ModeTerminology {
-  mode: ReconciliationMode;
-  title: string;
-  subtitle: string;
-  primaryBookLabel: string;       // e.g. "Purchase Register" / "Sales Register"
-  primaryBookDesc: string;
-  secondaryBookLabel: string;     // e.g. "Journal Register" / "Sales Book"
-  secondaryBookDesc: string;
-  govtLabel: string;              // "GSTR-2B" / "GSTR-1"
-  govtDesc: string;
-  partyLabel: string;             // "Supplier" / "Customer"
-  partyTradeLabel: string;        // "Trade / Legal Name"
-  primaryShort: string;           // "PR" / "Sales"
-  govtShort: string;              // "2B" / "GSTR-1"
-  riskLabel: string;              // "at ITC risk" / "tax liability gap"
-  missingInGovtAction: string;
-  missingInBookAction: string;
-  valueMismatchAction: string;
-  exportPrefix: string;           // "Input" / "Output"
-}
+export const getTerminology = (mode: ReconciliationMode) => {
+  return {
+    primaryRecord: mode === 'input' ? 'Purchase Register' : 'Sales Register',
+    secondaryRecord: mode === 'input' ? 'GSTR-2B' : 'GSTR-1',
+    additionalBooks: mode === 'input' ? 'Journals' : 'Additional Sales Books',
+    partyName: mode === 'input' ? 'Supplier' : 'Customer/Recipient',
+    missingInPrimary: mode === 'input' ? 'Missing in PR' : 'Missing in Sales',
+    missingInSecondary: mode === 'input' ? 'Missing in 2B' : 'Missing in GSTR-1',
+    actionMissingPrimary: mode === 'input' 
+      ? 'Follow up with supplier / Verify invoices' 
+      : 'Verify with customer; possible unrecorded sale',
+    actionMissingSecondary: mode === 'input' 
+      ? 'Check if filed in next period / Claim ITC later' 
+      : 'File in next GSTR-1 / amend',
+    actionValueMismatch: mode === 'input'
+      ? 'Verify ITC amount with supplier'
+      : 'Verify Taxable Value & tax with customer',
+    primaryShorthand: mode === 'input' ? 'PR' : 'Sales',
+    secondaryShorthand: mode === 'input' ? '2B' : 'GSTR-1',
+  };
+};
 
-export const TERMS: Record<ReconciliationMode, ModeTerminology> = {
+export const TERMS = {
   input: {
-    mode: 'input',
-    title: 'Input Reconciliation',
-    subtitle: 'Purchase Register ↔ GSTR-2B',
     primaryBookLabel: 'Purchase Register',
-    primaryBookDesc: 'Your books / Tally export',
-    secondaryBookLabel: 'Journal Voucher',
-    secondaryBookDesc: 'Optional — combined with Purchase Register and compared to GSTR-2B',
-    govtLabel: 'GSTR-2B Data',
-    govtDesc: 'Downloaded from GST Portal',
-    partyLabel: 'Supplier',
-    partyTradeLabel: 'Trade / Legal Name',
+    primaryBookDesc: 'Upload your Purchase Register (PR) Excel',
+    govtLabel: 'GSTR-2B',
+    govtDesc: 'Upload GSTR-2B downloaded from GST Portal',
+    partyLabel: 'Supplier Name',
     primaryShort: 'PR',
-    govtShort: '2B',
-    riskLabel: 'at ITC risk',
-    missingInGovtAction: 'Follow up with Vendor / Hold GST Payment.',
-    missingInBookAction: 'Possible vendor entry — verify and book in PR.',
-    valueMismatchAction: 'Verify Taxable Value with Vendor.',
-    exportPrefix: 'Input',
+    govtShort: '2B'
   },
   output: {
-    mode: 'output',
-    title: 'Output Reconciliation',
-    subtitle: 'Sales Register ↔ GSTR-1',
     primaryBookLabel: 'Sales Register',
-    primaryBookDesc: 'Your sales books / Tally export',
-    secondaryBookLabel: 'Sales Book',
-    secondaryBookDesc: 'Optional — extra sales books combined with Sales Register and compared to GSTR-1',
-    govtLabel: 'GSTR-1 Data',
-    govtDesc: 'Downloaded from GST Portal',
-    partyLabel: 'Customer',
-    partyTradeLabel: 'Trade / Legal Name',
+    primaryBookDesc: 'Upload your Sales Register Excel',
+    govtLabel: 'GSTR-1',
+    govtDesc: 'Upload GSTR-1 downloaded from GST Portal',
+    partyLabel: 'Customer/Recipient Name',
     primaryShort: 'Sales',
-    govtShort: 'GSTR-1',
-    riskLabel: 'tax liability gap',
-    missingInGovtAction: 'File in next GSTR-1 / amend return.',
-    missingInBookAction: 'Possible unrecorded sale — verify with customer.',
-    valueMismatchAction: 'Verify Taxable Value & tax with Customer.',
-    exportPrefix: 'Output',
-  },
+    govtShort: 'GSTR-1'
+  }
 };

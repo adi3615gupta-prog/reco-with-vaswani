@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CMAReportPayload",
+  "description": "Payload structure sent from the frontend to trigger the automated CMA & Project Report Excel workbook generation.",
+  "type": "object",
+  "required": [
+    "client_metadata",
+    "assumptions",
+    "financial_inputs",
+    "loan_details",
+    "drawing_power_inputs"
+  ],
+  "properties": {
+    "client_metadata": {
+      "type": "object",
+      "required": ["company_name"],
+      "properties": {
+        "company_name": { "type": "string", "example": "Astra Tech Manufacturing Private Limited" },
+        "cin_number": { "type": "string", "example": "U29100MH2024PTC412345" },
+        "registered_address": { "type": "string", "example": "Plot No. 45, MIDC Industrial Area, Andheri East, Mumbai - 400093" },
+        "audit_firm_name": { "type": "string", "example": "Vaswani & Associates, Chartered Accountants" },
+        "firm_reg_no": { "type": "string", "example": "123456W" },
+        "partner_name": { "type": "string", "example": "CA Anish Vaswani" },
+        "membership_no": { "type": "string", "example": "089456" },
+        "udin": { "type": "string", "example": "26089456AAAAAB1234" },
+        "director_1_name": { "type": "string", "example": "Siddharth Malhotra" },
+        "director_2_name": { "type": "string", "example": "Neha Sharma" }
+      }
+    },
+    "assumptions": {
+      "type": "object",
+      "required": [
+        "projection_years",
+        "capacity_utilization_pct",
+        "sales_growth_pct",
+        "rm_cost_pct",
+        "other_expenses_pct",
+        "tax_rate_pct",
+        "depreciation_method",
+        "depreciation_rates"
+      ],
+      "properties": {
+        "projection_years": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 5,
+          "maxItems": 5,
+          "example": [2026, 2027, 2028, 2029, 2030]
+        },
+        "capacity_utilization_pct": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 5,
+          "maxItems": 5,
+          "example": [60.0, 70.0, 80.0, 90.0, 95.0]
+        },
+        "sales_growth_pct": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 5,
+          "maxItems": 5,
+          "description": "Sales growth rate % for years 1-5 (first year represents growth over the base historical year)",
+          "example": [10.0, 15.0, 12.0, 10.0, 8.0]
+        },
+        "rm_cost_pct": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 5,
+          "maxItems": 5,
+          "description": "Raw Material Cost as % of Sales for years 1-5",
+          "example": [55.0, 54.0, 53.5, 53.0, 53.0]
+        },
+        "other_expenses_pct": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 5,
+          "maxItems": 5,
+          "description": "Power, labor, and admin expenses as % of Sales",
+          "example": [12.0, 11.5, 11.0, 10.5, 10.5]
+        },
+        "tax_rate_pct": { "type": "number", "example": 25.17 },
+        "depreciation_method": {
+          "type": "string",
+          "enum": ["WDV", "SLM"],
+          "example": "WDV"
+        },
+        "depreciation_rates": {
+          "type": "object",
+          "required": ["building", "plant_machinery", "computers", "office_equipment"],
+          "properties": {
+            "building": { "type": "number", "example": 10.0 },
+            "plant_machinery": { "type": "number", "example": 15.0 },
+            "computers": { "type": "number", "example": 40.0 },
+            "office_equipment": { "type": "number", "example": 10.0 }
+          }
+        }
+      }
+    },
+    "financial_inputs": {
+      "type": "object",
+      "required": [
+        "base_year_sales",
+        "share_capital_init",
+        "fixed_assets_init",
+        "capex_plan"
+      ],
+      "properties": {
+        "base_year_sales": { "type": "number", "description": "Base sales of the preceding historical year in ₹ Lakhs", "example": 450.0 },
+        "share_capital_init": { "type": "number", "description": "Starting Share Capital in ₹ Lakhs", "example": 120.0 },
+        "fixed_assets_init": {
+          "type": "object",
+          "required": ["building", "plant_machinery", "computers", "office_equipment"],
+          "properties": {
+            "building": { "type": "number", "example": 150.0 },
+            "plant_machinery": { "type": "number", "example": 220.0 },
+            "computers": { "type": "number", "example": 15.0 },
+            "office_equipment": { "type": "number", "example": 25.0 }
+          }
+        },
+        "capex_plan": {
+          "type": "array",
+          "description": "Yearly capital additions (greater than and less than 180 days logic) for years 1-5",
+          "items": {
+            "type": "object",
+            "required": ["year", "building", "plant_machinery", "computers", "office_equipment"],
+            "properties": {
+              "year": { "type": "integer" },
+              "building": {
+                "type": "object",
+                "properties": { "gt_180_days": { "type": "number" }, "lt_180_days": { "type": "number" } }
+              },
+              "plant_machinery": {
+                "type": "object",
+                "properties": { "gt_180_days": { "type": "number" }, "lt_180_days": { "type": "number" } }
+              },
+              "computers": {
+                "type": "object",
+                "properties": { "gt_180_days": { "type": "number" }, "lt_180_days": { "type": "number" } }
+              },
+              "office_equipment": {
+                "type": "object",
+                "properties": { "gt_180_days": { "type": "number" }, "lt_180_days": { "type": "number" } }
+              }
+            }
+          },
+          "example": [
+            {
+              "year": 1,
+              "building": { "gt_180_days": 20.0, "lt_180_days": 5.0 },
+              "plant_machinery": { "gt_180_days": 40.0, "lt_180_days": 10.0 },
+              "computers": { "gt_180_days": 2.0, "lt_180_days": 0.5 },
+              "office_equipment": { "gt_180_days": 3.0, "lt_180_days": 1.0 }
+            },
+            {
+              "year": 2,
+              "building": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "plant_machinery": { "gt_180_days": 15.0, "lt_180_days": 0.0 },
+              "computers": { "gt_180_days": 1.0, "lt_180_days": 0.0 },
+              "office_equipment": { "gt_180_days": 2.0, "lt_180_days": 0.0 }
+            },
+            {
+              "year": 3,
+              "building": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "plant_machinery": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "computers": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "office_equipment": { "gt_180_days": 0.0, "lt_180_days": 0.0 }
+            },
+            {
+              "year": 4,
+              "building": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "plant_machinery": { "gt_180_days": 10.0, "lt_180_days": 0.0 },
+              "computers": { "gt_180_days": 0.5, "lt_180_days": 0.0 },
+              "office_equipment": { "gt_180_days": 0.0, "lt_180_days": 0.0 }
+            },
+            {
+              "year": 5,
+              "building": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "plant_machinery": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "computers": { "gt_180_days": 0.0, "lt_180_days": 0.0 },
+              "office_equipment": { "gt_180_days": 0.0, "lt_180_days": 0.0 }
+            }
+          ]
+        }
+      }
+    },
+    "loan_details": {
+      "type": "object",
+      "required": ["term_loan_amount", "interest_rate_pct", "repayment_months", "moratorium_months", "cc_limit"],
+      "properties": {
+        "term_loan_amount": { "type": "number", "description": "Sanctioned Term Loan in ₹ Lakhs", "example": 150.0 },
+        "interest_rate_pct": { "type": "number", "example": 10.5 },
+        "repayment_months": { "type": "integer", "description": "Total repayment duration in months including moratorium", "example": 60 },
+        "moratorium_months": { "type": "integer", "description": "Interest-only moratorium period in months", "example": 6 },
+        "cc_limit": { "type": "number", "description": "Sanctioned Cash Credit limit in ₹ Lakhs", "example": 80.0 }
+      }
+    },
+    "drawing_power_inputs": {
+      "type": "object",
+      "required": [
+        "stock_value",
+        "sundry_creditors",
+        "debtors_under_90_days",
+        "debtors_over_90_days",
+        "stock_margin_pct",
+        "debtors_margin_pct"
+      ],
+      "properties": {
+        "stock_value": { "type": "number", "description": "Gross value of stock in inventory (₹ Lakhs)", "example": 110.0 },
+        "sundry_creditors": { "type": "number", "description": "Sundry creditors for raw materials (₹ Lakhs)", "example": 35.0 },
+        "debtors_under_90_days": { "type": "number", "description": "Eligible trade receivables (<90 days, ₹ Lakhs)", "example": 85.0 },
+        "debtors_over_90_days": { "type": "number", "description": "Ineligible trade receivables (>90 days, ₹ Lakhs)", "example": 15.0 },
+        "stock_margin_pct": { "type": "number", "example": 25.0 },
+        "debtors_margin_pct": { "type": "number", "example": 40.0 }
+      }
+    }
+  }
+}

@@ -32,6 +32,7 @@ function App() {
 
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('user');
 
   // 1. Fetch Offices
   useEffect(() => {
@@ -50,8 +51,29 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated || !activeOffice) return;
     
-    const unsubModules = onSnapshot(query(collection(db, 'module_usage'), where('office_id', '==', activeOffice)), (snap) => {
-      setModules(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements', 'Forensic'];
+    const unsubModules = onSnapshot(query(collection(db, 'module_usage'), where('office_id', '==', activeOffice)), async (snap) => {
+      const fetchedModules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setModules(fetchedModules);
+
+      // Auto-initialize missing default modules for existing office
+      const fetchedNames = new Set(fetchedModules.map((m: any) => m.name || m.module_name || m.id.split('_')[1]));
+      for (const mod of defaultModules) {
+        if (!fetchedNames.has(mod)) {
+          try {
+            await setDoc(doc(db, 'module_usage', `${activeOffice}_${mod}`), {
+              name: mod,
+              is_enabled: 1,
+              usage_count: 0,
+              office_id: activeOffice,
+              module_name: mod
+            });
+            console.log(`Auto-initialized missing default module: ${mod} for office ${activeOffice}`);
+          } catch (e) {
+            console.error(`Failed to auto-initialize missing module ${mod}:`, e);
+          }
+        }
+      }
     });
     const unsubKeys = onSnapshot(query(collection(db, 'serial_keys'), where('office_id', '==', activeOffice)), (snap) => {
       setKeys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -92,10 +114,10 @@ function App() {
     });
 
     // Initialize Default Modules
-    const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements'];
+    const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements', 'Forensic'];
     for(const mod of defaultModules) {
         await setDoc(doc(db, 'module_usage', `${officeId}_${mod}`), { 
-            name: mod, is_enabled: 1, usage_count: 0, office_id: officeId 
+            name: mod, is_enabled: 1, usage_count: 0, office_id: officeId, module_name: mod
         });
     }
 
@@ -107,16 +129,12 @@ function App() {
   const createNetworkAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword || !activeOffice) return;
-    
-    const officeUsers = networkUsers.filter(u => u.office_id === activeOffice);
-    if (officeUsers.length >= 4) {
-      return alert("Maximum client limit reached (1 Server + 4 Clients). You cannot create more than 4 network accounts for a single office.");
-    }
-
+    // No limit on network accounts
+ 
     await addDoc(collection(db, 'network_users'), {
       username: newUsername.toLowerCase().trim(),
       password: newPassword, // In production, hash this
-      role: 'user',
+      role: newRole,
       created_at: serverTimestamp(),
       is_active: 1,
       office_id: activeOffice,
@@ -124,7 +142,8 @@ function App() {
     });
     setNewUsername('');
     setNewPassword('');
-    alert(`Network Account Created for Office: ${activeOffice}`);
+    setNewRole('user');
+    alert(`Network Account Created for Office: ${activeOffice} with role ${newRole}`);
   };
 
   const toggleNetworkUser = async (userId: string, currentStatus: number) => {
@@ -169,6 +188,24 @@ function App() {
         alert("Office permanently deleted. All connected PCs will factory reset within 60 seconds.");
       } catch (err: any) {
         alert("Failed to delete: " + err.message);
+      }
+    }
+  };
+
+  const triggerKillSwitch = async (officeId: string) => {
+    if (confirm(`CRITICAL WARNING: Are you sure you want to trigger the KILL SWITCH for ${officeId}?\nThis will permanently wipe their software directory and all databases. This CANNOT be undone.`)) {
+      if (prompt("Type 'WIPE' to confirm:") === 'WIPE') {
+        try {
+          const keysSnap = await getDocs(query(collection(db, 'serial_keys'), where('office_id', '==', officeId), where('key_type', '==', 'server')));
+          if (!keysSnap.empty) {
+            await updateDoc(keysSnap.docs[0].ref, { kill_switch: true });
+            alert("KILL SWITCH TRIGGERED. The client's software will be wiped within 5 seconds.");
+          } else {
+            alert("No server key found for this office to trigger.");
+          }
+        } catch (err: any) {
+          alert("Failed to trigger Kill Switch: " + err.message);
+        }
       }
     }
   };
@@ -307,9 +344,14 @@ function App() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   {activeOffice || 'NO OFFICE SELECTED'}
                   {activeOffice && (
-                    <button onClick={() => deleteOffice(activeOffice)} style={{ padding: '0.25rem 0.5rem', backgroundColor: 'var(--accent-red)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', marginLeft: '1rem' }}>
-                      Delete Office
-                    </button>
+                    <>
+                      <button onClick={() => deleteOffice(activeOffice)} style={{ padding: '0.25rem 0.5rem', backgroundColor: 'var(--accent-red)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', marginLeft: '1rem' }}>
+                        Delete Office
+                      </button>
+                      <button onClick={() => triggerKillSwitch(activeOffice)} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#ef4444', color: 'white', border: '2px solid white', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 900, cursor: 'pointer', marginLeft: '0.5rem' }}>
+                        ⚡ TRIGGER KILL SWITCH
+                      </button>
+                    </>
                   )}
                 </h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Viewing isolated data for this CA Office</p>
@@ -357,6 +399,19 @@ function App() {
                         onChange={e => setNewPassword(e.target.value)} 
                         />
                     </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>Assign Role</label>
+                        <select 
+                          value={newRole} 
+                          onChange={e => setNewRole(e.target.value)}
+                          className="input-field"
+                          style={{ width: '100%', height: '40px', backgroundColor: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-panel)', borderRadius: '8px', color: 'white', padding: '0 0.75rem', fontSize: '0.85rem', outline: 'none' }}
+                        >
+                          <option value="user" style={{ backgroundColor: '#0f172a' }}>Standard User</option>
+                          <option value="Senior Auditor" style={{ backgroundColor: '#0f172a' }}>Senior Auditor</option>
+                          <option value="Admin" style={{ backgroundColor: '#0f172a' }}>Administrator</option>
+                        </select>
+                    </div>
                     <button type="submit" className="btn-blue" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                         Create Account <UserPlus size={16} />
                     </button>
@@ -368,7 +423,10 @@ function App() {
                             {networkUsers.map((user) => (
                                 <div key={user.id} style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-panel)', borderRadius: '6px', fontSize: '0.8rem', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <span style={{ fontWeight: 700 }}>{user.username}</span>
+                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                            <span style={{ fontWeight: 700 }}>{user.username}</span>
+                                            <span style={{ fontSize: '0.65rem', color: '#60a5fa', fontWeight: 600, marginTop: '0.15rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{user.role || 'user'}</span>
+                                        </div>
                                         <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', backgroundColor: user.status === 'online' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.1)', color: user.status === 'online' ? 'var(--accent-green)' : 'var(--text-muted)' }}>
                                             {user.status === 'online' ? 'ONLINE' : 'OFFLINE'}
                                         </span>
@@ -421,8 +479,8 @@ function App() {
                     <Key size={16} color="var(--accent-yellow)" />
                     <span style={{ fontSize: '0.85rem' }}>LICENSE MANAGEMENT</span>
                     </div>
-                    <p style={{ color: 'var(--accent-red)', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '1.5rem', textTransform: 'uppercase', textAlign: 'center' }}>
-                    STRICT LIMIT: 1 SERVER, 5 CLIENTS
+                    <p style={{ color: 'var(--accent-green)', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '1.5rem', textTransform: 'uppercase', textAlign: 'center' }}>
+                    LIMIT: UNLIMITED CLIENTS
                     </p>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

@@ -27,6 +27,7 @@ export type MatchStatus =
   | 'Unmatched Vendor'
   | 'Not in Books'
   | 'Tax Type Error'
+  | 'Prior FY (Excluded)'
   // Legacy / sub-case statuses (kept for compatibility with existing UI tabs):
   | 'Matched'
   | 'Matched (Rounded)'
@@ -71,6 +72,7 @@ export interface ReconciliationSummary {
   unmatchedVendor: number;
   missingInPR: number;
   taxTypeError: number;
+  priorFyExcluded: number;
   // Back-compat aliases used by existing UI:
   matched: number;
   matchedRounded: number;
@@ -147,8 +149,8 @@ function prepareRecord(rec: InvoiceRecord): InvoiceRecord {
 
 export function normalizePartyName(name: string): string {
   if (!name) return '';
-  let n = name
-    .toUpperCase()
+  let n = name.toUpperCase()
+    .replace(/[-\s\(\)]+(CR|DR)\b$/g, '')
     .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, '')
     .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
     .replace(/[^A-Z0-9]/g, '')
@@ -167,7 +169,43 @@ export function reconcile(
   partyTolerance: number = 5
 ): ReconciliationResult[] {
   const pr = prRecords.map(prepareRecord);
-  const twoB = twoBRecords.map(prepareRecord);
+
+  // Determine current FY from PR records to identify the active reconciliation period
+  let currentFY = 'UNKNOWN';
+  let currentStartYear = 0;
+  if (pr.length > 0) {
+    const fyCounts = new Map<string, number>();
+    let maxCount = 0;
+    for (const p of pr) {
+      if (p.financialYear && p.financialYear !== 'UNKNOWN') {
+        const count = (fyCounts.get(p.financialYear) || 0) + 1;
+        fyCounts.set(p.financialYear, count);
+        if (count > maxCount) {
+          maxCount = count;
+          currentFY = p.financialYear;
+        }
+      }
+    }
+    if (currentFY !== 'UNKNOWN') {
+      currentStartYear = parseInt(currentFY.split('-')[0], 10);
+    }
+  }
+
+  const validTwoB: InvoiceRecord[] = [];
+  const priorTwoB: InvoiceRecord[] = [];
+  for (const t of twoBRecords) {
+    const prepared = prepareRecord(t);
+    let isPrior = false;
+    if (currentStartYear > 0 && prepared.financialYear && prepared.financialYear !== 'UNKNOWN') {
+      const tStartYear = parseInt(prepared.financialYear.split('-')[0], 10);
+      if (tStartYear < currentStartYear) {
+        isPrior = true;
+      }
+    }
+    if (isPrior) priorTwoB.push(prepared);
+    else validTwoB.push(prepared);
+  }
+  const twoB = validTwoB;
 
   // Group 2B records by GSTIN for Step-1 lookup
   const twoBByGstin = new Map<string, number[]>();
@@ -223,7 +261,7 @@ export function reconcile(
 
     // ---- Step 1: Identify the party ----
     let candidateIdxs: number[] | null = null;
-    let matchMethod: 'GSTIN' | 'Name (Exact)' | 'Name (Fuzzy)' | undefined;
+    let matchMethod: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)' | undefined;
     let vendorRemark: string | undefined;
     
     const isOut = mode === 'output';
@@ -442,12 +480,24 @@ export function reconcile(
     }
   }
 
+  // Append excluded prior FY records to the results so they appear in exports but don't affect variance
+  for (const t of priorTwoB) {
+    results.push({
+      twoBRecord: t,
+      status: 'Prior FY (Excluded)',
+      remark: `Excluded: Invoice belongs to previous FY (${t.financialYear})`,
+      cgstDiff: 0, sgstDiff: 0, igstDiff: 0, gstDiff: 0,
+      taxableDiff: 0,
+    });
+  }
+
   // ---- Post-process: Auto-clear records if Party Net Balance is Nil ----
   const partyMap = new Map<string, { records: ReconciliationResult[]; prIgst: number; prCgst: number; prSgst: number; tbIgst: number; tbCgst: number; tbSgst: number; }>();
   const nameIndex = new Map<string, string>();
   let unknownIndex = 0;
   
   for (const r of results) {
+    if (r.status === 'Prior FY (Excluded)') continue; // Skip excluded records from net balance calculations
     const pr = r.prRecord;
     const tb = r.twoBRecord;
     const gstin = pr?.gstin || tb?.gstin || '';
@@ -518,6 +568,7 @@ export function getSummary(results: ReconciliationResult[]): ReconciliationSumma
   const invoiceMissing = count('Not in 2B');
   const unmatchedVendor = count('Unmatched Vendor');
   const missingInPR = count('Not in Books') + count('Missing in PR');
+  const priorFyExcluded = count('Prior FY (Excluded)');
 
   return {
     total: results.length,
@@ -527,6 +578,7 @@ export function getSummary(results: ReconciliationResult[]): ReconciliationSumma
     unmatchedVendor: results.filter((r) => r.status === 'Unmatched Vendor').length,
     missingInPR: results.filter((r) => r.status === 'Missing in PR' || r.status === 'Not in Books').length,
     taxTypeError: results.filter((r) => r.status === 'Tax Type Error').length,
+    priorFyExcluded,
     // Back-compat aliases for existing UI tabs / cards
     matched: perfectMatch,
     matchedRounded: 0,
@@ -547,6 +599,7 @@ export function detectGstinIssues(results: ReconciliationResult[]): { suggested:
   // 1. Group records by normalized party name to catch missing/wrong GSTINs across unmatched invoices
   const partyRecords = new Map<string, { prGstins: Set<string>; tbGstins: Set<string>; prNames: Set<string>; tbNames: Set<string>; }>();
   for (const r of results) {
+    if (r.status === 'Prior FY (Excluded)') continue;
     const pr = r.prRecord;
     const tb = r.twoBRecord;
     const prName = pr?.supplierName || '';
@@ -628,6 +681,7 @@ export function detectGstinIssues(results: ReconciliationResult[]): { suggested:
   // Conflicts: Same GSTIN mapped to multiple party names
   const gstinMap = new Map<string, { prNames: Set<string>; tbNames: Set<string>; }>();
   for (const r of results) {
+    if (r.status === 'Prior FY (Excluded)') continue;
     const pr = r.prRecord;
     const tb = r.twoBRecord;
     const gstinPR = pr?.gstin || '';
@@ -649,18 +703,18 @@ export function detectGstinIssues(results: ReconciliationResult[]): { suggested:
 
   for (const [gstin, info] of gstinMap.entries()) {
     const prCount = info.prNames.size;
-    const tbCount = info.tbNames.size;
-    const needsReview = prCount > 1 || tbCount > 1 || (prCount > 0 && tbCount > 0 && !setsEqual(info.prNames, info.tbNames));
+    // Strictly define duplicate: Same GSTIN under multiple parties in books
+    const needsReview = prCount > 1;
     
     if (needsReview) {
       conflicts.push({
         id: `conflict::${gstin}`,
-        supplierName: [...info.prNames, ...info.tbNames].join(' | '),
+        supplierName: [...info.prNames].join(' | '),
         source: 'PR',
         originalGstin: gstin,
         currentGstin: gstin,
         issueType: 'Duplicate GSTIN',
-        relatedParties: [...new Set([...info.prNames, ...info.tbNames])],
+        relatedParties: [...info.prNames],
       });
     }
   }

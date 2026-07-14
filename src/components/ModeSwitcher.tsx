@@ -1,27 +1,30 @@
-import { Repeat } from 'lucide-react';
-import type { ReconciliationMode } from '@/lib/mode';
-import { TERMS } from '@/lib/mode';
-import { cn } from '@/lib/utils';
+import React from 'react';
+import { ReconciliationMode } from '../lib/mode';
 
 interface ModeSwitcherProps {
   currentMode: ReconciliationMode;
-  onSwitch: () => void;
+  onSwitch: (mode: ReconciliationMode) => void;
 }
 
-export function ModeSwitcher({ currentMode, onSwitch }: ModeSwitcherProps) {
-  const otherMode = currentMode === 'input' ? 'output' : 'input';
-  
+export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ currentMode, onSwitch }) => {
   return (
-    <button
-      onClick={onSwitch}
-      className={cn(
-        "flex items-center gap-2 px-3.5 py-1.5 rounded-full border transition-all duration-300 text-sm font-medium active:scale-95",
-        "bg-background/80 text-foreground border-input hover:bg-background/95 dark:bg-white/15 dark:text-white dark:border-white/20 dark:hover:bg-white/25 backdrop-blur-sm shadow-[0_0_15px_rgba(0,0,0,0.08)] dark:shadow-[0_0_15px_rgba(255,255,255,0.08)] hover:shadow-[0_0_25px_rgba(0,0,0,0.12)] dark:hover:shadow-[0_0_25px_rgba(255,255,255,0.12)] hover:scale-105"
-      )}
-      title={`Switch to ${TERMS[otherMode].title}`}
-    >
-      <Repeat className="w-4 h-4" />
-      <span>{currentMode === 'input' ? 'Input' : 'Output'} Mode</span>
-    </button>
+    <div className="flex items-center space-x-1 bg-slate-900/60 p-1 rounded-full border border-slate-800">
+      <button
+        className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+          currentMode === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-transparent text-slate-400 hover:text-slate-200'
+        }`}
+        onClick={() => onSwitch('input')}
+      >
+        Input Reco
+      </button>
+      <button
+        className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+          currentMode === 'output' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-transparent text-slate-400 hover:text-slate-200'
+        }`}
+        onClick={() => onSwitch('output')}
+      >
+        Output Reco
+      </button>
+    </div>
   );
-}
+};

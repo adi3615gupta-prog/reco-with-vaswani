@@ -36,22 +36,52 @@ export default function FinancialReports() {
   }, [rawNotes]);
 
   // Helper to fetch a note by static reference, returns value and display number
+  // Automatically applies credit-normal sign transformation so normal balances are displayed positive
   const getNote = (staticRef: number) => {
     const note = rawNotes.find(n => n.note_reference === staticRef);
     if (!note) return { cy: 0, py: 0, displayNum: '' };
+    
+    const lineItem = note.line_items[0];
+    const isCreditNormal = lineItem ? (lineItem.group_code >= 2000 && lineItem.group_code < 4000) : false;
+    const multiplier = isCreditNormal ? -1 : 1;
+
     return {
-      cy: note.cy_grand_total,
-      py: note.py_grand_total,
+      cy: note.cy_grand_total * multiplier,
+      py: note.py_grand_total * multiplier,
       displayNum: noteDisplayMap.get(staticRef)?.toString() || ''
     };
   };
+
+  // ---- P&L GROUPS (Needed first to calculate Net Profit) ----
+  const revOps = getNote(30);
+  const otherInc = getNote(31);
+  const totalIncome = revOps.cy + otherInc.cy;
+  const totalIncomePY = revOps.py + otherInc.py;
+
+  const costMat = getNote(32);
+  const purchStock = getNote(33);
+  const changeInv = getNote(34);
+  const empBenefit = getNote(35);
+  const finCost = getNote(36);
+  const depAmort = getNote(37);
+  const otherExp = getNote(38);
+  
+  const totalExpenses = costMat.cy + purchStock.cy + changeInv.cy + empBenefit.cy + finCost.cy + depAmort.cy + otherExp.cy;
+  const totalExpensesPY = costMat.py + purchStock.py + changeInv.py + empBenefit.py + finCost.py + depAmort.py + otherExp.py;
+
+  const pbt = totalIncome - totalExpenses;
+  const pbtPY = totalIncomePY - totalExpensesPY;
+
+  const tax = getNote(39);
+  const pat = pbt - tax.cy;
+  const patPY = pbtPY - tax.py;
 
   // ---- BALANCE SHEET GROUPS ----
   // Equity & Liab
   const shareCapital = getNote(18);
   const reserves = getNote(19);
   const otherEquity = getNote(20);
-  const shareWarrants = { cy: 0, py: 0, displayNum: '' }; // Not in seed
+  const shareWarrants = { cy: 0, py: 0, displayNum: '' };
 
   const ltBorrowings = getNote(21);
   const defTaxLiab = getNote(22);
@@ -64,8 +94,12 @@ export default function FinancialReports() {
   const currProvisions = getNote(29);
   const otherCurrLiab2 = getNote(28); // 28 is Other Current Liabilities
 
-  const totalEquity = shareCapital.cy + reserves.cy + otherEquity.cy;
-  const totalEquityPY = shareCapital.py + reserves.py + otherEquity.py;
+  // Dynamically roll unclosed Current Year Profit/Loss into Reserves and Surplus
+  const reservesAdjustedCY = reserves.cy + pat;
+  const reservesAdjustedPY = reserves.py + patPY;
+
+  const totalEquity = shareCapital.cy + reservesAdjustedCY + otherEquity.cy;
+  const totalEquityPY = shareCapital.py + reservesAdjustedPY + otherEquity.py;
 
   const totalNcLiab = ltBorrowings.cy + defTaxLiab.cy + otherNcLiab.cy + ncProvisions.cy;
   const totalNcLiabPY = ltBorrowings.py + defTaxLiab.py + otherNcLiab.py + ncProvisions.py;
@@ -105,29 +139,56 @@ export default function FinancialReports() {
   const totalAssets = totalNcAssets + totalCurrAssets;
   const totalAssetsPY = totalNcAssetsPY + totalCurrAssetsPY;
 
-  // ---- P&L GROUPS ----
-  const revOps = getNote(30);
-  const otherInc = getNote(31);
-  const totalIncome = revOps.cy + otherInc.cy;
-  const totalIncomePY = revOps.py + otherInc.py;
+  // ---- Ratio and Audit calculations ----
+  const debtorDaysCY = revOps.cy > 0 ? (tradeReceivables.cy / revOps.cy) * 365 : 0;
+  const debtorDaysPY = revOps.py > 0 ? (tradeReceivables.py / revOps.py) * 365 : 0;
 
-  const costMat = getNote(32);
-  const purchStock = getNote(33);
-  const changeInv = getNote(34);
-  const empBenefit = getNote(35);
-  const finCost = getNote(36);
-  const depAmort = getNote(37);
-  const otherExp = getNote(38);
-  
-  const totalExpenses = costMat.cy + purchStock.cy + changeInv.cy + empBenefit.cy + finCost.cy + depAmort.cy + otherExp.cy;
-  const totalExpensesPY = costMat.py + purchStock.py + changeInv.py + empBenefit.py + finCost.py + depAmort.py + otherExp.py;
+  // Structural Working Capital Inversion Check
+  const changeReceivablesPct = tradeReceivables.py > 0 ? ((tradeReceivables.cy - tradeReceivables.py) / tradeReceivables.py) * 100 : 0;
+  const changeRevenuePct = revOps.py > 0 ? ((revOps.cy - revOps.py) / revOps.py) * 100 : 0;
+  const isWorkingCapitalInverted = changeReceivablesPct >= 50 && changeRevenuePct <= 0;
 
-  const pbt = totalIncome - totalExpenses;
-  const pbtPY = totalIncomePY - totalExpensesPY;
+  // Overhead Consumption Margin Variance
+  const changeEmployeePct = empBenefit.py > 0 ? ((empBenefit.cy - empBenefit.py) / empBenefit.py) * 100 : 0;
+  const changeMaterialPct = costMat.py > 0 ? ((costMat.cy - costMat.py) / costMat.py) * 100 : 0;
+  const overheadVariancePct = changeEmployeePct - changeMaterialPct;
 
-  const tax = getNote(39);
-  const pat = pbt - tax.cy;
-  const patPY = pbtPY - tax.py;
+  // 25% Statutory Variance Exception Notes
+  const varianceExceptions = useMemo(() => {
+    const list: { noteName: string; noteNum: string; cy: number; py: number; variance: number; comment: string }[] = [];
+    rawNotes.forEach(n => {
+      const isCredit = n.line_items[0] ? (n.line_items[0].group_code >= 2000 && n.line_items[0].group_code < 4000) : false;
+      const mult = isCredit ? -1 : 1;
+      const cyVal = n.cy_grand_total * mult;
+      const pyVal = n.py_grand_total * mult;
+      
+      if (pyVal !== 0 && cyVal !== 0) {
+        const diffPct = ((cyVal - pyVal) / Math.abs(pyVal)) * 100;
+        if (Math.abs(diffPct) >= 25) {
+          let comment = '';
+          const dir = diffPct > 0 ? 'increase' : 'decrease';
+          if (n.note_reference === 11) {
+            comment = `Statutory note: Trade receivables registered a significant ${dir} of ${Math.abs(diffPct).toFixed(1)}%. Requires review of debtor collection velocity and age-wise provisioning.`;
+          } else if (n.note_reference === 30) {
+            comment = `Statutory note: Revenue from operations registered a ${dir} of ${Math.abs(diffPct).toFixed(1)}%. Cross-reference with GSTR-1 and GSTR-3B filings for variance explanation.`;
+          } else if (n.note_reference === 35) {
+            comment = `Statutory note: Employee benefits expense showed a ${dir} of ${Math.abs(diffPct).toFixed(1)}%. Audit variance against PF/ESI statutory returns and payroll registers.`;
+          } else {
+            comment = `Statutory note: Balance under ${n.note_title} changed by ${diffPct.toFixed(1)}%, exceeding the 25% statutory variance threshold. Requires note disclosure explaining operational drivers.`;
+          }
+          list.push({
+            noteName: n.note_title,
+            noteNum: noteDisplayMap.get(n.note_reference)?.toString() || '',
+            cy: cyVal,
+            py: pyVal,
+            variance: diffPct,
+            comment
+          });
+        }
+      }
+    });
+    return list;
+  }, [rawNotes, noteDisplayMap]);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -155,17 +216,17 @@ export default function FinancialReports() {
           className="flex-1 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left group"
         >
           <div className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1 group-hover:text-amber-400">Unmapped Check</div>
-          <div className="text-sm text-amber-400">Click to view unmapped ledgers</div>
+          <div className="text-sm text-amber-400 font-bold">Unmapped Ledgers count</div>
         </button>
 
         <button 
           className={`flex-1 p-3 rounded-lg border transition-all text-left ${
-            totalAssets === totalEqLiab ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10 hover:bg-red-500/20 cursor-pointer'
+            Math.abs(totalAssets - totalEqLiab) < 0.05 ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10 hover:bg-red-500/20 cursor-pointer'
           }`}
         >
-          <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${totalAssets === totalEqLiab ? 'text-emerald-500' : 'text-red-500'}`}>Balance Sheet Check</div>
-          <div className={`text-sm ${totalAssets === totalEqLiab ? 'text-emerald-400' : 'text-red-400'}`}>
-            {totalAssets === totalEqLiab ? 'Balanced' : `Diff: ₹${Math.abs(totalAssets - totalEqLiab).toLocaleString('en-IN')}`}
+          <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${Math.abs(totalAssets - totalEqLiab) < 0.05 ? 'text-emerald-500' : 'text-red-500'}`}>Balance Sheet Check</div>
+          <div className={`text-sm ${Math.abs(totalAssets - totalEqLiab) < 0.05 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {Math.abs(totalAssets - totalEqLiab) < 0.05 ? 'Balanced' : `Diff: ₹${Math.abs(totalAssets - totalEqLiab).toLocaleString('en-IN')}`}
           </div>
         </button>
       </div>
@@ -175,6 +236,7 @@ export default function FinancialReports() {
         <TabButton active={activeTab === 'bs'} onClick={() => setActiveTab('bs')} icon={Landmark} label="Balance Sheet" />
         <TabButton active={activeTab === 'pl'} onClick={() => setActiveTab('pl')} icon={Activity} label="Profit & Loss" />
         <TabButton active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} icon={FileText} label="Notes to Accounts" />
+        <TabButton active={activeTab === 'ratios' as any} onClick={() => setActiveTab('ratios' as any)} icon={TrendingUp} label="Compliance & Ratios Audit" />
       </div>
 
       {/* Content */}
@@ -204,7 +266,7 @@ export default function FinancialReports() {
                 
                 <SubHeader title="1. Shareholders' funds" />
                 <Row title="(a) Share capital" note={shareCapital.displayNum} cy={shareCapital.cy} py={shareCapital.py} staticRef={18} />
-                <Row title="(b) Reserves and surplus" note={reserves.displayNum} cy={reserves.cy} py={reserves.py} staticRef={19} />
+                <Row title="(b) Reserves and surplus" note={reserves.displayNum} cy={reservesAdjustedCY} py={reservesAdjustedPY} staticRef={19} />
                 <Row title="(c) Money received against share warrants" cy={0} py={0} />
 
                 <SubHeader title="2. Share application money pending allotment" />
@@ -326,23 +388,125 @@ export default function FinancialReports() {
                   
                   <table className="w-full text-sm">
                     <tbody className="divide-y divide-white/[0.03]">
-                      {note.line_items.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-white/[0.02]">
-                          <td className="py-2 text-slate-300">{item.particulars}</td>
-                          <td className="py-2 text-right text-slate-300 font-mono w-28">{INR(item.cy_total)}</td>
-                          <td className="py-2 text-right text-slate-400 font-mono w-28">{INR(item.py_total)}</td>
+                      {note.line_items.map((item, idx) => {
+                        const isCreditNormal = item.group_code >= 2000 && item.group_code < 4000;
+                        const multiplier = isCreditNormal ? -1 : 1;
+                        return (
+                          <tr key={idx} className="hover:bg-white/[0.02]">
+                            <td className="py-2 text-slate-300">{item.particulars}</td>
+                            <td className="py-2 text-right text-slate-300 font-mono w-28">{INR(item.cy_total * multiplier)}</td>
+                            <td className="py-2 text-right text-slate-400 font-mono w-28">{INR(item.py_total * multiplier)}</td>
+                          </tr>
+                        );
+                      })}
+                      {note.note_reference === 19 && (
+                        <tr className="hover:bg-white/[0.02] text-cyan-400 font-medium">
+                          <td className="py-2 pl-4">Add: Net Profit for the year (rolled forward)</td>
+                          <td className="py-2 text-right font-mono w-28">{INR(pat)}</td>
+                          <td className="py-2 text-right font-mono w-28">{INR(patPY)}</td>
                         </tr>
-                      ))}
+                      )}
                       <tr className="bg-white/[0.02] border-y border-white/10">
                         <td className="py-2 font-bold text-cyan-100 text-right pr-4">Total</td>
-                        <td className="py-2 text-right font-bold text-cyan-300 font-mono border-t border-cyan-500/20">{INR(note.cy_grand_total)}</td>
-                        <td className="py-2 text-right font-bold text-slate-300 font-mono border-t border-cyan-500/20">{INR(note.py_grand_total)}</td>
+                        <td className="py-2 text-right font-bold text-cyan-300 font-mono border-t border-cyan-500/20">
+                          {INR((note.cy_grand_total * (note.line_items[0]?.group_code >= 2000 && note.line_items[0]?.group_code < 4000 ? -1 : 1)) + (note.note_reference === 19 ? pat : 0))}
+                        </td>
+                        <td className="py-2 text-right font-bold text-slate-300 font-mono border-t border-cyan-500/20">
+                          {INR((note.py_grand_total * (note.line_items[0]?.group_code >= 2000 && note.line_items[0]?.group_code < 4000 ? -1 : 1)) + (note.note_reference === 19 ? patPY : 0))}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {/* === COMPLIANCE & RATIOS AUDIT === */}
+        {activeTab === 'ratios' as any && (
+          <div className="space-y-6">
+            <div className="text-center mb-6">
+              <h3 className="text-lg font-black text-white uppercase tracking-widest">{client.company_name || 'COMPANY NAME'}</h3>
+              <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Compliance & Ratios Audit Report</p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              {/* Ratio 1: Debtor Velocity */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-2">
+                <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Debtor Collection Velocity</div>
+                <div className="text-2xl font-black text-white font-mono">{debtorDaysCY.toFixed(1)} Days</div>
+                <div className="text-xs text-slate-500">Previous Year: <span className="font-mono">{debtorDaysPY.toFixed(1)} Days</span></div>
+                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                  {debtorDaysCY > debtorDaysPY 
+                    ? `⚠️ Collection window has lengthened by ${(debtorDaysCY - debtorDaysPY).toFixed(1)} days, indicating potential collection inefficiency.`
+                    : `✓ Collection window has shortened, showing improved cash velocity.`}
+                </p>
+              </div>
+
+              {/* Ratio 2: WC Inversion */}
+              <div className={`bg-slate-900/60 border rounded-xl p-4 space-y-2 ${isWorkingCapitalInverted ? 'border-red-500/30' : 'border-slate-800'}`}>
+                <div className="text-xs font-bold text-purple-400 uppercase tracking-wider">Working Capital Inversion</div>
+                <div className={`text-sm font-bold uppercase tracking-wider ${isWorkingCapitalInverted ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
+                  {isWorkingCapitalInverted ? 'CRITICAL ALERT (Inverted)' : 'NORMAL'}
+                </div>
+                <div className="space-y-1 text-xs text-slate-500 mt-2">
+                  <div>Δ Receivables: <span className={`font-mono ${changeReceivablesPct >= 50 ? 'text-amber-400 font-bold' : ''}`}>{changeReceivablesPct.toFixed(1)}%</span></div>
+                  <div>Δ Revenue: <span className={`font-mono ${changeRevenuePct <= 0 ? 'text-red-400 font-bold' : ''}`}>{changeRevenuePct.toFixed(1)}%</span></div>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed mt-2">
+                  {isWorkingCapitalInverted 
+                    ? '⚠️ Warning: Receivables are expanding rapidly while revenue is flat or contracting, indicating cash is locked up in working capital.'
+                    : '✓ Healthy relationship between sales volume growth and receivables growth.'}
+                </p>
+              </div>
+
+              {/* Ratio 3: Overhead Margin */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-2">
+                <div className="text-xs font-bold text-teal-400 uppercase tracking-wider">Overhead Variance</div>
+                <div className="text-2xl font-black text-white font-mono">{overheadVariancePct.toFixed(1)}%</div>
+                <div className="space-y-1 text-xs text-slate-500">
+                  <div>Δ Employee Cost: <span className="font-mono">{changeEmployeePct.toFixed(1)}%</span></div>
+                  <div>Δ Material Cost: <span className="font-mono">{changeMaterialPct.toFixed(1)}%</span></div>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed mt-2">
+                  {overheadVariancePct > 0 
+                    ? `⚠️ Administrative/payroll cost growth exceeds material cost variance. Overhead is consuming direct margins.`
+                    : `✓ Overhead growth is aligned with direct cost changes.`}
+                </p>
+              </div>
+            </div>
+
+            {/* 25% Exceptions Section */}
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+              <h4 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Statutory 25% Variance Analysis Exceptions
+              </h4>
+              
+              {varianceExceptions.length === 0 ? (
+                <p className="text-xs text-slate-500 py-3">No note item registers a year-over-year change exceeding the statutory 25% threshold.</p>
+              ) : (
+                <div className="space-y-3">
+                  {varianceExceptions.map((ex, idx) => (
+                    <div key={idx} className="bg-slate-950/60 border border-white/5 rounded-lg p-3 space-y-1.5 animate-in slide-in-from-top-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300">Note {ex.noteNum}: {ex.noteName}</span>
+                        <span className={`font-mono font-bold ${ex.variance > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {ex.variance > 0 ? '+' : ''}{ex.variance.toFixed(1)}% YoY
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        Current: <span className="text-slate-300 font-mono">₹{ex.cy.toLocaleString('en-IN')}</span> | Previous: <span className="text-slate-400 font-mono">₹{ex.py.toLocaleString('en-IN')}</span>
+                      </div>
+                      <p className="text-[11px] text-amber-400/90 italic bg-amber-500/5 border border-amber-500/10 p-2 rounded mt-1">
+                        {ex.comment}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

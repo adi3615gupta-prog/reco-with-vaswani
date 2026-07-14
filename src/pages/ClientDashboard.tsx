@@ -2,20 +2,20 @@ import { useState, useEffect } from 'react';
 import { 
   ArrowLeft, HardDrive, DownloadCloud, Users, CalendarClock, 
   Mail, MessageSquare, Plus, Search, Building2, CheckCircle2, 
-  AlertCircle, Clock, Trash2, Edit, Settings, Trash, Check, X, FileText, Send,
-  Download, Upload, Award, TrendingUp, Calculator, Percent, Activity, TrendingDown
+  AlertCircle, Clock, Trash2, Edit, Settings, Trash, Check, X, FileText, Send, BarChart3,
+  Download, Upload, Award, TrendingUp, Calculator, Percent, Activity, TrendingDown, Lightbulb
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseFile, exportToXlsx, exportClientTemplate } from '@/lib/fileParser';
-
-const getApiHost = () => localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1';
+import { getApiBase, getAuthToken } from '@/lib/api';
 
 interface ClientDashboardProps {
   onBack: () => void;
 }
 
 export default function ClientDashboard({ onBack }: ClientDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'analytics' | 'tasks' | 'clients'>('analytics');
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
+  const [activeTab, setActiveTab] = useState<'analytics' | 'tasks' | 'clients' | 'pan'>('analytics');
   const [clients, setClients] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -57,8 +57,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   const fetchDashboardData = async () => {
     try {
       const [cliRes, tskRes] = await Promise.all([
-        fetch(`http://${getApiHost()}:3001/api/clients`, { headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` } }),
-        fetch(`http://${getApiHost()}:3001/api/tasks`, { headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` } })
+        fetch(`${getApiBase()}/api/clients`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } }),
+        fetch(`${getApiBase()}/api/tasks`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
       ]);
       if (cliRes.ok) setClients(await cliRes.json());
       if (tskRes.ok) setTasks(await tskRes.json());
@@ -77,7 +77,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     if (gstin && gstin.length >= 12) {
       return gstin.slice(2, 12).toUpperCase();
     }
-    return '—';
+    return 'â€”';
   };
 
   // Google Drive Cloud Backup
@@ -85,9 +85,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     setIsBackingUp(true);
     const loadingId = toast.loading("Syncing SQLite database tables to Google Drive...");
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/backup/drive`, {
+      const res = await fetch(`${getApiBase()}/api/backup/drive`, {
         method: 'POST', 
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       if (res.ok) {
         toast.success("Google Drive Backup Successful", { 
@@ -110,17 +110,17 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     setIsSyncing(true);
     const loadingId = toast.loading(`Browser opened! Please solve the CAPTCHA for ${gstin.toUpperCase()}...`);
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/portal/import-client`, {
+      const res = await fetch(`${getApiBase()}/api/portal/import-client`, {
         method: 'POST', 
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ gstin: gstin.toUpperCase().trim() })
       });
       const data = await res.json();
       if (data.success) {
         // Save to DB
-        await fetch(`http://${getApiHost()}:3001/api/clients`, {
+        await fetch(`${getApiBase()}/api/clients`, {
             method: 'POST', 
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({ id: `cli_${Date.now()}`, ...data.data })
         });
         toast.success("Portal Fetch Complete", { 
@@ -143,9 +143,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
     const loadingId = toast.loading("Saving client master records...");
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/clients`, {
+      const res = await fetch(`${getApiBase()}/api/clients`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({
           id: `cli_${Date.now()}`,
           gstin: cliGstin.toUpperCase().trim(),
@@ -177,9 +177,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
     const loadingId = toast.loading("Updating client registry...");
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/clients`, {
+      const res = await fetch(`${getApiBase()}/api/clients`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({
           id: editingClient.id,
           gstin: editingClient.gstin,
@@ -206,9 +206,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
     const loadingId = toast.loading("Deleting client profile...");
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/clients/${id}`, {
+      const res = await fetch(`${getApiBase()}/api/clients/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       if (res.ok) {
         toast.success("Client deleted successfully", { id: loadingId });
@@ -228,9 +228,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
       let created = 0;
       for (const client of clients) {
         const taskId = `tsk_${client.gstin}_${genReturnType}_${genPeriod.replace(/\s+/g, '_')}`;
-        await fetch(`http://${getApiHost()}:3001/api/tasks`, {
+        await fetch(`${getApiBase()}/api/tasks`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
           body: JSON.stringify({
             id: taskId,
             client_gstin: client.gstin,
@@ -257,9 +257,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   // Update GSTR filing status
   const handleUpdateTaskStatus = async (task: any, newStatus: string) => {
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/tasks`, {
+      const res = await fetch(`${getApiBase()}/api/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({
           ...task,
           status: newStatus
@@ -276,9 +276,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
   // Delete individual task row
   const handleDeleteTask = async (id: string) => {
-    const res = await fetch(`http://${getApiHost()}:3001/api/tasks/${id}`, {
+    const res = await fetch(`${getApiBase()}/api/tasks/${id}`, {
       method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
     });
     if (res.ok) {
       toast.success("Filing record cleared.");
@@ -294,9 +294,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     const loadingId = toast.loading(`Broadcasting compliance notifications to ${pendingTasks.length} pending clients...`);
     try {
       // Dispatch alert request
-      await fetch(`http://${getApiHost()}:3001/api/alerts/send`, {
+      await fetch(`${getApiBase()}/api/alerts/send`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       toast.success("Bulk Alerts Dispatched", { 
         id: loadingId, 
@@ -313,9 +313,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     const displayName = client ? client.trade_name : clientGstin;
     const loadingId = toast.loading(`Sending filing reminder ${type} to ${displayName}...`);
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/alerts/send`, {
+      const res = await fetch(`${getApiBase()}/api/alerts/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({
           type,
           clientGstin,
@@ -387,9 +387,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         }
 
         try {
-          const res = await fetch(`http://${getApiHost()}:3001/api/clients`, {
+          const res = await fetch(`${getApiBase()}/api/clients`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({
               id: `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
               gstin: rowGstin,
@@ -533,9 +533,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   const [calcIsNilVal, setCalcIsNilVal] = useState(false);
 
   // Late Fee logic
-  const dailyLateRate = calcIsNilVal ? 20 : 50; // Nil return ₹20/day, standard return ₹50/day (CGST+SGST)
+  const dailyLateRate = calcIsNilVal ? 20 : 50; // Nil return â‚¹20/day, standard return â‚¹50/day (CGST+SGST)
   const rawLateFeeVal = calcDelayVal * dailyLateRate;
-  const calculatedLateFeeVal = Math.min(rawLateFeeVal, 10000); // capped at ₹10,000 max per return
+  const calculatedLateFeeVal = Math.min(rawLateFeeVal, 10000); // capped at â‚¹10,000 max per return
   const cgstLateFeeVal = calculatedLateFeeVal / 2;
   const sgstLateFeeVal = calculatedLateFeeVal / 2;
 
@@ -553,17 +553,17 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     const clientFiled = clientTasks.filter(t => t.status === 'Filed').length;
     const clientPct = clientScheduled > 0 ? (clientFiled / clientScheduled) * 100 : 0;
     
-    let clientHealth = '🟢 PERFECT';
+    let clientHealth = 'ðŸŸ¢ PERFECT';
     let clientHealthColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
     
     if (clientScheduled === 0) {
-      clientHealth = '⚪ NO SCHEDULES';
+      clientHealth = 'âšª NO SCHEDULES';
       clientHealthColor = 'text-slate-400 bg-slate-500/10 border-slate-500/20';
     } else if (clientPct < 50) {
-      clientHealth = '🔴 CRITICAL';
+      clientHealth = 'ðŸ”´ CRITICAL';
       clientHealthColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
     } else if (clientPct < 90) {
-      clientHealth = '🟡 AUDIT RISK';
+      clientHealth = 'ðŸŸ¡ AUDIT RISK';
       clientHealthColor = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
     }
 
@@ -587,21 +587,33 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     return { month, filed, pending, progress, total: monthTasks.length || 1 };
   });
 
+  const groupedByPan = clients.reduce((acc, client) => {
+    const pan = getPanFromGstin(client.gstin);
+    if (!acc[pan]) acc[pan] = { pan, entities: [], totalScheduled: 0, totalFiled: 0 };
+    acc[pan].entities.push(client);
+    
+    const cTasks = allTasksList.filter(t => t.client_gstin === client.gstin);
+    acc[pan].totalScheduled += cTasks.length;
+    acc[pan].totalFiled += cTasks.filter(t => t.status === 'Filed').length;
+    return acc;
+  }, {} as Record<string, any>);
+  const panGroups = Object.values(groupedByPan).sort((a: any, b: any) => b.entities.length - a.entities.length);
+
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 select-text">
+    <div className="w-full max-w-7xl mx-auto space-y-6 select-text relative z-10">
       
       {/* Header Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-800 pb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div>
-          <button onClick={onBack} className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] mb-4 transition-colors"><ArrowLeft className="w-3 h-3" /> Back to Hub</button>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Practice Dashboard</h1>
-          <p className="text-slate-400 font-medium mt-1">Manage client master directory, track filing calendars, and broadcast notifications.</p>
+          <button onClick={onBack} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] mb-4 transition-colors"><ArrowLeft className="w-3 h-3" /> Back to Hub</button>
+          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Practice Dashboard</h1>
+          <p className="text-slate-600 dark:text-slate-400 font-medium mt-1">Manage client master directory, track filing calendars, and broadcast notifications.</p>
         </div>
         
         <div className="flex flex-wrap gap-3">
           <button 
             onClick={() => setShowSettings(true)}
-            className="px-4 py-2.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-xl font-bold text-sm transition-all flex items-center gap-2"
+            className="px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
           >
             <Settings className="w-4 h-4 text-purple-400" />
             SMTP & Gateway Settings
@@ -609,7 +621,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
           <button 
             onClick={handleDriveBackup} 
             disabled={isBackingUp}
-            className="px-4 py-2.5 bg-slate-850 hover:bg-slate-750 border border-slate-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm flex items-center gap-2"
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 text-white rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2"
           >
             <HardDrive className={`w-4 h-4 text-emerald-400 ${isBackingUp ? 'animate-pulse' : ''}`} /> 
             {isBackingUp ? 'Backing up...' : 'Google Drive Backup'}
@@ -617,48 +629,83 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         </div>
       </div>
 
+      {/* Collapsible Quick Guide */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg">
+        <button 
+          onClick={() => setShowQuickGuide(!showQuickGuide)} 
+          className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+            <Lightbulb className="w-4 h-4 text-yellow-400" />
+            Quick Dashboard User Guide
+          </span>
+          <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+        </button>
+        {showQuickGuide && (
+          <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <p><strong>Overview:</strong> Central control panel to configure your client directory, track return filing tasks, monitor practice metrics, and run secure database backups.</p>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                <ol className="space-y-1.5 pl-4 list-decimal">
+                  <li><strong>Add Clients:</strong> Go to the "Client Master Data" tab and add client details or upload a bulk Excel spreadsheet.</li>
+                  <li><strong>Generate Filing Due Dates:</strong> Go to the "Task Management" tab and click "Generate filing calendar" to auto-populate compliance tasks.</li>
+                  <li><strong>Monitor Analytics:</strong> The analytics dashboard displays filing ratios, trends, and practice grades.</li>
+                  <li><strong>Google Drive Backup:</strong> Click the backup button to upload SQLite databases to the cloud securely.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Required Inputs & Outputs:</p>
+                <p className="mb-2"><strong>Required Inputs:</strong> Client trade names, PANs, GSTINs (must be exactly 15 characters), contact details, and optional SMTP settings.</p>
+                <p><strong>Outputs Produced:</strong> SQLite database records, interactive color-coded compliance trackers, email/SMS reminders, and encrypted backup files.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Quick Metrics Counter Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pop-in">
-        <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-700 transition-colors">
-          <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+        <div className="glass-card-np bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+          <div className="w-12 h-12 bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Master Directory</p>
-            <p className="text-2xl font-black text-white mt-1">{clients.length} Clients</p>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Master Directory</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">{clients.length} Clients</p>
           </div>
         </div>
         
-        <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-700 transition-colors">
-          <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+        <div className="glass-card-np bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+          <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Returns Filed</p>
-            <p className="text-2xl font-black text-white mt-1">
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Returns Filed</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
               {displayTasks.filter(t => t.status === 'Filed').length} Completed
             </p>
           </div>
         </div>
         
-        <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-700 transition-colors">
-          <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+        <div className="glass-card-np bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+          <div className="w-12 h-12 bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
             <AlertCircle className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Reminders</p>
-            <p className="text-2xl font-black text-white mt-1">
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pending Reminders</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
               {displayTasks.filter(t => t.status !== 'Filed').length} Pending
             </p>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-700 transition-colors">
-          <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+        <div className="glass-card-np bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-lg flex items-center gap-4 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+          <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center shadow-inner shrink-0">
             <HardDrive className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Database Integrity</p>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Database Integrity</p>
             <p className="text-xs font-bold text-emerald-400 mt-2.5 flex items-center gap-1.5 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> ONLINE SECURE
             </p>
@@ -677,6 +724,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
           </button>
           <button onClick={() => setActiveTab('clients')} className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'clients' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
             <Users className="w-4 h-4 text-purple-400" /> Client Master Data
+          </button>
+          <button onClick={() => setActiveTab('pan')} className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'pan' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+            <Building2 className="w-4 h-4 text-amber-400" /> PAN-Level View
           </button>
         </div>
         
@@ -886,7 +936,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                       className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg px-2 text-white outline-none focus:border-blue-500"
                     >
                       <option value="tax">Tax Payable Return</option>
-                      <option value="nil">Nil Return (₹0 Liability)</option>
+                      <option value="nil">Nil Return (â‚¹0 Liability)</option>
                     </select>
                   </div>
                 </div>
@@ -894,7 +944,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 {/* Net Cash Tax Liability */}
                 {!calcIsNilVal && (
                   <div className="animate-pop-in">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Net Cash Tax Liability (₹)</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Net Cash Tax Liability (â‚¹)</label>
                     <input 
                       type="number"
                       value={calcTaxVal}
@@ -941,8 +991,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Late Fee Capped</span>
                   <div>
-                    <p className="text-lg font-black text-white font-mono mt-1">₹{calculatedLateFeeVal.toLocaleString('en-IN')}</p>
-                    <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">₹{dailyLateRate}/Day Delay</p>
+                    <p className="text-lg font-black text-white font-mono mt-1">â‚¹{calculatedLateFeeVal.toLocaleString('en-IN')}</p>
+                    <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">â‚¹{dailyLateRate}/Day Delay</p>
                   </div>
                 </div>
                 
@@ -950,7 +1000,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Interest u/s 50</span>
                   <div>
-                    <p className="text-lg font-black text-white font-mono mt-1">₹{Math.round(calculatedInterestVal).toLocaleString('en-IN')}</p>
+                    <p className="text-lg font-black text-white font-mono mt-1">â‚¹{Math.round(calculatedInterestVal).toLocaleString('en-IN')}</p>
                     <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">18% P.A. on Cash Liability</p>
                   </div>
                 </div>
@@ -959,7 +1009,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-gradient-to-br from-purple-900/20 to-pink-900/10 border border-purple-500/20 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-purple-400 uppercase tracking-wider">Total Outflow</span>
                   <div>
-                    <p className="text-xl font-black text-pink-400 font-mono mt-1">₹{Math.round(totalFilingLiabilityVal).toLocaleString('en-IN')}</p>
+                    <p className="text-xl font-black text-pink-400 font-mono mt-1">â‚¹{Math.round(totalFilingLiabilityVal).toLocaleString('en-IN')}</p>
                     <p className="text-[8px] text-purple-400/70 font-semibold uppercase mt-1">Estim. Total Penalty</p>
                   </div>
                 </div>
@@ -972,12 +1022,12 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>SGST / CGST Late Fee Breakdown</span>
-                  <span className="font-mono font-bold text-white">₹{cgstLateFeeVal} CGST + ₹{sgstLateFeeVal} SGST</span>
+                  <span className="font-mono font-bold text-white">â‚¹{cgstLateFeeVal} CGST + â‚¹{sgstLateFeeVal} SGST</span>
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>Filing Delay Status Grade</span>
                   <span className={`font-bold ${calcDelayVal > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {calcDelayVal > 30 ? '🔴 MASSIVE INTEREST CHARGE' : calcDelayVal > 0 ? '🟡 MINOR DELAY WARNING' : '🟢 NO LATE FEES'}
+                    {calcDelayVal > 30 ? 'ðŸ”´ MASSIVE INTEREST CHARGE' : calcDelayVal > 0 ? 'ðŸŸ¡ MINOR DELAY WARNING' : 'ðŸŸ¢ NO LATE FEES'}
                   </span>
                 </div>
               </div>
@@ -1131,6 +1181,65 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
             </table>
           </div>
         </div>
+  )}
+
+  {/* TAB CONTENT: PAN LEVEL CONSOLIDATION */}
+  {activeTab === 'pan' && (
+    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl animate-pop-in">
+      <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h3 className="font-bold text-white uppercase tracking-wider text-sm flex items-center gap-2">PAN-Level Consolidation</h3>
+          <p className="text-[10px] text-slate-400 mt-0.5">Corporate grouping of multi-branch GSTINs under a single Permanent Account Number.</p>
+        </div>
+      </div>
+      
+      <div className="p-6 space-y-6">
+        {panGroups.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">No client records available to consolidate.</div>
+        ) : (
+          panGroups.map((group: any, idx) => {
+             const pct = group.totalScheduled > 0 ? Math.round((group.totalFiled / group.totalScheduled) * 100) : 0;
+             return (
+            <div key={idx} className="bg-slate-950/50 border border-slate-800/80 rounded-xl overflow-hidden shadow-sm hover:border-slate-700 transition-all">
+              <div className="p-4 bg-slate-900/50 border-b border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center border border-amber-500/20 shadow-inner">
+                    <Building2 className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-white font-mono tracking-widest">{group.pan}</h4>
+                    <p className="text-xs text-slate-400">{group.entities.length} Registered GSTIN{group.entities.length > 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
+                  <div className="text-right">
+                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Corporate Compliance</div>
+                     <div className="text-sm font-black text-emerald-400">{group.totalFiled} / {group.totalScheduled} Returns</div>
+                  </div>
+                  <div className="w-12 h-12 rounded-full border-[3px] border-slate-800 flex items-center justify-center relative bg-slate-950 shrink-0">
+                     <svg className="absolute inset-0 w-full h-full transform -rotate-90 p-0.5">
+                       <circle cx="22" cy="22" r="21" stroke="#10B981" strokeWidth="3" fill="transparent" strokeDasharray="132" strokeDashoffset={132 - (pct/100)*132} className="transition-all duration-1000 ease-out" />
+                     </svg>
+                     <span className="text-[10px] font-bold text-white relative z-10">{pct}%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {group.entities.map((ent: any, i: number) => (
+                  <div key={i} className="p-3 rounded-lg border border-slate-800/80 bg-slate-900/30 flex items-center justify-between hover:bg-slate-800/50 transition-colors">
+                     <div className="truncate pr-2">
+                       <p className="text-xs font-bold text-slate-200 truncate">{ent.trade_name}</p>
+                       <p className="text-[10px] font-mono text-blue-400 mt-1 uppercase">{ent.gstin}</p>
+                     </div>
+                     <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )})
+        )}
+      </div>
+    </div>
       )}
 
       {/* TAB CONTENT: CLIENT MASTER */}
@@ -1218,8 +1327,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                       </td>
                       <td className="px-6 py-4 font-mono text-blue-400 text-xs select-all tracking-wider">{c.gstin}</td>
                       <td className="px-6 py-4 font-mono text-emerald-400 font-bold text-xs select-all tracking-wider">{getPanFromGstin(c.gstin)}</td>
-                      <td className="px-6 py-4 text-slate-300 font-mono text-xs">{c.email || '—'}</td>
-                      <td className="px-6 py-4 text-slate-300 font-mono text-xs">{c.phone || '—'}</td>
+                      <td className="px-6 py-4 text-slate-300 font-mono text-xs">{c.email || 'â€”'}</td>
+                      <td className="px-6 py-4 text-slate-300 font-mono text-xs">{c.phone || 'â€”'}</td>
                       <td className="px-6 py-4 text-right space-x-1.5">
                         <button 
                           onClick={() => {
@@ -1507,7 +1616,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="space-y-2">
                   <div>
                     <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Twilio API Key / Gateway Token</label>
-                    <input type="password" value="••••••••••••••••••••" disabled className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-slate-500" />
+                    <input type="password" value="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" disabled className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-slate-500" />
                   </div>
                   <p className="text-[8px] text-slate-500 italic">Twilio Sandbox SMS API verified. Standard Indian SMS header: "VASWNI"</p>
                 </div>

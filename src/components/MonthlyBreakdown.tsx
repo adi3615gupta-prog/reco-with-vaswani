@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -84,6 +85,8 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
     };
 
     for (const r of results) {
+      if (r.status === 'Prior FY (Excluded)') continue;
+      
       if (r.prRecord) {
         const mk = getMonthKey(r.prRecord.invoiceDate, r.prRecord.normalizedDate);
         if (mk) {
@@ -178,29 +181,35 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
   }, [monthlyData, activeTab]);
 
   const handleExport = () => {
-    const exportRows: MonthlyComparisonRow[] = results.map((r) => {
-      const pr = r.prRecord;
-      const tb = r.twoBRecord;
-      return {
-        partyTally: pr?.supplierName || '',
-        gstinTally: pr?.gstin || '',
-        invoiceTally: pr?.invoiceNo || '',
-        cgstTally: pr?.cgst || 0,
-        sgstTally: pr?.sgst || 0,
-        igstTally: pr?.igst || 0,
-        dateTally: pr?.invoiceDate || '',
-        partyCmp: tb?.supplierName || '',
-        gstinCmp: tb?.gstin || '',
-        invoiceCmp: tb?.invoiceNo || '',
-        cgstCmp: tb?.cgst || 0,
-        sgstCmp: tb?.sgst || 0,
-        igstCmp: tb?.igst || 0,
-        dateCmp: tb?.invoiceDate || '',
-        status: r.status,
-        totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
-      };
-    });
-    exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', debitNotes, companyName);
+    try {
+      const exportRows: MonthlyComparisonRow[] = results.map((r) => {
+        const pr = r.prRecord;
+        const tb = r.twoBRecord;
+        return {
+          partyTally: pr?.supplierName || '',
+          gstinTally: pr?.gstin || '',
+          invoiceTally: pr?.invoiceNo || '',
+          cgstTally: pr?.cgst || 0,
+          sgstTally: pr?.sgst || 0,
+          igstTally: pr?.igst || 0,
+          dateTally: pr?.invoiceDate || '',
+          partyCmp: tb?.supplierName || '',
+          gstinCmp: tb?.gstin || '',
+          invoiceCmp: tb?.invoiceNo || '',
+          cgstCmp: tb?.cgst || 0,
+          sgstCmp: tb?.sgst || 0,
+          igstCmp: tb?.igst || 0,
+          dateCmp: tb?.invoiceDate || '',
+          status: r.status,
+          totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+        };
+      });
+      exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', debitNotes, companyName);
+      toast.success('Monthly comparison exported successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   return (

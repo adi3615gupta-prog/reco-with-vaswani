@@ -257,6 +257,8 @@ export function computeBalanceCheck(): BalanceCheck {
   const notes = aggregateNotes(false); // Don't suppress for check
   let totalAssets = 0;
   let totalEquityLiabilities = 0;
+  let totalIncome = 0;
+  let totalExpenses = 0;
 
   for (const note of notes) {
     const master = getMasterGroupCodes().find(
@@ -264,19 +266,32 @@ export function computeBalanceCheck(): BalanceCheck {
     );
     if (!master) continue;
 
+    const val = note.cy_grand_total;
     if (master.group_code >= 1000 && master.group_code < 2000) {
-      totalAssets += note.cy_grand_total;
+      // Asset (Dr positive, Cr negative)
+      totalAssets += val;
     } else if (master.group_code >= 2000 && master.group_code < 3000) {
-      totalEquityLiabilities += note.cy_grand_total;
+      // Liability/Equity (Cr positive, Dr negative). Negated to get positive balance.
+      totalEquityLiabilities += -val;
+    } else if (master.group_code >= 3000 && master.group_code < 4000) {
+      // Income (Cr positive, Dr negative). Negated to get positive balance.
+      totalIncome += -val;
+    } else if (master.group_code >= 4000 && master.group_code < 5000) {
+      // Expenses (Dr positive, Cr negative)
+      totalExpenses += val;
     }
   }
 
-  const diff = totalAssets - totalEquityLiabilities;
+  // Roll unclosed P&L surplus (Revenue - Expenses) into Equity & Liabilities
+  const netProfit = totalIncome - totalExpenses;
+  const adjustedEquityLiabilities = totalEquityLiabilities + netProfit;
+
+  const diff = totalAssets - adjustedEquityLiabilities;
   return {
     total_assets: totalAssets,
-    total_equity_liabilities: totalEquityLiabilities,
+    total_equity_liabilities: adjustedEquityLiabilities,
     difference: diff,
-    is_balanced: Math.abs(diff) < 0.01,
+    is_balanced: Math.abs(diff) < 0.05,
   };
 }
 

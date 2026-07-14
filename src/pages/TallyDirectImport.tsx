@@ -16,7 +16,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft, Server, Wifi, WifiOff, RefreshCw, Download,
   CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet, Building2,
-  ChevronRight, Zap, Database, ArrowRight, Settings2,
+  ChevronRight, Zap, Database, ArrowRight, Settings2, Lightbulb
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx-js-style';
@@ -52,20 +52,6 @@ export interface CustomTaxLedger {
   type: 'Input' | 'Output' | 'RCM';
 }
 
-export interface TallyFlatVoucher {
-  voucherType: string;
-  voucherNumber: string;
-  date: string;
-  partyName: string;
-  gstin: string;
-  invoiceNo: string;
-  igst: number;
-  cgst: number;
-  sgst: number;
-  taxableValue: number;
-  totalAmount: number;
-  debugLog?: string;
-}
 
 interface VoucherTypeConfig {
   type: TallyVoucherType;
@@ -80,14 +66,52 @@ interface VoucherTypeConfig {
 // ─── Component ───────────────────────────────────────────────
 
 export default function TallyDirectImport({ onBack, onImportToReconciliation }: TallyDirectImportProps) {
+  const [logs, setLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    const captureLog = (...args: any[]) => {
+      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      setLogs(prev => [...prev.slice(-100), msg]);
+      originalLog(...args);
+    };
+
+    const captureError = (...args: any[]) => {
+      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      setLogs(prev => [...prev.slice(-100), `❌ ${msg}`]);
+      originalError(...args);
+    };
+
+    const captureWarn = (...args: any[]) => {
+      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      setLogs(prev => [...prev.slice(-100), `⚠️ ${msg}`]);
+      originalWarn(...args);
+    };
+
+    console.log = captureLog;
+    console.error = captureError;
+    console.warn = captureWarn;
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }, []);
+
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [customInputTaxGroups, setCustomInputTaxGroups] = useState<string>('ITC, DUTIES & TAXES, DUTIES AND TAXES, INPUT');
   const [customOutputTaxGroups, setCustomOutputTaxGroups] = useState<string>('OUTPUT, DUTIES & TAXES, DUTIES AND TAXES');
   const [customTaxLedgers, setCustomTaxLedgers] = useState<CustomTaxLedger[]>([]);
+  const [strictMode, setStrictMode] = useState(false);
 
   useEffect(() => {
     const storedInput = localStorage.getItem('tallyCustomInputTaxGroups');
     if (storedInput) setCustomInputTaxGroups(storedInput);
-    
+
     const storedOutput = localStorage.getItem('tallyCustomOutputTaxGroups');
     if (storedOutput) setCustomOutputTaxGroups(storedOutput);
 
@@ -95,15 +119,18 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     if (storedLedgers) {
       try {
         setCustomTaxLedgers(JSON.parse(storedLedgers));
-      } catch (e) {}
+      } catch (e) { }
     }
+
+    const storedStrict = localStorage.getItem('tallyStrictMode');
+    if (storedStrict) setStrictMode(storedStrict === 'true');
   }, []);
 
   const handleInputTaxGroupsChange = (val: string) => {
     setCustomInputTaxGroups(val);
     localStorage.setItem('tallyCustomInputTaxGroups', val);
   };
-  
+
   const handleOutputTaxGroupsChange = (val: string) => {
     setCustomOutputTaxGroups(val);
     localStorage.setItem('tallyCustomOutputTaxGroups', val);
@@ -112,18 +139,21 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
   const addCustomTaxLedger = () => {
     const newLedgers = [...customTaxLedgers, { id: Date.now().toString(), name: '', category: 'CGST' as const, type: 'Input' as const }];
     setCustomTaxLedgers(newLedgers);
+    localStorage.setItem(`tallyCustomTaxLedgers_${companyInfo?.name || 'default'}`, JSON.stringify(newLedgers));
     localStorage.setItem('tallyCustomTaxLedgers', JSON.stringify(newLedgers));
   };
 
   const updateCustomTaxLedger = (id: string, field: keyof CustomTaxLedger, value: string) => {
     const newLedgers = customTaxLedgers.map(l => l.id === id ? { ...l, [field]: value } : l);
     setCustomTaxLedgers(newLedgers);
+    localStorage.setItem(`tallyCustomTaxLedgers_${companyInfo?.name || 'default'}`, JSON.stringify(newLedgers));
     localStorage.setItem('tallyCustomTaxLedgers', JSON.stringify(newLedgers));
   };
 
   const removeCustomTaxLedger = (id: string) => {
     const newLedgers = customTaxLedgers.filter(l => l.id !== id);
     setCustomTaxLedgers(newLedgers);
+    localStorage.setItem(`tallyCustomTaxLedgers_${companyInfo?.name || 'default'}`, JSON.stringify(newLedgers));
     localStorage.setItem('tallyCustomTaxLedgers', JSON.stringify(newLedgers));
   };
 
@@ -158,8 +188,21 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
+
+        // Performance Fix: Prevent 1-Million Row browser freeze if whole column was formatted in Excel
+        let maxRow = 0;
+        for (const key of Object.keys(worksheet)) {
+          if (key.startsWith('!')) continue;
+          const rowMatch = key.match(/\d+/);
+          if (rowMatch && parseInt(rowMatch[0], 10) > maxRow) maxRow = parseInt(rowMatch[0], 10);
+        }
+        if (worksheet['!ref']) {
+          const range = XLSX.utils.decode_range(worksheet['!ref']);
+          worksheet['!ref'] = XLSX.utils.encode_range({ s: range.s, e: { r: Math.max(range.s.r, maxRow - 1), c: range.e.c } });
+        }
+
         const json = XLSX.utils.sheet_to_json(worksheet);
-        
+
         const newLedgers = json.map((row: any, i) => ({
           id: Date.now().toString() + i,
           name: String(row['Exact Ledger Name (in Tally)'] || '').trim(),
@@ -186,7 +229,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     try {
       const stored = localStorage.getItem('tallyCustomVouchers');
       if (stored) return JSON.parse(stored);
-    } catch (e) {}
+    } catch (e) { }
     return {
       Purchase: '',
       Sales: '',
@@ -244,16 +287,34 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
       const info = await fetchCompanyInfo({ host: 'localhost', port: tallyPort });
       setCompanyInfo(info);
       setConnectionStatus('connected');
-      
+
       try {
         const storedTax = localStorage.getItem(`tallyCustomTaxLedgers_${info.name}`);
-        if (storedTax) setCustomTaxLedgers(JSON.parse(storedTax));
-        else setCustomTaxLedgers([]);
-        
+        if (storedTax) {
+          setCustomTaxLedgers(JSON.parse(storedTax));
+        } else {
+          const fallbackTax = localStorage.getItem('tallyCustomTaxLedgers');
+          if (fallbackTax) {
+            setCustomTaxLedgers(JSON.parse(fallbackTax));
+            localStorage.setItem(`tallyCustomTaxLedgers_${info.name}`, fallbackTax);
+          } else {
+            setCustomTaxLedgers([]);
+          }
+        }
+
         const storedVoucher = localStorage.getItem(`tallyCustomVouchers_${info.name}`);
-        if (storedVoucher) setCustomVoucherMapping(JSON.parse(storedVoucher));
-        else setCustomVoucherMapping({ Purchase: '', Sales: '', Journal: '', 'Credit Note': '', 'Debit Note': '' });
-      } catch (e) {}
+        if (storedVoucher) {
+          setCustomVoucherMapping(JSON.parse(storedVoucher));
+        } else {
+          const fallbackVoucher = localStorage.getItem('tallyCustomVouchers');
+          if (fallbackVoucher) {
+            setCustomVoucherMapping(JSON.parse(fallbackVoucher));
+            localStorage.setItem(`tallyCustomVouchers_${info.name}`, fallbackVoucher);
+          } else {
+            setCustomVoucherMapping({ Purchase: '', Sales: '', Journal: '', 'Credit Note': '', 'Debit Note': '' });
+          }
+        }
+      } catch (e) { }
 
       toast.success('Connected to Tally!', {
         description: `Company: ${info.name} (Mappings loaded)`,
@@ -281,16 +342,16 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
     try {
       const config: TallyConnectionConfig = { host: 'localhost', port: tallyPort };
-      
+
       const all: TallyFlatVoucher[] = [];
       for (const vt of activeTypes) {
         const customNamesStr = customVoucherMapping[vt.type] || '';
         const extraNames = customNamesStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
         const typesToFetch = [vt.type, ...extraNames];
-        
+
         const inputGroups = customInputTaxGroups.split(',').map(s => s.trim()).filter(s => s.length > 0);
         const outputGroups = customOutputTaxGroups.split(',').map(s => s.trim()).filter(s => s.length > 0);
-        
+
         const data = await fetchVouchers(
           vt.type as any,
           typesToFetch,
@@ -299,7 +360,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
           config,
           inputGroups,
           outputGroups,
-          customTaxLedgers
+          customTaxLedgers,
+          strictMode
         );
         setFetchProgress((prev) => [...prev, `✅ ${vt.type}: ${data.length} vouchers fetched`]);
         all.push(...data);
@@ -312,7 +374,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     } finally {
       setIsFetching(false);
     }
-  }, [voucherTypes, customVoucherMapping, fromDate, toDate, tallyPort, customInputTaxGroups, customOutputTaxGroups, customTaxLedgers]);
+  }, [voucherTypes, customVoucherMapping, fromDate, toDate, tallyPort, customInputTaxGroups, customOutputTaxGroups, customTaxLedgers, strictMode]);
 
   // ─── Export to Excel ─────────────────────────────────────
 
@@ -358,24 +420,27 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     }, {} as Record<string, typeof fetchedData>);
 
     const headers = [
-      'Voucher Type', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
-      'Invoice No', 'IGST', 'CGST', 'SGST', 
+      'Voucher Type', 'Voucher Alias', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
+      'Invoice No', 'IGST', 'CGST', 'SGST',
       'Taxable Value', 'Total Amount',
+      'IGST Ledger', 'CGST Ledger', 'SGST Ledger'
     ];
 
     // Helper to generate a sheet from rows data
     const generateSheet = (rowsData: typeof fetchedData) => {
       const rows = rowsData.map((v) => [
-        v.voucherType, v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
-        v.invoiceNo, v.igst, v.cgst, v.sgst, 
+        v.voucherType, v.originalVoucherType || '', v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
+        v.invoiceNo, v.igst, v.cgst, v.sgst,
         v.taxableValue, v.totalAmount,
+        v.igstLedger || '', v.cgstLedger || '', v.sgstLedger || ''
       ]);
 
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       ws['!cols'] = [
-        { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
-        { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, 
+        { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
+        { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 14 },
+        { wch: 20 }, { wch: 20 }, { wch: 20 }
       ];
       applyHeaderStyles(ws, headers.length);
       return ws;
@@ -418,7 +483,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
       'Voucher Type', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
       'Tax Ledger Name', 'Category (CGST/SGST/IGST)', 'Type (Input/Output/RCM)', 'Amount'
     ];
-    
+
     const breakdownRows: any[][] = [];
     fetchedData.forEach(v => {
       if (v.taxLedgersBreakdown && v.taxLedgersBreakdown.length > 0) {
@@ -480,9 +545,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     };
 
     const headers = [
-      'Voucher Type', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
+      'Voucher Type', 'Voucher Alias', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
       'Invoice No', 'IGST', 'CGST', 'SGST',
       'Taxable Value', 'Total Amount',
+      'IGST Ledger', 'CGST Ledger', 'SGST Ledger'
     ];
 
     const compName = companyInfo?.name || 'Tally';
@@ -498,16 +564,18 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     let count = 0;
     Object.entries(groupedData).forEach(([vType, rowsData]) => {
       const rows = rowsData.map((v) => [
-        v.voucherType, v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
+        v.voucherType, v.originalVoucherType || '', v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
         v.invoiceNo, v.igst, v.cgst, v.sgst,
         v.taxableValue, v.totalAmount,
+        v.igstLedger || '', v.cgstLedger || '', v.sgstLedger || ''
       ]);
 
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       ws['!cols'] = [
-        { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
+        { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
         { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 14 },
+        { wch: 20 }, { wch: 20 }, { wch: 20 }
       ];
       applyHeaderStyles(ws, headers.length);
 
@@ -541,9 +609,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
       };
 
       const headers = [
-        'Voucher Type', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
+        'Voucher Type', 'Voucher Alias', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
         'Invoice No', 'IGST', 'CGST', 'SGST',
         'Taxable Value', 'Total Amount',
+        'IGST Ledger', 'CGST Ledger', 'SGST Ledger'
       ];
 
       // Group by type
@@ -557,17 +626,19 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
       // Helper to generate a virtual File object
       const generateVirtualFile = (rowsData: typeof fetchedData, fileName: string) => {
         const rows = rowsData.map((v) => [
-          v.voucherType, v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
+          v.voucherType, v.originalVoucherType || '', v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
           v.invoiceNo, v.igst, v.cgst, v.sgst,
           v.taxableValue, v.totalAmount,
+          v.igstLedger || '', v.cgstLedger || '', v.sgstLedger || ''
         ]);
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         ws['!cols'] = [
-          { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
+          { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
           { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
           { wch: 14 }, { wch: 14 },
+          { wch: 20 }, { wch: 20 }, { wch: 20 }
         ];
-        
+
         // Apply basic header styles
         for (let i = 0; i < headers.length; i++) {
           const cellRef = XLSX.utils.encode_cell({ c: i, r: 0 });
@@ -579,7 +650,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             };
           }
         }
-        
+
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
         const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -608,7 +679,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
       if (journals.length > 0) {
         journalFiles.push(generateVirtualFile(journals, 'Tally_Journals.xlsx'));
       }
-      
+
       const creditNotes = groupedData['Credit Note'] || [];
       if (creditNotes.length > 0) {
         journalFiles.push(generateVirtualFile(creditNotes, 'Tally_Credit_Notes.xlsx'));
@@ -673,13 +744,51 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
           </div>
         </div>
 
+        {/* Collapsible Quick Guide */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg mb-6">
+          <button
+            onClick={() => setShowQuickGuide(!showQuickGuide)}
+            className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+          >
+            <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+              <Lightbulb className="w-4 h-4 text-yellow-400" />
+              Quick Tally Direct Import User Guide
+            </span>
+            <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+          </button>
+          {showQuickGuide && (
+            <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+              <p><strong>Overview:</strong> Directly import purchase, sales, debit/credit notes, and journal vouchers from your running TallyPrime application via XML API.</p>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                  <ol className="space-y-1.5 pl-4 list-decimal">
+                    <li><strong>Tally Setup:</strong> Open TallyPrime on your computer. Make sure "Enable ODBC/XML server" is turned ON.</li>
+                    <li><strong>Connect:</strong> Enter your Tally Port (default is 9000) and click "Connect". Your active company name should appear.</li>
+                    <li><strong>Configurations:</strong> Enter custom tax ledger mappings or voucher types if you use customized accounting groups in Tally.</li>
+                    <li><strong>Fetch & Send:</strong> Set date ranges, check voucher types, click "Fetch Vouchers", and click "Send to Reconciliation".</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-300 mb-1.5">TallyPrime Configuration details:</p>
+                  <ul className="space-y-1.5 pl-4 list-disc text-slate-400">
+                    <li>To verify port: Go to TallyPrime → <strong>F12 (Configure)</strong> → <strong>Advanced Configuration</strong>.</li>
+                    <li>Ensure "TallyPrime acts as" is set to <strong>Server</strong> or <strong>Both</strong>.</li>
+                    <li>Ensure the Port matches the number typed in this interface.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ─── Step 1: Connection Panel ─── */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 bg-teal-500/10 border border-teal-500/20 rounded-lg flex items-center justify-center">
               <Server className="w-4 h-4 text-teal-400" />
             </div>
-            
+
             <div>
               <h2 className="text-sm font-bold">Step 1: Connect to Tally</h2>
               <p className="text-[10px] text-slate-500">
@@ -759,22 +868,22 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-             {voucherTypes.map(v => (
-                <div key={v.type} className="flex flex-col gap-1.5">
-                   <label className="text-[10px] text-slate-500 uppercase tracking-wider">{v.label} Aliases</label>
-                   <input
-                      type="text"
-                      placeholder={`e.g. GST ${v.label}`}
-                      value={customVoucherMapping[v.type] || ''}
-                      onChange={(e) => setCustomVoucherMapping(prev => {
-                         const n = { ...prev, [v.type]: e.target.value };
-                         localStorage.setItem(`tallyCustomVouchers_${companyInfo?.name || 'default'}`, JSON.stringify(n));
-                         return n;
-                      })}
-                      className="h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-slate-600"
-                   />
-                </div>
-             ))}
+            {voucherTypes.map(v => (
+              <div key={v.type} className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider">{v.label} Aliases</label>
+                <input
+                  type="text"
+                  placeholder={`e.g. GST ${v.label}`}
+                  value={customVoucherMapping[v.type] || ''}
+                  onChange={(e) => setCustomVoucherMapping(prev => {
+                    const n = { ...prev, [v.type]: e.target.value };
+                    localStorage.setItem(`tallyCustomVouchers_${companyInfo?.name || 'default'}`, JSON.stringify(n));
+                    return n;
+                  })}
+                  className="h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-slate-600"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -825,11 +934,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 <button
                   key={vt.type}
                   onClick={() => toggleVoucherType(idx)}
-                  className={`p-3 rounded-xl border-2 transition-all text-left ${
-                    vt.enabled
-                      ? `${vt.bgColor} ${vt.borderColor} ring-1 ring-white/10`
-                      : 'bg-slate-800/40 border-slate-700/50 opacity-50 hover:opacity-80'
-                  }`}
+                  className={`p-3 rounded-xl border-2 transition-all text-left ${vt.enabled
+                    ? `${vt.bgColor} ${vt.borderColor} ring-1 ring-white/10`
+                    : 'bg-slate-800/40 border-slate-700/50 opacity-50 hover:opacity-80'
+                    }`}
                 >
                   <span className="text-xl">{vt.icon}</span>
                   <p className={`text-xs font-bold mt-1 ${vt.enabled ? vt.color : 'text-slate-400'}`}>
@@ -842,114 +950,129 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               ))}
             </div>
 
-              <h2 className="text-sm font-bold mb-4 flex items-center gap-2">
-                <span className="w-4 h-4 text-emerald-400">🛡</span>
-                Step 3: Custom Tax Mapping
-              </h2>
-              <p className="text-xs text-slate-400 mb-4">
-                Explicitly define your Tax Ledgers here if the auto-detection is not picking up the values. If you add ledgers here, it will guarantee they are classified correctly.
-              </p>
-              
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <label className="block text-xs font-semibold text-slate-300">Explicit Ledger Mapping Table</label>
-                  <div className="flex items-center gap-2">
-                    <button onClick={exportTaxLedgers} className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors flex items-center gap-1">
-                      Export Excel
-                    </button>
-                    <label className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors cursor-pointer flex items-center gap-1">
-                      Import Excel
-                      <input type="file" accept=".xlsx" className="hidden" onChange={importTaxLedgers} />
-                    </label>
-                    <button onClick={addCustomTaxLedger} className="text-xs bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-1 rounded transition-colors">
-                      + Add Ledger
-                    </button>
-                  </div>
+            <h2 className="text-sm font-bold mb-4 flex items-center gap-2">
+              <span className="w-4 h-4 text-emerald-400">🛡</span>
+              Step 3: Custom Tax Mapping
+            </h2>
+            <p className="text-xs text-slate-400 mb-4">
+              Explicitly define your Tax Ledgers here if the auto-detection is not picking up the values. If you add ledgers here, it will guarantee they are classified correctly.
+            </p>
+
+            <div className="flex items-center gap-2 mb-4">
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-2 cursor-pointer bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:bg-slate-800/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={strictMode}
+                  onChange={(e) => {
+                    setStrictMode(e.target.checked);
+                    localStorage.setItem('tallyStrictMode', String(e.target.checked));
+                  }}
+                  className="rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                />
+                Strict Mapping (Ignore Auto-Detect and ONLY import mapped ledgers)
+              </label>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-xs font-semibold text-slate-300">Explicit Ledger Mapping Table</label>
+                <div className="flex items-center gap-2">
+                  <button onClick={exportTaxLedgers} className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors flex items-center gap-1">
+                    Export Excel
+                  </button>
+                  <label className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors cursor-pointer flex items-center gap-1">
+                    Import Excel
+                    <input type="file" accept=".xlsx" className="hidden" onChange={importTaxLedgers} />
+                  </label>
+                  <button onClick={addCustomTaxLedger} className="text-xs bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-1 rounded transition-colors">
+                    + Add Ledger
+                  </button>
                 </div>
-                
-                {customTaxLedgers.length > 0 ? (
-                  <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
-                        <tr>
-                          <th className="px-3 py-2 font-medium">Exact Ledger Name (in Tally)</th>
-                          <th className="px-3 py-2 font-medium w-32">Tax Category</th>
-                          <th className="px-3 py-2 font-medium w-32">Tax Type</th>
-                          <th className="px-3 py-2 font-medium w-16 text-center">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {customTaxLedgers.map(ledger => (
-                          <tr key={ledger.id}>
-                            <td className="px-3 py-2">
-                              <input 
-                                type="text" 
-                                value={ledger.name} 
-                                onChange={e => updateCustomTaxLedger(ledger.id, 'name', e.target.value)} 
-                                className="w-full bg-transparent border-none outline-none text-slate-200" 
-                                placeholder="e.g. CGST @ 9% Input" 
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <select 
-                                value={ledger.category} 
-                                onChange={e => updateCustomTaxLedger(ledger.id, 'category', e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
-                              >
-                                <option value="CGST">CGST</option>
-                                <option value="SGST">SGST</option>
-                                <option value="IGST">IGST</option>
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <select 
-                                value={ledger.type} 
-                                onChange={e => updateCustomTaxLedger(ledger.id, 'type', e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
-                              >
-                                <option value="Input">Input</option>
-                                <option value="Output">Output</option>
-                                <option value="RCM">RCM</option>
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <button onClick={() => removeCustomTaxLedger(ledger.id)} className="text-red-400 hover:text-red-300">✕</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-500">
-                    No explicit ledgers defined. Auto-detection via Groups will be used.
-                  </div>
-                )}
               </div>
 
-              <div className="grid gap-4 pt-4 border-t border-slate-800">
-                <p className="text-xs text-slate-500 col-span-full">Or map entire Ledger Groups (Fallback Auto-Detection):</p>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Input Tax Groups (Purchases)</label>
-                  <input
-                    type="text"
-                    value={customInputTaxGroups}
-                    onChange={e => handleInputTaxGroupsChange(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
-                    placeholder="e.g. ITC, DUTIES & TAXES"
-                  />
+              {customTaxLedgers.length > 0 ? (
+                <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Exact Ledger Name (in Tally)</th>
+                        <th className="px-3 py-2 font-medium w-32">Tax Category</th>
+                        <th className="px-3 py-2 font-medium w-32">Tax Type</th>
+                        <th className="px-3 py-2 font-medium w-16 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {customTaxLedgers.map(ledger => (
+                        <tr key={ledger.id}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={ledger.name}
+                              onChange={e => updateCustomTaxLedger(ledger.id, 'name', e.target.value)}
+                              className="w-full bg-transparent border-none outline-none text-slate-200"
+                              placeholder="e.g. CGST @ 9% Input"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={ledger.category}
+                              onChange={e => updateCustomTaxLedger(ledger.id, 'category', e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
+                            >
+                              <option value="CGST">CGST</option>
+                              <option value="SGST">SGST</option>
+                              <option value="IGST">IGST</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={ledger.type}
+                              onChange={e => updateCustomTaxLedger(ledger.id, 'type', e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
+                            >
+                              <option value="Input">Input</option>
+                              <option value="Output">Output</option>
+                              <option value="RCM">RCM</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button onClick={() => removeCustomTaxLedger(ledger.id)} className="text-red-400 hover:text-red-300">✕</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Output Tax Groups (Sales)</label>
-                  <input
-                    type="text"
-                    value={customOutputTaxGroups}
-                    onChange={e => handleOutputTaxGroupsChange(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
-                    placeholder="e.g. OUTPUT, DUTIES & TAXES"
-                  />
+              ) : (
+                <div className="text-center py-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-500">
+                  No explicit ledgers defined. Auto-detection via Groups will be used.
                 </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 pt-4 border-t border-slate-800">
+              <p className="text-xs text-slate-500 col-span-full">Or map entire Ledger Groups (Fallback Auto-Detection):</p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Input Tax Groups (Purchases)</label>
+                <input
+                  type="text"
+                  value={customInputTaxGroups}
+                  onChange={e => handleInputTaxGroupsChange(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
+                  placeholder="e.g. ITC, DUTIES & TAXES"
+                />
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Output Tax Groups (Sales)</label>
+                <input
+                  type="text"
+                  value={customOutputTaxGroups}
+                  onChange={e => handleOutputTaxGroupsChange(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
+                  placeholder="e.g. OUTPUT, DUTIES & TAXES"
+                />
+              </div>
+            </div>
 
             {/* Fetch Button */}
             <button
@@ -984,7 +1107,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         )}
         {/* ─── Step 4: Preview & Export ─── */}
         {fetchedData.length > 0 && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -1031,7 +1154,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             </div>
 
             {/* Summary Cards */}
-            <motion.div 
+            <motion.div
               initial="hidden"
               animate="show"
               variants={{
@@ -1056,8 +1179,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   { label: 'Total Tax', value: `₹${totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: 'text-emerald-400' },
                 ];
               })().map((card) => (
-                <motion.div 
-                  key={card.label} 
+                <motion.div
+                  key={card.label}
                   variants={{
                     hidden: { opacity: 0, y: 20, scale: 0.95 },
                     show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
@@ -1075,7 +1198,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             {(() => {
               const anomalies = fetchedData.filter(v => v.anomalies && v.anomalies.length > 0);
               if (anomalies.length === 0) return null;
-              
+
               return (
                 <div className="mb-6 border border-amber-500/30 rounded-xl overflow-hidden">
                   <div className="bg-amber-500/10 px-4 py-3 border-b border-amber-500/20 flex items-center gap-2">
@@ -1177,10 +1300,29 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 </div>
               )}
             </div>
-            
+
 
           </motion.div>
         )}
+
+        {/* Debug Logs Panel */}
+        <div className="bg-slate-955/90 border border-slate-800 rounded-2xl p-4 mt-6 backdrop-blur-md shadow-2xl">
+          <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse inline-block" />
+            Tally Engine Console Debugger (Active Logs)
+          </p>
+          <div className="h-60 overflow-y-auto bg-black/60 border border-slate-900 rounded-xl p-3 font-mono text-[10px] text-slate-400 space-y-1.5 select-all scrollbar-thin">
+            {logs.length === 0 ? (
+              <span className="text-slate-600 italic">No logs recorded yet. Connect to Tally and click 'Fetch Vouchers'.</span>
+            ) : (
+              logs.map((log, idx) => (
+                <div key={idx} className={log.startsWith('❌') ? 'text-red-400 font-semibold' : log.startsWith('⚠️') ? 'text-amber-400' : 'text-slate-300'}>
+                  {log}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="text-center pt-4 pb-8">

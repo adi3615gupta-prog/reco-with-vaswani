@@ -1,16 +1,16 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, ImageIcon, UploadCloud, CheckCircle2, FileSpreadsheet, X } from 'lucide-react';
+import { ArrowLeft, ImageIcon, UploadCloud, CheckCircle2, FileSpreadsheet, X, Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from "xlsx";
 import XLSXStyle from "xlsx-js-style";
-
-const getApiHost = () => localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1';
+import { getApiBase, getAuthToken } from '@/lib/api';
 
 interface ImageToExcelProps {
   onBack: () => void;
 }
 
 export default function ImageToExcel({ onBack }: ImageToExcelProps) {
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -19,7 +19,7 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
-    
+
     // Sort files alphabetically to ensure "Pg 1 (A)", "Pg 1 (B)", etc. are ordered correctly
     const sortedFiles = filesArray.sort((a, b) => a.name.localeCompare(b.name));
     setSelectedFiles(sortedFiles);
@@ -45,8 +45,8 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
     }
 
     try {
-      const res = await fetch(`http://${getApiHost()}:3001/api/usage/increment`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+      const res = await fetch(`${getApiBase()}/api/usage/increment`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ module_name: 'OCR' })
       });
       if (!res.ok) {
@@ -58,23 +58,23 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
       toast.error('Connection Error', { description: 'Could not verify usage limits' });
       return;
     }
-    
+
     setIsProcessing(true);
     try {
       // Convert all images to Base64
       const base64Images = await Promise.all(selectedFiles.map(file => convertToBase64(file)));
-      
+
       // Send to Vision API backend
-      const res = await fetch(`http://${getApiHost()}:3001/api/vision-extract`, {
+      const res = await fetch(`${getApiBase()}/api/vision-extract`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ images: base64Images })
       });
-      
+
       if (!res.ok) throw new Error("Failed to extract data from images.");
-      
+
       const data = await res.json();
-      
+
       if (data && Array.isArray(data.records) && data.records.length > 0) {
         setParsedData(data.records);
         toast.success("Extraction Complete", { description: `Extracted ${data.records.length} rows successfully.` });
@@ -96,14 +96,14 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
       // 1. Extract dynamic headers from all JSON objects
       const headerSet = new Set<string>();
       parsedData.forEach(row => Object.keys(row).forEach(k => headerSet.add(k)));
-      
+
       // Standardize ordering as requested
       const standardHeaders = ["Date", "Particulars", "Voucher Type", "Voucher No.", "Voucher Ref. No.", "GSTIN/UIN", "Narration", "Value", "Gross Total"];
       const dynamicHeaders = Array.from(headerSet).filter(h => !standardHeaders.some(sh => h.toLowerCase().includes(sh.toLowerCase())));
       const finalHeaders = [...standardHeaders, ...dynamicHeaders];
 
       const aoa: any[][] = [];
-      
+
       // 2. Static Company Header Block
       aoa.push(["EXTRACTED COMPANY DATA PVT. LTD."]);
       aoa.push(["Automated Address Line 1"]);
@@ -111,16 +111,16 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
       aoa.push(["Automated Address Line 3"]);
       aoa.push(["Vision Extracted Journal Register"]);
       aoa.push(["Extracted Data Period"]);
-      
+
       // 3. Bold Table Headers
       aoa.push(finalHeaders);
 
       // 4. Data Rows
       parsedData.forEach((row: any) => {
         const rowData = finalHeaders.map(header => {
-            // Look for case-insensitive matches in the JSON object
-            const keyMatch = Object.keys(row).find(k => k.toLowerCase() === header.toLowerCase());
-            return keyMatch ? row[keyMatch] : "";
+          // Look for case-insensitive matches in the JSON object
+          const keyMatch = Object.keys(row).find(k => k.toLowerCase() === header.toLowerCase());
+          return keyMatch ? row[keyMatch] : "";
         });
         aoa.push(rowData);
       });
@@ -141,7 +141,7 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
         for (let C = 0; C < maxCols; ++C) {
           const cellRef = XLSXStyle.utils.encode_cell({ r: R, c: C });
           if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
-          
+
           if (R === 0) ws[cellRef].s = companyHeaderStyle;
           else if (R > 0 && R < 6) ws[cellRef].s = companySubHeaderStyle;
           else if (R === 6) ws[cellRef].s = headerStyle;
@@ -163,14 +163,14 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
       // Auto-fit column widths
       const colWidths = finalHeaders.map(h => ({ wch: Math.max(12, h.length + 5) }));
       ws["!cols"] = colWidths;
-      
+
       ws["!merges"] = [
-        { s: {r:0, c:0}, e: {r:0, c:maxCols - 1} },
-        { s: {r:1, c:0}, e: {r:1, c:maxCols - 1} },
-        { s: {r:2, c:0}, e: {r:2, c:maxCols - 1} },
-        { s: {r:3, c:0}, e: {r:3, c:maxCols - 1} },
-        { s: {r:4, c:0}, e: {r:4, c:maxCols - 1} },
-        { s: {r:5, c:0}, e: {r:5, c:maxCols - 1} },
+        { s: { r: 0, c: 0 }, e: { r: 0, c: maxCols - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: maxCols - 1 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: maxCols - 1 } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: maxCols - 1 } },
+        { s: { r: 4, c: 0 }, e: { r: 4, c: maxCols - 1 } },
+        { s: { r: 5, c: 0 }, e: { r: 5, c: maxCols - 1 } },
       ];
 
       const wb = XLSXStyle.utils.book_new();
@@ -193,6 +193,43 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
         </div>
       </div>
 
+      {/* Collapsible Quick Guide */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg max-w-4xl mx-auto">
+        <button
+          onClick={() => setShowQuickGuide(!showQuickGuide)}
+          className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+            <Lightbulb className="w-4 h-4 text-yellow-400" />
+            Quick AI OCR User Guide
+          </span>
+          <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+        </button>
+        {showQuickGuide && (
+          <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <p><strong>Overview:</strong> Upload screenshots or invoice slices. The offline vision model extracts the tabular structure and compiles a clean, exportable Excel sheet.</p>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                <ol className="space-y-1.5 pl-4 list-decimal">
+                  <li><strong>Capture Slices:</strong> Crop clear screenshot slices of invoice columns or ledger books.</li>
+                  <li><strong>Upload:</strong> Click the upload zone and select all slices together. They are sorted alphabetically.</li>
+                  <li><strong>Stitch & Process:</strong> Click "Start Extraction" to run the Vision AI extraction pipeline.</li>
+                  <li><strong>Download:</strong> Once complete, download the consolidated styled Excel file.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-bold text-slate-300 mb-1.5">Best Practices for High Accuracy:</p>
+                <ul className="space-y-1.5 pl-4 list-disc text-slate-400">
+                  <li>Ensure images are not blurry or skewed.</li>
+                  <li>Alphabetical sorting ensures slices are joined in the correct sequence.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/jpg" multiple onChange={handleFileUpload} />
 
       {isProcessing ? (
@@ -208,7 +245,7 @@ export default function ImageToExcel({ onBack }: ImageToExcelProps) {
             <h3 className="text-xl font-bold text-white mb-2">Select Image Slices</h3>
             <p className="text-slate-400 text-sm text-center max-w-md">Drop multiple JPG/PNG images here. They will be automatically sorted alphabetically before processing.</p>
           </div>
-          
+
           {selectedFiles.length > 0 && (
             <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
               <div className="flex justify-between items-center mb-4"><h4 className="text-white font-bold text-sm">Queued Images ({selectedFiles.length})</h4><button onClick={processImages} className="bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">Start Extraction</button></div>

@@ -57,10 +57,10 @@ export default function Splash({ onComplete, themeStyles }: SplashProps) {
         }}
         onMouseLeave={() => setTilt({ x: 0, y: 0 })}
       >
-        <video autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-screen pointer-events-none">
+        <video autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-screen pointer-events-none" style={{ filter: 'contrast(1.2) saturate(1.2)' }}>
           <source src="./intro.mp4" type="video/mp4" />
         </video>
-        <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/40 via-slate-950/80 to-purple-900/40 animate-pulse pointer-events-none"></div>
+        <div className="absolute inset-0 bg-gradient-to-tr from-[#090d16]/90 via-[#090d16]/60 to-purple-950/40 pointer-events-none"></div>
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           {particles.map((p, i) => <div key={i} className="particle" style={{ left: p.left, width: p.size, height: p.size, animationDuration: p.duration, animationDelay: p.delay, opacity: p.opacity, boxShadow: p.shadow }} />)}
         </div>
@@ -72,7 +72,7 @@ export default function Splash({ onComplete, themeStyles }: SplashProps) {
           </div>
           <h1 className="text-4xl md:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 tracking-tight mb-6 drop-shadow-lg animate-tracking-in" style={{ animationDelay: '0.2s' }}>RECO WITH VASWANI</h1>
           <div className="h-px w-32 bg-gradient-to-r from-transparent via-slate-400 to-transparent mb-6 opacity-50"></div>
-          <div className="mt-2"><p className="text-white text-3xl md:text-4xl flex items-center gap-2 animate-signature" style={{ fontFamily: "'Dancing Script', cursive", animationDelay: '1.2s' }}>Made by <span className="font-bold">Sourav Vaswani</span></p></div>
+          <div className="mt-2"><p className="text-white text-lg md:text-xl font-medium tracking-wide flex items-center gap-2 animate-slow-reveal" style={{ animationDelay: '1.2s' }}>Made by <span className="font-black tracking-widest uppercase">Sourav Vaswani</span></p></div>
           <div className="w-64 max-w-[80vw] h-1 bg-slate-800/60 rounded-full mt-12 overflow-hidden relative backdrop-blur-md shadow-inner animate-slow-reveal" style={{ animationDelay: '1.5s' }}><div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 via-indigo-400 to-purple-500 rounded-full animate-progress-fill shadow-[0_0_15px_rgba(99,102,241,1)]"></div></div>
           <div className="mt-3 text-blue-400/80 font-mono text-[10px] tracking-[0.3em] uppercase font-bold animate-slow-reveal flex items-center justify-between w-64 px-1" style={{ animationDelay: '1.5s' }}><span>Initializing Engine</span><span className="text-white">{loadingPercent}%</span></div>
         </div>
