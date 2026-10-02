@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { reconcileTds, exportTdsReport, computeBooksTdsLiability, type TdsReconciliationResult } from '../lib/tdsEngine';
+import { reconcileTds, exportTdsReport, computeBooksTdsLiability, computeAdvanceTdsAudit, type TdsReconciliationResult } from '../lib/tdsEngine';
 import * as XLSX from 'xlsx-js-style';
 
 vi.mock('xlsx-js-style', () => {
@@ -229,49 +229,55 @@ describe('TDS Engine', () => {
         expect(XLSX.utils.book_append_sheet).toHaveBeenCalled();
         const ws = (XLSX.utils.book_append_sheet as any).mock.calls[0][1] as XLSX.WorkSheet;
 
-        // H5: Req. TDS (Books)
-        const cellH5 = ws['H5'];
-        expect(cellH5).toBeDefined();
-        expect((cellH5 as any).f).toBe('ROUND(F5*G5/100, 0)');
-        expect((cellH5 as any).v).toBe(2000);
+        // J5: Req. TDS (Books)
+        const cellJ5 = ws['J5'];
+        expect(cellJ5).toBeDefined();
+        expect((cellJ5 as any).f).toBe('ROUND(G5*I5/100, 0)');
+        expect((cellJ5 as any).v).toBe(2000);
 
-        // Col L is Taxable Variance (F5 - J5)
-        const cellL5 = ws['L5'];
-        expect(cellL5).toBeDefined();
-        expect((cellL5 as any).f).toBe('F5-J5');
-        expect((cellL5 as any).v).toBe(20000);
+        // Col N is Books TDS Variance (J5 - K5)
+        const cellN5 = ws['N5'];
+        expect(cellN5).toBeDefined();
+        expect((cellN5 as any).f).toBe('J5-K5');
+        expect((cellN5 as any).v).toBe(0);
 
-        // Col M is TDS Variance (H5 - K5)
-        const cellM5 = ws['M5'];
-        expect(cellM5).toBeDefined();
-        expect((cellM5 as any).f).toBe('H5-K5');
-        expect((cellM5 as any).v).toBe(400);
+        // Col O is 26Q TDS Variance (J5 - M5)
+        const cellO5 = ws['O5'];
+        expect(cellO5).toBeDefined();
+        expect((cellO5 as any).f).toBe('J5-M5');
+        expect((cellO5 as any).v).toBe(400);
+
+        // Col P is Taxable Variance (G5 - L5)
+        const cellP5 = ws['P5'];
+        expect(cellP5).toBeDefined();
+        expect((cellP5 as any).f).toBe('G5-L5');
+        expect((cellP5 as any).v).toBe(20000);
 
         // Check GRAND TOTAL formulas (R=5, Excel row 6)
-        const cellE6 = ws['E6']; // GRAND TOTAL for Books Spend
-        expect(cellE6).toBeDefined();
-        expect((cellE6 as any).f).toBe('SUM(E5:E5)');
-        expect((cellE6 as any).v).toBe(100000);
-
-        const cellF6 = ws['F6']; // GRAND TOTAL for Books Taxable
+        const cellF6 = ws['F6']; // GRAND TOTAL for Books Spend
         expect(cellF6).toBeDefined();
         expect((cellF6 as any).f).toBe('SUM(F5:F5)');
         expect((cellF6 as any).v).toBe(100000);
 
-        const cellH6 = ws['H6']; // GRAND TOTAL for Req TDS
-        expect(cellH6).toBeDefined();
-        expect((cellH6 as any).f).toBe('SUM(H5:H5)');
-        expect((cellH6 as any).v).toBe(2000);
+        const cellG6 = ws['G6']; // GRAND TOTAL for Books Taxable
+        expect(cellG6).toBeDefined();
+        expect((cellG6 as any).f).toBe('SUM(G5:G5)');
+        expect((cellG6 as any).v).toBe(100000);
 
-        const cellL6 = ws['L6']; // GRAND TOTAL for Taxable Variance
-        expect(cellL6).toBeDefined();
-        expect((cellL6 as any).f).toBe('SUM(L5:L5)');
-        expect((cellL6 as any).v).toBe(20000);
+        const cellJ6 = ws['J6']; // GRAND TOTAL for Req TDS
+        expect(cellJ6).toBeDefined();
+        expect((cellJ6 as any).f).toBe('SUM(J5:J5)');
+        expect((cellJ6 as any).v).toBe(2000);
 
-        const cellM6 = ws['M6']; // GRAND TOTAL for TDS Variance
-        expect(cellM6).toBeDefined();
-        expect((cellM6 as any).f).toBe('SUM(M5:M5)');
-        expect((cellM6 as any).v).toBe(400);
+        const cellO6 = ws['O6']; // GRAND TOTAL for 26Q TDS Variance
+        expect(cellO6).toBeDefined();
+        expect((cellO6 as any).f).toBe('SUM(O5:O5)');
+        expect((cellO6 as any).v).toBe(400);
+
+        const cellP6 = ws['P6']; // GRAND TOTAL for Taxable Variance
+        expect(cellP6).toBeDefined();
+        expect((cellP6 as any).f).toBe('SUM(P5:P5)');
+        expect((cellP6 as any).v).toBe(20000);
     });
 
     it('should only match by name if the match is in the confirmedMatches list', () => {
@@ -442,5 +448,140 @@ describe('TDS Engine', () => {
         expect(booksLiability[key].grossSpend).toBe(36400);
         expect(booksLiability[key].reversalAmount).toBe(18402);
         expect(booksLiability[key].reason).toContain('Spend: ₹17,998 (Gross: ₹36,400 | Reversals: ₹18,402)');
+    });
+
+    it('should compute advance TDS audit when current year payments exceed expense bills', () => {
+        const sectionsMaster = [
+            {
+                old_section: '194C',
+                new_section_2025: '194C',
+                nature_of_payment: 'Contractors',
+                single_bill_threshold: 30000,
+                annual_aggregate_threshold: 100000,
+                rate_individual_huf: 1.0,
+                rate_company_others: 2.0,
+                rate_missing_pan_206AA: 20.0
+            }
+        ];
+
+        const transactions = [
+            {
+                date: new Date('2025-05-10'),
+                partyName: 'ABC ADVANCE SUPPLIER',
+                partyPan: 'ABCPP1234F', // Individual/HUF PAN (4th char = P)
+                ledgerName: 'Labour Expenses',
+                amount: 50000,
+                actualTdsDeducted: 0,
+                isPayment: false
+            },
+            {
+                date: new Date('2025-06-15'),
+                partyName: 'ABC ADVANCE SUPPLIER',
+                partyPan: 'ABCPP1234F',
+                ledgerName: 'Payment / Disbursement',
+                amount: 0,
+                actualTdsDeducted: 0,
+                isPayment: true,
+                paymentAmount: 150000 // Payment > Expense (150000 > 50000 -> Advance = 100000)
+            }
+        ];
+
+        const mappings = [
+            { ledgerName: 'Labour Expenses', sectionCode: '194C' }
+        ];
+
+        const advanceAudit = computeAdvanceTdsAudit(transactions, mappings, sectionsMaster);
+        expect(advanceAudit).toHaveLength(1);
+        expect(advanceAudit[0].partyName).toBe('ABC ADVANCE SUPPLIER');
+        expect(advanceAudit[0].currentYearExpenses).toBe(50000);
+        expect(advanceAudit[0].currentYearPayments).toBe(150000);
+        expect(advanceAudit[0].advanceAmount).toBe(100000);
+        expect(advanceAudit[0].section).toBe('194C');
+        expect(advanceAudit[0].requiredTdsOnAdvance).toBe(1000); // 1% of 100,000 for Individual PAN
+        expect(advanceAudit[0].status).toBe('Un-deducted Advance TDS');
+    });
+
+    it('should correctly account for Opening Credit Balance in Advance TDS calculation (GREENVELI LANDSCAPE test case)', () => {
+        const sectionsMaster = [
+            {
+                old_section: '194C',
+                new_section_2025: '393(1)_Sl_8i',
+                nature_of_payment: 'Payment to Contractors',
+                single_bill_threshold: 30000,
+                annual_aggregate_threshold: 100000,
+                rate_individual_huf: 1.0,
+                rate_company_others: 2.0,
+                rate_missing_pan_206AA: 20.0
+            }
+        ];
+
+        const transactions = [
+            {
+                date: new Date('2025-05-10'),
+                partyName: 'GREENVELI LANDSCAPE',
+                partyPan: 'AAACG1234F',
+                ledgerName: 'Bank Payment',
+                amount: 0,
+                actualTdsDeducted: 0,
+                isPayment: true,
+                paymentAmount: 715724,
+                openingBalanceCr: 797372 // Opening Cr balance exceeds payments
+            }
+        ];
+
+        const mappings = [
+            { ledgerName: 'Landscaping Charges', sectionCode: '194C' }
+        ];
+
+        const partyOpeningBalances = new Map<string, number>([
+            ['GREENVELI LANDSCAPE', 797372]
+        ]);
+
+        const advanceAudit = computeAdvanceTdsAudit(transactions, mappings, sectionsMaster, undefined, partyOpeningBalances);
+        // Should evaluate Advance Amount = MAX(0, 715724 - (0 + 797372)) = 0, and be excluded from advance results
+        expect(advanceAudit).toHaveLength(0);
+    });
+
+    it('should correctly calculate Section 194Q taxable base exceeding 50L threshold (Roof\'s India test case)', () => {
+        const sectionsMaster = [
+            {
+                old_section: '194Q',
+                new_section_2025: '393(1)_Sl_8ii',
+                nature_of_payment: 'Purchase of Goods',
+                single_bill_threshold: null,
+                annual_aggregate_threshold: 5000000,
+                rate_individual_huf: 0.1,
+                rate_company_others: 0.1,
+                rate_missing_pan_206AA: 5.0
+            }
+        ];
+
+        const transactions = [
+            {
+                date: new Date('2025-08-01'),
+                partyName: "Roof's India",
+                partyPan: 'AAACR1234F', // Company PAN
+                ledgerName: 'Purchase Account 194Q',
+                amount: 8569526,
+                actualTdsDeducted: 0
+            }
+        ];
+
+        const mappings = [
+            { ledgerName: 'Purchase Account 194Q', sectionCode: '194Q' }
+        ];
+
+        const booksLiability = computeBooksTdsLiability(transactions, mappings, sectionsMaster);
+        const key = 'AAACR1234F_194Q';
+        expect(booksLiability[key]).toBeDefined();
+        expect(booksLiability[key].annualSpend).toBe(8569526);
+        expect(booksLiability[key].taxableAmount).toBe(3569526); // 85,69,526 - 50,00,000
+        expect(booksLiability[key].requiredTds).toBe(3570); // 35,69,526 * 0.1% = 3569.526 -> 3570
+        expect(booksLiability[key].reason).toContain('TDS Status: Applicable | Total Spend: ₹85,69,526 | Exempt Threshold: ₹50,00,000 | Taxable Base: ₹35,69,526 | Book TDS: ₹0');
+
+        const results = reconcileTds(booksLiability, []);
+        expect(results).toHaveLength(1);
+        expect(results[0].booksTaxable).toBe(3569526);
+        expect(results[0].booksRequiredTds).toBe(3570);
     });
 });

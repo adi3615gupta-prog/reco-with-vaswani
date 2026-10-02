@@ -1,5 +1,6 @@
 import type { TdsSection } from '@/pages/TdsReconciliation';
 import * as XLSX from 'xlsx-js-style';
+import { toast } from 'sonner';
 
 export interface TallyTdsTransaction {
     date: Date;
@@ -11,6 +12,23 @@ export interface TallyTdsTransaction {
     tdsLedgerName?: string;
     parentGroup?: string;
     parentGroupPath?: string;
+    isPayment?: boolean;
+    paymentAmount?: number;
+}
+
+export interface AdvanceTdsResult {
+    partyName: string;
+    partyPan: string;
+    section: string;
+    currentYearExpenses: number;
+    currentYearPayments: number;
+    advanceAmount: number;
+    rateApplied: number;
+    requiredTdsOnAdvance: number;
+    actualTdsDeducted: number;
+    tdsShortfallOnAdvance: number;
+    status: 'Un-deducted Advance TDS' | 'Short Deducted' | 'Sufficiently Covered' | 'Unmapped Advance Payment';
+    reason: string;
 }
 
 export interface Form26QRecord {
@@ -31,6 +49,7 @@ export interface TdsReconciliationResult {
     section: string;
     booksSpend: number;
     booksTaxable: number;
+    taxableBasis?: string;
     booksRequiredTds: number;
     booksActualTds: number;
     tracesTaxable: number;
@@ -43,6 +62,8 @@ export interface TdsReconciliationResult {
     rateApplied?: number;
     reason?: string;
     closingBalance?: number;
+    isMultiLedgerPan?: boolean;
+    multiLedgerCount?: number;
 }
 
 // Statutory TDS Rates based on Entity Type
@@ -135,14 +156,16 @@ export function computeBooksTdsLiability(
         reason?: string
     }> = {};
 
+    const cleanLedgerStr = (s: string) => (s || '').replace(/\u00A0/g, ' ').replace(/["']/g, '').toLowerCase().trim();
+
     // Map ledger names to their statutory section configuration
-    const ledgerToSectionMap = new Map(mappings.map(m => [m.ledgerName.toLowerCase().trim(), m.sectionCode]));
+    const ledgerToSectionMap = new Map(mappings.map(m => [cleanLedgerStr(m.ledgerName), m.sectionCode]));
     const sectionLimits = new Map(sectionsMaster.map(s => [s.old_section, s]));
 
     // Pre-scan to build a map of party name to its resolved section codes
     const partySectionMap = new Map<string, Set<string>>();
     for (const txn of transactions) {
-        const sectionCode = ledgerToSectionMap.get(txn.ledgerName.toLowerCase().trim());
+        const sectionCode = ledgerToSectionMap.get(cleanLedgerStr(txn.ledgerName));
         if (sectionCode) {
             const key = txn.partyName.toUpperCase().trim();
             if (!partySectionMap.has(key)) {
@@ -155,63 +178,48 @@ export function computeBooksTdsLiability(
     // Sort transactions chronologically to accurately simulate the running threshold
     const sortedTxns = [...transactions].sort((a, b) => a.date.getTime() - b.date.getTime());
 
+    const extractSectionFromStr = (str?: string) => {
+        if (!str) return null;
+        const u = str.toUpperCase();
+        if (u.includes('194C') || u.includes('194-C')) return '194C';
+        if (u.includes('194IA') || u.includes('194-IA')) return '194IA';
+        if (u.includes('194IB') || u.includes('194-IB')) return '194IB';
+        if (u.includes('194I') || u.includes('194-I')) {
+            return (u.includes('MACHINERY') || u.includes('HIRE') || u.includes('PLANT')) ? '194I(a)' : '194I(b)';
+        }
+        if (u.includes('194J') || u.includes('194-J')) {
+            return (u.includes('PROF') || u.includes('SERVICE') || u.includes('FEES')) ? '194J(b)' : '194J(a)';
+        }
+        if (u.includes('194H') || u.includes('194-H')) return '194H';
+        if (u.includes('194Q') || u.includes('194-Q')) return '194Q';
+        if (u.includes('194R') || u.includes('194-R')) return '194R';
+        if (u.includes('194T') || u.includes('194-T')) return '194T';
+        if (u.includes('194A') || u.includes('194-A')) return '194A';
+        if (u.includes('194M') || u.includes('194-M')) return '194M';
+        if (u.includes('194O') || u.includes('194-O')) return '194O';
+        return null;
+    };
+
     for (const txn of sortedTxns) {
-        const cleanLedger = (txn.ledgerName || '').toLowerCase().trim();
+        const cleanLedger = cleanLedgerStr(txn.ledgerName);
         const isTdsTax = cleanLedger.includes('tds') || cleanLedger.includes('tax deducted') || cleanLedger.includes('tax payable') || cleanLedger.includes('tax liability');
 
         let resolvedSection = ledgerToSectionMap.get(cleanLedger);
+        if (!resolvedSection && txn.tdsLedgerName) {
+            resolvedSection = extractSectionFromStr(txn.tdsLedgerName) || undefined;
+        }
+        if (!resolvedSection && txn.ledgerName) {
+            resolvedSection = extractSectionFromStr(txn.ledgerName) || undefined;
+        }
         if (!resolvedSection) {
-            // For separate TDS adjustment entry records that have ledgerName like "TDS 194C" or "194C TDS",
-            // resolve section by parsing the ledgerName string directly.
-            const cleanName = cleanLedger.toUpperCase();
-            if (isTdsTax) {
-                let extractedSec = '';
-                if (cleanName.includes('194C') || cleanName.includes('194-C')) {
-                    extractedSec = '194C';
-                } else if (cleanName.includes('194IA') || cleanName.includes('194-IA')) {
-                    extractedSec = '194IA';
-                } else if (cleanName.includes('194IB') || cleanName.includes('194-IB')) {
-                    extractedSec = '194IB';
-                } else if (cleanName.includes('194I') || cleanName.includes('194-I')) {
-                    if (cleanName.includes('MACHINERY') || cleanName.includes('HIRE') || cleanName.includes('PLANT')) {
-                        extractedSec = '194I(a)';
-                    } else {
-                        extractedSec = '194I(b)';
-                    }
-                } else if (cleanName.includes('194J') || cleanName.includes('194-J')) {
-                    if (cleanName.includes('PROF') || cleanName.includes('SERVICE') || cleanName.includes('FEES')) {
-                        extractedSec = '194J(b)';
-                    } else {
-                        extractedSec = '194J(a)';
-                    }
-                } else if (cleanName.includes('194H') || cleanName.includes('194-H')) {
-                    extractedSec = '194H';
-                } else if (cleanName.includes('194M') || cleanName.includes('194-M')) {
-                    extractedSec = '194M';
-                } else if (cleanName.includes('194Q') || cleanName.includes('194-Q')) {
-                    extractedSec = '194Q';
-                } else if (cleanName.includes('194R') || cleanName.includes('194-R')) {
-                    extractedSec = '194R';
-                } else if (cleanName.includes('194T') || cleanName.includes('194-T')) {
-                    extractedSec = '194T';
-                } else if (cleanName.includes('194A') || cleanName.includes('194-A')) {
-                    extractedSec = '194A';
-                } else if (cleanName.includes('194O') || cleanName.includes('194-O')) {
-                    extractedSec = '194O';
-                }
-
-                if (extractedSec) {
-                    resolvedSection = extractedSec;
-                } else {
-                    const partySections = partySectionMap.get(txn.partyName.toUpperCase().trim());
-                    if (partySections && partySections.size > 0) {
-                        resolvedSection = Array.from(partySections)[0];
-                    }
-                }
+            const partySections = partySectionMap.get(txn.partyName.toUpperCase().trim());
+            if (partySections && partySections.size > 0) {
+                resolvedSection = Array.from(partySections)[0];
             }
         }
-
-        if (!resolvedSection) continue; // Ledger is not mapped for TDS and could not be resolved
+        if (!resolvedSection) {
+            resolvedSection = '194C';
+        }
 
         const limits = sectionLimits.get(resolvedSection);
         if (!limits) continue;
@@ -223,9 +231,10 @@ export function computeBooksTdsLiability(
         } else {
             rawPan = rawPan.replace(/\s+/g, '');
         }
+        const cleanName = txn.partyName.toUpperCase().trim();
         const groupKey = isMissing
-            ? `NOPAN-${txn.partyName.toUpperCase().trim()}_${resolvedSection}`
-            : `${rawPan}_${resolvedSection}`;
+            ? `NOPAN-${cleanName}_${resolvedSection}`
+            : `${cleanName}_${rawPan}_${resolvedSection}`;
 
         if (!partySectionTotals[groupKey]) {
             partySectionTotals[groupKey] = {
@@ -267,71 +276,304 @@ export function computeBooksTdsLiability(
         group.rateApplied = currentRate;
 
         // THRESHOLD CHECK LOGIC
-        let isTaxable = false;
-        if (limits.single_bill_threshold !== null && txn.amount > limits.single_bill_threshold) {
-            isTaxable = true; // Breached single bill limit
-        } else if (group.annualSpend > limits.annual_aggregate_threshold) {
-            isTaxable = true; // Breached aggregate annual limit
-        }
+        if (resolvedSection !== '194Q') {
+            let isTaxable = false;
+            if (limits.single_bill_threshold !== null && txn.amount > limits.single_bill_threshold) {
+                isTaxable = true; // Breached single bill limit
+            } else if (group.annualSpend > limits.annual_aggregate_threshold) {
+                isTaxable = true; // Breached aggregate annual limit
+            }
 
-        if (isTaxable) {
-            group.taxableAmount += txn.amount;
-            // Note: If annual limit is breached mid-year, previous non-taxed amounts might also become taxable. 
-            // For V1 of this engine, we calculate TDS forward from the breaching transaction.
-            const { rate } = getTdsRate(resolvedSection, rawPan, sectionsMaster);
-            group.requiredTds += (txn.amount * rate) / 100;
+            if (isTaxable) {
+                group.taxableAmount += txn.amount;
+                const { rate } = getTdsRate(resolvedSection, rawPan, sectionsMaster);
+                group.requiredTds += (txn.amount * rate) / 100;
+            }
         }
     }
 
     for (const groupKey of Object.keys(partySectionTotals)) {
         const group = partySectionTotals[groupKey];
-        const [pan, section] = groupKey.split('_');
+        const lastUnderscore = groupKey.lastIndexOf('_');
+        const section = groupKey.substring(lastUnderscore + 1);
+        const prefix = groupKey.substring(0, lastUnderscore);
+        const secondLastUnderscore = prefix.lastIndexOf('_');
+        const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
         const limits = sectionLimits.get(section);
         let reason = '';
-        if (group.taxableAmount > 0) {
-            const breachType = [];
+
+        if (section === '194Q') {
+            const threshold = limits ? limits.annual_aggregate_threshold : 5000000;
+            group.taxableAmount = Math.max(0, group.annualSpend - threshold);
+            const { rate, isMissingPan } = getTdsRate(section, pan.startsWith('NOPAN-') ? '' : pan, sectionsMaster);
+            group.rateApplied = rate;
+            group.requiredTds = Math.round((group.taxableAmount * rate) / 100);
+
+            const isApp = group.taxableAmount > 0;
+            let reasonStr = isApp
+                ? `TDS Status: Applicable | Total Spend: ₹${group.annualSpend.toLocaleString('en-IN')} | Exempt Threshold: ₹${threshold.toLocaleString('en-IN')} | Taxable Base: ₹${group.taxableAmount.toLocaleString('en-IN')} | Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`
+                : `TDS Status: Not Applicable (Below threshold) | Total Spend: ₹${group.annualSpend.toLocaleString('en-IN')} | Exempt Threshold: ₹${threshold.toLocaleString('en-IN')} | Taxable Base: ₹0 | Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`;
+
+            if (isMissingPan) {
+                reasonStr += ` | PAN: Missing (${rate}% rate)`;
+            }
+            if (group.reversalAmount > 0) {
+                reasonStr += ` | Gross: ₹${group.grossSpend.toLocaleString('en-IN')} | Reversals: ₹${group.reversalAmount.toLocaleString('en-IN')}`;
+            }
+
+            group.reason = reasonStr;
+        } else {
+            if (group.taxableAmount > 0) {
+                const breachType = [];
+                if (limits) {
+                    if (limits.single_bill_threshold && group.maxSingleBill >= limits.single_bill_threshold) {
+                        breachType.push(`Bill ₹${group.maxSingleBill.toLocaleString('en-IN')} > single limit ₹${limits.single_bill_threshold.toLocaleString('en-IN')}`);
+                    }
+                    if (group.annualSpend >= limits.annual_aggregate_threshold) {
+                        breachType.push(`Annual Spend ₹${group.annualSpend.toLocaleString('en-IN')} > annual limit ₹${limits.annual_aggregate_threshold.toLocaleString('en-IN')}`);
+                    }
+                }
+                reason = `TDS Status: Applicable (${breachType.join(' or ')})`;
+                if (group.actualTds > 0) {
+                    reason += ` | Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`;
+                }
+            } else {
+                reason = `TDS Status: Not Applicable (Below threshold)`;
+                if (group.actualTds > 0) {
+                    reason += ` | Voluntary Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`;
+                }
+            }
+
+            const { rate, isMissingPan } = getTdsRate(section, pan.startsWith('NOPAN-') ? '' : pan, sectionsMaster);
+            if (isMissingPan && limits) {
+                reason += ` | PAN: Missing (${rate}% rate)`;
+            }
+
+            if (group.reversalAmount > 0) {
+                reason += ` | Spend: ₹${group.annualSpend.toLocaleString('en-IN')} (Gross: ₹${group.grossSpend.toLocaleString('en-IN')} | Reversals: ₹${group.reversalAmount.toLocaleString('en-IN')})`;
+            } else {
+                reason += ` | Spend: ₹${group.annualSpend.toLocaleString('en-IN')}`;
+            }
+
             if (limits) {
-                if (limits.single_bill_threshold && group.maxSingleBill >= limits.single_bill_threshold) {
-                    breachType.push(`Bill ₹${group.maxSingleBill.toLocaleString('en-IN')} > single limit ₹${limits.single_bill_threshold.toLocaleString('en-IN')}`);
+                const limitParts = [`Annual limit ₹${limits.annual_aggregate_threshold.toLocaleString('en-IN')}`];
+                if (limits.single_bill_threshold) {
+                    limitParts.push(`Single limit ₹${limits.single_bill_threshold.toLocaleString('en-IN')}`);
                 }
-                if (group.annualSpend >= limits.annual_aggregate_threshold) {
-                    breachType.push(`Annual Spend ₹${group.annualSpend.toLocaleString('en-IN')} > annual limit ₹${limits.annual_aggregate_threshold.toLocaleString('en-IN')}`);
-                }
+                reason += ` | Limits: ${limitParts.join(' / ')}`;
             }
-            reason = `TDS Status: Applicable (${breachType.join(' or ')})`;
-            if (group.actualTds > 0) {
-                reason += ` | Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`;
-            }
-        } else {
-            reason = `TDS Status: Not Applicable (Below threshold)`;
-            if (group.actualTds > 0) {
-                reason += ` | Voluntary Book TDS: ₹${group.actualTds.toLocaleString('en-IN')}`;
-            }
-        }
 
-        const { rate, isMissingPan } = getTdsRate(section, pan.startsWith('NOPAN-') ? '' : pan, sectionsMaster);
-        if (isMissingPan && limits) {
-            reason += ` | PAN: Missing (${rate}% rate)`;
+            group.reason = reason;
         }
-
-        if (group.reversalAmount > 0) {
-            reason += ` | Spend: ₹${group.annualSpend.toLocaleString('en-IN')} (Gross: ₹${group.grossSpend.toLocaleString('en-IN')} | Reversals: ₹${group.reversalAmount.toLocaleString('en-IN')})`;
-        } else {
-            reason += ` | Spend: ₹${group.annualSpend.toLocaleString('en-IN')}`;
-        }
-
-        if (limits) {
-            const limitParts = [`Annual limit ₹${limits.annual_aggregate_threshold.toLocaleString('en-IN')}`];
-            if (limits.single_bill_threshold) {
-                limitParts.push(`Single limit ₹${limits.single_bill_threshold.toLocaleString('en-IN')}`);
-            }
-            reason += ` | Limits: ${limitParts.join(' / ')}`;
-        }
-
-        group.reason = reason;
     }
 
     return partySectionTotals;
+}
+
+export interface TallyTdsTransaction {
+    date: Date;
+    partyName: string;
+    partyPan: string;
+    ledgerName: string;
+    amount: number;
+    actualTdsDeducted: number;
+    tdsLedgerName?: string;
+    parentGroup?: string;
+    parentGroupPath?: string;
+    isPayment?: boolean;
+    paymentAmount?: number;
+    openingBalanceCr?: number;
+}
+
+export interface AdvanceTdsResult {
+    partyName: string;
+    partyPan: string;
+    section: string;
+    currentYearExpenses: number;
+    openingBalanceCr?: number;
+    currentYearPayments: number;
+    advanceAmount: number;
+    rateApplied: number;
+    requiredTdsOnAdvance: number;
+    actualTdsDeducted: number;
+    tdsShortfallOnAdvance: number;
+    status: 'Un-deducted Advance TDS' | 'Short Deducted' | 'Sufficiently Covered' | 'Unmapped Advance Payment';
+    reason: string;
+}
+
+/**
+ * ADVANCE TDS AUDIT ENGINE (Section 199 / Rule 37BA Compliance)
+ * Identifies instances where Payments > (Expenses + Opening Balance Cr)
+ * and computes mandatory TDS liability under "Payment or Credit Whichever is Earlier" provision.
+ */
+export function computeAdvanceTdsAudit(
+    transactions: TallyTdsTransaction[],
+    mappings: { ledgerName: string; sectionCode: string }[],
+    sectionsMaster: TdsSection[],
+    partyMasterSectionMap?: Map<string, string>,
+    partyOpeningBalances?: Map<string, number>
+): AdvanceTdsResult[] {
+    const cleanLedgerStr = (s: string) => (s || '').replace(/\u00A0/g, ' ').replace(/["']/g, '').toLowerCase().trim();
+    const ledgerToSectionMap = new Map(mappings.map(m => [cleanLedgerStr(m.ledgerName), m.sectionCode]));
+    const sectionLimits = new Map(sectionsMaster.map(s => [s.old_section, s]));
+
+    interface PartySummary {
+        partyName: string;
+        partyPan: string;
+        currentYearExpenses: number;
+        currentYearPayments: number;
+        actualTdsDeducted: number;
+        maxSingleBill: number;
+        openingBalanceCr: number;
+        sectionsUsed: Set<string>;
+    }
+
+    const partySummaryMap = new Map<string, PartySummary>();
+
+    for (const txn of transactions) {
+        const partyKey = txn.partyName.toUpperCase().trim();
+        if (!partySummaryMap.has(partyKey)) {
+            let opCr = 0;
+            if (txn.openingBalanceCr !== undefined && txn.openingBalanceCr !== null) {
+                opCr = Math.max(0, txn.openingBalanceCr);
+            } else if (partyOpeningBalances && partyOpeningBalances.has(partyKey)) {
+                const bal = partyOpeningBalances.get(partyKey)!;
+                opCr = bal < 0 ? Math.abs(bal) : (bal > 0 ? bal : 0);
+            }
+
+            partySummaryMap.set(partyKey, {
+                partyName: txn.partyName,
+                partyPan: txn.partyPan || '',
+                currentYearExpenses: 0,
+                currentYearPayments: 0,
+                actualTdsDeducted: 0,
+                maxSingleBill: 0,
+                openingBalanceCr: opCr,
+                sectionsUsed: new Set<string>()
+            });
+        }
+
+        const summary = partySummaryMap.get(partyKey)!;
+        if (!summary.partyPan && txn.partyPan) {
+            summary.partyPan = txn.partyPan;
+        }
+
+        if (txn.openingBalanceCr !== undefined && txn.openingBalanceCr !== null && txn.openingBalanceCr > summary.openingBalanceCr) {
+            summary.openingBalanceCr = Math.max(0, txn.openingBalanceCr);
+        }
+
+        const txnVal = Math.abs(txn.isPayment ? (txn.paymentAmount ?? txn.amount) : txn.amount);
+        if (txnVal > summary.maxSingleBill) {
+            summary.maxSingleBill = txnVal;
+        }
+
+        if (txn.isPayment) {
+            summary.currentYearPayments += txn.paymentAmount ?? Math.abs(txn.amount);
+            summary.actualTdsDeducted += txn.actualTdsDeducted || 0;
+        } else {
+            const cleanLedger = cleanLedgerStr(txn.ledgerName);
+            const sectionCode = ledgerToSectionMap.get(cleanLedger);
+            if (sectionCode) {
+                summary.sectionsUsed.add(sectionCode);
+            }
+            if (txn.amount > 0) {
+                summary.currentYearExpenses += txn.amount;
+            }
+            summary.actualTdsDeducted += txn.actualTdsDeducted || 0;
+        }
+    }
+
+    const results: AdvanceTdsResult[] = [];
+
+    for (const [, summary] of partySummaryMap.entries()) {
+        if (summary.currentYearPayments === 0 && summary.currentYearExpenses === 0) continue;
+
+        const openingCr = Math.max(0, summary.openingBalanceCr);
+        // Advance Amount = MAX(0, Payments Made (FY) - (Expenses Credited (FY) + Opening Balance (Cr)))
+        const advanceAmount = Math.max(0, summary.currentYearPayments - (summary.currentYearExpenses + openingCr));
+        if (advanceAmount <= 0) continue; // Only process parties where Payments > (Expenses + Opening Balance Cr)
+
+        // Resolve Section Code: Priority 1 (Expense Ledgers) -> Priority 2 (Party Master) -> Priority 3 (UNMAPPED)
+        let resolvedSection = '';
+        if (summary.sectionsUsed.size > 0) {
+            resolvedSection = Array.from(summary.sectionsUsed)[0];
+        } else if (partyMasterSectionMap && partyMasterSectionMap.has(summary.partyName.toUpperCase().trim())) {
+            resolvedSection = partyMasterSectionMap.get(summary.partyName.toUpperCase().trim())!;
+        } else {
+            resolvedSection = 'UNMAPPED';
+        }
+
+        let rate = 0;
+        let isMissingPan = false;
+
+        if (resolvedSection !== 'UNMAPPED') {
+            const tdsRateInfo = getTdsRate(resolvedSection, summary.partyPan, sectionsMaster);
+            rate = tdsRateInfo.rate;
+            isMissingPan = tdsRateInfo.isMissingPan;
+        }
+
+        const limits = sectionLimits.get(resolvedSection);
+        let isTaxable = false;
+
+        // THRESHOLD GATEKEEPER: Use MAX(Expenses, Payments) as Gross Transaction Value for annual limit, and maxSingleBill for single bill limit
+        const grossTransactionValue = Math.max(summary.currentYearExpenses, summary.currentYearPayments);
+
+        if (resolvedSection === 'UNMAPPED') {
+            isTaxable = true;
+        } else if (limits) {
+            const breachesSingleBill = limits.single_bill_threshold !== null && summary.maxSingleBill >= limits.single_bill_threshold;
+            const breachesAnnualAggregate = limits.annual_aggregate_threshold !== null && grossTransactionValue >= limits.annual_aggregate_threshold;
+            if (breachesSingleBill || breachesAnnualAggregate) {
+                isTaxable = true;
+            }
+        } else {
+            isTaxable = true;
+        }
+
+        const requiredTdsOnAdvance = isTaxable ? Math.round((advanceAmount * rate) / 100) : 0;
+        const tdsShortfallOnAdvance = isTaxable ? Math.max(0, requiredTdsOnAdvance - summary.actualTdsDeducted) : 0;
+
+        let status: AdvanceTdsResult['status'] = 'Sufficiently Covered';
+        if (resolvedSection === 'UNMAPPED') {
+            status = 'Unmapped Advance Payment';
+        } else if (!isTaxable) {
+            status = 'Sufficiently Covered'; // Below threshold - no TDS needed
+        } else if (tdsShortfallOnAdvance > 0 && summary.actualTdsDeducted === 0) {
+            status = 'Un-deducted Advance TDS';
+        } else if (tdsShortfallOnAdvance > 0) {
+            status = 'Short Deducted';
+        }
+
+        const expPlusOpeningStr = openingCr > 0 ? `Expenses (₹${summary.currentYearExpenses.toLocaleString('en-IN')}) + Opening Cr (₹${openingCr.toLocaleString('en-IN')})` : `Expenses (₹${summary.currentYearExpenses.toLocaleString('en-IN')})`;
+        let reason = `Payments (₹${summary.currentYearPayments.toLocaleString('en-IN')}) > ${expPlusOpeningStr} by ₹${advanceAmount.toLocaleString('en-IN')}.`;
+        if (resolvedSection === 'UNMAPPED') {
+            reason += ' Section unmapped — assign TDS section in Party Master.';
+        } else if (!isTaxable) {
+            const thresholdVal = limits ? limits.annual_aggregate_threshold : 0;
+            reason += ` Not Applicable (Below Threshold). Gross Transaction Value ₹${grossTransactionValue.toLocaleString('en-IN')} < Annual Limit ₹${thresholdVal.toLocaleString('en-IN')} u/s ${resolvedSection}.`;
+        } else {
+            reason += ` TDS rate ${rate}% u/s ${resolvedSection}.`;
+            if (isMissingPan) reason += ' PAN missing (20% rate applied u/s 206AA).';
+        }
+
+        results.push({
+            partyName: summary.partyName,
+            partyPan: summary.partyPan || 'PAN-MISSING',
+            section: resolvedSection,
+            currentYearExpenses: Math.round(summary.currentYearExpenses),
+            openingBalanceCr: Math.round(openingCr),
+            currentYearPayments: Math.round(summary.currentYearPayments),
+            advanceAmount: Math.round(advanceAmount),
+            rateApplied: isTaxable ? rate : 0,
+            requiredTdsOnAdvance,
+            actualTdsDeducted: Math.round(summary.actualTdsDeducted),
+            tdsShortfallOnAdvance: Math.round(tdsShortfallOnAdvance),
+            status,
+            reason
+        });
+    }
+
+    return results;
 }
 
 /**
@@ -402,9 +644,12 @@ export function reconcileTds(
     const normalizePartyName = (name: string) => {
         if (!name) return '';
         let n = name.toUpperCase()
-            .replace(/[-\s\(\)]+(CR|DR)\b$/g, '')
-            .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, '')
-            .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
+            .replace(/[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,4}[-\s]?\d{1,4}/gi, '')
+            .replace(/\(.*?\)/g, '')
+            .replace(/\b(DRIVER|VEHICLE|LORRY|TRUCK|TANKER|CAB|AUTO|TRANSPORTER|TRANSPORT|TEMPO|BUS|TRAILER)\b/gi, '')
+            .replace(/[-\s\(\)]+(CR|DR)\b$/gi, '')
+            .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/gi, '')
+            .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/gi, '')
             .replace(/[^A-Z0-9]/g, '')
             .trim();
         if (n.endsWith('S')) n = n.slice(0, -1);
@@ -436,8 +681,10 @@ export function reconcileTds(
     for (const bKey of unmatchedBooks) {
         const books = booksLiability[bKey];
         const lastUnderscore = bKey.lastIndexOf('_');
-        const pan = bKey.substring(0, lastUnderscore);
         const section = bKey.substring(lastUnderscore + 1);
+        const prefix = bKey.substring(0, lastUnderscore);
+        const secondLastUnderscore = prefix.lastIndexOf('_');
+        const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
 
         if (isLocalPanValid(pan)) {
             // First try: exact PAN + exact Section
@@ -448,7 +695,8 @@ export function reconcileTds(
                 matchedTraces.set(tKeyExact, books);
                 matchMethods.set(bKey, 'PAN');
                 unmatchedBooks.delete(bKey);
-                unmatchedTraces.delete(tKeyExact);
+                // Do not delete tKeyExact if other party names share the same PAN
+                // unmatchedTraces.delete(tKeyExact);
                 continue;
             }
 
@@ -465,7 +713,6 @@ export function reconcileTds(
                 matchedTraces.set(newTKey, books);
                 matchMethods.set(bKey, 'PAN');
                 unmatchedBooks.delete(bKey);
-                unmatchedTraces.delete(tKeyEmpty);
                 continue;
             }
 
@@ -488,7 +735,6 @@ export function reconcileTds(
                 matchedTraces.set(foundTKey, books);
                 matchMethods.set(bKey, 'PAN');
                 unmatchedBooks.delete(bKey);
-                unmatchedTraces.delete(foundTKey);
             }
         }
     }
@@ -509,10 +755,10 @@ export function reconcileTds(
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                         let allowed = true;
-                        if (confirmedMatches) {
+                        if (confirmedMatches && confirmedMatches.length > 0) {
                             allowed = confirmedMatches.some(cm => 
-                                cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() &&
-                                cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                                normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                             );
                         }
                         if (allowed) {
@@ -530,10 +776,10 @@ export function reconcileTds(
                         const tracesNormName = normalizePartyName(traces.partyName);
                         if (booksNormName === tracesNormName) {
                             let allowed = true;
-                            if (confirmedMatches) {
+                            if (confirmedMatches && confirmedMatches.length > 0) {
                                 allowed = confirmedMatches.some(cm => 
-                                    cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() &&
-                                    cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                                    normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                    normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                                 );
                             }
                             if (allowed) {
@@ -551,10 +797,10 @@ export function reconcileTds(
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                         let allowed = true;
-                        if (confirmedMatches) {
+                        if (confirmedMatches && confirmedMatches.length > 0) {
                             allowed = confirmedMatches.some(cm => 
-                                cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() &&
-                                cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                                normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                             );
                         }
                         if (allowed) {
@@ -610,10 +856,10 @@ export function reconcileTds(
 
                         if (sim >= highestSim) {
                             let allowed = true;
-                            if (confirmedMatches) {
+                            if (confirmedMatches && confirmedMatches.length > 0) {
                                 allowed = confirmedMatches.some(cm => 
-                                    cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() &&
-                                    cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                                    normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                    normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                                 );
                             }
                             if (allowed) {
@@ -645,10 +891,10 @@ export function reconcileTds(
 
                         if (sim >= highestSim) {
                             let allowed = true;
-                            if (confirmedMatches) {
+                            if (confirmedMatches && confirmedMatches.length > 0) {
                                 allowed = confirmedMatches.some(cm => 
-                                    cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() &&
-                                    cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                                    normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                    normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                                 );
                             }
                             if (allowed) {
@@ -678,8 +924,10 @@ export function reconcileTds(
     for (const bKey of Object.keys(booksLiability)) {
         const books = booksLiability[bKey];
         const lastUnderscore = bKey.lastIndexOf('_');
-        const pan = bKey.substring(0, lastUnderscore);
         const section = bKey.substring(lastUnderscore + 1);
+        const prefix = bKey.substring(0, lastUnderscore);
+        const secondLastUnderscore = prefix.lastIndexOf('_');
+        const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
 
         const matchedTrace = matchedBooks.get(bKey);
 
@@ -832,27 +1080,54 @@ export function reconcileTds(
         });
     }
 
+    // Identify multi-ledger PANs (where > 1 distinct party ledger shares the same valid PAN)
+    const panToLedgerNamesMap = new Map<string, Set<string>>();
+    for (const r of results) {
+        const cleanPan = (r.partyPan || '').toUpperCase().trim();
+        if (cleanPan && !cleanPan.startsWith('NOPAN-') && cleanPan !== 'PAN-MISSING' && cleanPan !== 'PAN MISSING' && cleanPan !== '—') {
+            if (!panToLedgerNamesMap.has(cleanPan)) {
+                panToLedgerNamesMap.set(cleanPan, new Set());
+            }
+            if (r.nameInBooks && r.nameInBooks !== '—') {
+                panToLedgerNamesMap.get(cleanPan)!.add(r.nameInBooks.trim());
+            }
+        }
+    }
+
+    for (const r of results) {
+        const cleanPan = (r.partyPan || '').toUpperCase().trim();
+        if (cleanPan && panToLedgerNamesMap.has(cleanPan)) {
+            const distinctNames = panToLedgerNamesMap.get(cleanPan)!;
+            if (distinctNames.size > 1) {
+                r.isMultiLedgerPan = true;
+                r.multiLedgerCount = distinctNames.size;
+            }
+        }
+    }
+
     return results;
 }
 
 function createSheet(results: TdsReconciliationResult[], title: string, companyName: string) {
     const headers = [
-        'Party Name',
+        'Party Name (Books)',
+        'Party Name (26Q)',
         'PAN (Books)',
+        'PAN (26Q)',
         'Section',
-        'Status',
         'Total Spend (Books)',
         'Taxable (Books)',
+        'Taxable Calculation Basis',
         'TDS Rate (%)',
         'Req. TDS (Books)',
         'Actual TDS (Books)',
         'Taxable (26Q)',
         'TDS (26Q)',
+        'Books TDS Variance (Req - Actual)',
+        '26Q TDS Variance (Req - 26Q)',
         'Taxable Variance',
-        'TDS Variance',
+        'Status',
         'Closing Balance',
-        'PAN in 26Q',
-        'Name in 26Q',
         'Expense Ledgers',
         'TDS Ledgers',
         'Applicability Reason'
@@ -860,23 +1135,27 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
 
     const data = results.map((r, i) => {
         const rowNum = 5 + i; // 1-based index in Excel, starts at row 5
+        const booksVariance = r.booksRequiredTds - r.booksActualTds;
+        const returnVariance = r.booksRequiredTds - r.tracesTds;
         return [
-            r.partyName || r.nameInBooks || r.nameIn26Q || '',
+            r.nameInBooks && r.nameInBooks !== '—' ? r.nameInBooks : '—',
+            r.nameIn26Q || '',
             r.panInBooks || '',
+            r.panIn26Q || '',
             r.section || '',
-            r.status || '',
             r.booksSpend || 0,
             r.booksTaxable || 0,
+            r.taxableBasis || '',
             r.rateApplied || 0,
-            { t: 'n', f: `ROUND(F${rowNum}*G${rowNum}/100, 0)`, v: r.booksRequiredTds },
+            { t: 'n', f: `ROUND(G${rowNum}*I${rowNum}/100, 0)`, v: r.booksRequiredTds },
             r.booksActualTds || 0,
             r.tracesTaxable || 0,
             r.tracesTds || 0,
-            { t: 'n', f: `F${rowNum}-J${rowNum}`, v: r.taxableVariance },
-            { t: 'n', f: `H${rowNum}-K${rowNum}`, v: r.tdsVariance },
+            { t: 'n', f: `J${rowNum}-K${rowNum}`, v: booksVariance },
+            { t: 'n', f: `J${rowNum}-M${rowNum}`, v: returnVariance },
+            { t: 'n', f: `G${rowNum}-L${rowNum}`, v: r.taxableVariance },
+            r.status || '',
             r.closingBalance || 0,
-            r.panIn26Q || '',
-            r.nameIn26Q || '',
             r.ledgers || '',
             r.tdsLedgers || '',
             r.reason || ''
@@ -886,18 +1165,20 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
     const startRow = 5;
     const endRow = 4 + results.length;
     const totals = [
-        'GRAND TOTAL', '', '', '',
-        results.length > 0 ? { t: 'n', f: `SUM(E${startRow}:E${endRow})`, v: results.reduce((sum, r) => sum + r.booksSpend, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(F${startRow}:F${endRow})`, v: results.reduce((sum, r) => sum + r.booksTaxable, 0) } : 0,
-        '', // Rate is empty for GRAND TOTAL row
-        results.length > 0 ? { t: 'n', f: `SUM(H${startRow}:H${endRow})`, v: results.reduce((sum, r) => sum + r.booksRequiredTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(I${startRow}:I${endRow})`, v: results.reduce((sum, r) => sum + r.booksActualTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(J${startRow}:J${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTaxable, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(K${startRow}:K${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(L${startRow}:L${endRow})`, v: results.reduce((sum, r) => sum + r.taxableVariance, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(M${startRow}:M${endRow})`, v: results.reduce((sum, r) => sum + r.tdsVariance, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(N${startRow}:N${endRow})`, v: results.reduce((sum, r) => sum + (r.closingBalance || 0), 0) } : 0,
-        '', '', '', '', ''
+        'GRAND TOTAL', '', '', '', '',
+        results.length > 0 ? { t: 'n', f: `SUM(F${startRow}:F${endRow})`, v: results.reduce((sum, r) => sum + r.booksSpend, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(G${startRow}:G${endRow})`, v: results.reduce((sum, r) => sum + r.booksTaxable, 0) } : 0,
+        '', '', // Basis & Rate empty
+        results.length > 0 ? { t: 'n', f: `SUM(J${startRow}:J${endRow})`, v: results.reduce((sum, r) => sum + r.booksRequiredTds, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(K${startRow}:K${endRow})`, v: results.reduce((sum, r) => sum + r.booksActualTds, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(L${startRow}:L${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTaxable, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(M${startRow}:M${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTds, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(N${startRow}:N${endRow})`, v: results.reduce((sum, r) => sum + (r.booksRequiredTds - r.booksActualTds), 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(O${startRow}:O${endRow})`, v: results.reduce((sum, r) => sum + (r.booksRequiredTds - r.tracesTds), 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(P${startRow}:P${endRow})`, v: results.reduce((sum, r) => sum + r.taxableVariance, 0) } : 0,
+        '', // Status empty
+        results.length > 0 ? { t: 'n', f: `SUM(R${startRow}:R${endRow})`, v: results.reduce((sum, r) => sum + (r.closingBalance || 0), 0) } : 0,
+        '', '', ''
     ];
 
     const aoa = [
@@ -918,40 +1199,25 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
     ];
 
     ws['!cols'] = [
-        { wch: 32 }, // Col A: Party Name
-        { wch: 16 }, // Col B: PAN (Books)
-        { wch: 12 }, // Col C: Section
-        { wch: 20 }, // Col D: Status
-        { wch: 20 }, // Col E: Total Spend
-        { wch: 18 }, // Col F: Taxable (Books)
-        { wch: 14 }, // Col G: TDS Rate
-        { wch: 18 }, // Col H: Req. TDS
-        { wch: 18 }, // Col I: Actual TDS
-        { wch: 18 }, // Col J: Taxable (26Q)
-        { wch: 18 }, // Col K: TDS (26Q)
-        { wch: 18 }, // Col L: Taxable Variance
-        { wch: 18 }, // Col M: TDS Variance
-        { wch: 18 }, // Col N: Closing Balance
-        { wch: 16 }, // Col O: PAN in 26Q
-        { wch: 30 }, // Col P: Name in 26Q
-        { wch: 25 }, // Col Q: Expense Ledgers
-        { wch: 25 }, // Col R: TDS Ledgers
-        { wch: 60 }  // Col S: Reason
+        { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
+        { wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 16 },
+        { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 24 },
+        { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 25 }, { wch: 20 },
+        { wch: 45 }
     ];
 
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:S10');
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:U10');
 
     for (let R = 0; R <= range.e.r; R++) {
         for (let C = 0; C <= range.e.c; C++) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
             if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
 
-            const isNumCol = (C >= 4 && C <= 13);
-            const isRateCol = C === 6;
+            const isNumCol = (C === 5 || C === 6 || C === 9 || C === 10 || C === 11 || C === 12 || C === 13 || C === 14 || C === 15 || C === 17);
+            const isRateCol = C === 8;
             const isTotalRow = R === range.e.r;
 
             if (R === 0) {
-                // Main Header Banner
                 ws[cellAddress].s = {
                     font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
                     fill: { fgColor: { rgb: '0F172A' } },
@@ -966,11 +1232,12 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
                 };
             } else if (R === 3) {
                 // Table Header Row - Category Group Banding
-                let fill = '1E293B'; // Identifiers (Slate)
-                if (C >= 4 && C <= 8) fill = '1E3A8A';   // Books Liability (Ocean Blue)
-                if (C >= 9 && C <= 10) fill = '065F46';  // 26Q Traces (Forest Green)
-                if (C >= 11 && C <= 12) fill = '92400E'; // Variances (Warm Amber)
-                if (C >= 13 && C <= 17) fill = '3730A3'; // Ledgers & References (Indigo)
+                let fill = '1E293B'; // Identifiers (A-E)
+                if (C >= 5 && C <= 9) fill = '1E3A8A';   // Books Liability (F-J)
+                if (C >= 10 && C <= 11) fill = '065F46'; // 26Q Traces (K-L)
+                if (C >= 12 && C <= 14) fill = '92400E'; // Variances (M-O)
+                if (C === 15) fill = '4C1D95';           // Status (P)
+                if (C >= 16) fill = '3730A3';            // Closing Bal & Ledgers (Q-T)
 
                 ws[cellAddress].s = {
                     font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
@@ -1003,9 +1270,14 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
                     };
                 } else {
                     // Regular Data Row Styling
+                    const resItem = results[R - 4];
+                    const isMultiPan = resItem && resItem.isMultiLedgerPan;
+                    const fgColor = isMultiPan ? 'FEF3C7' : (R % 2 === 0 ? 'F8FAFC' : 'FFFFFF');
+                    const fontColor = isMultiPan ? '92400E' : '0F172A';
+
                     ws[cellAddress].s = {
-                        font: { sz: 9, color: { rgb: '0F172A' } },
-                        fill: { fgColor: { rgb: R % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+                        font: { sz: 9, color: { rgb: fontColor }, bold: isMultiPan ? true : false },
+                        fill: { fgColor: { rgb: fgColor } },
                         alignment: { horizontal: isNumCol && !isRateCol ? 'right' : (isRateCol || C === 2 ? 'center' : 'left'), vertical: 'center' },
                         border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } } }
                     };
@@ -1041,15 +1313,184 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
     return ws;
 }
 
+function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyName: string): XLSX.WorkSheet {
+    const headers = [
+        'Party Name',
+        'Party PAN',
+        'Section',
+        'Status',
+        'Expenses Credited (FY)',
+        'Opening Balance (Cr)',
+        'Payments Made (FY)',
+        'Advance Amount (Pay - Exp - OpBal)',
+        'TDS Rate (%)',
+        'Req. TDS on Advance',
+        'Actual Book TDS',
+        'Advance TDS Shortfall',
+        'Audit Remarks'
+    ];
+
+    const data = results.map((r, i) => {
+        const rowNum = 5 + i; // Excel 1-based row index starting at row 5
+        return [
+            r.partyName || '',
+            r.partyPan || '',
+            r.section || '',
+            r.status || '',
+            r.currentYearExpenses || 0,
+            r.openingBalanceCr || 0,
+            r.currentYearPayments || 0,
+            { t: 'n', f: `MAX(0, G${rowNum}-(E${rowNum}+F${rowNum}))`, v: r.advanceAmount },
+            r.rateApplied || 0,
+            { t: 'n', f: `ROUND(H${rowNum}*I${rowNum}/100, 0)`, v: r.requiredTdsOnAdvance },
+            r.actualTdsDeducted || 0,
+            { t: 'n', f: `MAX(0, J${rowNum}-K${rowNum})`, v: r.tdsShortfallOnAdvance },
+            r.reason || ''
+        ];
+    });
+
+    const startRow = 5;
+    const endRow = 4 + results.length;
+    const totals = [
+        'GRAND TOTAL', '', '', '',
+        results.length > 0 ? { t: 'n', f: `SUM(E${startRow}:E${endRow})`, v: results.reduce((sum, r) => sum + r.currentYearExpenses, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(F${startRow}:F${endRow})`, v: results.reduce((sum, r) => sum + (r.openingBalanceCr || 0), 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(G${startRow}:G${endRow})`, v: results.reduce((sum, r) => sum + r.currentYearPayments, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(H${startRow}:H${endRow})`, v: results.reduce((sum, r) => sum + r.advanceAmount, 0) } : 0,
+        '', // Rate empty
+        results.length > 0 ? { t: 'n', f: `SUM(J${startRow}:J${endRow})`, v: results.reduce((sum, r) => sum + r.requiredTdsOnAdvance, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(K${startRow}:K${endRow})`, v: results.reduce((sum, r) => sum + r.actualTdsDeducted, 0) } : 0,
+        results.length > 0 ? { t: 'n', f: `SUM(L${startRow}:L${endRow})`, v: results.reduce((sum, r) => sum + r.tdsShortfallOnAdvance, 0) } : 0,
+        ''
+    ];
+
+    const aoa = [
+        [`${title.toUpperCase()} - ${companyName.toUpperCase()}`],
+        [`Generated on: ${new Date().toLocaleString('en-IN')} | Compliance Rule: Payment or Credit Whichever is Earlier`],
+        [],
+        headers,
+        ...data,
+        totals
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
+    ];
+
+    ws['!cols'] = [
+        { wch: 32 }, // Col A: Party Name
+        { wch: 16 }, // Col B: PAN
+        { wch: 12 }, // Col C: Section
+        { wch: 25 }, // Col D: Status
+        { wch: 22 }, // Col E: Expenses
+        { wch: 22 }, // Col F: Opening Balance Cr
+        { wch: 22 }, // Col G: Payments
+        { wch: 28 }, // Col H: Advance Amount
+        { wch: 14 }, // Col I: Rate
+        { wch: 20 }, // Col J: Req TDS
+        { wch: 18 }, // Col K: Actual TDS
+        { wch: 22 }, // Col L: Shortfall
+        { wch: 60 }  // Col M: Remarks
+    ];
+
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:M10');
+
+    for (let R = 0; R <= range.e.r; R++) {
+        for (let C = 0; C <= range.e.c; C++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+
+            const isNumCol = (C >= 4 && C <= 11 && C !== 8);
+            const isRateCol = C === 8;
+            const isTotalRow = R === range.e.r;
+
+            if (R === 0) {
+                ws[cellAddress].s = {
+                    font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
+                    fill: { fgColor: { rgb: '4338CA' } }, // Indigo Header Banner
+                    alignment: { horizontal: 'center', vertical: 'center' }
+                };
+            } else if (R === 1) {
+                ws[cellAddress].s = {
+                    font: { italic: true, sz: 10, color: { rgb: 'E0E7FF' } },
+                    fill: { fgColor: { rgb: '312E81' } },
+                    alignment: { horizontal: 'center', vertical: 'center' }
+                };
+            } else if (R === 3) {
+                ws[cellAddress].s = {
+                    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+                    fill: { fgColor: { rgb: '1E1B4B' } },
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: {
+                        top: { style: 'medium', color: { rgb: '0F172A' } },
+                        bottom: { style: 'medium', color: { rgb: '0F172A' } }
+                    }
+                };
+            } else if (R > 3) {
+                if (isNumCol && (ws[cellAddress].v !== '' || ws[cellAddress].f)) {
+                    ws[cellAddress].t = 'n';
+                    if (isRateCol) {
+                        ws[cellAddress].z = '0.0"%"';
+                    } else {
+                        ws[cellAddress].z = '#,##0.00';
+                    }
+                }
+
+                if (isTotalRow) {
+                    ws[cellAddress].s = {
+                        font: { sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+                        fill: { fgColor: { rgb: '312E81' } },
+                        alignment: { horizontal: isNumCol && !isRateCol ? 'right' : 'left', vertical: 'center' },
+                        border: {
+                            top: { style: 'medium', color: { rgb: 'FFFFFF' } },
+                            bottom: { style: 'double', color: { rgb: 'FFFFFF' } }
+                        }
+                    };
+                } else {
+                    ws[cellAddress].s = {
+                        font: { sz: 9, color: { rgb: '0F172A' } },
+                        fill: { fgColor: { rgb: R % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+                        alignment: { horizontal: isNumCol && !isRateCol ? 'right' : (isRateCol || C === 2 ? 'center' : 'left'), vertical: 'center' },
+                        border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } } }
+                    };
+
+                    if (C === 3) {
+                        const status = String(ws[cellAddress].v);
+                        if (status === 'Un-deducted Advance TDS' || status === 'Short Deducted') {
+                            ws[cellAddress].s.fill = { fgColor: { rgb: 'FEE2E2' } };
+                            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '991B1B' } };
+                        } else if (status === 'Unmapped Advance Payment') {
+                            ws[cellAddress].s.fill = { fgColor: { rgb: 'FEF3C7' } };
+                            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '92400E' } };
+                        } else if (status === 'Sufficiently Covered') {
+                            ws[cellAddress].s.fill = { fgColor: { rgb: 'D1FAE5' } };
+                            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '065F46' } };
+                        }
+                        ws[cellAddress].s.alignment = { horizontal: 'center', vertical: 'center' };
+                    }
+                }
+            }
+        }
+    }
+    return ws;
+}
+
 const isPanMissing = (pan?: string) => {
     const p = (pan || '').trim().toUpperCase();
     return !p || p === 'PAN-MISSING' || p === 'PAN MISSING' || p === 'UNREGISTERED';
 };
 
 /**
- * EXPORT SERVICE: Generates a styled Excel workbook with three sheets for Applicable, Not Applicable, and PAN Required results
+ * EXPORT SERVICE: Generates a styled Excel workbook with sheets for Applicable, Not Applicable, PAN Required, and Advance TDS
  */
-export function exportTdsReport(results: TdsReconciliationResult[], companyName: string = 'Company') {
+export function exportTdsReport(
+    results: TdsReconciliationResult[], 
+    companyName: string = 'Company',
+    advanceResults?: AdvanceTdsResult[]
+) {
     const wb = XLSX.utils.book_new();
 
     const panMissingResults = results.filter(r => isPanMissing(r.partyPan));
@@ -1064,5 +1505,204 @@ export function exportTdsReport(results: TdsReconciliationResult[], companyName:
     XLSX.utils.book_append_sheet(wb, wsNotApp, 'TDS Not Applicable');
     XLSX.utils.book_append_sheet(wb, wsPanReq, 'PAN Required');
 
+    if (advanceResults && advanceResults.length > 0) {
+        const wsAdv = createAdvanceSheet(advanceResults, 'Advance Payment TDS Audit (Payment > Expense)', companyName);
+        XLSX.utils.book_append_sheet(wb, wsAdv, 'Advance TDS (Payment > Expense)');
+    }
+
     XLSX.writeFile(wb, `TDS_Reconciliation_${new Date().getTime()}.xlsx`);
+}
+
+export interface MultiLedgerPanInfo {
+    pan: string;
+    partyNames: string[];
+    totalSpend: number;
+    totalActualTds: number;
+    tracesTaxable: number;
+    tracesTds: number;
+    sections: string[];
+    ledgers: { partyName: string; spend: number; actualTds: number; section: string }[];
+}
+
+export function computeMultiLedgerPans(
+    reconResults: TdsReconciliationResult[]
+): MultiLedgerPanInfo[] {
+    const panMap = new Map<string, MultiLedgerPanInfo>();
+
+    for (const r of reconResults) {
+        const pan = (r.panInBooks && r.panInBooks !== 'PAN-MISSING') ? r.panInBooks : (r.partyPan || '');
+        if (!pan || pan === 'PAN-MISSING' || pan === '—' || pan.length !== 10) continue;
+
+        if (!panMap.has(pan)) {
+            panMap.set(pan, {
+                pan,
+                partyNames: [],
+                totalSpend: 0,
+                totalActualTds: 0,
+                tracesTaxable: r.tracesTaxable || 0,
+                tracesTds: r.tracesTds || 0,
+                sections: [],
+                ledgers: []
+            });
+        }
+
+        const info = panMap.get(pan)!;
+        if (r.partyName && !info.partyNames.includes(r.partyName)) {
+            info.partyNames.push(r.partyName);
+        }
+        if (r.section && !info.sections.includes(r.section)) {
+            info.sections.push(r.section);
+        }
+        info.totalSpend += r.booksSpend || 0;
+        info.totalActualTds += r.booksActualTds || 0;
+        if (r.tracesTaxable && !info.tracesTaxable) info.tracesTaxable = r.tracesTaxable;
+        if (r.tracesTds && !info.tracesTds) info.tracesTds = r.tracesTds;
+
+        info.ledgers.push({
+            partyName: r.partyName,
+            spend: r.booksSpend || 0,
+            actualTds: r.booksActualTds || 0,
+            section: r.section || ''
+        });
+    }
+
+    return Array.from(panMap.values()).filter(p => p.partyNames.length > 1);
+}
+
+export function exportMultiLedgerPanWorkbook(
+    multiLedgerPans: MultiLedgerPanInfo[],
+    companyName: string = 'Company'
+) {
+    if (!multiLedgerPans || multiLedgerPans.length === 0) {
+        toast.info("No Multi-Ledger PANs available to export.");
+        return;
+    }
+
+    try {
+        const wb = XLSX.utils.book_new();
+
+        // 1. Data Rows setup
+        const rows: any[][] = [];
+
+        // Title row
+        rows.push([`MULTI-LEDGER PAN AUDIT REPORT — ${companyName.toUpperCase()}`]);
+        rows.push([`Generated on ${new Date().toLocaleDateString('en-IN')} | Total Multi-Ledger PANs Flagged: ${multiLedgerPans.length}`]);
+        rows.push([]); // blank line
+
+        // Table headers
+        rows.push([
+            'PAN Number',
+            'Tally Party Name (Books)',
+            'Section',
+            'Ledger Spend (₹)',
+            'Ledger Actual TDS (₹)',
+            'Total PAN Spend (₹)',
+            'Total PAN TDS (₹)',
+            '26Q Taxable (₹)',
+            '26Q TDS (₹)',
+            'Match Status'
+        ]);
+
+        for (const panItem of multiLedgerPans) {
+            for (let i = 0; i < panItem.ledgers.length; i++) {
+                const l = panItem.ledgers[i];
+                const isFirst = i === 0;
+
+                rows.push([
+                    isFirst ? panItem.pan : '',
+                    l.partyName,
+                    l.section,
+                    l.spend,
+                    l.actualTds,
+                    isFirst ? panItem.totalSpend : '',
+                    isFirst ? panItem.totalActualTds : '',
+                    isFirst ? panItem.tracesTaxable : '',
+                    isFirst ? panItem.tracesTds : '',
+                    isFirst ? (Math.abs(panItem.totalActualTds - panItem.tracesTds) <= 1 ? 'Matched' : 'TDS Variance') : ''
+                ]);
+            }
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Column widths
+        ws['!cols'] = [
+            { wch: 16 }, // PAN
+            { wch: 35 }, // Party Name
+            { wch: 12 }, // Section
+            { wch: 20 }, // Ledger Spend
+            { wch: 20 }, // Ledger Actual TDS
+            { wch: 22 }, // Total PAN Spend
+            { wch: 20 }, // Total PAN TDS
+            { wch: 20 }, // 26Q Taxable
+            { wch: 20 }, // 26Q TDS
+            { wch: 16 }  // Match Status
+        ];
+
+        // Styling
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:J10');
+        for (let R = 0; R <= range.e.r; R++) {
+            for (let C = 0; C <= range.e.c; C++) {
+                const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+                if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+
+                const isNumCol = [3, 4, 5, 6, 7, 8].includes(C);
+
+                if (R === 0) {
+                    ws[cellAddress].s = {
+                        font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
+                        fill: { fgColor: { rgb: '4338CA' } },
+                        alignment: { horizontal: 'center', vertical: 'center' }
+                    };
+                } else if (R === 1) {
+                    ws[cellAddress].s = {
+                        font: { italic: true, sz: 10, color: { rgb: 'E0E7FF' } },
+                        fill: { fgColor: { rgb: '312E81' } },
+                        alignment: { horizontal: 'center', vertical: 'center' }
+                    };
+                } else if (R === 3) {
+                    ws[cellAddress].s = {
+                        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+                        fill: { fgColor: { rgb: '1E1B4B' } },
+                        alignment: { horizontal: 'center', vertical: 'center' },
+                        border: {
+                            top: { style: 'medium', color: { rgb: '0F172A' } },
+                            bottom: { style: 'medium', color: { rgb: '0F172A' } }
+                        }
+                    };
+                } else if (R > 3) {
+                    if (isNumCol && (ws[cellAddress].v !== '' && ws[cellAddress].v !== null)) {
+                        ws[cellAddress].t = 'n';
+                        ws[cellAddress].z = '#,##0.00';
+                    }
+
+                    ws[cellAddress].s = {
+                        font: { sz: 9, color: { rgb: '0F172A' } },
+                        fill: { fgColor: { rgb: R % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+                        alignment: { horizontal: isNumCol ? 'right' : (C === 0 || C === 2 || C === 9 ? 'center' : 'left'), vertical: 'center' },
+                        border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } } }
+                    };
+
+                    if (C === 9 && ws[cellAddress].v) {
+                        const st = String(ws[cellAddress].v);
+                        if (st === 'Matched') {
+                            ws[cellAddress].s.fill = { fgColor: { rgb: 'D1FAE5' } };
+                            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '065F46' } };
+                        } else if (st === 'TDS Variance') {
+                            ws[cellAddress].s.fill = { fgColor: { rgb: 'FEF3C7' } };
+                            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '92400E' } };
+                        }
+                    }
+                }
+            }
+        }
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Multi-Ledger PAN Audit');
+        const filename = `Multi_Ledger_PAN_Audit_Report_${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_FY25-26.xlsx`;
+        XLSX.writeFile(wb, filename);
+        toast.success(`Exported ${multiLedgerPans.length} Multi-Ledger PANs to Excel!`);
+    } catch (err: any) {
+        console.error("Export Multi-Ledger PAN error:", err);
+        toast.error("Failed to export Multi-Ledger PAN report", { description: err.message });
+    }
 }

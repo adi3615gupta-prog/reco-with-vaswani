@@ -24,6 +24,6 @@ This file serves as a persistent memory module for TDS Reconciliation (Books vs 
      - **Under-deduction:** Flags items where the rate applied was less than the statutory rate.
 
 ## Statutory Rules & Finance Act 2025 Updates
-- **Threshold Alerts:** Tracks annual payments u/s 194C (₹1L aggregate), 194J (₹50k aggregate), 194I (₹2.4L aggregate) to flag when TDS liability was triggered but books failed to deduct.
+- **Threshold Alerts:** Tracks annual payments u/s 194C (₹1L aggregate), 194J (₹50k aggregate), 194I (₹6L aggregate) to flag when TDS liability was triggered but books failed to deduct.
 - **PAN Penalty (Section 206AA):** Enforces a mandatory flat 20% rate check (or 5% u/s 194Q) if the deductee fails to furnish a valid PAN.
 - **Section mappings:** Automatically redirects old section labels (e.g. 194C) to new simplified tax codes introduced in Budget/Finance Acts (e.g. `393(1)_Sl_6i` u/s 2025).

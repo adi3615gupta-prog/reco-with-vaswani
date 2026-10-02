@@ -36,7 +36,7 @@ const guides: GuideContent[] = [
     glowClass: 'shadow-purple-500/10',
     bgClass: 'from-purple-500/10 to-indigo-500/5',
     tag: 'Platform Overview',
-    overview: 'Welcome to RECO WITH VASWANI. This enterprise compliance suite is designed to process client registries, reconcile GST logs, convert Tally data, and generate financial reports. All operations are processed locally and securely on-premise.',
+    overview: 'Welcome to AUDIT WITH VASWANI. This enterprise compliance suite is designed to process client registries, reconcile GST logs, convert Tally data, and generate financial reports. All operations are processed locally and securely on-premise.',
     inputs: [
       'Raw Tally Exports (XML & HTML format)',
       'GSTR-2B & GSTR-1 Excel/JSON sheets',

@@ -13,7 +13,7 @@ export default function TBImportFullscreen() {
           </div>
           <div>
             <h1 className="text-sm font-black tracking-widest text-white uppercase flex items-center gap-2">
-              Reco With Vaswani <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded">FULLSCREEN</span>
+              Audit With Vaswani <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded">FULLSCREEN</span>
             </h1>
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
     detectVoucherNumberGaps,
     applyBenfordsLaw,
     analyzeJournalEntries,
+    exportForensicAuditToExcel,
     type ForensicObservation,
     type BenfordAnalysisResult
 } from '@/lib/auditEngine';
@@ -277,9 +278,18 @@ export default function ForensicAudit({
         return 'bg-slate-800 text-slate-400 border border-slate-700';
     };
 
+    const handleExportForensicExcel = () => {
+        if (benfordResults.length === 0 && gapResults.length === 0 && journalResults.length === 0) {
+            toast.warning('No forensic analysis results available to export. Run analysis first.');
+            return;
+        }
+        exportForensicAuditToExcel(benfordResults, gapResults, journalResults, companyName || 'Company', state.toDate);
+        toast.success("Forensic Fraud Audit Excel report generated!");
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6 text-slate-200 bg-slate-950 min-h-screen font-sans">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
                     <Button variant="outline" size="icon" onClick={onBack} className="bg-slate-900 border-slate-800 hover:bg-slate-800">
                         <ArrowLeft className="h-4 w-4" />
@@ -304,6 +314,12 @@ export default function ForensicAudit({
                         </div>
                     </div>
                 </div>
+                <Button 
+                    onClick={handleExportForensicExcel}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/40"
+                >
+                    <Download className="w-4 h-4" /> Export Forensic Excel Workbook
+                </Button>
             </div>
 
             {/* Tally Live Connection Panel */}

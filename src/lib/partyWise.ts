@@ -1,5 +1,5 @@
 import type { ReconciliationResult } from './reconciliation';
-import type { DebitNoteRecord } from './fileParser';
+import { formatDateStr, type DebitNoteRecord } from './fileParser';
 import { deriveItcEligibility, daysOldFrom, taxRatePct, posCompliance, rule37Warning, actionableRemark, isLateFiler } from './compliance';
 import { normalizePartyName } from './reconciliation';
 
@@ -9,14 +9,19 @@ export interface PartyInvoiceRow {
   invoiceNo2B: string;
   invoiceDatePR: string;
   invoiceDate2B: string;
+  taxablePR: number;
+  taxable2B: number;
   igstPR: number;
   igst2B: number;
   cgstPR: number;
   cgst2B: number;
   sgstPR: number;
   sgst2B: number;
+  invoiceValuePR: number;
+  invoiceValue2B: number;
   status: string;
   remark?: string;
+  rawResult?: ReconciliationResult;
   // Compliance audit columns
   itcEligibility?: string;
   gstr1Status?: string;
@@ -94,7 +99,8 @@ function mergePartySummaries(map: Map<string, PartySummary>, fromKey: string, to
 export function aggregateByParty(
   results: ReconciliationResult[],
   debitNotesOrMode?: { pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] } | 'input' | 'output' | null,
-  mode: 'input' | 'output' = 'input'
+  mode: 'input' | 'output' = 'input',
+  groupBy: 'gstin' | 'name' = 'gstin'
 ): PartySummary[] {
   let debitNotes: { pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] } | undefined = undefined;
   let actualMode = mode;
@@ -120,30 +126,34 @@ export function aggregateByParty(
     
     let key = gstin ? gstin : (normalizedName ? `NAME::${normalizedName}` : `UNKNOWN::${++unknownIndex}`);
 
-    if (!gstin && normalizedName && nameIndex.has(normalizedName)) {
-      key = nameIndex.get(normalizedName)!;
-    }
-    if (gstin && normalizedName && nameIndex.has(normalizedName) && nameIndex.get(normalizedName) !== gstin) {
-      const existingKey = nameIndex.get(normalizedName)!;
-      if (existingKey !== gstin && (existingKey.startsWith('NAME::') || existingKey.startsWith('UNKNOWN::'))) {
-        if (map.has(existingKey)) {
-          const existingParty = map.get(existingKey)!;
-          let newParty = map.get(gstin);
-          if (!newParty) {
-            newParty = createParty(gstin, existingParty.partyName || name, gstin, existingParty.partyNamePR, existingParty.partyName2B);
-            map.set(gstin, newParty);
-          }
-          newParty.invoices.push(...existingParty.invoices);
-          if (!newParty.partyName && existingParty.partyName) newParty.partyName = existingParty.partyName;
-          if (!newParty.partyNamePR && existingParty.partyNamePR) newParty.partyNamePR = existingParty.partyNamePR;
-          if (!newParty.partyName2B && existingParty.partyName2B) newParty.partyName2B = existingParty.partyName2B;
-          if (!newParty.gstinPR && existingParty.gstinPR) newParty.gstinPR = existingParty.gstinPR;
-          if (!newParty.gstin2B && existingParty.gstin2B) newParty.gstin2B = existingParty.gstin2B;
-          map.delete(existingKey);
-        }
-        nameIndex.set(normalizedName, gstin);
+    if (groupBy === 'name') {
+      key = normalizedName ? `NAME::${normalizedName}` : (gstin ? gstin : `UNKNOWN::${++unknownIndex}`);
+    } else {
+      if (!gstin && normalizedName && nameIndex.has(normalizedName)) {
+        key = nameIndex.get(normalizedName)!;
       }
-      key = gstin;
+      if (gstin && normalizedName && nameIndex.has(normalizedName) && nameIndex.get(normalizedName) !== gstin) {
+        const existingKey = nameIndex.get(normalizedName)!;
+        if (existingKey !== gstin && (existingKey.startsWith('NAME::') || existingKey.startsWith('UNKNOWN::'))) {
+          if (map.has(existingKey)) {
+            const existingParty = map.get(existingKey)!;
+            let newParty = map.get(gstin);
+            if (!newParty) {
+              newParty = createParty(gstin, existingParty.partyName || name, gstin, existingParty.partyNamePR, existingParty.partyName2B);
+              map.set(gstin, newParty);
+            }
+            newParty.invoices.push(...existingParty.invoices);
+            if (!newParty.partyName && existingParty.partyName) newParty.partyName = existingParty.partyName;
+            if (!newParty.partyNamePR && existingParty.partyNamePR) newParty.partyNamePR = existingParty.partyNamePR;
+            if (!newParty.partyName2B && existingParty.partyName2B) newParty.partyName2B = existingParty.partyName2B;
+            if (!newParty.gstinPR && existingParty.gstinPR) newParty.gstinPR = existingParty.gstinPR;
+            if (!newParty.gstin2B && existingParty.gstin2B) newParty.gstin2B = existingParty.gstin2B;
+            map.delete(existingKey);
+          }
+          nameIndex.set(normalizedName, gstin);
+        }
+        key = gstin;
+      }
     }
 
     const pr = r.prRecord;
@@ -162,7 +172,13 @@ export function aggregateByParty(
     if (!party.partyName && name) party.partyName = name;
     if (!party.partyNamePR && prName) party.partyNamePR = prName;
     if (!party.partyName2B && tbName) party.partyName2B = tbName;
-    if (!party.gstin && gstin) party.gstin = gstin;
+    if (gstin) {
+      if (!party.gstin) {
+        party.gstin = gstin;
+      } else if (!party.gstin.includes(gstin)) {
+        party.gstin = `${party.gstin} / ${gstin}`;
+      }
+    }
     if (!party.gstinPR && prGstin) party.gstinPR = prGstin;
     if (!party.gstin2B && tbGstin) party.gstin2B = tbGstin;
 
@@ -171,19 +187,29 @@ export function aggregateByParty(
     const totalTax = (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0);
     const lateFiler = isLateFiler(pr?.invoiceDate || tb?.invoiceDate, tb?.filingDate);
 
+    const prTaxable = pr?.taxableValue ?? 0;
+    const tbTaxable = tb?.taxableValue ?? 0;
+    const prInvVal = pr ? (pr.taxableValue ?? 0) + (pr.igst ?? 0) + (pr.cgst ?? 0) + (pr.sgst ?? 0) : 0;
+    const tbInvVal = tb ? (tb.taxableValue ?? 0) + (tb.igst ?? 0) + (tb.cgst ?? 0) + (tb.sgst ?? 0) : 0;
+
     party.invoices.push({
       financialYear: pr?.financialYear || tb?.financialYear || 'UNKNOWN',
       invoiceNoPR: pr?.invoiceNo || '',
       invoiceNo2B: tb?.invoiceNo || '',
-      invoiceDatePR: pr?.invoiceDate || '',
-      invoiceDate2B: tb?.invoiceDate || '',
+      invoiceDatePR: formatDateStr(pr?.invoiceDate || ''),
+      invoiceDate2B: formatDateStr(tb?.invoiceDate || ''),
+      taxablePR: prTaxable,
+      taxable2B: tbTaxable,
       igstPR: pr?.igst ?? 0,
       igst2B: tb?.igst ?? 0,
       cgstPR: pr?.cgst ?? 0,
       cgst2B: tb?.cgst ?? 0,
       sgstPR: pr?.sgst ?? 0,
       sgst2B: tb?.sgst ?? 0,
+      invoiceValuePR: prInvVal,
+      invoiceValue2B: tbInvVal,
       status: r.status,
+      rawResult: r,
       remark: actionableRemark(r.status, r.remark, lateFiler, actualMode),
       itcEligibility: actualMode === 'output' ? '—' : deriveItcEligibility(baseRec?.supplierName),
       gstr1Status: tb?.filingStatus ?? '',
@@ -240,7 +266,7 @@ export function aggregateByParty(
         financialYear: 'TALLY_DN',
         invoiceNoPR: 'DN-Books',
         invoiceNo2B: '',
-        invoiceDatePR: dateVal,
+        invoiceDatePR: formatDateStr(dateVal),
         invoiceDate2B: '',
         igstPR: -igst,
         igst2B: 0,
@@ -273,7 +299,7 @@ export function aggregateByParty(
         invoiceNoPR: '',
         invoiceNo2B: 'DN-2B',
         invoiceDatePR: '',
-        invoiceDate2B: dateVal,
+        invoiceDate2B: formatDateStr(dateVal),
         igstPR: 0,
         igst2B: -igst,
         cgstPR: 0,
@@ -304,10 +330,8 @@ export function aggregateByParty(
         acc.count += 1;
         if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)') {
           acc.perfectMatch += 1;
-        } else if (status === 'Not in 2B' || status === 'Missing in 2B') {
+        } else if (status === 'Not in 2B' || status === 'Missing in 2B' || status === 'Unmatched Vendor') {
           acc.invoiceMissing += 1;
-        } else if (status === 'Unmatched Vendor') {
-          acc.unmatchedVendor += 1;
         } else if (status === 'Not in Books' || status === 'Missing in PR') {
           acc.missingInPR += 1;
         } else {

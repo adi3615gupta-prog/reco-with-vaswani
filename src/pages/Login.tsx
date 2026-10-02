@@ -98,60 +98,7 @@ export default function Login(props: any) {
 
   // The layers are exactly as they were in Index.tsx
   
-  if (appMode === null && !!(window as any).electronAPI) {
-    return (
-      <>
-        <style dangerouslySetInnerHTML={{ __html: themeStyles }} />
-        <div className="dark min-h-screen flex items-center justify-center p-6 relative overflow-hidden bg-slate-50 dark:cinematic-bg">
-          {/* Cinematic Finance Background */}
-          <div className="absolute inset-0 z-0 pointer-events-none w-screen h-screen overflow-hidden">
-            <div className="absolute inset-0 finance-grid-bg dark:opacity-100 opacity-50"></div>
-            <video src="./finance-bg.mp4" className="absolute inset-0 w-full h-full object-cover opacity-10 dark:opacity-40" autoPlay muted loop playsInline />
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-50/50 dark:from-[#090d16]/50 via-slate-50/30 dark:via-[#090d16]/30 to-slate-50/90 dark:to-[#090d16]/90"></div>
-          </div>
-          
-          <div className="relative z-10 w-full max-w-2xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-10 backdrop-blur-xl shadow-2xl animate-pop-in">
-            <div className="text-center mb-10">
-              <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-2">Select Setup Mode</h1>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Choose how this computer will participate in the RECO network.</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-6">
-              <button 
-                onClick={async () => {
-                  if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'server');
-                  localStorage.setItem('np_app_mode', 'server');
-                  setAppMode('server');
-                  toast.success("Mode set to Server.");
-                }}
-                className="group relative h-48 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/50 hover:border-purple-500 hover:bg-white dark:hover:bg-slate-900 transition-all flex flex-col items-center justify-center p-6 cursor-pointer overflow-hidden shadow-sm dark:shadow-none"
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <Server className="w-12 h-12 text-slate-500 dark:text-slate-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 mb-4 transition-colors" />
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Set up as Server</h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 text-center">I am the main admin. I hold the Master Server Key.</p>
-              </button>
 
-              <button 
-                onClick={async () => {
-                  if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'client');
-                  localStorage.setItem('np_app_mode', 'client');
-                  setAppMode('client');
-                  toast.success("Mode set to Client.");
-                }}
-                className="group relative h-48 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/50 hover:border-blue-500 hover:bg-white dark:hover:bg-slate-900 transition-all flex flex-col items-center justify-center p-6 cursor-pointer overflow-hidden shadow-sm dark:shadow-none"
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <Laptop className="w-12 h-12 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 mb-4 transition-colors" />
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Connect as Client</h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 text-center">I am an employee connecting to the main server.</p>
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
 
   // LAYER 0.2: Client Server Connection
   const needsServerSelection = !localStorage.getItem('np_server_ip');
@@ -223,7 +170,7 @@ export default function Login(props: any) {
                 <Key className="w-8 h-8 text-white" />
               </div>
               <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">License Verification</h1>
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-2">Enter your active RECO WITH VASWANI serial key to authorize this machine.</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-2">Enter your active AUDIT WITH VASWANI serial key to authorize this machine.</p>
 
               {appMode === 'server' && serverIpInfo && (
                 <div className="mt-4 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex flex-col items-center gap-1 animate-fade-in">
@@ -276,29 +223,7 @@ export default function Login(props: any) {
           </div>
           
           <div className="relative z-10 w-full max-w-md bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 backdrop-blur-xl shadow-2xl animate-pop-in">
-            <div className="flex justify-between w-full mb-6">
-              {isElectron ? (
-                <button 
-                  onClick={async () => {
-                    if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', null);
-                    localStorage.removeItem('np_app_mode');
-                    setAppMode(null);
-                  }} 
-                  className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 font-bold uppercase tracking-wider text-[9px] transition-colors"
-                >
-                   <ArrowRight className="w-3 h-3 transform rotate-180" /> Change Setup Mode
-                </button>
-              ) : (
-                <button 
-                  onClick={() => {
-                    localStorage.removeItem('np_server_ip');
-                    window.location.reload();
-                  }} 
-                  className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 font-bold uppercase tracking-wider text-[9px] transition-colors"
-                >
-                   <ArrowRight className="w-3 h-3 transform rotate-180" /> Change Server
-                </button>
-              )}
+            <div className="flex justify-end w-full mb-6">
               {isElectron && (
                 <button 
                   onClick={async () => {
@@ -307,7 +232,7 @@ export default function Login(props: any) {
                       try { await fetch(`${getApiBase()}/api/reset-license`, { method: 'POST' }); } catch(e) {}
                       localStorage.clear();
                       sessionStorage.clear();
-                      if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', null);
+                      if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'server');
                       window.location.reload();
                     }
                   }} 
@@ -321,7 +246,7 @@ export default function Login(props: any) {
               <div className="w-16 h-16 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-center overflow-hidden mb-4 shadow-sm dark:shadow-none">
                 <img src="./logo.png" alt="Logo" className="w-10 h-10 object-contain dark:invert-0 invert" />
               </div>
-              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">RECO WITH VASWANI</h1>
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">AUDIT WITH VASWANI</h1>
               <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-1">Enterprise-grade offline reporting deck.</p>
               
               {appMode === 'server' && serverIpInfo && (

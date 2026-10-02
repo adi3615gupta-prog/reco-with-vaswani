@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Download, RefreshCw, FileCheck2, AlertTriangle, AlertCircle, Info, Layers } from 'lucide-react';
+import { Download, RefreshCw, FileCheck2, AlertTriangle, AlertCircle, Info, Layers, ChevronDown } from 'lucide-react';
 import type { ReconciliationResult } from '@/lib/reconciliation';
 import { exportMonthlyComparison, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
 import { cn } from '@/lib/utils';
@@ -67,6 +67,7 @@ function getMonthKey(dateStr: string | undefined, normalizedDate: Date | string 
 
 export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData }: MonthlyBreakdownProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'igst' | 'cgst' | 'sgst'>('all');
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const monthlyData = useMemo(() => {
     const map = new Map<string, MonthData>();
@@ -192,6 +193,7 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
           cgstTally: pr?.cgst || 0,
           sgstTally: pr?.sgst || 0,
           igstTally: pr?.igst || 0,
+          taxableTally: pr?.taxableValue || 0,
           dateTally: pr?.invoiceDate || '',
           partyCmp: tb?.supplierName || '',
           gstinCmp: tb?.gstin || '',
@@ -199,6 +201,7 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
           cgstCmp: tb?.cgst || 0,
           sgstCmp: tb?.sgst || 0,
           igstCmp: tb?.igst || 0,
+          taxableCmp: tb?.taxableValue || 0,
           dateCmp: tb?.invoiceDate || '',
           status: r.status,
           totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
@@ -228,122 +231,135 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
           <button onClick={handleExport} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold">
             <Download className="w-3.5 h-3.5" /> Full Report
           </button>
-        </div>
-      </div>
-
-      {/* Tax Head Segment Selectors */}
-      <div className="flex bg-slate-950/40 p-1.5 border-b border-slate-800/80 gap-1.5">
-        {[
-          { id: 'all', label: 'All Taxes Combined' },
-          { id: 'igst', label: 'IGST Only' },
-          { id: 'cgst', label: 'CGST Only' },
-          { id: 'sgst', label: 'SGST Only' }
-        ].map(tab => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all ${
-              activeTab === tab.id 
-                ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/20'
-            }`}
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="btn-np-outline gap-1.5 !py-1.5 text-[9px] uppercase tracking-widest font-bold hover:text-white"
+            title={isCollapsed ? "Expand Monthly Suite" : "Collapse Monthly Suite"}
           >
-            {tab.label}
+            <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", isCollapsed && "rotate-180")} />
+            {isCollapsed ? "Expand" : "Collapse"}
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* Advice warning notice */}
-      {gstr3bData ? (
-        <div className="p-3.5 bg-blue-500/[0.02] border-b border-slate-800/60 flex items-start gap-2">
-          <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
-          <div className="text-[9.5px] text-slate-400 leading-relaxed font-mono">
-            Comparing <span className="text-white">Books (PR)</span> vs <span className="text-white">Government (2B)</span> vs <span className="text-white">Claimed (3B)</span> month-wise. Variances indicate mismatch gaps.
+      {!isCollapsed && (
+        <>
+          {/* Tax Head Segment Selectors */}
+          <div className="flex bg-slate-950/40 p-1.5 border-b border-slate-800/80 gap-1.5">
+            {[
+              { id: 'all', label: 'All Taxes Combined' },
+              { id: 'igst', label: 'IGST Only' },
+              { id: 'cgst', label: 'CGST Only' },
+              { id: 'sgst', label: 'SGST Only' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all ${
+                  activeTab === tab.id 
+                    ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' 
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/20'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </div>
-      ) : (
-        <div className="p-3.5 bg-slate-900/10 border-b border-slate-800/60 flex items-start gap-2">
-          <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-          <div className="text-[9.5px] text-slate-500 leading-relaxed">
-            Upload a GSTR-3B Excel summary file in the upload zone to automatically populate the 3B-related comparison matrices!
-          </div>
-        </div>
-      )}
 
-      {/* Comparative Table */}
-      <div className="overflow-x-auto w-full">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            {/* Super header */}
-            <tr className="bg-slate-900/60 text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
-              <th className="px-4 py-3 font-black border-r border-slate-800/60">Period</th>
-              <th className="px-4 py-3 text-right font-black">Books (PR)</th>
-              <th className="px-4 py-3 text-right font-black border-r border-slate-800/60">Govt (2B)</th>
-              {gstr3bData && <th className="px-4 py-3 text-right font-black border-r border-slate-800/60 text-blue-400">Claimed (3B)</th>}
-              <th className={cn("px-4 py-3 text-right font-black", !gstr3bData && "text-rose-400")}>PR vs 2B</th>
-              {gstr3bData && <th className="px-4 py-3 text-right font-black text-amber-400">2B vs 3B</th>}
-              {gstr3bData && <th className="px-4 py-3 text-right font-black text-purple-400">PR vs 3B</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/40 font-mono text-slate-300">
-            {monthlyData.map(m => {
-              const vals = getTaxValuesForTab(m);
-              
-              // Comp 1: Books vs 2B
-              const prVs2B = vals.pr - vals.twoB;
-              // Comp 2: 2B vs 3B
-              const twoBVs3B = vals.twoB - vals.gstr3b;
-              // Comp 3: Books vs 3B
-              const prVs3B = vals.pr - vals.gstr3b;
+          {/* Advice warning notice */}
+          {gstr3bData ? (
+            <div className="p-3.5 bg-blue-500/[0.02] border-b border-slate-800/60 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="text-[9.5px] text-slate-400 leading-relaxed font-mono">
+                Comparing <span className="text-white">Books (PR)</span> vs <span className="text-white">Government (2B)</span> vs <span className="text-white">Claimed (3B)</span> month-wise. Variances indicate mismatch gaps.
+              </div>
+            </div>
+          ) : (
+            <div className="p-3.5 bg-slate-900/10 border-b border-slate-800/60 flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <div className="text-[9.5px] text-slate-500 leading-relaxed">
+                Upload a GSTR-3B Excel summary file in the upload zone to automatically populate the 3B-related comparison matrices!
+              </div>
+            </div>
+          )}
 
-              const isNegMonth = vals.pr < 0 || vals.twoB < 0 || vals.gstr3b < 0;
+          {/* Comparative Table */}
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                {/* Super header */}
+                <tr className="bg-slate-900/60 text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                  <th className="px-4 py-3 font-black border-r border-slate-800/60">Period</th>
+                  <th className="px-4 py-3 text-right font-black">Books (PR)</th>
+                  <th className="px-4 py-3 text-right font-black border-r border-slate-800/60">Govt (2B)</th>
+                  {gstr3bData && <th className="px-4 py-3 text-right font-black border-r border-slate-800/60 text-blue-400">Claimed (3B)</th>}
+                  <th className={cn("px-4 py-3 text-right font-black", !gstr3bData && "text-rose-400")}>PR vs 2B</th>
+                  {gstr3bData && <th className="px-4 py-3 text-right font-black text-amber-400">2B vs 3B</th>}
+                  {gstr3bData && <th className="px-4 py-3 text-right font-black text-purple-400">PR vs 3B</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40 font-mono text-slate-300">
+                {monthlyData.map(m => {
+                  const vals = getTaxValuesForTab(m);
+                  
+                  // Comp 1: Books vs 2B
+                  const prVs2B = vals.pr - vals.twoB;
+                  // Comp 2: 2B vs 3B
+                  const twoBVs3B = vals.twoB - vals.gstr3b;
+                  // Comp 3: Books vs 3B
+                  const prVs3B = vals.pr - vals.gstr3b;
 
-              return (
-                <tr key={m.sortKey} className={cn("hover:bg-slate-900/20 transition-colors", isNegMonth && "bg-amber-500/[0.01]")}>
-                  <td className="px-4 py-2.5 font-sans font-bold text-slate-200 border-r border-slate-800/40">
-                    {m.month}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">{fmt(vals.pr)}</td>
-                  <td className="px-4 py-2.5 text-right border-r border-slate-800/40">{fmt(vals.twoB)}</td>
+                  const isNegMonth = vals.pr < 0 || vals.twoB < 0 || vals.gstr3b < 0;
+
+                  return (
+                    <tr key={m.sortKey} className={cn("hover:bg-slate-900/20 transition-colors", isNegMonth && "bg-amber-500/[0.01]")}>
+                      <td className="px-4 py-2.5 font-sans font-bold text-slate-200 border-r border-slate-800/40">
+                        {m.month}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{fmt(vals.pr)}</td>
+                      <td className="px-4 py-2.5 text-right border-r border-slate-800/40">{fmt(vals.twoB)}</td>
+                      {gstr3bData && (
+                        <td className="px-4 py-2.5 text-right font-bold text-blue-300 border-r border-slate-800/40">
+                          {fmt(vals.gstr3b)}
+                        </td>
+                      )}
+                      <td className={cn("px-4 py-2.5 text-right", diffColor(prVs2B))}>{fmt(prVs2B)}</td>
+                      {gstr3bData && <td className={cn("px-4 py-2.5 text-right", diffColor(twoBVs3B))}>{fmt(twoBVs3B)}</td>}
+                      {gstr3bData && <td className={cn("px-4 py-2.5 text-right", diffColor(prVs3B))}>{fmt(prVs3B)}</td>}
+                    </tr>
+                  );
+                })}
+
+                {/* Totals Row */}
+                <tr className="bg-slate-900/60 font-bold border-t border-slate-800">
+                  <td className="px-4 py-3 font-sans font-extrabold text-slate-100 border-r border-slate-800/40">Grand Total</td>
+                  <td className="px-4 py-3 text-right">{fmt(totalRowCalculated.pr)}</td>
+                  <td className="px-4 py-3 text-right border-r border-slate-800/40">{fmt(totalRowCalculated.twoB)}</td>
                   {gstr3bData && (
-                    <td className="px-4 py-2.5 text-right font-bold text-blue-300 border-r border-slate-800/40">
-                      {fmt(vals.gstr3b)}
+                    <td className="px-4 py-3 text-right text-blue-400 font-extrabold border-r border-slate-800/40">
+                      {fmt(totalRowCalculated.gstr3b)}
                     </td>
                   )}
-                  <td className={cn("px-4 py-2.5 text-right", diffColor(prVs2B))}>{fmt(prVs2B)}</td>
-                  {gstr3bData && <td className={cn("px-4 py-2.5 text-right", diffColor(twoBVs3B))}>{fmt(twoBVs3B)}</td>}
-                  {gstr3bData && <td className={cn("px-4 py-2.5 text-right", diffColor(prVs3B))}>{fmt(prVs3B)}</td>}
+                  <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.pr - totalRowCalculated.twoB))}>
+                    {fmt(totalRowCalculated.pr - totalRowCalculated.twoB)}
+                  </td>
+                  {gstr3bData && (
+                    <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.twoB - totalRowCalculated.gstr3b))}>
+                      {fmt(totalRowCalculated.twoB - totalRowCalculated.gstr3b)}
+                    </td>
+                  )}
+                  {gstr3bData && (
+                    <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.pr - totalRowCalculated.gstr3b))}>
+                      {fmt(totalRowCalculated.pr - totalRowCalculated.gstr3b)}
+                    </td>
+                  )}
                 </tr>
-              );
-            })}
-
-            {/* Totals Row */}
-            <tr className="bg-slate-900/60 font-bold border-t border-slate-800">
-              <td className="px-4 py-3 font-sans font-extrabold text-slate-100 border-r border-slate-800/40">Grand Total</td>
-              <td className="px-4 py-3 text-right">{fmt(totalRowCalculated.pr)}</td>
-              <td className="px-4 py-3 text-right border-r border-slate-800/40">{fmt(totalRowCalculated.twoB)}</td>
-              {gstr3bData && (
-                <td className="px-4 py-3 text-right text-blue-400 font-extrabold border-r border-slate-800/40">
-                  {fmt(totalRowCalculated.gstr3b)}
-                </td>
-              )}
-              <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.pr - totalRowCalculated.twoB))}>
-                {fmt(totalRowCalculated.pr - totalRowCalculated.twoB)}
-              </td>
-              {gstr3bData && (
-                <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.twoB - totalRowCalculated.gstr3b))}>
-                  {fmt(totalRowCalculated.twoB - totalRowCalculated.gstr3b)}
-                </td>
-              )}
-              {gstr3bData && (
-                <td className={cn("px-4 py-3 text-right", diffColor(totalRowCalculated.pr - totalRowCalculated.gstr3b))}>
-                  {fmt(totalRowCalculated.pr - totalRowCalculated.gstr3b)}
-                </td>
-              )}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+

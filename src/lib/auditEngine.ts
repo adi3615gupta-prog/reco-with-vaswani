@@ -1,4 +1,28 @@
 import * as XLSX from 'xlsx-js-style';
+import type { TallyFinalisationData, TallyFinalisationParty } from '@/lib/tallyApi';
+
+export interface FinalisationScrutinyObservation {
+  id: string;
+  partyName: string;
+  category:
+    | 'Cash Payment / Sec 40A(3)'
+    | 'TDS Deduction Mismatch'
+    | 'Transporter Sec 194C(6) Declaration'
+    | 'Purchase Sec 194Q (0.1% TDS)'
+    | 'Hire Charges Sec 194I(a)'
+    | 'Advance Pending Bill Booking'
+    | 'Duplicate Invoice Risk'
+    | 'Payment Only (No Expense Bill)'
+    | 'Vehicle Repairs Outstanding'
+    | 'Small Balance Write-Off (< ₹500)'
+    | 'Reclassification to Expenditure'
+    | 'Double Payment / Late Credit Note';
+  severity: 'High' | 'Medium' | 'Low';
+  amount?: number;
+  queryDescription: string;
+  suggestedAction: string;
+  status: 'Pending' | 'Resolved' | 'Discussed with Client';
+}
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -1930,6 +1954,661 @@ export function exportAuditToExcel(
   XLSX.writeFile(wb, filename);
 }
 
+// ─── Dedicated Debtors Module Exporter ──────────────────────────────
+export function exportDebtorsToExcel(
+  debtors: AuditParty[],
+  companyName: string,
+  fyEnd: string
+) {
+  const wb = XLSX.utils.book_new();
+
+  const colors = {
+    brandBlue: "0F172A",
+    accentBlue: "0284C7",
+    headerBg: "1E293B",
+    zebraBg: "F8FAFC",
+    totalBg: "E2E8F0",
+    lowRisk: "DCFCE7",
+    lowRiskText: "15803D",
+    medRisk: "FEF9C3",
+    medRiskText: "A16207",
+    highRisk: "FEE2E2",
+    highRiskText: "B91C1C",
+  };
+
+  const borderThin = {
+    top: { style: "thin", color: { rgb: "E2E8F0" } },
+    bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+    left: { style: "thin", color: { rgb: "E2E8F0" } },
+    right: { style: "thin", color: { rgb: "E2E8F0" } },
+  };
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: colors.headerBg } },
+    font: { name: "Inter", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: borderThin,
+  };
+
+  const titleStyle = {
+    font: { name: "Inter", sz: 16, bold: true, color: { rgb: colors.brandBlue } },
+    alignment: { horizontal: "left" },
+  };
+
+  const subTitleStyle = {
+    font: { name: "Inter", sz: 10, italic: true, color: { rgb: "475569" } },
+    alignment: { horizontal: "left" },
+  };
+
+  // Debtors Summary Sheet
+  const grossReceivables = debtors.filter(d => d.totalOutstanding > 0).reduce((sum, d) => sum + d.totalOutstanding, 0);
+  const totalAdvances = debtors.filter(d => d.totalOutstanding < 0 || d.isAdvancePending).reduce((sum, d) => sum + Math.abs(d.totalOutstanding), 0);
+  const netReceivables = grossReceivables - totalAdvances;
+  const avgDso = Math.round(debtors.reduce((sum, d) => sum + d.avgPaymentDays, 0) / (debtors.length || 1));
+
+  const summaryData: any[][] = [
+    [`${companyName.toUpperCase()} - SUNDRY DEBTORS AUDIT REPORT`],
+    [`Trade Receivables & Ageing Analysis as of ${fyEnd}`],
+    [],
+    ["DEBTORS PORTFOLIO METRICS", null, null, null],
+    ["Metric Description", "Amount / Value", "Unit", "Auditor Status Assessment"],
+    ["Gross Trade Receivables (Debit Balances)", grossReceivables, "INR", grossReceivables > 10000000 ? "High Portfolio Value — Review Credit Policies" : "Healthy Collection Control"],
+    ["Customer Advances & Credit Notes (Credit)", totalAdvances, "INR", totalAdvances > 0 ? "Customer advances / credit balances pending" : "No advances"],
+    ["Net Trade Receivables Outstanding", netReceivables, "INR", "Net closing balance position"],
+    ["Average Days Sales Outstanding (DSO)", avgDso, "Days", avgDso > 45 ? "DSO Exceeds 45-day Benchmark — Accelerated Collections Recommended" : "Within Acceptable Limits"],
+    ["Total Active Debtor Accounts", debtors.length, "Count", "Total registered customer accounts audited"],
+    ["Critical Overdue (> 90 Days)", debtors.reduce((sum, d) => sum + d.days91_120 + d.days120_plus, 0), "INR", "Requires immediate recovery or provision evaluation"],
+    [],
+    ["TOP DEBTOR CONCENTRATION RISK (> 15% Exposure)", null, null, null],
+    ["Party Name", "Outstanding Balance", "Concentration %", "Risk Exposure"]
+  ];
+
+  const concThreshold = grossReceivables * 0.15;
+  debtors.forEach(d => {
+    const isAdv = d.totalOutstanding < 0 || d.isAdvancePending;
+    const absVal = Math.abs(d.totalOutstanding);
+    summaryData.push([
+      d.partyName + (isAdv ? " (Cr / Advance)" : ""),
+      absVal,
+      absVal / (grossReceivables || 1),
+      absVal > concThreshold ? "High Concentrated Exposure (>15%)" : (isAdv ? "Customer Credit / Advance" : "Diversified Exposure")
+    ]);
+  });
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary["!cols"] = [{ wch: 35 }, { wch: 22 }, { wch: 18 }, { wch: 35 }];
+  wsSummary["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: 3 } }
+  ];
+
+  const safeSetCell = (ws: any, addr: string, style: any, numFmt?: string) => {
+    if (ws[addr]) {
+      ws[addr].s = style;
+      if (numFmt) ws[addr].z = numFmt;
+    }
+  };
+
+  safeSetCell(wsSummary, "A1", titleStyle);
+  safeSetCell(wsSummary, "A2", subTitleStyle);
+  safeSetCell(wsSummary, "A4", { font: { name: "Inter", sz: 12, bold: true, color: { rgb: colors.accentBlue } } });
+  safeSetCell(wsSummary, "A11", { font: { name: "Inter", sz: 12, bold: true, color: { rgb: colors.accentBlue } } });
+
+  for (let c = 0; c < 4; c++) {
+    safeSetCell(wsSummary, XLSX.utils.encode_cell({ r: 4, c }), headerStyle);
+    safeSetCell(wsSummary, XLSX.utils.encode_cell({ r: 11, c }), headerStyle);
+  }
+
+  const kpiCellStyle = { font: { name: "Inter", sz: 10 }, border: borderThin, alignment: { vertical: "center" } };
+  const numCellStyle = { font: { name: "Inter", sz: 10, bold: true }, border: borderThin, alignment: { horizontal: "right", vertical: "center" } };
+
+  for (let r = 5; r <= 8; r++) {
+    safeSetCell(wsSummary, `A${r + 1}`, kpiCellStyle);
+    safeSetCell(wsSummary, `B${r + 1}`, numCellStyle, (r === 5 || r === 8) ? "₹#,##,##0.00" : (r === 6 ? "0" : "#,##0"));
+    safeSetCell(wsSummary, `C${r + 1}`, kpiCellStyle);
+    safeSetCell(wsSummary, `D${r + 1}`, kpiCellStyle);
+  }
+
+  // Debtors Detailed Ageing Sheet
+  const headersAgeing = [
+    "Party Name", "GSTIN", "Total Outstanding",
+    "0-30 Days", "31-60 Days", "61-90 Days", "91-120 Days", "120+ Days",
+    "Avg Pay Days", "Risk Status", "Invoice Count", "Email Address", "Phone Number"
+  ];
+  const ageingRows: any[][] = [
+    [`SUNDRY DEBTORS DETAILED AGEING BREAKDOWN`],
+    [`Company: ${companyName} | Valuation Date: ${fyEnd}`],
+    [],
+    headersAgeing
+  ];
+
+  debtors.forEach(p => {
+    ageingRows.push([
+      p.partyName, p.gstin || "MISSING GSTIN", p.totalOutstanding,
+      p.days0_30, p.days31_60, p.days61_90, p.days91_120, p.days120_plus,
+      p.avgPaymentDays, p.riskStatus, p.invoiceCount, p.email, p.phone
+    ]);
+  });
+
+  const totRowAgeing = ageingRows.length + 1;
+  ageingRows.push([
+    "Total Debtors Outstanding", null,
+    { f: `=SUM(C5:C${totRowAgeing - 1})` },
+    { f: `=SUM(D5:D${totRowAgeing - 1})` },
+    { f: `=SUM(E5:E${totRowAgeing - 1})` },
+    { f: `=SUM(F5:F${totRowAgeing - 1})` },
+    { f: `=SUM(G5:G${totRowAgeing - 1})` },
+    { f: `=SUM(H5:H${totRowAgeing - 1})` },
+    null, null,
+    { f: `=SUM(K5:K${totRowAgeing - 1})` },
+    null, null
+  ]);
+
+  const wsAgeing = XLSX.utils.aoa_to_sheet(ageingRows);
+  wsAgeing["!cols"] = [
+    { wch: 30 }, { wch: 18 }, { wch: 18 },
+    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 25 }, { wch: 16 }
+  ];
+  safeSetCell(wsAgeing, "A1", titleStyle);
+  safeSetCell(wsAgeing, "A2", subTitleStyle);
+  for (let c = 0; c < headersAgeing.length; c++) {
+    safeSetCell(wsAgeing, XLSX.utils.encode_cell({ r: 3, c }), headerStyle);
+  }
+
+  // Debtors Bill Breakdown Sheet
+  const billHeaders = ["Party Name", "GSTIN", "Ref Number", "Invoice Date", "Due Date", "Outstanding Amount", "Age (Days)", "Status", "Risk Category"];
+  const billRows: any[][] = [
+    [`SUNDRY DEBTORS BILL-BY-BILL OUTSTANDING LEDGER`],
+    [`Detailed Sales Invoices List for ${companyName}`],
+    [],
+    billHeaders
+  ];
+
+  debtors.forEach(p => {
+    (p.bills || []).forEach(b => {
+      let status = "Current";
+      if (b.ageDays > 90) status = "Critical";
+      else if (b.ageDays > 30) status = "Overdue";
+
+      billRows.push([
+        p.partyName, p.gstin || "MISSING", b.refNo, b.date, b.dueDate,
+        Math.abs(b.amount), b.ageDays, status, p.riskStatus
+      ]);
+    });
+  });
+
+  const wsBills = XLSX.utils.aoa_to_sheet(billRows);
+  wsBills["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+  safeSetCell(wsBills, "A1", titleStyle);
+  safeSetCell(wsBills, "A2", subTitleStyle);
+  for (let c = 0; c < billHeaders.length; c++) {
+    safeSetCell(wsBills, XLSX.utils.encode_cell({ r: 3, c }), headerStyle);
+  }
+
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Debtors Executive Summary");
+  XLSX.utils.book_append_sheet(wb, wsAgeing, "Sundry Debtors Ageing");
+  XLSX.utils.book_append_sheet(wb, wsBills, "Debtors Invoice Details");
+
+  XLSX.writeFile(wb, `${companyName.replace(/\s+/g, '_')}_Sundry_Debtors_Audit.xlsx`);
+}
+
+// ─── Dedicated Creditors Module Exporter ────────────────────────────
+export function exportCreditorsToExcel(
+  creditors: AuditParty[],
+  companyName: string,
+  fyEnd: string
+) {
+  const wb = XLSX.utils.book_new();
+
+  const colors = {
+    brandBlue: "0F172A",
+    accentBlue: "0284C7",
+    headerBg: "1E293B",
+    zebraBg: "F8FAFC",
+    totalBg: "E2E8F0",
+    lowRisk: "DCFCE7",
+    lowRiskText: "15803D",
+    medRisk: "FEF9C3",
+    medRiskText: "A16207",
+    highRisk: "FEE2E2",
+    highRiskText: "B91C1C",
+  };
+
+  const borderThin = {
+    top: { style: "thin", color: { rgb: "E2E8F0" } },
+    bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+    left: { style: "thin", color: { rgb: "E2E8F0" } },
+    right: { style: "thin", color: { rgb: "E2E8F0" } },
+  };
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: colors.headerBg } },
+    font: { name: "Inter", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: borderThin,
+  };
+
+  const titleStyle = {
+    font: { name: "Inter", sz: 16, bold: true, color: { rgb: colors.brandBlue } },
+    alignment: { horizontal: "left" },
+  };
+
+  const subTitleStyle = {
+    font: { name: "Inter", sz: 10, italic: true, color: { rgb: "475569" } },
+    alignment: { horizontal: "left" },
+  };
+
+  // Creditors Summary Sheet
+  const grossPayables = creditors.filter(c => c.totalOutstanding > 0).reduce((sum, c) => sum + c.totalOutstanding, 0);
+  const totalAdvances = creditors.filter(c => c.totalOutstanding < 0 || c.isAdvancePending).reduce((sum, c) => sum + Math.abs(c.totalOutstanding), 0);
+  const netPayables = grossPayables - totalAdvances;
+  const avgDpo = Math.round(creditors.reduce((sum, c) => sum + c.avgPaymentDays, 0) / (creditors.length || 1));
+
+  const summaryData: any[][] = [
+    [`${companyName.toUpperCase()} - SUNDRY CREDITORS AUDIT REPORT`],
+    [`Trade Payables & Vendor Payment Control as of ${fyEnd}`],
+    [],
+    ["CREDITORS PORTFOLIO METRICS", null, null, null],
+    ["Metric Description", "Amount / Value", "Unit", "Auditor Status Assessment"],
+    ["Gross Trade Payables (Credit Balances)", grossPayables, "INR", grossPayables > 10000000 ? "High Creditor Working Capital Exposure" : "Adequate Creditor Working Capital"],
+    ["Supplier Advances Paid (Debit Balances)", totalAdvances, "INR", totalAdvances > 0 ? "Supplier advances paid / invoice booking pending" : "No supplier advances pending"],
+    ["Net Trade Payables Outstanding", netPayables, "INR", "Net closing vendor payable position"],
+    ["Average Days Payable Outstanding (DPO)", avgDpo, "Days", avgDpo > 60 ? "DPO Exceeds 60 Days — Review Vendor Credit Terms & MSME Rules" : "Healthy Payment Terms"],
+    ["Total Active Supplier Accounts", creditors.length, "Count", "Total registered vendor accounts audited"],
+    ["Critical Vendor Payables (> 90 Days)", creditors.reduce((sum, c) => sum + c.days91_120 + c.days120_plus, 0), "INR", "Review for MSME statutory payment disallowances"],
+    [],
+    ["TOP SUPPLIER CONCENTRATION RISK (> 15% Exposure)", null, null, null],
+    ["Vendor Party Name", "Outstanding Balance", "Concentration %", "Risk Status"]
+  ];
+
+  const concThreshold = grossPayables * 0.15;
+  creditors.forEach(c => {
+    const isAdv = c.totalOutstanding < 0 || c.isAdvancePending;
+    const absVal = Math.abs(c.totalOutstanding);
+    summaryData.push([
+      c.partyName + (isAdv ? " (Dr / Advance Paid)" : ""),
+      absVal,
+      absVal / (grossPayables || 1),
+      absVal > concThreshold ? "High Supplier Exposure (>15%)" : (isAdv ? "Supplier Advance Paid" : "Diversified Suppliers")
+    ]);
+  });
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary["!cols"] = [{ wch: 35 }, { wch: 22 }, { wch: 18 }, { wch: 35 }];
+  wsSummary["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: 3 } }
+  ];
+
+  const safeSetCell = (ws: any, addr: string, style: any, numFmt?: string) => {
+    if (ws[addr]) {
+      ws[addr].s = style;
+      if (numFmt) ws[addr].z = numFmt;
+    }
+  };
+
+  safeSetCell(wsSummary, "A1", titleStyle);
+  safeSetCell(wsSummary, "A2", subTitleStyle);
+  safeSetCell(wsSummary, "A4", { font: { name: "Inter", sz: 12, bold: true, color: { rgb: colors.accentBlue } } });
+  safeSetCell(wsSummary, "A11", { font: { name: "Inter", sz: 12, bold: true, color: { rgb: colors.accentBlue } } });
+
+  for (let c = 0; c < 4; c++) {
+    safeSetCell(wsSummary, XLSX.utils.encode_cell({ r: 4, c }), headerStyle);
+    safeSetCell(wsSummary, XLSX.utils.encode_cell({ r: 11, c }), headerStyle);
+  }
+
+  // Creditors Ageing Sheet
+  const headersAgeing = [
+    "Party Name", "GSTIN", "Total Outstanding",
+    "0-30 Days", "31-60 Days", "61-90 Days", "91-120 Days", "120+ Days",
+    "Avg Pay Days", "Risk Status", "Invoice Count", "Email Address", "Phone Number"
+  ];
+  const ageingRows: any[][] = [
+    [`SUNDRY CREDITORS DETAILED AGEING BREAKDOWN`],
+    [`Company: ${companyName} | Valuation Date: ${fyEnd}`],
+    [],
+    headersAgeing
+  ];
+
+  creditors.forEach(p => {
+    ageingRows.push([
+      p.partyName, p.gstin || "MISSING GSTIN", p.totalOutstanding,
+      p.days0_30, p.days31_60, p.days61_90, p.days91_120, p.days120_plus,
+      p.avgPaymentDays, p.riskStatus, p.invoiceCount, p.email, p.phone
+    ]);
+  });
+
+  const totRowAgeing = ageingRows.length + 1;
+  ageingRows.push([
+    "Total Creditors Outstanding", null,
+    { f: `=SUM(C5:C${totRowAgeing - 1})` },
+    { f: `=SUM(D5:D${totRowAgeing - 1})` },
+    { f: `=SUM(E5:E${totRowAgeing - 1})` },
+    { f: `=SUM(F5:F${totRowAgeing - 1})` },
+    { f: `=SUM(G5:G${totRowAgeing - 1})` },
+    { f: `=SUM(H5:H${totRowAgeing - 1})` },
+    null, null,
+    { f: `=SUM(K5:K${totRowAgeing - 1})` },
+    null, null
+  ]);
+
+  const wsAgeing = XLSX.utils.aoa_to_sheet(ageingRows);
+  wsAgeing["!cols"] = [
+    { wch: 30 }, { wch: 18 }, { wch: 18 },
+    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 25 }, { wch: 16 }
+  ];
+  safeSetCell(wsAgeing, "A1", titleStyle);
+  safeSetCell(wsAgeing, "A2", subTitleStyle);
+  for (let c = 0; c < headersAgeing.length; c++) {
+    safeSetCell(wsAgeing, XLSX.utils.encode_cell({ r: 3, c }), headerStyle);
+  }
+
+  // Creditors Bill Breakdown Sheet
+  const billHeaders = ["Vendor Name", "GSTIN", "Ref Number", "Invoice Date", "Due Date", "Outstanding Amount", "Age (Days)", "Status", "Risk Category"];
+  const billRows: any[][] = [
+    [`SUNDRY CREDITORS BILL-BY-BILL OUTSTANDING LEDGER`],
+    [`Detailed Purchase Invoices List for ${companyName}`],
+    [],
+    billHeaders
+  ];
+
+  creditors.forEach(p => {
+    (p.bills || []).forEach(b => {
+      let status = "Current";
+      if (b.ageDays > 90) status = "Critical";
+      else if (b.ageDays > 30) status = "Overdue";
+
+      billRows.push([
+        p.partyName, p.gstin || "MISSING", b.refNo, b.date, b.dueDate,
+        Math.abs(b.amount), b.ageDays, status, p.riskStatus
+      ]);
+    });
+  });
+
+  const wsBills = XLSX.utils.aoa_to_sheet(billRows);
+  wsBills["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+  safeSetCell(wsBills, "A1", titleStyle);
+  safeSetCell(wsBills, "A2", subTitleStyle);
+  for (let c = 0; c < billHeaders.length; c++) {
+    safeSetCell(wsBills, XLSX.utils.encode_cell({ r: 3, c }), headerStyle);
+  }
+
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Creditors Executive Summary");
+  XLSX.utils.book_append_sheet(wb, wsAgeing, "Sundry Creditors Ageing");
+  XLSX.utils.book_append_sheet(wb, wsBills, "Creditors Invoice Details");
+
+  XLSX.writeFile(wb, `${companyName.replace(/\s+/g, '_')}_Sundry_Creditors_Audit.xlsx`);
+}
+
+// ─── Dedicated Cash Compliance Exporter ─────────────────────────────
+export function exportCashComplianceToExcel(
+  cashObservations: CashAuditObservation[],
+  companyName: string,
+  fyEnd: string,
+  openingBalance: number = 0
+) {
+  const wb = XLSX.utils.book_new();
+
+  const colors = {
+    brandBlue: "0F172A",
+    accentBlue: "0284C7",
+    headerBg: "1E293B",
+    totalBg: "E2E8F0",
+    highRisk: "FEE2E2",
+    highRiskText: "B91C1C",
+    medRisk: "FEF9C3",
+    medRiskText: "A16207",
+    lowRisk: "DCFCE7",
+    lowRiskText: "15803D"
+  };
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: colors.headerBg } },
+    font: { name: "Inter", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" }
+  };
+
+  const titleStyle = { font: { name: "Inter", sz: 16, bold: true, color: { rgb: colors.brandBlue } } };
+  const subTitleStyle = { font: { name: "Inter", sz: 10, italic: true, color: { rgb: "475569" } } };
+
+  // Executive Dashboard
+  const sec40A3Count = cashObservations.filter(o => o.type === 'Disallowed Payment (40A(3))').length;
+  const sec40A3Amt = cashObservations.filter(o => o.type === 'Disallowed Payment (40A(3))').reduce((s, o) => s + o.amount, 0);
+  const sec269Count = cashObservations.filter(o => o.type === 'Loan Violation (269SS/T)').length;
+  const sec269Amt = cashObservations.filter(o => o.type === 'Loan Violation (269SS/T)').reduce((s, o) => s + o.amount, 0);
+  const negCashCount = cashObservations.filter(o => o.type === 'Negative Cash Balance' && o.voucherNumber !== 'CLOSING').length;
+
+  const dashboardRows = [
+    [`CASH COMPLIANCE AUDIT SUMMARY — ${companyName.toUpperCase()}`],
+    [`Statutory Cash Limits & Negative Cash Checks as of ${fyEnd}`],
+    [],
+    ["STATUTORY CASH AUDIT SUMMARY", null, null, null],
+    ["Compliance Parameter", "Count / Value", "Unit", "Statutory Provision & Risk Assessment"],
+    ["Sec 40A(3) Disallowed Cash Payments (>₹10k)", sec40A3Amt, "INR", `${sec40A3Count} instances flagged. Tax disallowance u/s 40A(3)`],
+    ["Sec 269SS/269T Cash Loan Violations (>₹20k)", sec269Amt, "INR", `${sec269Count} instances flagged. Attracts 100% penalty u/s 271D/E`],
+    ["Negative Cash Balance Days", negCashCount, "Days Flagged", negCashCount > 0 ? "CRITICAL: Cash-in-hand went negative!" : "No negative cash days detected"],
+    ["Opening Cash-in-Hand Balance", openingBalance, "INR", "Starting cash book balance"]
+  ];
+
+  const wsDash = XLSX.utils.aoa_to_sheet(dashboardRows);
+  wsDash["!cols"] = [{ wch: 38 }, { wch: 22 }, { wch: 18 }, { wch: 45 }];
+  wsDash["A1"].s = titleStyle;
+  wsDash["A2"].s = subTitleStyle;
+  for (let c = 0; c < 4; c++) {
+    const colChar = String.fromCharCode(65 + c);
+    wsDash[`${colChar}5`].s = headerStyle;
+  }
+
+  // 40A3 Sheet
+  const sec40A3Rows: any[][] = [
+    [`SECTION 40A(3) CASH DISALLOWANCE LOG (> ₹10,000 DAILY LIMIT)`],
+    [`Company: ${companyName} | Audit Date: ${fyEnd}`],
+    [],
+    ["Date", "Party / Ledger Name", "Voucher Type", "Voucher No", "Cash Amount (INR)", "Severity", "Audit Risk Note", "Recommended Action"]
+  ];
+
+  cashObservations.filter(o => o.type === 'Disallowed Payment (40A(3))').forEach(o => {
+    sec40A3Rows.push([o.date, o.partyName, o.voucherType, o.voucherNumber, o.amount, o.severity, o.description, o.recommendation]);
+  });
+
+  const ws40A3 = XLSX.utils.aoa_to_sheet(sec40A3Rows);
+  ws40A3["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 50 }, { wch: 50 }];
+  ws40A3["A1"].s = titleStyle;
+  ws40A3["A2"].s = subTitleStyle;
+  for (let c = 0; c < 8; c++) {
+    ws40A3[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  // Sec 269SS/T Sheet
+  const sec269Rows: any[][] = [
+    [`SECTION 269SS / 269T CASH LOAN VIOLATIONS LOG (> ₹20,000 LIMIT)`],
+    [`Company: ${companyName} | Audit Date: ${fyEnd}`],
+    [],
+    ["Date", "Loan Account Name", "Voucher Type", "Voucher No", "Transaction Amount", "Severity", "Statutory Impact", "Auditor Advice"]
+  ];
+
+  cashObservations.filter(o => o.type === 'Loan Violation (269SS/T)').forEach(o => {
+    sec269Rows.push([o.date, o.partyName, o.voucherType, o.voucherNumber, o.amount, o.severity, o.description, o.recommendation]);
+  });
+
+  const ws269 = XLSX.utils.aoa_to_sheet(sec269Rows);
+  ws269["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 50 }, { wch: 50 }];
+  ws269["A1"].s = titleStyle;
+  ws269["A2"].s = subTitleStyle;
+  for (let c = 0; c < 8; c++) {
+    ws269[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  // Negative Cash Sheet
+  const negCashRows: any[][] = [
+    [`CHRONOLOGICAL CASH BALANCE & NEGATIVE CASH AUDIT LOG`],
+    [`Company: ${companyName} | Audit Date: ${fyEnd}`],
+    [],
+    ["Date", "Voucher Type", "Voucher No", "Voucher Amount", "Running Cash Balance", "Audit Finding", "Recommendation"]
+  ];
+
+  cashObservations.filter(o => o.type === 'Negative Cash Balance').forEach(o => {
+    negCashRows.push([o.date, o.voucherType, o.voucherNumber, o.amount, o.runningBalance, o.description, o.recommendation]);
+  });
+
+  const wsNeg = XLSX.utils.aoa_to_sheet(negCashRows);
+  wsNeg["!cols"] = [{ wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 20 }, { wch: 50 }, { wch: 50 }];
+  wsNeg["A1"].s = titleStyle;
+  wsNeg["A2"].s = subTitleStyle;
+  for (let c = 0; c < 7; c++) {
+    wsNeg[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  XLSX.utils.book_append_sheet(wb, wsDash, "Cash Executive Dashboard");
+  XLSX.utils.book_append_sheet(wb, ws40A3, "Sec 40A(3) Disallowances");
+  XLSX.utils.book_append_sheet(wb, ws269, "Sec 269SS-269T Loan Violations");
+  XLSX.utils.book_append_sheet(wb, wsNeg, "Negative Cash Walk Log");
+
+  XLSX.writeFile(wb, `${companyName.replace(/\s+/g, '_')}_Cash_Compliance_Audit.xlsx`);
+}
+
+// ─── Dedicated Forensic Audit Exporter ───────────────────────────────
+export function exportForensicAuditToExcel(
+  benfordResults: BenfordAnalysisResult[],
+  gapObservations: ForensicObservation[],
+  journalAnomalies: ForensicObservation[],
+  companyName: string,
+  fyEnd: string
+) {
+  const wb = XLSX.utils.book_new();
+
+  const colors = {
+    brandBlue: "0F172A",
+    headerBg: "1E293B",
+    highRisk: "FEE2E2",
+    highRiskText: "B91C1C",
+    medRisk: "FEF9C3",
+    lowRisk: "DCFCE7"
+  };
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: colors.headerBg } },
+    font: { name: "Inter", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" }
+  };
+
+  const titleStyle = { font: { name: "Inter", sz: 16, bold: true, color: { rgb: colors.brandBlue } } };
+  const subTitleStyle = { font: { name: "Inter", sz: 10, italic: true, color: { rgb: "475569" } } };
+
+  // 1. Summary Sheet
+  const summaryRows = [
+    [`FORENSIC AUDIT & FRAUD DETECTION SUMMARY — ${companyName.toUpperCase()}`],
+    [`Benford's Law, Sequence Gap & Journal Anomaly Scan as of ${fyEnd}`],
+    [],
+    ["FORENSIC INDICATORS OVERVIEW", null, null, null],
+    ["Analysis Module", "Flagged Count", "Primary Anomaly Category", "Auditor Action Summary"],
+    ["Benford's First-Digit Test", benfordResults.filter(b => b.isAnomaly).length, "Statistical Digit Spike", "Examine flagged leading digits for split vouchers or round totals"],
+    ["Voucher Sequence Gap Scan", gapObservations.length, "Missing / Jumped Voucher Nos", "Verify potential deleted transactions or unrecorded sales/purchases"],
+    ["Journal Entry Anomalies", journalAnomalies.length, "High Risk Postings", "Review round sum journals, holiday postings, or direct equity debits"]
+  ];
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary["!cols"] = [{ wch: 30 }, { wch: 16 }, { wch: 28 }, { wch: 55 }];
+  wsSummary["A1"].s = titleStyle;
+  wsSummary["A2"].s = subTitleStyle;
+  for (let c = 0; c < 4; c++) {
+    wsSummary[`${String.fromCharCode(65 + c)}5`].s = headerStyle;
+  }
+
+  // 2. Benford Sheet
+  const benfordRows: any[][] = [
+    [`BENFORD'S LAW FIRST-DIGIT DISTRIBUTION AUDIT`],
+    [`Company: ${companyName} | Target Curve vs Actual Frequency`],
+    [],
+    ["Leading Digit (1-9)", "Actual Count", "Actual %", "Benford Target %", "Variance %", "Anomaly Status"]
+  ];
+
+  benfordResults.forEach(b => {
+    benfordRows.push([
+      b.digit,
+      b.actualCount,
+      (b.actualPercentage / 100).toLocaleString(undefined, { style: 'percent', minimumFractionDigits: 1 }),
+      (b.benfordPercentage / 100).toLocaleString(undefined, { style: 'percent', minimumFractionDigits: 1 }),
+      (b.difference / 100).toLocaleString(undefined, { style: 'percent', minimumFractionDigits: 1 }),
+      b.isAnomaly ? "STATISTICAL ANOMALY DETECTED" : "Normal Distribution"
+    ]);
+  });
+
+  const wsBenford = XLSX.utils.aoa_to_sheet(benfordRows);
+  wsBenford["!cols"] = [{ wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 30 }];
+  wsBenford["A1"].s = titleStyle;
+  wsBenford["A2"].s = subTitleStyle;
+  for (let c = 0; c < 6; c++) {
+    wsBenford[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  // 3. Voucher Gaps Sheet
+  const gapRows: any[][] = [
+    [`VOUCHER NUMBER SEQUENCE GAP LOG`],
+    [`Company: ${companyName}`],
+    [],
+    ["Missing Voucher / Gap Ref", "Severity", "Audit Risk Finding", "Auditor Recommendation"]
+  ];
+
+  gapObservations.forEach(g => {
+    gapRows.push([
+      g.description,
+      g.severity,
+      g.description,
+      g.recommendation
+    ]);
+  });
+
+  const wsGaps = XLSX.utils.aoa_to_sheet(gapRows);
+  wsGaps["!cols"] = [{ wch: 35 }, { wch: 12 }, { wch: 50 }, { wch: 50 }];
+  wsGaps["A1"].s = titleStyle;
+  wsGaps["A2"].s = subTitleStyle;
+  for (let c = 0; c < 4; c++) {
+    wsGaps[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  // 4. Journal Anomalies Sheet
+  const journalRows: any[][] = [
+    [`JOURNAL ENTRY HIGH-RISK ANOMALY LOG`],
+    [`Company: ${companyName}`],
+    [],
+    ["Date", "Voucher Number", "Account / Ledger", "Amount (INR)", "Severity", "Anomaly Finding", "Recommended Auditor Verification"]
+  ];
+
+  journalAnomalies.forEach(j => {
+    journalRows.push([
+      j.date || '-',
+      j.voucherNumber || '-',
+      j.partyName || '-',
+      j.amount || 0,
+      j.severity,
+      j.description,
+      j.recommendation
+    ]);
+  });
+
+  const wsJournal = XLSX.utils.aoa_to_sheet(journalRows);
+  wsJournal["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 50 }, { wch: 50 }];
+  wsJournal["A1"].s = titleStyle;
+  wsJournal["A2"].s = subTitleStyle;
+  for (let c = 0; c < 7; c++) {
+    wsJournal[`${String.fromCharCode(65 + c)}4`].s = headerStyle;
+  }
+
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Forensic Executive Summary");
+  XLSX.utils.book_append_sheet(wb, wsBenford, "Benford First-Digit Test");
+  XLSX.utils.book_append_sheet(wb, wsGaps, "Voucher Sequence Gaps");
+  XLSX.utils.book_append_sheet(wb, wsJournal, "Journal Entry Anomalies");
+
+  XLSX.writeFile(wb, `${companyName.replace(/\s+/g, '_')}_Forensic_Fraud_Audit.xlsx`);
+}
+
 // ─── Excel File Upload Parser ───────────────────────────────────────
 
 export function parseExcelOutstandingReport(sheetData: any[][]): AuditParty[] {
@@ -2855,5 +3534,368 @@ export function exportSamplingToExcel(
   XLSX.utils.book_append_sheet(wb, buildSamplesSheet(), "Voucher Verification Log");
 
   XLSX.writeFile(wb, `${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_SA_530_Sampling_Audit.xlsx`);
+}
+
+// ─── Direct Tally Creditor Finalisation Scrutiny Engine ──────
+
+/**
+ * CREDITOR & DEBTOR FINALISATION SCRUTINY ENGINE:
+ * Evaluates live Tally data or imported vouchers against 12 CA Audit Finalisation Rules.
+ * Modeled after `Queries for Finalisation 1.xlsx`.
+ */
+export function runCreditorFinalisationScrutiny(
+  tallyData: TallyFinalisationData
+): FinalisationScrutinyObservation[] {
+  const observations: FinalisationScrutinyObservation[] = [];
+  let obsId = 1;
+
+  const addObs = (
+    partyName: string,
+    category: FinalisationScrutinyObservation['category'],
+    severity: FinalisationScrutinyObservation['severity'],
+    queryDescription: string,
+    suggestedAction: string,
+    amount?: number
+  ) => {
+    observations.push({
+      id: `scrutiny-${obsId++}`,
+      partyName,
+      category,
+      severity,
+      amount: amount !== undefined ? Math.round(amount) : undefined,
+      queryDescription,
+      suggestedAction,
+      status: 'Pending'
+    });
+  };
+
+  const { parties, allVouchers } = tallyData;
+
+  for (const [, party] of parties.entries()) {
+    const partyName = party.partyName;
+    const nameUpper = partyName.toUpperCase();
+    const isCreditor = party.parentGroup.includes('Creditor') || !party.parentGroup.includes('Debtor');
+
+    let totalExpenses = 0;
+    let totalPayments = 0;
+    let cashPaymentsTotal = 0;
+    let maxSingleCashPayment = 0;
+
+    let hasPurchaseVouchers = false;
+    let hasPaymentVouchers = false;
+
+    const invoiceDates: { date: string; amount: number; vNo: string }[] = [];
+
+    for (const v of party.vouchers) {
+      const isCash = v.counterpartyLedger.toUpperCase().includes('CASH');
+      if (v.isDebit) {
+        totalPayments += v.amount;
+        hasPaymentVouchers = true;
+        if (isCash) {
+          cashPaymentsTotal += v.amount;
+          if (v.amount > maxSingleCashPayment) maxSingleCashPayment = v.amount;
+        }
+      } else {
+        totalExpenses += v.amount;
+        hasPurchaseVouchers = true;
+        invoiceDates.push({ date: v.date, amount: v.amount, vNo: v.voucherNumber });
+      }
+
+      // Rule 1: Cash Payment > ₹10,000 (Sec 40A(3))
+      if (isCash && v.isDebit && v.amount > 10000) {
+        addObs(
+          partyName,
+          'Cash Payment / Sec 40A(3)',
+          'High',
+          `Single Cash payment of ₹${v.amount.toLocaleString('en-IN')} on ${v.date} (Vch #${v.voucherNumber}). Risk u/s 40A(3).`,
+          'Disallowed u/s 40A(3) unless covered under Rule 6DD exceptions. Verify cash voucher.',
+          v.amount
+        );
+      }
+    }
+
+    // Rule 1b: Small Cash Balance Settlement Risk (< ₹10,000)
+    if (cashPaymentsTotal > 0 && maxSingleCashPayment <= 10000 && maxSingleCashPayment > 0) {
+      addObs(
+        partyName,
+        'Cash Payment / Sec 40A(3)',
+        'Low',
+        `Cash payments totalling ₹${cashPaymentsTotal.toLocaleString('en-IN')} made during the year.`,
+        'Verify if balance of ₹' + Math.abs(party.closingBalance).toLocaleString('en-IN') + ' is to be paid in cash.',
+        cashPaymentsTotal
+      );
+    }
+
+    // Rule 3: Transporter TDS Declaration u/s 194C(6)
+    const isTransporter =
+      nameUpper.includes('LOGISTICS') ||
+      nameUpper.includes('TRANSPORT') ||
+      nameUpper.includes('FREIGHT') ||
+      nameUpper.includes('CARGO') ||
+      nameUpper.includes('TRUCK') ||
+      nameUpper.includes('VRL');
+    if (isTransporter && totalExpenses > 30000) {
+      addObs(
+        partyName,
+        'Transporter Sec 194C(6) Declaration',
+        'Medium',
+        `TDS on Transport/Logistics charges of ₹${totalExpenses.toLocaleString('en-IN')}. Check Form 194C(6) declaration.`,
+        'Check if Transporter Declaration (with PAN & <= 10 carriages) is available. If yes, do not deduct TDS.',
+        totalExpenses
+      );
+    }
+
+    // Rule 4: Goods Purchase 0.1% TDS u/s 194Q (> ₹50 Lakhs)
+    if (totalExpenses > 5000000 && (nameUpper.includes('STEEL') || nameUpper.includes('TRADER') || nameUpper.includes('HARDWARE') || nameUpper.includes('BUILDING') || nameUpper.includes('ROOF') || nameUpper.includes('DISTRIBUTOR') || nameUpper.includes('HUB'))) {
+      addObs(
+        partyName,
+        'Purchase Sec 194Q (0.1% TDS)',
+        'High',
+        `Goods Purchase ₹${totalExpenses.toLocaleString('en-IN')} exceeds ₹50 Lakhs. Section 194Q applies.`,
+        'Deduct 0.1% TDS u/s 194Q on purchase amount exceeding ₹50 Lakhs.',
+        totalExpenses
+      );
+    }
+
+    // Rule 5: Equipment / Land Hire Charges TDS u/s 194I(a)
+    const isHireParty =
+      nameUpper.includes('HIRE') ||
+      nameUpper.includes('CRANE') ||
+      nameUpper.includes('EARTHMOVER') ||
+      nameUpper.includes('DEVELOPER') ||
+      nameUpper.includes('WATER SUPPLIER') ||
+      nameUpper.includes('GENERATOR');
+    if (isHireParty && totalExpenses > 0) {
+      addObs(
+        partyName,
+        'Hire Charges Sec 194I(a)',
+        'Medium',
+        `Equipment/Plant hire charges ₹${totalExpenses.toLocaleString('en-IN')} booked. Check TDS u/s 194I(a).`,
+        'Verify if total annual hire charges breach threshold before deducting 194I(a) TDS.',
+        totalExpenses
+      );
+    }
+
+    // Rule 6: Advance Payments Pending Bill Booking ("Whichever is earlier" rule)
+    if (totalPayments > totalExpenses && (totalPayments - totalExpenses) > 5000) {
+      const advAmt = totalPayments - totalExpenses;
+      addObs(
+        partyName,
+        'Advance Pending Bill Booking',
+        'High',
+        `Advance Payment of ₹${advAmt.toLocaleString('en-IN')} (Payments ₹${totalPayments.toLocaleString('en-IN')} > Expenses ₹${totalExpenses.toLocaleString('en-IN')}). Bill booking & TDS pending.`,
+        'Book pending vendor bill and deduct TDS on advance payment under "whichever is earlier" rule.',
+        advAmt
+      );
+    }
+
+    // Rule 8: Only Payment Entry (No Expense Bill)
+    if (hasPaymentVouchers && !hasPurchaseVouchers && totalPayments > 0) {
+      addObs(
+        partyName,
+        'Payment Only (No Expense Bill)',
+        'High',
+        `Only Payment entry of ₹${totalPayments.toLocaleString('en-IN')} found. No purchase/expense bill booked.`,
+        'Check nature of payment, obtain vendor invoice, and book expense entry.',
+        totalPayments
+      );
+    }
+
+    // Rule 9: Vehicle Repairs Outstanding Anomaly
+    const isVehicleRepairParty =
+      nameUpper.includes('AUTOMOBILE') ||
+      nameUpper.includes('MOTORS') ||
+      nameUpper.includes('AUTO SERVICE') ||
+      nameUpper.includes('CAR') ||
+      nameUpper.includes('GARAGE');
+    if (isVehicleRepairParty && party.closingBalance !== 0) {
+      addObs(
+        partyName,
+        'Vehicle Repairs Outstanding',
+        'Medium',
+        `Vehicle repairs balance of ₹${Math.abs(party.closingBalance).toLocaleString('en-IN')} sitting as outstanding creditor.`,
+        'Repairs to vehicles are normally settled immediately. Verify cash/bank disbursement source.',
+        Math.abs(party.closingBalance)
+      );
+    }
+
+    // Rule 10: Small Balance Write-Off (< ₹500)
+    const absBal = Math.abs(party.closingBalance);
+    if (absBal > 0 && absBal < 500) {
+      addObs(
+        partyName,
+        'Small Balance Write-Off (< ₹500)',
+        'Low',
+        `Residual closing balance of ₹${absBal.toLocaleString('en-IN')} pending in ledger.`,
+        'Settle balance or write off to Discount Received/Allowed to close ledger.',
+        absBal
+      );
+    }
+
+    // Rule 11: Reclassification to Expenditure
+    const isReclassRequired =
+      nameUpper.includes('LIC OF INDIA') ||
+      nameUpper.includes('SURVEYOR') ||
+      nameUpper.includes('ARCHITECT') ||
+      nameUpper.includes('NURSERY') ||
+      nameUpper.includes('CONSULTANT');
+    if (isReclassRequired && isCreditor && absBal > 0) {
+      addObs(
+        partyName,
+        'Reclassification to Expenditure',
+        'Medium',
+        `Ledger sitting under Creditors/Liability with balance ₹${absBal.toLocaleString('en-IN')}.`,
+        'Transfer ledger balance to Expenditure account and check TDS applicability.',
+        absBal
+      );
+    }
+
+    // Rule 7 & 12: Duplicate Invoice Risk & Late Credit Note Risk
+    invoiceDates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    for (let i = 0; i < invoiceDates.length - 1; i++) {
+      const inv1 = invoiceDates[i];
+      const inv2 = invoiceDates[i + 1];
+      const timeDiffDays = Math.abs(new Date(inv2.date).getTime() - new Date(inv1.date).getTime()) / (1000 * 3600 * 24);
+      if (inv1.amount === inv2.amount && timeDiffDays <= 2) {
+        addObs(
+          partyName,
+          'Duplicate Invoice Risk',
+          'High',
+          `Same bill amount ₹${inv1.amount.toLocaleString('en-IN')} booked twice on ${inv1.date} (Vch #${inv1.vNo}) and ${inv2.date} (Vch #${inv2.vNo}).`,
+          'Verify against GSTR-2B. If single invoice was booked twice, reverse the duplicate entry.',
+          inv1.amount
+        );
+      }
+    }
+  }
+
+  // Also scan all vouchers for year-end Credit Notes (Rule 12)
+  for (const vch of allVouchers) {
+    if (vch.voucherType.toUpperCase().includes('CREDIT NOTE')) {
+      const vchDate = new Date(vch.date);
+      if (vchDate.getMonth() === 2 && (vchDate.getDate() === 30 || vchDate.getDate() === 31)) {
+        const partyEntry = vch.entries[0];
+        if (partyEntry) {
+          addObs(
+            partyEntry.ledgerName,
+            'Double Payment / Late Credit Note',
+            'Medium',
+            `Credit Note of ₹${partyEntry.amount.toLocaleString('en-IN')} booked on last day of Financial Year (${vch.date}).`,
+            'Verify why credit note was booked on final day and match with vendor statement.',
+            partyEntry.amount
+          );
+        }
+      }
+    }
+  }
+
+  return observations;
+}
+
+/**
+ * EXPORT SERVICE: Exports Finalisation Scrutiny findings to an Excel file matching `Queries for Finalisation 1.xlsx`
+ */
+export function exportFinalisationScrutinyToExcel(
+  observations: FinalisationScrutinyObservation[],
+  companyName: string = 'Company'
+) {
+  const wb = XLSX.utils.book_new();
+
+  const headers = [
+    'Sr.no',
+    'Ledger Name',
+    'Category',
+    'Particulars / Audit Query',
+    'Suggested Action',
+    'Risk Severity',
+    'Auditor Status'
+  ];
+
+  const data = observations.map((obs, idx) => [
+    idx + 1,
+    obs.partyName,
+    obs.category,
+    obs.queryDescription,
+    obs.suggestedAction,
+    obs.severity,
+    obs.status
+  ]);
+
+  const aoa = [
+    [`CREDITORS & DEBTORS FINALISATION SCRUTINY REPORT - ${companyName.toUpperCase()}`],
+    [`Generated on: ${new Date().toLocaleString('en-IN')} | Compliance & Finalisation Audit`],
+    [],
+    headers,
+    ...data
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
+  ];
+
+  ws['!cols'] = [
+    { wch: 8 },  // Sr.no
+    { wch: 32 }, // Ledger Name
+    { wch: 30 }, // Category
+    { wch: 55 }, // Particulars / Audit Query
+    { wch: 55 }, // Suggested Action
+    { wch: 14 }, // Risk Severity
+    { wch: 18 }  // Auditor Status
+  ];
+
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G10');
+
+  for (let R = 0; R <= range.e.r; R++) {
+    for (let C = 0; C <= range.e.c; C++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+
+      if (R === 0) {
+        ws[cellAddress].s = {
+          font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '0F172A' } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      } else if (R === 1) {
+        ws[cellAddress].s = {
+          font: { italic: true, sz: 10, color: { rgb: '94A3B8' } },
+          fill: { fgColor: { rgb: '1E293B' } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      } else if (R === 3) {
+        ws[cellAddress].s = {
+          font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+          fill: { fgColor: { rgb: '1E3A8A' } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      } else if (R > 3) {
+        ws[cellAddress].s = {
+          font: { sz: 9, color: { rgb: '0F172A' } },
+          fill: { fgColor: { rgb: R % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+          alignment: { horizontal: C === 0 || C === 5 || C === 6 ? 'center' : 'left', vertical: 'center' }
+        };
+
+        if (C === 5) {
+          const sev = String(ws[cellAddress].v);
+          if (sev === 'High') {
+            ws[cellAddress].s.fill = { fgColor: { rgb: 'FEE2E2' } };
+            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '991B1B' } };
+          } else if (sev === 'Medium') {
+            ws[cellAddress].s.fill = { fgColor: { rgb: 'FEF3C7' } };
+            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '92400E' } };
+          } else if (sev === 'Low') {
+            ws[cellAddress].s.fill = { fgColor: { rgb: 'F1F5F9' } };
+            ws[cellAddress].s.font = { sz: 9, bold: true, color: { rgb: '475569' } };
+          }
+        }
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Finalisation Scrutiny Queries');
+  XLSX.writeFile(wb, `Queries_for_Finalisation_${new Date().getTime()}.xlsx`);
 }
 

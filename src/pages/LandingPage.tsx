@@ -508,7 +508,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                   <MessageSquare className="w-7 h-7 text-white" />
                 </div>
                 <h3 className="text-xl font-black text-slate-900 dark:text-white">Share Your Feedback</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Help us improve RECO WITH VASWANI</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Help us improve AUDIT WITH VASWANI</p>
               </div>
               <div className="space-y-5">
                 <div>
@@ -566,7 +566,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                 <img src="./logo.png" alt="Logo" className="w-8 h-8 object-contain dark:invert-0 invert" />
               </div>
               <div>
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">RECO WITH VASWANI</h1>
+                <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">AUDIT WITH VASWANI</h1>
                 <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-[0.25em] font-bold mt-0.5 font-mono">GST Compliance & Automation Suite</p>
               </div>
             </div>
@@ -613,7 +613,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               </div>
 
               <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-                Built for Chartered Accountants, Tax Consultants, and finance professionals who demand accuracy, speed, and security. RECO WITH VASWANI runs 100% offline on your local network — your data never leaves your premises.
+                Built for Chartered Accountants, Tax Consultants, and finance professionals who demand accuracy, speed, and security. AUDIT WITH VASWANI runs 100% offline on your local network — your data never leaves your premises.
               </p>
 
               <div className="flex flex-wrap gap-4 text-xs font-mono text-slate-500 dark:text-slate-400 pt-2">
@@ -769,7 +769,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
             <div className="text-center bg-white dark:bg-transparent bg-gradient-to-r from-blue-500/5 via-purple-500/10 to-blue-500/5 border border-slate-200 dark:border-slate-800/50 rounded-3xl p-10 space-y-4 shadow-sm dark:shadow-none">
               <MessageSquare className="w-10 h-10 text-purple-400 mx-auto" />
               <h3 className="text-xl font-black text-slate-900 dark:text-white">We Value Your Opinion</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">Your feedback shapes the future of RECO WITH VASWANI. Tell us what you love and what we can improve.</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">Your feedback shapes the future of AUDIT WITH VASWANI. Tell us what you love and what we can improve.</p>
               <button onClick={() => setShowFeedbackModal(true)} className="mt-2 px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-sm uppercase tracking-wider transition-all shadow-lg shadow-purple-500/20 hover:scale-[1.02] flex items-center gap-2 mx-auto">
                 <Star className="w-4 h-4" /> Share Your Feedback
               </button>
@@ -782,7 +782,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
               <div className="space-y-6">
                 <div className="text-center space-y-2">
                   <h3 className="text-xl font-black text-slate-900 dark:text-white">What Our Users Say</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Real feedback from professionals using RECO WITH VASWANI</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Real feedback from professionals using AUDIT WITH VASWANI</p>
                 </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {feedbackList.slice(0, 9).map((fb, i) => (
@@ -833,7 +833,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                     <div className="w-8 h-8 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden">
                       <img src="./logo.png" alt="Logo" className="w-5 h-5 object-contain dark:invert-0 invert" />
                     </div>
-                    <span className="text-sm font-black text-slate-900 dark:text-white">RECO WITH VASWANI</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">AUDIT WITH VASWANI</span>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-relaxed">Professional GST compliance and automation suite for Chartered Accountants, Tax Consultants, and finance professionals across India.</p>
                 </div>
@@ -861,7 +861,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-800/40 pt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <p className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.2em]">© {new Date().getFullYear()} RECO WITH VASWANI. All rights reserved.</p>
+                <p className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.2em]">© {new Date().getFullYear()} AUDIT WITH VASWANI. All rights reserved.</p>
                 <div className="flex items-center gap-4 text-[9px] text-slate-600">
                   <span>Contact: +91 1234567890</span>
                   <span className="w-px h-3 bg-slate-800"></span>

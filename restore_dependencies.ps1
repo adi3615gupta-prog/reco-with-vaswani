@@ -1,4 +1,4 @@
-# RECO WITH VASWANI - Dependency Restoration Script
+# AUDIT WITH VASWANI - Dependency Restoration Script
 # Runs in PowerShell / Windows Terminal
 # Installs Node.js, Python, NPM modules, and Python libraries
 
@@ -19,7 +19,7 @@ function Refresh-Path {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
 
-Write-Header "RECO WITH VASWANI - Dependency Restorer"
+Write-Header "AUDIT WITH VASWANI - Dependency Restorer"
 
 # Check if script is run in the root directory
 if (!(Test-Path "package.json")) {

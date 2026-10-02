@@ -1,6 +1,6 @@
 @echo off
 echo ========================================================
-echo   RECO WITH VASWANI - Server Setup & Launch Script
+echo   AUDIT WITH VASWANI - Server Setup & Launch Script
 echo ========================================================
 echo.
 echo Installing production dependencies...

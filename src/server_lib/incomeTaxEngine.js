@@ -240,7 +240,8 @@ var IncomeType = {
   LTCG_112: "LTCG_112",
   CASUAL_INCOME: "CASUAL_INCOME",
   AGRICULTURAL_INCOME: "AGRICULTURAL_INCOME",
-  DEEMED_INCOME_115BBE: "DEEMED_INCOME_115BBE"
+  DEEMED_INCOME_115BBE: "DEEMED_INCOME_115BBE",
+  CRYPTO_VDA: "CRYPTO_VDA"
 };
 var RegimeType = {
   OLD: "OLD",
@@ -562,7 +563,7 @@ function aggregateIncome(incomeRecords, profile, regime) {
       case IncomeType.DEEMED_INCOME_115BBE:
         deemedIncome115BBE = deemedIncome115BBE.add(netAmt);
         break;
-      case "CRYPTO_VDA":
+      case IncomeType.CRYPTO_VDA:
         cryptoVda = cryptoVda.add(netAmt);
         break;
       default:
@@ -1045,7 +1046,7 @@ function calculateNonIndividualTax(profile, incomeRecords, deductionRecords) {
     financialYear: profile.financial_year,
     assessmentYear: profile.assessment_year,
     regimeType: RegimeType.NEW,
-    ageCategory: AgeCategory.BELOW_60,
+    ageCategory: AgeCategory.NORMAL,
     standardDeductionAmount: step1.standardDeductionAmount,
     incomeBreakdown: step1.incomeBreakdown,
     grossTotalIncome: step1.grossTotalIncome,

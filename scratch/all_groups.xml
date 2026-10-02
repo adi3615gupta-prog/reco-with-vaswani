@@ -1,0 +1,624 @@
+<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <STATUS>1</STATUS>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <CMPINFO>
+    <COMPANY>11</COMPANY>
+    <GROUP>0</GROUP>
+    <LEDGER>0</LEDGER>
+    <COSTCATEGORY>0</COSTCATEGORY>
+    <COSTCENTRE>0</COSTCENTRE>
+    <GODOWN>0</GODOWN>
+    <STOCKGROUP>0</STOCKGROUP>
+    <STOCKCATEGORY>0</STOCKCATEGORY>
+    <STOCKITEM>0</STOCKITEM>
+    <VOUCHERTYPE>0</VOUCHERTYPE>
+    <CURRENCY>11</CURRENCY>
+    <UNIT>0</UNIT>
+    <BUDGET>0</BUDGET>
+    <CLIENTRULE>0</CLIENTRULE>
+    <SERVERRULE>0</SERVERRULE>
+    <STATE>0</STATE>
+    <TDSRATE>0</TDSRATE>
+    <TAXCLASSIFICATION>0</TAXCLASSIFICATION>
+    <STCATEGORY>0</STCATEGORY>
+    <DEDUCTEETYPE>0</DEDUCTEETYPE>
+    <ATTENDANCETYPE>0</ATTENDANCETYPE>
+    <FBTCATEGORY>0</FBTCATEGORY>
+    <FBTASSESSEETYPE>0</FBTASSESSEETYPE>
+    <TARIFFCLASSIFICATION>0</TARIFFCLASSIFICATION>
+    <EXCISEDUTYCLASSIFICATION>0</EXCISEDUTYCLASSIFICATION>
+    <SERIALNUMBER>0</SERIALNUMBER>
+    <ADJUSTMENTCLASSIFICATION>0</ADJUSTMENTCLASSIFICATION>
+    <INCOMETAXSLAB>0</INCOMETAXSLAB>
+    <INCOMETAXCLASSIFICATION>0</INCOMETAXCLASSIFICATION>
+    <LBTCLASSIFICATION>0</LBTCLASSIFICATION>
+    <TAXUNIT>0</TAXUNIT>
+    <RETURNMASTER>0</RETURNMASTER>
+    <GSTCLASSIFICATION>0</GSTCLASSIFICATION>
+    <VOUCHERNUMBERSERIES>0</VOUCHERNUMBERSERIES>
+    <VOUCHER>0</VOUCHER>
+   </CMPINFO>
+  </DESC>
+  <DATA>
+   <COLLECTION ISMSTDEPTYPE="Yes" MSTDEPTYPE="4">
+    <GROUP NAME="ACCUMULATED DEPRECIATION" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>ACCUMULATED DEPRECIATION</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bad Debts" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bad Debts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bank Accounts" RESERVEDNAME="Bank Accounts">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bank Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bank Commission" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank Commission</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bank OD A/c" RESERVEDNAME="Bank OD A/c">
+     <PARENT TYPE="String">Loans (Liability)</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank OD A/c</NAME>
+       <NAME>Bank OCC A/c</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Branch / Divisions" RESERVEDNAME="Branch / Divisions">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Branch / Divisions</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Buildings" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Buildings</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Capital Account" RESERVEDNAME="Capital Account">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Capital Account</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Cash-in-Hand" RESERVEDNAME="Cash-in-Hand">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Cash-in-Hand</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Commission" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Commission</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Computers &amp; Data Processing Equipment" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Computers &amp; Data Processing Equipment</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Conveyance" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Conveyance</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Current Assets" RESERVEDNAME="Current Assets">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Current Assets</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Current Liabilities" RESERVEDNAME="Current Liabilities">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Current Liabilities</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Deposits (Asset)" RESERVEDNAME="Deposits (Asset)">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Deposits (Asset)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Direct Expenses" RESERVEDNAME="Direct Expenses">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Direct Expenses</NAME>
+       <NAME>Expenses (Direct)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Direct Incomes" RESERVEDNAME="Direct Incomes">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Direct Incomes</NAME>
+       <NAME>Income (Direct)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Duties &amp; Taxes" RESERVEDNAME="Duties &amp; Taxes">
+     <PARENT TYPE="String">Current Liabilities</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Duties &amp; Taxes</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Electrical Installations / Equip." RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Electrical Installations / Equip.</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Fixed Assets" RESERVEDNAME="Fixed Assets">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Fixed Assets</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Furniture and Fixtures" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Furniture and Fixtures</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="GST" RESERVEDNAME="">
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>GST</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Guest House Rent" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Guest House Rent</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Indirect Expenses" RESERVEDNAME="Indirect Expenses">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Indirect Expenses</NAME>
+       <NAME>Expenses (Indirect)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Indirect Incomes" RESERVEDNAME="Indirect Incomes">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Indirect Incomes</NAME>
+       <NAME>Income (Indirect)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Insurance" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Insurance</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Insurance Claim" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Incomes</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Insurance Claim</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Intangible Assets" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Intangible Assets</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Internet Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Internet Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Investments" RESERVEDNAME="Investments">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Investments</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Legal Work Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Professional Fees</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Legal Work Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Loans &amp; Advances (Asset)" RESERVEDNAME="Loans &amp; Advances (Asset)">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Loans &amp; Advances (Asset)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Loans (Liability)" RESERVEDNAME="Loans (Liability)">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Loans (Liability)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Maintenance charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Maintenance charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Misc. Expenses (ASSET)" RESERVEDNAME="Misc. Expenses (ASSET)">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Misc. Expenses (ASSET)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Office Equipment" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Office Equipment</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Office Expenses" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Office Expenses</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Plant &amp; Equipment" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Plant &amp; Equipment</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Plant &amp; Equipment (Material Handling)" RESERVEDNAME="">
+     <PARENT TYPE="String">Fixed Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Plant &amp; Equipment (Material Handling)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Postage &amp; Courier Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Postage &amp; Courier Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Prepaid Exp" RESERVEDNAME="">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Prepaid Exp</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Printing &amp; Stationary Expenses" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Printing &amp; Stationary Expenses</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Professional Fees" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Professional Fees</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Provisions" RESERVEDNAME="Provisions">
+     <PARENT TYPE="String">Current Liabilities</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Provisions</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="PT" RESERVEDNAME="">
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>PT</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Purchase Accounts" RESERVEDNAME="Purchase Accounts">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Purchase Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Rent" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Rent</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Reserves &amp; Surplus" RESERVEDNAME="Reserves &amp; Surplus">
+     <PARENT TYPE="String">Capital Account</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Reserves &amp; Surplus</NAME>
+       <NAME>Retained Earnings</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Salary" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Salary</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sales Accounts" RESERVEDNAME="Sales Accounts">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sales Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sales Promotion" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sales Promotion</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Secured Loans" RESERVEDNAME="Secured Loans">
+     <PARENT TYPE="String">Loans (Liability)</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Secured Loans</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Security Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Security Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Shipment Clearing Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Direct Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Shipment Clearing Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Stock-in-Hand" RESERVEDNAME="Stock-in-Hand">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Stock-in-Hand</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sundry Creditors" RESERVEDNAME="Sundry Creditors">
+     <PARENT TYPE="String">Current Liabilities</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sundry Creditors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sundry Debtors" RESERVEDNAME="Sundry Debtors">
+     <PARENT TYPE="String">Current Assets</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sundry Debtors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Suspense A/c" RESERVEDNAME="Suspense A/c">
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Suspense A/c</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="TDS" RESERVEDNAME="">
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>TDS</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Transportation Charges" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Transportation Charges</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Travel Expenses" RESERVEDNAME="">
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Travel Expenses</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Unsecured Loans" RESERVEDNAME="Unsecured Loans">
+     <PARENT TYPE="String">Loans (Liability)</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Unsecured Loans</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+   </COLLECTION>
+  </DATA>
+ </BODY>
+</ENVELOPE>

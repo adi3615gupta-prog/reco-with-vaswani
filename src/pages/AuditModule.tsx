@@ -16,6 +16,10 @@ import {
   fetchCompanyInfo,
   fetchTallyMetadata,
   sendTallyRequest,
+  extractLedgerNameFromBlock,
+  clearTallyMetadataCache,
+  fetchPartyBalances,
+  fetchFinalisationDataFromTally,
   type TallyConnectionConfig,
   type TallyCompanyInfo
 } from '@/lib/tallyApi';
@@ -23,6 +27,9 @@ import {
 import {
   getMockAuditData,
   exportAuditToExcel,
+  exportDebtorsToExcel,
+  exportCreditorsToExcel,
+  exportCashComplianceToExcel,
   parseExcelOutstandingReport,
   computeFifoAgeing,
   runCashComplianceAudit,
@@ -30,6 +37,8 @@ import {
   exportDirectExpensesToExcel,
   runAuditSampling,
   exportSamplingToExcel,
+  runCreditorFinalisationScrutiny,
+  exportFinalisationScrutinyToExcel,
   type AuditParty,
   type CashAuditObservation,
   type TallyVoucherEntry,
@@ -37,7 +46,8 @@ import {
   type DirectExpenseLedgerSummary,
   type SampleItem,
   type SamplingConfig,
-  type AuditVoucherWorkingPaper
+  type AuditVoucherWorkingPaper,
+  type FinalisationScrutinyObservation
 } from '@/lib/auditEngine';
 import ForensicAudit from './ForensicAudit';
 import DepreciationAuditor from './DepreciationAuditor';
@@ -59,8 +69,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
   // --- View tabs ---
   const [activeTab, setActiveTab] = useState<'debtors' | 'creditors' | 'insights'>('debtors');
-  const [selectedSubModule, setSelectedSubModule] = useState<'menu' | 'debtors-creditors' | 'cash-auditor' | 'analytical-procedures' | 'forensic-audit' | 'depreciation-auditor' | 'direct-expenses' | 'audit-sampling'>('menu');
+  const [selectedSubModule, setSelectedSubModule] = useState<'menu' | 'debtors-creditors' | 'cash-auditor' | 'analytical-procedures' | 'forensic-audit' | 'depreciation-auditor' | 'direct-expenses' | 'audit-sampling' | 'creditor-finalisation'>('menu');
   const [cashTab, setCashTab] = useState<'All' | 'Disallowed Payments' | 'Loan Violations' | 'Negative Balance'>('All');
+
+  // --- Creditor & Debtor Finalisation Scrutiny states ---
+  const [scrutinyObservations, setScrutinyObservations] = useState<FinalisationScrutinyObservation[]>([]);
+  const [scrutinySearch, setScrutinySearch] = useState('');
+  const [scrutinyCategoryFilter, setScrutinyCategoryFilter] = useState<string>('All');
+  const [isScrutinyLoading, setIsScrutinyLoading] = useState(false);
 
   // --- SA 520 Analytical Procedures State ---
   const [varianceThreshold, setVarianceThreshold] = useState<number>(15);
@@ -165,16 +181,32 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   const [obsTypeFilter, setObsTypeFilter] = useState<'All' | 'Advances' | 'Overdues' | 'Dormant Balances' | 'Tax Compliance'>('All');
   const [obsSeverityFilter, setObsSeverityFilter] = useState<'All' | 'High' | 'Medium' | 'Low'>('All');
 
-  const getVouchersForGroup = (groupNameKey: string) => {
-    const keyUpper = groupNameKey.toUpperCase();
+  const getVouchersForGroup = (groupName: string) => {
+    const keyUpper = groupName.toUpperCase().trim();
     return allVouchersList.filter(v => {
-      const ledgerName = v.ledgerName.toUpperCase();
-      let currentGroup = allLedgersData.get(ledgerName)?.parentGroup || '';
+      const ledgerName = v.ledgerName.toUpperCase().trim();
+
+      // Direct keyword matching fallback on ledger name
+      if (keyUpper.includes('SALES') && ledgerName.includes('SALES')) return true;
+      if (keyUpper.includes('PURCHASE') && ledgerName.includes('PURCHASE')) return true;
+
+      let currentGroup = allLedgersData.get(ledgerName)?.parentGroup || ledgerParentMap.get(ledgerName) || '';
+
+      if (!currentGroup) {
+        if (keyUpper.includes('EXPENSE') && ledgerName.includes('EXPENSE')) return true;
+        if (keyUpper.includes('INCOME') && ledgerName.includes('INCOME')) return true;
+      }
 
       const visited = new Set<string>();
       while (currentGroup) {
-        const currentUpper = currentGroup.toUpperCase();
-        if (currentUpper === keyUpper || currentUpper.includes(keyUpper)) {
+        const currentUpper = currentGroup.toUpperCase().trim();
+        if (
+          currentUpper === keyUpper ||
+          currentUpper.includes(keyUpper) ||
+          keyUpper.includes(currentUpper) ||
+          (keyUpper.includes('SALES') && currentUpper.includes('SALES')) ||
+          (keyUpper.includes('PURCHASE') && currentUpper.includes('PURCHASE'))
+        ) {
           return true;
         }
         if (visited.has(currentUpper)) break;
@@ -200,8 +232,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   const computeMomForGroup = (groupName: string) => {
     const matchingVouchers = getVouchersForGroup(groupName);
 
-    // Fallback matching for Demo Mode
-    if (matchingVouchers.length === 0) {
+    // Fallback matching for Demo Mode ONLY (when live Tally is not connected)
+    if (matchingVouchers.length === 0 && (allLedgersData.size === 0 || isDemoData)) {
       const name = groupName.toUpperCase();
       if (name.includes('SALES')) return momMockData['Sales'] || [];
       if (name.includes('INDIRECT') && name.includes('EXPENSE')) return momMockData['Salaries'] || [];
@@ -216,7 +248,15 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
       '04': 0, '05': 1, '06': 2, '07': 3, '08': 4, '09': 5, '10': 6, '11': 7, '12': 8, '01': 9, '02': 10, '03': 11
     };
 
-    const monthlySums = Array(12).fill(0);
+    const parsedFromDate = new Date(fromDate);
+    const pyFromDate = new Date(parsedFromDate);
+    pyFromDate.setFullYear(pyFromDate.getFullYear() - 1);
+    const fromPYStr = pyFromDate.toISOString().split('T')[0];
+
+    const monthlySumsCY = Array(12).fill(0);
+    const monthlySumsPY = Array(12).fill(0);
+    let hasPYVouchers = false;
+
     const isIncome = groupName.toUpperCase().includes('INCOME') || groupName.toUpperCase().includes('SALES');
 
     matchingVouchers.forEach(v => {
@@ -226,14 +266,25 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         const change = isIncome
           ? (v.isDebit ? -v.amount : v.amount)
           : (v.isDebit ? v.amount : -v.amount);
-        monthlySums[idx] += change;
+
+        if (v.date >= fromDate && v.date <= evaluationDate) {
+          monthlySumsCY[idx] += change;
+        } else if (v.date >= fromPYStr && v.date < fromDate) {
+          monthlySumsPY[idx] += change;
+          hasPYVouchers = true;
+        }
       }
     });
 
     return monthOrder.map((month, idx) => {
-      const cy = Math.abs(monthlySums[idx]);
-      const multiplier = 0.9 + (Math.sin(idx) * 0.05);
-      const py = cy > 0 ? Math.round(cy * multiplier) : 10000;
+      const cy = Math.abs(monthlySumsCY[idx]);
+      let py = 0;
+      if (hasPYVouchers || allLedgersData.size > 0 || !isDemoData) {
+        py = Math.abs(monthlySumsPY[idx]);
+      } else {
+        const multiplier = 0.9 + (Math.sin(idx) * 0.05);
+        py = cy > 0 ? Math.round(cy * multiplier) : 10000;
+      }
       return { month, py, cy };
     });
   };
@@ -261,7 +312,10 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
       return ratiosMockData;
     }
 
-    const salesBal = allLedgersData.size > 0 ? getGroupClosingBalance(['Sales Accounts', 'Sales']) : 12000000;
+    const salesMomTotal = computedMomData['Sales Accounts']?.reduce((sum, r) => sum + r.cy, 0) || 0;
+    const salesBal = salesMomTotal > 0
+      ? salesMomTotal
+      : (allLedgersData.size > 0 ? getGroupClosingBalance(['Sales Accounts', 'Sales']) : 12000000);
     const debtorsBal = allLedgersData.size > 0 ? getGroupClosingBalance(['Sundry Debtors']) : debtors.reduce((sum, d) => sum + d.totalOutstanding, 0);
     const creditorsBal = allLedgersData.size > 0 ? getGroupClosingBalance(['Sundry Creditors']) : creditors.reduce((sum, c) => sum + c.totalOutstanding, 0);
 
@@ -696,7 +750,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <FILTER>IsAuditVch</FILTER>
           </COLLECTION>
           <SYSTEM TYPE="FORMULAS" NAME="IsAuditVch">
-            ($$IsJournal:$VoucherTypeName OR $$IsPayment:$VoucherTypeName OR $$IsPurchase:$VoucherTypeName OR $$IsReceipt:$VoucherTypeName OR $$IsSales:$VoucherTypeName OR $$IsCreditNote:$VoucherTypeName OR $$IsDebitNote:$VoucherTypeName OR $VoucherTypeName = "Journal" OR $VoucherTypeName = "Payment" OR $VoucherTypeName = "Purchase" OR $VoucherTypeName = "Receipt" OR $VoucherTypeName = "Sales" OR $VoucherTypeName = "Credit Note" OR $VoucherTypeName = "Debit Note") AND NOT $IsCancelled AND NOT $IsOptional AND $Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate
+            ($$IsJournal:$VoucherTypeName OR $$IsPayment:$VoucherTypeName OR $$IsPurchase:$VoucherTypeName OR $$IsReceipt:$VoucherTypeName OR $$IsSales:$VoucherTypeName OR $$IsCreditNote:$VoucherTypeName OR $$IsDebitNote:$VoucherTypeName OR $VoucherTypeName = "Journal" OR $VoucherTypeName = "Payment" OR $VoucherTypeName = "Purchase" OR $VoucherTypeName = "Receipt" OR $VoucherTypeName = "Sales" OR $VoucherTypeName = "Credit Note" OR $VoucherTypeName = "Debit Note") AND NOT $IsCancelled AND NOT $IsOptional
           </SYSTEM>
           
           <COLLECTION NAME="AuditLedgerEntries">
@@ -744,36 +798,38 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 </ENVELOPE>`;
   };
 
-  const isDebtorOrCreditor = (partyName: string, metadata: any): 'Sundry Debtors' | 'Sundry Creditors' | null => {
-    const nameUpper = partyName.toUpperCase().trim();
-    const parentGroup = metadata.ledgerParentMap.get(nameUpper);
-    if (!parentGroup) return null;
+  const isDebtorOrCreditor = (partyName: string, metadata: any, parentGroupName?: string): 'Sundry Debtors' | 'Sundry Creditors' | null => {
+    let current = (parentGroupName || '').toUpperCase().trim();
+    if (!current && metadata) {
+      const nameUpper = partyName.toUpperCase().trim();
+      current = (metadata.ledgerParentMap.get(nameUpper) || '').toUpperCase().trim();
+    }
 
-    let current = parentGroup.toUpperCase();
     const visited = new Set<string>();
     while (current && !visited.has(current)) {
-      if (current === 'SUNDRY DEBTORS' || current.includes('DEBTORS')) return 'Sundry Debtors';
-      if (current === 'SUNDRY CREDITORS' || current.includes('CREDITORS')) return 'Sundry Creditors';
+      if (current === 'SUNDRY DEBTORS' || current === 'SUNDRY DEBTOR') return 'Sundry Debtors';
+      if (current === 'SUNDRY CREDITORS' || current === 'SUNDRY CREDITOR') return 'Sundry Creditors';
       visited.add(current);
-      current = metadata.groupParentMap.get(current) || '';
+      current = metadata ? ((metadata.groupParentMap?.get(current) || '').toUpperCase().trim()) : '';
     }
     return null;
   };
 
-  const isCashLedger = (ledgerName: string, metadata?: any): boolean => {
+  const isCashLedger = (ledgerName: string, metadata?: any, parentGroupName?: string): boolean => {
     const nameUpper = ledgerName.toUpperCase().trim();
     if (nameUpper === 'CASH') return true;
-    const parentMap = metadata ? metadata.ledgerParentMap : ledgerParentMap;
+    let current = (parentGroupName || '').toUpperCase().trim();
+    if (!current) {
+      const parentMap = metadata ? metadata.ledgerParentMap : ledgerParentMap;
+      current = (parentMap ? (parentMap.get(nameUpper) || '') : '').toUpperCase().trim();
+    }
     const groupMap = metadata ? metadata.groupParentMap : groupParentMap;
-    const parentGroup = parentMap.get(nameUpper);
-    if (!parentGroup) return false;
-
-    let current = parentGroup.toUpperCase();
+    if (!groupMap) return false;
     const visited = new Set<string>();
     while (current && !visited.has(current)) {
       if (current === 'CASH-IN-HAND' || current === 'CASH IN HAND' || current.includes('CASH IN HAND')) return true;
       visited.add(current);
-      current = groupMap.get(current) || '';
+      current = (groupMap.get(current) || '').toUpperCase().trim();
     }
     return false;
   };
@@ -818,6 +874,25 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   // ─── Tally Connection ──────────────────────────────────────────────
   const handleLaunchForensicAuditor = () => {
     setSelectedSubModule('forensic-audit');
+  };
+
+  const handleConnectAndRunFinalisationScrutiny = async () => {
+    setIsScrutinyLoading(true);
+    toast.loading("Connecting to Tally & extracting vouchers for Creditor Finalisation Scrutiny...");
+    try {
+      const config: TallyConnectionConfig = { host: 'localhost', port: tallyPort };
+      const tallyData = await fetchFinalisationDataFromTally(fromDate, evaluationDate, config);
+      const obs = runCreditorFinalisationScrutiny(tallyData);
+      setScrutinyObservations(obs);
+      setSelectedSubModule('creditor-finalisation');
+      toast.dismiss();
+      toast.success(`Scrutiny complete! Identified ${obs.length} audit finalisation queries across 12 rule categories.`);
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error("Failed to run Tally Finalisation Scrutiny", { description: err.message || String(err) });
+    } finally {
+      setIsScrutinyLoading(false);
+    }
   };
 
   const connectToTally = async () => {
@@ -870,8 +945,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     };
 
     try {
+      clearTallyMetadataCache();
       const config: TallyConnectionConfig = { host: 'localhost', port: tallyPort };
-      toast.loading("Fetching metadata & parameters from Tally...");
+      toast.loading("Fetching company info & metadata from Tally...");
+      const companyInfo = await fetchCompanyInfo(config);
+      if (companyInfo && companyInfo.name) {
+        setCompanyName(companyInfo.name);
+      }
+
       const metadata = await fetchTallyMetadata(config);
 
       toast.loading(`Fetching all ledger closing balances as of ${evaluationDate}...`);
@@ -889,22 +970,21 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
       const parsedAllLedgers = new Map<string, { parentGroup: string; closingBalance: number; isDebit: boolean }>();
 
-      const ledgerRegex = /<LEDGER[^>]*>([\s\S]*?)<\/LEDGER>/ig;
+      const ledgerRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/ig;
       let lMatch: RegExpExecArray | null;
 
       while ((lMatch = ledgerRegex.exec(ledgersResp)) !== null) {
-        const block = lMatch[1];
-        const nameTag = block.match(/<NAME[^>]*>([^<]+)<\/NAME>/i);
-        const parentTag = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
-        const balTag = block.match(/<CLOSINGBALANCE[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
-        const gstinTag = block.match(/<PARTYGSTIN[^>]*>([^<]+)<\/PARTYGSTIN>/i);
-        const emailTag = block.match(/<EMAIL[^>]*>([^<]+)<\/EMAIL>/i);
-        const phoneTag = block.match(/<PHONE[^>]*>([^<]+)<\/PHONE>/i);
+        const partyName = extractLedgerNameFromBlock(lMatch[1], lMatch[2]);
+        const block = lMatch[0];
 
-        if (!nameTag || !parentTag) continue;
+        const parentTag = block.match(/<PARENT\b[^>]*>([^<]+)<\/PARENT>/i);
+        const balTag = block.match(/<CLOSINGBALANCE\b[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
+        const gstinTag = block.match(/<PARTYGSTIN\b[^>]*>([^<]+)<\/PARTYGSTIN>/i);
+        const emailTag = block.match(/<EMAIL\b[^>]*>([^<]+)<\/EMAIL>/i);
+        const phoneTag = block.match(/<PHONE\b[^>]*>([^<]+)<\/PHONE>/i);
 
-        const rawName = nameTag[1].trim();
-        const partyName = unescapeXml(rawName).trim();
+        if (!partyName || !parentTag) continue;
+
         const parentGroupName = parentTag[1].trim();
 
         const balStr = balTag ? balTag[1].trim() : '0';
@@ -926,8 +1006,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           isDebit
         });
 
-        const group = isDebtorOrCreditor(partyName, metadata);
-        const isCash = isCashLedger(partyName, metadata);
+        const group = isDebtorOrCreditor(partyName, metadata, parentGroupName);
+        const isCash = isCashLedger(partyName, metadata, parentGroupName);
         if (!group && !isCash) continue; // Only process ledgers that are Debtors, Creditors, or Cash accounts
 
         const absBal = Math.abs(rawBal);
@@ -956,8 +1036,13 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         });
       }
 
-      toast.loading(`Querying transaction ledger entries for period ${fromDate} to ${evaluationDate}...`);
-      const from = fromDate.replace(/-/g, '');
+      const parsedFromDate = new Date(fromDate);
+      const pyFromDate = new Date(parsedFromDate);
+      pyFromDate.setFullYear(pyFromDate.getFullYear() - 1);
+      const fromPYStr = pyFromDate.toISOString().split('T')[0];
+
+      toast.loading(`Querying transaction ledger entries for period ${fromPYStr} to ${evaluationDate}...`);
+      const from = fromPYStr.replace(/-/g, '');
       const to = evaluationDate.replace(/-/g, '');
 
       const xml = buildAuditLedgerEntriesXml(from, to);
@@ -973,7 +1058,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
       const parsedAllVouchers: { ledgerName: string; date: string; voucherType: string; voucherNumber: string; amount: number; isDebit: boolean }[] = [];
 
-      const entryBlockRegex = /<LEDGERENTRY[^>]*>([\s\S]*?)<\/LEDGERENTRY>/ig;
+      const entryBlockRegex = /<(?:AUDIT|ALL)?LEDGERENTRI(?:ES|Y)(?:\.LIST)?[^>]*>([\s\S]*?)<\/(?:AUDIT|ALL)?LEDGERENTRI(?:ES|Y)(?:\.LIST)?>/ig;
       let match: RegExpExecArray | null;
 
       while ((match = entryBlockRegex.exec(resp)) !== null) {
@@ -983,9 +1068,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
         const ledgerName = unescapeXml(ledgerNameTag[1]).trim().toUpperCase();
 
-        const dateTag = block.match(/<VCHDATE[^>]*>([^<]+)<\/VCHDATE>/i);
-        const numTag = block.match(/<VCHNUMBER[^>]*>([^<]+)<\/VCHNUMBER>/i);
-        const typeTag = block.match(/<VCHTYPE[^>]*>([^<]+)<\/VCHTYPE>/i);
+        const dateTag = block.match(/<(?:VCHDATE|DATE)[^>]*>([^<]+)<\/(?:VCHDATE|DATE)>/i);
+        const numTag = block.match(/<(?:VCHNUMBER|VOUCHERNUMBER)[^>]*>([^<]+)<\/(?:VCHNUMBER|VOUCHERNUMBER)>/i);
+        const typeTag = block.match(/<(?:VCHTYPE|VOUCHERTYPENAME)[^>]*>([^<]+)<\/(?:VCHTYPE|VOUCHERTYPENAME)>/i);
         const amtTag = block.match(/<AMOUNT[^>]*>([^<]+)<\/AMOUNT>/i);
         const posTag = block.match(/<ISDEEMEDPOSITIVE[^>]*>([^<]+)<\/ISDEEMEDPOSITIVE>/i);
 
@@ -1028,13 +1113,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
       const parsedCreditors: AuditParty[] = [];
       const parsedCashAccounts: AuditParty[] = [];
 
-      const parsedFromDate = new Date(fromDate);
       const priorDate = new Date(parsedFromDate);
       priorDate.setDate(priorDate.getDate() - 1);
       const priorDateStr = priorDate.toISOString().split('T')[0];
 
       for (const [key, party] of activeParties.entries()) {
-        const periodVouchers = partyVouchers.get(key) || [];
+        const periodVouchers = (partyVouchers.get(key) || []).filter(v => v.date >= fromDate);
 
         if (isCashLedger(party.partyName, metadata)) {
           let netChange = 0;
@@ -1099,7 +1183,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
         const res = computeFifoAgeing(combinedVouchers, evaluationDate, isDebtor);
 
-        res.totalOutstanding = Math.abs(party.closingBalance);
+        res.totalOutstanding = party.closingBalance < 0 ? -Math.abs(party.closingBalance) : Math.abs(party.closingBalance);
 
         const olderThan90 = res.days91_120 + res.days120_plus;
         const ratio = olderThan90 / (res.totalOutstanding || 1);
@@ -1215,6 +1299,16 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   };
 
   // ─── Export to Styled Excel ────────────────────────────────────────
+  const handleDebtorsExport = () => {
+    exportDebtorsToExcel(debtors, companyName, evaluationDate);
+    toast.success("Sundry Debtors Audit workbook exported!");
+  };
+
+  const handleCreditorsExport = () => {
+    exportCreditorsToExcel(creditors, companyName, evaluationDate);
+    toast.success("Sundry Creditors Audit workbook exported!");
+  };
+
   const triggerExcelExport = () => {
     exportAuditToExcel(debtors, creditors, companyName, evaluationDate);
     toast.success("Excel audit report generated successfully!");
@@ -1587,6 +1681,41 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
           {/* Symmetrical cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            {/* Card 0: Creditor & Debtor Finalisation Scrutiny (Live Tally) */}
+            <div
+              onClick={() => setSelectedSubModule('creditor-finalisation')}
+              className="bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-900/40 border border-indigo-500/30 hover:border-indigo-400/50 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-slate-900/80 shadow-2xl transition-all relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+              <div>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="w-12 h-12 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-lg shadow-indigo-950">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <span className="text-[9px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">Live Tally Engine</span>
+                </div>
+                <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                  Creditor &amp; Debtor Finalisation Scrutiny
+                </h3>
+                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  Scans live Tally vouchers against 12 CA Finalisation Rules (Modeled after Queries for Finalisation). Detects Sec 40A(3) cash risk, 194C(6) Transporter declarations, 194Q TDS, 194I(a) hire charges, duplicate bills &amp; advance shortfalls.
+                </p>
+                <div className="mt-4 space-y-1.5">
+                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-indigo-400" /> Direct Tally XML Port 9000 Integration
+                  </div>
+                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-indigo-400" /> 12 CA Finalisation Scrutiny Rules
+                  </div>
+                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-indigo-400" /> Export Excel matching Queries for Finalisation 1.xlsx
+                  </div>
+                </div>
+              </div>
+              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-lg shadow-indigo-900/40">
+                Launch Finalisation Scrutiny <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
             {/* Card 1: Debtors and Creditors Audit */}
             <div
               onClick={() => { setSelectedSubModule('debtors-creditors'); setActiveTab('debtors'); }}
@@ -1858,11 +1987,29 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   }
 
   const handleCashExport = () => {
-    exportAuditToExcel(debtors, creditors, companyName, evaluationDate, cashAuditObservations);
+    const cashAcc = cashAccounts.find(acc => acc.parentGroup === 'Cash Account') || cashAccounts[0];
+    const netChange = cashAcc?.netBalance || 0;
+    const openingBalance = (cashAcc?.totalOutstanding || 0) - netChange;
+    exportCashComplianceToExcel(cashAuditObservations, companyName, evaluationDate, openingBalance);
     toast.success("Cash Compliance Audit report exported!");
   };
 
+    const getFyLabel = (dateStr: string): string => {
+      if (!dateStr || dateStr.length < 4) return 'FY';
+      const year = parseInt(dateStr.slice(0, 4), 10);
+      const month = parseInt(dateStr.slice(5, 7), 10);
+      if (isNaN(year)) return 'FY';
+      const startYr = month >= 4 ? year : year - 1;
+      const endYrShort = String(startYr + 1).slice(-2);
+      return `FY ${startYr}-${endYrShort}`;
+    };
+
   if (selectedSubModule === 'analytical-procedures') {
+    const cyFyLabel = getFyLabel(fromDate);
+    const pyFromDate = new Date(fromDate);
+    pyFromDate.setFullYear(pyFromDate.getFullYear() - 1);
+    const pyFyLabel = getFyLabel(pyFromDate.toISOString().split('T')[0]);
+
     const handleExportSa520 = () => {
       const wb = XLSX.utils.book_new();
 
@@ -1876,7 +2023,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
       Object.entries(computedMomData).forEach(([accName, monthlyData]) => {
         momRows.push([`${accName} Account Fluctuation`]);
         currentRowNum++;
-        momRows.push(["Month", "Previous Year (PY)", "Current Year (CY)", "Net Change", "Variance %", "Alert Status"]);
+        momRows.push(["Month", `Previous Year (PY — ${pyFyLabel})`, `Current Year (CY — ${cyFyLabel})`, "Net Change", "Variance %", "Alert Status"]);
         currentRowNum++;
 
         monthlyData.forEach((row) => {
@@ -1979,6 +2126,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     </span>
                   )}
                 </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/20 text-purple-300 rounded-lg font-mono">
+                    Current Period (CY): <strong className="text-white font-bold">{cyFyLabel}</strong> ({fromDate} to {evaluationDate})
+                  </span>
+                  <span className="px-3 py-1 bg-slate-800/80 border border-slate-700 text-slate-300 rounded-lg font-mono">
+                    Prior Period (PY): <strong className="text-white font-bold">{pyFyLabel}</strong> (1 Year Prior Comparison)
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -2147,7 +2302,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     {/* Comparative Vertical Bar Chart */}
                     <div className="bg-slate-950/60 rounded-2xl p-6 border border-slate-850">
                       <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 text-center">
-                        Monthly Fluctuation Graph — PY (Grey) vs CY (Colored)
+                        Monthly Fluctuation Graph — Previous Year ({pyFyLabel}) vs Current Year ({cyFyLabel})
                       </h4>
                       <div className="h-64 flex items-end justify-between gap-1 sm:gap-2 px-2 border-b border-slate-800 pb-2">
                         {(() => {
@@ -2165,8 +2320,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                 {/* Tooltip */}
                                 <div className="absolute bottom-full mb-2 bg-slate-900 border border-slate-700 text-[10px] p-2 rounded shadow-xl hidden group-hover:block z-50 w-28 text-center pointer-events-none">
                                   <div className="font-bold text-white border-b border-slate-800 pb-1 mb-1">{d.month}</div>
-                                  <div className="text-slate-400">CY: ₹{(d.cy / 1000).toFixed(0)}k</div>
-                                  <div className="text-slate-400">PY: ₹{(d.py / 1000).toFixed(0)}k</div>
+                                  <div className="text-slate-400">{cyFyLabel}: ₹{(d.cy / 1000).toFixed(0)}k</div>
+                                  <div className="text-slate-400">{pyFyLabel}: ₹{(d.py / 1000).toFixed(0)}k</div>
                                   <div className={`font-bold mt-1 ${changePct > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {changePct > 0 ? '+' : ''}{changePct.toFixed(1)}%
                                   </div>
@@ -2201,8 +2356,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         <thead className="bg-slate-950 text-[10px] text-slate-400 uppercase tracking-wider">
                           <tr>
                             <th className="px-4 py-3">Month</th>
-                            <th className="px-4 py-3 text-right">Previous Year (PY)</th>
-                            <th className="px-4 py-3 text-right">Current Year (CY)</th>
+                            <th className="px-4 py-3 text-right">Previous Year (PY — {pyFyLabel})</th>
+                            <th className="px-4 py-3 text-right">Current Year (CY — {cyFyLabel})</th>
                             <th className="px-4 py-3 text-right">Net Change</th>
                             <th className="px-4 py-3 text-right">Variance %</th>
                             <th className="px-4 py-3 text-center">Alert Status</th>
@@ -3542,19 +3697,35 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3 self-start md:self-end">
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-end">
             {isDemoData && (
               <span className="text-[10px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">
                 Viewing Demo Data
               </span>
             )}
             <button
+              onClick={handleDebtorsExport}
+              disabled={debtors.length === 0}
+              className="px-3 py-2 bg-indigo-600/80 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-indigo-500/20"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-300" />
+              Export Debtors Workbook
+            </button>
+            <button
+              onClick={handleCreditorsExport}
+              disabled={creditors.length === 0}
+              className="px-3 py-2 bg-cyan-600/80 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-cyan-500/20"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-300" />
+              Export Creditors Workbook
+            </button>
+            <button
               onClick={triggerExcelExport}
               disabled={debtors.length === 0 && creditors.length === 0}
-              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all border border-indigo-500/20"
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-slate-700"
             >
-              <Download className="w-4 h-4" />
-              Export Full Audit Book
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              Export Full Portfolio
             </button>
           </div>
         </div>
@@ -4735,6 +4906,196 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   <p className="text-[10px] text-slate-500 italic mt-2">
                     * Benchmarks: positive Net Days indicates the firm delays supplier payables longer than it takes to collect receivables, optimising cash reserves.
                   </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Sub-Module: Creditor & Debtor Finalisation Scrutiny (Live Tally) */}
+          {selectedSubModule === 'creditor-finalisation' && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              {/* Top Controls & Connect Bar */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedSubModule('menu')}
+                    className="p-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <div>
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                      <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
+                      Creditor &amp; Debtor Finalisation Scrutiny
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      12 CA Finalisation Rules (Modeled after Queries for Finalisation 1.xlsx)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+                    <span className="text-slate-400 font-medium">Tally Port:</span>
+                    <input
+                      type="number"
+                      value={tallyPort}
+                      onChange={(e) => setTallyPort(Number(e.target.value))}
+                      className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-white font-mono text-center outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleConnectAndRunFinalisationScrutiny}
+                    disabled={isScrutinyLoading}
+                    className="h-10 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-900/30 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isScrutinyLoading ? 'animate-spin' : ''}`} />
+                    {isScrutinyLoading ? 'Scanning Tally Vouchers...' : 'Connect & Scan Live Tally'}
+                  </button>
+
+                  <button
+                    onClick={() => exportFinalisationScrutinyToExcel(scrutinyObservations, companyName)}
+                    disabled={scrutinyObservations.length === 0}
+                    className="h-10 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" /> Export Working Paper
+                  </button>
+                </div>
+              </div>
+
+              {/* Metric Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Total Scrutiny Queries</span>
+                  <span className="text-2xl font-black text-white">{scrutinyObservations.length}</span>
+                </div>
+                <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-rose-400 block uppercase tracking-wider">High Risk Queries</span>
+                  <span className="text-2xl font-black text-rose-400">{scrutinyObservations.filter(o => o.severity === 'High').length}</span>
+                </div>
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-amber-400 block uppercase tracking-wider">Medium Risk Queries</span>
+                  <span className="text-2xl font-black text-amber-400">{scrutinyObservations.filter(o => o.severity === 'Medium').length}</span>
+                </div>
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Low Risk Queries</span>
+                  <span className="text-2xl font-black text-slate-300">{scrutinyObservations.filter(o => o.severity === 'Low').length}</span>
+                </div>
+                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-center col-span-2 md:col-span-1">
+                  <span className="text-[10px] text-emerald-400 block uppercase tracking-wider">Resolved Queries</span>
+                  <span className="text-2xl font-black text-emerald-400">{scrutinyObservations.filter(o => o.status === 'Resolved').length}</span>
+                </div>
+              </div>
+
+              {/* Scrutiny Controls Bar */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                  <div className="relative w-full md:w-72">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      value={scrutinySearch}
+                      onChange={(e) => setScrutinySearch(e.target.value)}
+                      placeholder="Search party or query..."
+                      className="w-full h-9 bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 text-xs text-white outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto max-w-full pb-1">
+                    {['All', 'Cash Payment / Sec 40A(3)', 'TDS Deduction Mismatch', 'Transporter Sec 194C(6) Declaration', 'Purchase Sec 194Q (0.1% TDS)', 'Hire Charges Sec 194I(a)', 'Advance Pending Bill Booking', 'Duplicate Invoice Risk', 'Payment Only (No Expense Bill)', 'Vehicle Repairs Outstanding', 'Small Balance Write-Off (< ₹500)', 'Reclassification to Expenditure'].map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setScrutinyCategoryFilter(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap border ${scrutinyCategoryFilter === cat ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'}`}
+                      >
+                        {cat === 'All' ? 'All Categories' : cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Finalisation Scrutiny Findings Table */}
+                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                      <tr>
+                        <th className="px-3.5 py-2.5 font-medium w-12 text-center">Sr.No</th>
+                        <th className="px-3.5 py-2.5 font-medium">Ledger Name</th>
+                        <th className="px-3.5 py-2.5 font-medium">Scrutiny Category</th>
+                        <th className="px-3.5 py-2.5 font-medium">Audit Query / Particulars</th>
+                        <th className="px-3.5 py-2.5 font-medium">Suggested Action</th>
+                        <th className="px-3.5 py-2.5 font-medium text-center">Risk</th>
+                        <th className="px-3.5 py-2.5 font-medium text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40">
+                      {scrutinyObservations.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
+                            <div className="flex flex-col items-center gap-3">
+                              <FileSpreadsheet className="w-10 h-10 text-slate-600" />
+                              <span className="text-sm font-medium text-slate-300">No Finalisation Scrutiny Findings Loaded</span>
+                              <p className="text-xs text-slate-500 max-w-md">
+                                Click <strong className="text-indigo-400">"Connect &amp; Scan Live Tally"</strong> to execute the 12 CA Finalisation Rules against Tally vouchers.
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        scrutinyObservations
+                          .filter(o => (scrutinyCategoryFilter === 'All' || o.category === scrutinyCategoryFilter) && (!scrutinySearch || o.partyName.toLowerCase().includes(scrutinySearch.toLowerCase()) || o.queryDescription.toLowerCase().includes(scrutinySearch.toLowerCase())))
+                          .map((obs, idx) => {
+                            const getRiskStyle = (sev: string) => {
+                              if (sev === 'High') return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                              if (sev === 'Medium') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                              return 'bg-slate-500/10 text-slate-400 border-slate-700';
+                            };
+
+                            const toggleStatus = (id: string) => {
+                              setScrutinyObservations(prev => prev.map(item => {
+                                if (item.id === id) {
+                                  const nextSt = item.status === 'Pending' ? 'Resolved' : item.status === 'Resolved' ? 'Discussed with Client' : 'Pending';
+                                  return { ...item, status: nextSt };
+                                }
+                                return item;
+                              }));
+                            };
+
+                            return (
+                              <tr key={obs.id} className="hover:bg-slate-800/30 transition-colors">
+                                <td className="px-3.5 py-3 text-center text-slate-500 font-mono">{idx + 1}</td>
+                                <td className="px-3.5 py-3 text-white font-bold max-w-[180px] truncate" title={obs.partyName}>{obs.partyName}</td>
+                                <td className="px-3.5 py-3">
+                                  <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-bold text-[10px]">
+                                    {obs.category}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-3 text-slate-300 max-w-[280px] leading-relaxed">{obs.queryDescription}</td>
+                                <td className="px-3.5 py-3 text-slate-400 max-w-[280px] leading-relaxed">{obs.suggestedAction}</td>
+                                <td className="px-3.5 py-3 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getRiskStyle(obs.severity)}`}>
+                                    {obs.severity}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-3 text-center">
+                                  <button
+                                    onClick={() => toggleStatus(obs.id)}
+                                    className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase transition-all border ${obs.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : obs.status === 'Discussed with Client' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}
+                                  >
+                                    {obs.status}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>

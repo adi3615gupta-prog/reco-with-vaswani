@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  ShieldCheck, ArrowRight, Plus, Sparkles, Building2,
+  ShieldCheck, ArrowRight, ArrowLeft, Plus, Sparkles, Building2,
   FileSpreadsheet, RotateCcw, CloudDownload, Settings,
   Users, Database, FileCode2, Send, ImageIcon,
   Lock, Key, Laptop, Activity, Server, AlertCircle, LogOut,
   ChevronRight, CalendarClock, ShieldAlert, GitCompare,
   Star, MessageSquare, X, Phone, Mail, MapPin, CheckCircle2, AlertTriangle, Lightbulb, Zap, Search,
-  BookOpen, Landmark
+  BookOpen, Landmark, ArrowRightLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
@@ -28,6 +28,7 @@ import {
   type ColumnMapping, type DebitNoteRecord,
   exportMonthlyComparison, exportPartyWise, type MonthlyComparisonRow
 } from '@/lib/fileParser';
+import { parseFileAsync, reconcileAsync } from '@/lib/asyncWorkerService';
 import { reconcile, getSummary, detectGstinIssues, type ReconciliationResult, type ReconciliationSummary, type GstinIssue } from '@/lib/reconciliation';
 import { aggregateByParty } from '@/lib/partyWise';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,8 @@ import DepreciationModule from './DepreciationModule';
 import AuditModule from './AuditModule';
 import UserGuideCenter from '@/components/UserGuideCenter';
 import IncomeTaxDashboard from './IncomeTaxDashboard';
+import TaxAuditClause44 from './TaxAuditClause44';
+import VoucherReclassifier from './VoucherReclassifier';
 
 // CSS theme styles passed down for splash screen and visual presentations
 const themeStyles = `
@@ -191,9 +194,11 @@ export default function Index() {
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [guideActiveModule, setGuideActiveModule] = useState<string>('intro');
 
-  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'consolidation' | 'dashboard' | 'returns' | 'ocr' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'depreciation' | 'audit' | 'income-tax'>(() => {
+  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'consolidation' | 'dashboard' | 'returns' | 'ocr' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'depreciation' | 'audit' | 'income-tax' | 'clause44' | 'voucher-reclass'>(() => {
     return (safeGetItem('np_app_route') as any) || 'hub';
   });
+
+  const [activeCategoryCard, setActiveCategoryCard] = useState<'wip' | 'reco' | 'collector' | 'audit' | 'tax' | null>(null);
 
     const [showAdmin, setShowAdmin] = useState(false);
     const [networkDiagnostics, setNetworkDiagnostics] = useState({ latency: 0, status: 'Online' });
@@ -216,6 +221,7 @@ export default function Index() {
 
     const [processing, setProcessing] = useState(false);
     const [progressValue, setProgressValue] = useState(0);
+    const [progressStage, setProgressStage] = useState('');
     const [companyName, setCompanyName] = useState<string>(() => {
       return safeGetItem('np_reco_company') || '';
     });
@@ -310,7 +316,7 @@ export default function Index() {
     const [updateVersion, setUpdateVersion] = useState('');
     const [checkingUpdates, setCheckingUpdates] = useState(false);
 
-    const [appMode, setAppMode] = useState<'server' | 'client' | null>(null);
+    const [appMode, setAppMode] = useState<'server' | 'client'>('server');
     const [appModeLoaded, setAppModeLoaded] = useState(false);
     const [serverIpInfo, setServerIpInfo] = useState<{ ip: string, port: number, pcName: string } | null>(null);
     const [isScanningNetwork, setIsScanningNetwork] = useState(false);
@@ -325,15 +331,19 @@ export default function Index() {
     useEffect(() => {
       if ((window as any).electronAPI && (window as any).electronAPI.invoke) {
         (window as any).electronAPI.invoke('get_app_mode').then((mode: any) => {
-          setAppMode(mode);
-          if (mode) localStorage.setItem('np_app_mode', mode);
-          else localStorage.removeItem('np_app_mode');
+          const finalMode = mode || 'server';
+          setAppMode(finalMode);
+          localStorage.setItem('np_app_mode', finalMode);
           setAppModeLoaded(true);
-          if (mode === 'server') {
+          if (finalMode === 'server') {
             fetch(`http://localhost:3001/api/network-info`).then(r => r.json()).then(data => setServerIpInfo(data)).catch(() => { });
           }
-        }).catch(() => setAppModeLoaded(true));
+        }).catch(() => {
+          setAppMode('server');
+          setAppModeLoaded(true);
+        });
       } else {
+        setAppMode('server');
         setAppModeLoaded(true);
       }
     }, []);
@@ -527,6 +537,10 @@ export default function Index() {
       setJournals([]);
       setResults(null);
       setSummary(null);
+      setOutputResults(null);
+      setBooksQueue([]);
+      setPortalQueue([]);
+      setPortalMappings({});
       setPrMapping({});
       setTwoBMapping({});
       setPrDnFile(null);
@@ -551,14 +565,14 @@ export default function Index() {
 
     const handlePrUpload = async (f: File) => {
       setPrFile(f);
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrHeaders(headers);
       setPrMapping(detectColumnMapping(headers));
     };
 
     const handleTwoBUpload = async (f: File) => {
       setTwoBFile(f);
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setTwoBHeaders(headers);
       setTwoBMapping(detectColumnMapping(headers));
     };
@@ -566,7 +580,7 @@ export default function Index() {
     const handleJournalUpload = async (files: File[]) => {
       const newJournals = await Promise.all(
         files.map(async (f) => {
-          const { headers } = await parseFile(f);
+          const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
           return { file: f, headers, mapping: detectColumnMapping(headers) };
         })
       );
@@ -575,21 +589,21 @@ export default function Index() {
 
     const handlePrDnUpload = async (f: File) => {
       setPrDnFile(f);
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrDnHeaders(headers);
       setPrDnMapping(detectColumnMapping(headers));
     };
 
     const handlePrCnUpload = async (f: File) => {
       setPrCnFile(f);
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrCnHeaders(headers);
       setPrCnMapping(detectColumnMapping(headers));
     };
 
     const handleTwoBDnUpload = async (f: File) => {
       setTwoBDnFile(f);
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setTwoBDnHeaders(headers);
       setTwoBDnMapping(detectColumnMapping(headers));
     };
@@ -609,28 +623,38 @@ export default function Index() {
           body: JSON.stringify({ module_name: 'RecoEngine' })
         });
         if (!res.ok) {
-          const data = await res.json();
-          toast.error('Module Locked', { description: data.error || 'Usage limit reached' });
-          return;
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 403) {
+            toast.error('Module Locked', { description: data.error || 'Usage limit reached' });
+            return;
+          }
         }
       } catch (err) {
-        toast.error('Connection Error', { description: 'Could not verify usage limits' });
-        return;
+        console.warn('Usage limit server unavailable, continuing offline match engine execution.');
       }
       setProcessing(true);
       setProgressValue(5);
       try {
         await new Promise((r) => setTimeout(r, 100)); // Yield to UI
 
-        const prParsed = await parseFile(prFile!);
+        const primaryBookFile = prFile || booksQueue.find(q => q.docType === 'primary')?.file || booksQueue[0]?.file;
+        const primaryPortalFile = twoBFile || portalQueue.find(q => q.docType === 'primary' || q.docType === 'b2b')?.file || portalQueue[0]?.file;
+
+        if (!primaryBookFile) {
+          toast.error('Primary Books File Missing', { description: 'Please assign a Primary role to your Books file in Step 1.' });
+          setProcessing(false);
+          return;
+        }
+
+        const prParsed = await parseFile(primaryBookFile);
         const prRecs = mapToRecords(prParsed.rows, prMapping as ColumnMapping, 'PR', mode === 'input' ? 'Purchase Register' : 'Sales Register');
         setProgressValue(25);
         await new Promise((r) => setTimeout(r, 50));
 
         let twoBParsed: any = { rows: [], headers: [] };
         let twoBRecs: any[] = [];
-        if (twoBFile) {
-          twoBParsed = await parseFile(twoBFile);
+        if (primaryPortalFile) {
+          twoBParsed = await parseFile(primaryPortalFile, { findHeader: true, docType: mode === 'input' ? '2b' : 'b2b' });
           twoBRecs = mapToRecords(twoBParsed.rows, twoBMapping as ColumnMapping, '2B', mode === 'input' ? 'GSTR-2B' : 'GSTR-1');
         }
         setProgressValue(45);
@@ -686,21 +710,41 @@ export default function Index() {
         await new Promise((r) => setTimeout(r, 150));
 
         if (mode === 'output') {
-          const applyMap = (rows: any[], mapping: any) => rows.map(r => ({
-            'Invoice No.': r[mapping.invoiceNo] || r['Invoice No'] || r['Invoice Number'] || '',
-            'Invoice Date': r[mapping.invoiceDate] || r['Invoice Date'] || r['Date'] || '',
-            'Month': r[mapping.filingStatus] || r[mapping.returnPeriod] || r['Month'] || r['Return Period'] || '',
-            'Party': r[mapping.supplierName] || r['Party Name'] || r['Customer Name'] || r['Receiver Name'] || '',
-            'GST No.': r[mapping.gstin] || r['GSTIN'] || r['GST No.'] || '',
-            'Taxable Value': r[mapping.taxableValue] || r['Taxable Value'] || r['Taxable'] || 0,
-            'CGST': r[mapping.cgst] || r['CGST'] || 0,
-            'SGST': r[mapping.sgst] || r['SGST'] || 0,
-            'IGST': r[mapping.igst] || r['IGST'] || 0,
-            'POS': r[mapping.pos] || r['POS'] || r['Place of Supply'] || '',
-            'Nil Rated': r[mapping.nilRated] || r['Nil Rated'] || 0,
-            'Non Taxable': r[mapping.nonTaxable] || r['Non Taxable'] || r['Non-GST'] || r['Exempted'] || 0,
-            'Voucher Type': r['Voucher Type'] || r['Voucher Type Name'] || r['Vch Type'] || ''
-          }));
+          const getVal = (r: any, keys: string[]) => {
+            if (!r) return undefined;
+            for (const k of keys) {
+              if (k && r[k] !== undefined && r[k] !== '') return r[k];
+            }
+            const normKeys: Record<string, any> = {};
+            for (const origKey of Object.keys(r)) {
+              normKeys[origKey.trim().toLowerCase()] = r[origKey];
+            }
+            for (const k of keys) {
+              if (!k) continue;
+              const normK = k.trim().toLowerCase();
+              if (normKeys[normK] !== undefined && normKeys[normK] !== '') return normKeys[normK];
+            }
+            return undefined;
+          };
+
+          const applyMap = (rows: any[], mapping: any) => (rows || []).map(r => {
+            const m = mapping || {};
+            return {
+              'Invoice No.': getVal(r, [m.invoiceNo, 'Invoice No.', 'Note No.', 'Invoice No', 'Note No', 'Invoice Number']) || '',
+              'Invoice Date': getVal(r, [m.invoiceDate, 'Invoice Date', 'Note Date', 'Date']) || '',
+              'Month': getVal(r, [m.filingStatus, m.returnPeriod, 'Month', 'Return Period', 'Filing Period']) || '',
+              'Party': getVal(r, [m.supplierName, 'Party', 'Receiver Name', 'Party Name', 'Customer Name', 'Particulars']) || '',
+              'GST No.': getVal(r, [m.gstin, 'GST No.', 'GSTIN', 'GST No']) || '',
+              'Taxable Value': getVal(r, [m.taxableValue, 'Taxable', 'Taxable Value', 'Taxable Amount']) || 0,
+              'CGST': getVal(r, [m.cgst, 'CGST']) || 0,
+              'SGST': getVal(r, [m.sgst, 'SGST']) || 0,
+              'IGST': getVal(r, [m.igst, 'IGST']) || 0,
+              'POS': getVal(r, [m.pos, 'POS', 'Place of Supply']) || '',
+              'Nil Rated': getVal(r, [m.nilRated, 'Nil Rated', 'Nil Rated Supplies']) || 0,
+              'Non Taxable': getVal(r, [m.nonTaxable, 'Non Taxable', 'Non-GST', 'Non-GST Supplies', 'Exempted', 'Exempted Supplies', 'Exempt']) || 0,
+              'Voucher Type': getVal(r, ['Voucher Type', 'Voucher Type Name', 'Vch Type', 'Note Type']) || ''
+            };
+          });
 
           const booksSales = applyMap(prParsed.rows, prMapping);
           for (const j of journals) {
@@ -711,31 +755,57 @@ export default function Index() {
           const booksReturns = prDnFile ? applyMap((await parseFile(prDnFile)).rows, prDnMapping) : [];
           const booksCreditNotes = prCnFile ? applyMap((await parseFile(prCnFile)).rows, prCnMapping) : [];
           const booksDebitNotes = prDnFile ? applyMap((await parseFile(prDnFile)).rows, prDnMapping) : [];
-          const portalB2B = twoBFile ? applyMap(twoBParsed.rows, twoBMapping) : [];
-          const portalCN = twoBDnFile ? applyMap((await parseFile(twoBDnFile)).rows, twoBDnMapping) : [];
+          const portalB2B: any[] = [];
+          const portalCN: any[] = [];
           const portalB2C: any[] = [];
           const portalB2CL: any[] = [];
           const portalNil: any[] = [];
           const portalExport: any[] = [];
 
-          if (portalMappings) {
+          const processedPortalFileKeys = new Set<string>();
+
+          if (portalMappings && Object.keys(portalMappings).length > 0) {
             for (const [id, pMap] of Object.entries(portalMappings as Record<string, any>)) {
               const q = portalQueue.find(x => x.id === id);
               if (q) {
-                const p = await parseFile(q.file);
+                const docCategory = (q.docType === 'b2b' || q.docType === 'primary') ? 'b2b' : q.docType;
+                const fileKey = `${q.file.name}_${q.file.size}_${docCategory}`;
+                if (processedPortalFileKeys.has(fileKey)) continue;
+                processedPortalFileKeys.add(fileKey);
+
+                const p = await parseFile(q.file, { findHeader: true, docType: q.docType });
                 const mapped = applyMap(p.rows, pMap.mapping);
-                if (q.docType === 'b2b') portalB2B.push(...mapped);
-                if (q.docType === 'exp') portalExport.push(...mapped);
-                if (q.docType === 'b2c') portalB2C.push(...mapped);
-                if (q.docType === 'b2cl') portalB2CL.push(...mapped);
-                if (q.docType === 'cn') portalCN.push(...mapped);
-                if (q.docType === 'nil') portalNil.push(...mapped);
+                if (q.docType === 'b2b' || q.docType === 'primary') portalB2B.push(...mapped);
+                else if (q.docType === 'exp') portalExport.push(...mapped);
+                else if (q.docType === 'b2c') portalB2C.push(...mapped);
+                else if (q.docType === 'b2cl') portalB2CL.push(...mapped);
+                else if (q.docType === 'cn') portalCN.push(...mapped);
+                else if (q.docType === 'nil') portalNil.push(...mapped);
               }
+            }
+          }
+          if (primaryPortalFile) {
+            const fileKey = `${primaryPortalFile.name}_${primaryPortalFile.size}_b2b`;
+            if (!processedPortalFileKeys.has(fileKey)) {
+              processedPortalFileKeys.add(fileKey);
+              const p = await parseFile(primaryPortalFile, { findHeader: true, docType: 'b2b' });
+              portalB2B.push(...applyMap(p.rows, twoBMapping));
+            }
+          }
+          if (twoBDnFile) {
+            const fileKey = `${twoBDnFile.name}_${twoBDnFile.size}_cn`;
+            if (!processedPortalFileKeys.has(fileKey)) {
+              processedPortalFileKeys.add(fileKey);
+              const p = await parseFile(twoBDnFile, { findHeader: true, docType: 'cn' });
+              portalCN.push(...applyMap(p.rows, twoBDnMapping));
             }
           }
 
           const raw3bData = localStorage.getItem('np_gstr3b_data');
           const resolved3bData = raw3bData ? JSON.parse(raw3bData) : null;
+
+          // DEBUG: Trace data being passed to output reconciliation
+
 
           setOutputResults(executeOutputReconciliation({ 
             booksSales, 
@@ -754,7 +824,10 @@ export default function Index() {
         const filteredPrRecs = mode === 'output' ? prRecs.filter(r => r.gstin && r.gstin.trim().length >= 10) : prRecs;
         const filteredTwoBRecs = mode === 'output' ? twoBRecs.filter(r => r.gstin && r.gstin.trim().length >= 10) : twoBRecs;
 
-        const res = reconcile(filteredPrRecs, filteredTwoBRecs, mode as 'input' | 'output', tolerance, 5);
+        const res = await reconcileAsync(filteredPrRecs, filteredTwoBRecs, { mode: mode as 'input' | 'output', dateTolerance: tolerance, toleranceDays: 5 }, (stage, pct) => {
+          setProgressStage(stage);
+          setProgressValue(pct);
+        });
         setProgressValue(95);
         await new Promise((r) => setTimeout(r, 150));
 
@@ -801,34 +874,48 @@ export default function Index() {
 
     const handleExportMonthly = useCallback(() => {
       if (!results) return;
-      const exportRows: MonthlyComparisonRow[] = results.map((r) => {
-        const pr = r.prRecord;
-        const tb = r.twoBRecord;
-        return {
-          partyTally: pr?.supplierName || '',
-          gstinTally: pr?.gstin || '',
-          invoiceTally: pr?.invoiceNo || '',
-          cgstTally: pr?.cgst || 0,
-          sgstTally: pr?.sgst || 0,
-          igstTally: pr?.igst || 0,
-          dateTally: pr?.invoiceDate || '',
-          partyCmp: tb?.supplierName || '',
-          gstinCmp: tb?.gstin || '',
-          invoiceCmp: tb?.invoiceNo || '',
-          cgstCmp: tb?.cgst || 0,
-          sgstCmp: tb?.sgst || 0,
-          igstCmp: tb?.igst || 0,
-          dateCmp: tb?.invoiceDate || '',
-          status: r.status,
-          totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
-        };
-      });
-      exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', parsedDebitNotes, companyName);
+      try {
+        const exportRows: MonthlyComparisonRow[] = results.map((r) => {
+          const pr = r.prRecord;
+          const tb = r.twoBRecord;
+          return {
+            partyTally: pr?.supplierName || '',
+            gstinTally: pr?.gstin || '',
+            invoiceTally: pr?.invoiceNo || '',
+            cgstTally: pr?.cgst || 0,
+            sgstTally: pr?.sgst || 0,
+            igstTally: pr?.igst || 0,
+            taxableTally: pr?.taxableValue || 0,
+            dateTally: pr?.invoiceDate || '',
+            partyCmp: tb?.supplierName || '',
+            gstinCmp: tb?.gstin || '',
+            invoiceCmp: tb?.invoiceNo || '',
+            cgstCmp: tb?.cgst || 0,
+            sgstCmp: tb?.sgst || 0,
+            igstCmp: tb?.igst || 0,
+            taxableCmp: tb?.taxableValue || 0,
+            dateCmp: tb?.invoiceDate || '',
+            status: r.status,
+            totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+          };
+        });
+        exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', parsedDebitNotes, companyName);
+        toast.success('Monthly comparison exported successfully!');
+      } catch (err) {
+        console.error('Monthly export error:', err);
+        toast.error(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     }, [results, parsedDebitNotes, companyName]);
 
     const handleExportParty = useCallback(() => {
       if (!results) return;
-      exportPartyWise(aggregateByParty(results, parsedDebitNotes), 'Party_Wise_Report.xlsx', companyName);
+      try {
+        exportPartyWise(aggregateByParty(results, parsedDebitNotes), 'Party_Wise_Report.xlsx', companyName);
+        toast.success('Party-wise report exported successfully!');
+      } catch (err) {
+        console.error('Party export error:', err);
+        toast.error(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     }, [results, parsedDebitNotes, companyName]);
 
     // --- CHECK IF ADMIN ACCOUNT EXISTS (FIRST-RUN SETUP) ---
@@ -1101,54 +1188,7 @@ export default function Index() {
       );
     }
 
-    // LAYER 0.1: Mode Selection
-    if (appMode === null) {
-      return (
-        <>
-          <style dangerouslySetInnerHTML={{ __html: themeStyles }} />
-          <div className="dark min-h-screen flex items-center justify-center p-6 bg-[#090d16]">
-            <div className="relative z-10 w-full max-w-2xl bg-slate-900/60 border border-slate-800 rounded-3xl p-10 backdrop-blur-xl shadow-2xl animate-pop-in">
-              <div className="text-center mb-10">
-                <h1 className="text-3xl font-black text-white tracking-tight mb-2">Select Setup Mode</h1>
-                <p className="text-sm text-slate-400">Choose how this computer will participate in the RECO network.</p>
-              </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <button
-                  onClick={async () => {
-                    if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'server');
-                    localStorage.setItem('np_app_mode', 'server');
-                    setAppMode('server');
-                    toast.success("Mode set to Server.");
-                  }}
-                  className="group relative h-48 rounded-2xl border-2 border-slate-700 bg-slate-950/50 hover:border-purple-500 hover:bg-slate-900 transition-all flex flex-col items-center justify-center p-6 cursor-pointer overflow-hidden"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                  <Server className="w-12 h-12 text-slate-400 group-hover:text-purple-400 mb-4 transition-colors" />
-                  <h3 className="text-lg font-bold text-white mb-2">Set up as Server</h3>
-                  <p className="text-xs text-slate-400 text-center">I am the main admin. I hold the Master Server Key.</p>
-                </button>
-
-                <button
-                  onClick={async () => {
-                    if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'client');
-                    localStorage.setItem('np_app_mode', 'client');
-                    setAppMode('client');
-                    toast.success("Mode set to Client.");
-                  }}
-                  className="group relative h-48 rounded-2xl border-2 border-slate-700 bg-slate-950/50 hover:border-blue-500 hover:bg-slate-900 transition-all flex flex-col items-center justify-center p-6 cursor-pointer overflow-hidden"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                  <Laptop className="w-12 h-12 text-slate-400 group-hover:text-blue-400 mb-4 transition-colors" />
-                  <h3 className="text-lg font-bold text-white mb-2">Connect as Client</h3>
-                  <p className="text-xs text-slate-400 text-center">I am an employee connecting to the main server.</p>
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      );
-    }
 
     // LAYER 0.2: Client Server Connection
     const isDefaultIp = getApiHost() === '127.0.0.1' || getApiHost() === 'localhost';
@@ -1269,7 +1309,7 @@ export default function Index() {
                   <Key className="w-8 h-8 text-white" />
                 </div>
                 <h1 className="text-2xl font-black text-white tracking-tight">License Verification</h1>
-                <p className="text-xs text-slate-400 font-medium mt-2">Enter your active RECO WITH VASWANI serial key to authorize this machine.</p>
+                <p className="text-xs text-slate-400 font-medium mt-2">Enter your active AUDIT WITH VASWANI serial key to authorize this machine.</p>
 
                 {appMode === 'server' && serverIpInfo && (
                   <div className="mt-4 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex flex-col items-center gap-1 animate-fade-in">
@@ -1321,23 +1361,13 @@ export default function Index() {
             </div>
 
             <div className="relative z-10 w-full max-w-md bg-slate-900/60 border border-slate-800 rounded-3xl p-8 backdrop-blur-xl shadow-2xl animate-pop-in">
-              <div className="flex justify-between w-full mb-6">
-                <button
-                  onClick={async () => {
-                    if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', null);
-                    localStorage.removeItem('np_app_mode');
-                    setAppMode(null);
-                  }}
-                  className="text-slate-400 hover:text-white flex items-center gap-1.5 font-bold uppercase tracking-wider text-[9px] transition-colors"
-                >
-                  <ArrowRight className="w-3 h-3 transform rotate-180" /> Change Setup Mode
-                </button>
+              <div className="flex justify-end w-full mb-6">
                 <button
                   onClick={async () => {
                     if (confirm('Are you sure you want to factory reset this installation? This will clear activation.')) {
                       localStorage.clear();
                       sessionStorage.clear();
-                      if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', null);
+                      if ((window as any).electronAPI) await (window as any).electronAPI.invoke('set_app_mode', 'server');
                       window.location.reload();
                     }
                   }}
@@ -1350,7 +1380,7 @@ export default function Index() {
                 <div className="w-16 h-16 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-center overflow-hidden mb-4">
                   <img src="./logo.png" alt="Logo" className="w-10 h-10 object-contain" />
                 </div>
-                <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">RECO WITH VASWANI</h1>
+                <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">AUDIT WITH VASWANI</h1>
                 <p className="text-xs text-slate-400 font-medium mt-1">Enterprise-grade offline reporting deck.</p>
 
                 {appMode === 'server' && serverIpInfo && (
@@ -1569,7 +1599,7 @@ export default function Index() {
       }
     };
 
-    // LAYER 5: Post-Login RECO WITH VASWANI Compliance Platform Home Suite Hub
+    // LAYER 5: Post-Login AUDIT WITH VASWANI Compliance Platform Home Suite Hub
     const handleSendToReco = (company: string) => {
       setCompanyName(company);
       setMode(null);
@@ -1595,7 +1625,7 @@ export default function Index() {
                 <img src="./logo.png" alt="Logo" className="w-6 h-6 object-contain" />
               </div>
               <div>
-                <h1 className="text-md font-extrabold tracking-tight text-white flex items-center gap-1.5">RECO WITH VASWANI <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold tracking-widest uppercase">PRO</span></h1>
+                <h1 className="text-md font-extrabold tracking-tight text-white flex items-center gap-1.5">AUDIT WITH VASWANI <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold tracking-widest uppercase">PRO</span></h1>
                 <p className="text-[8px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">Offline Enterprise Suite v1.4.1</p>
               </div>
             </div>
@@ -1638,6 +1668,7 @@ export default function Index() {
                     else if (appRoute === 'gstin-scan') targetModule = 'gstin-scan';
                     else if (appRoute === 'tds-reco') targetModule = 'tds-reco';
                     else if (appRoute === 'cma') targetModule = 'cma';
+                    else if (appRoute === 'voucher-reclass') targetModule = 'voucher-reclass';
                     else if (appRoute === 'depreciation') targetModule = 'depreciation';
 
                     setGuideActiveModule(targetModule);
@@ -1690,283 +1721,701 @@ export default function Index() {
                   </p>
                 </div>
 
-                {/* 3x2 SYMMETRICAL COMPLIANCE TOOLS GRID */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* MAIN CONTENT AREA: 5 SUITE CARDS OR SELECTED SUITE DRILL-DOWN */}
+                {activeCategoryCard === null ? (
+                  /* 5 MAIN CATEGORY CARDS - CLICK TO EXPAND */
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
-                  {/* Card 1: Practice Dashboard (Amber Accent) */}
-                  <div
-                    onClick={() => moduleConfig['Dashboard'] !== 0 && setAppRoute('dashboard')}
-                    className={`glass-card-np neon-amber p-6 rounded-2xl ${moduleConfig['Dashboard'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['Dashboard'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Users className="w-6 h-6" />
+                    {/* Card 01: Work In Progress (WIP) Suite */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('wip')}
+                      className="glass-card-np neon-amber p-6 md:p-7 rounded-3xl border border-amber-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-amber-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/5">
+                            <Zap className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                            8 Modules
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-bold">Suite 01</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-amber-400 transition-colors">
+                            Work In Progress (WIP) Suite
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Comprehensive practice control, GSTIN auditing, returns tracking, AI vision OCR &amp; financial reports.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '05. AI OCR', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-amber-500 transition-colors uppercase tracking-widest">Control Suite</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors">Practice Dashboard</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Manage clients list, track filing due dates, and securely back up database tables to Google Drive.</p>
-                    </div>
-                  </div>
-
-                  {/* Card 2: Consolidate Ledgers (Blue Accent) */}
-                  <div
-                    onClick={() => moduleConfig['Consolidator'] !== 0 && setAppRoute('consolidation')}
-                    className={`glass-card-np neon-blue p-6 rounded-2xl ${moduleConfig['Consolidator'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['Consolidator'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 text-blue-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Database className="w-6 h-6" />
+                      <div className="pt-4 border-t border-amber-500/15 flex items-center justify-between text-amber-400 text-xs font-bold">
+                        <span>Open Suite 01</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-blue-500 transition-colors uppercase tracking-widest">Organization</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors">Consolidate Ledgers</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Merge decentralized multi-branch sales or purchase ledgers into a clean consolidated sheet format.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 3: GST Reconciliation (Emerald Accent) */}
-                  <div
-                    onClick={() => { if (moduleConfig['RecoEngine'] !== 0) { setAppRoute('reco'); setMode(null); setStep('upload'); } }}
-                    className={`glass-card-np neon-emerald p-6 rounded-2xl ${moduleConfig['RecoEngine'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['RecoEngine'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <ShieldCheck className="w-6 h-6" />
+                    {/* Card 02: Reconciliation Engine Hub */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('reco')}
+                      className="glass-card-np neon-emerald p-6 md:p-7 rounded-3xl border border-emerald-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-emerald-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-lg shadow-emerald-500/5">
+                            <ShieldCheck className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
+                            3 Modules
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">Suite 02</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-emerald-400 transition-colors">
+                            Reconciliation Engine Hub
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            High-performance matching engines for GST ledgers, debit note parsing &amp; Form 26Q TDS reconciliation.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. GST Consolidator', '02. GST Reco Engine', '03. TDS Reconciliation'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-emerald-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-500 transition-colors uppercase tracking-widest">Audit Engine</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">GST Reconciliation</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">High-performance matching engine with custom thresholds, debit notes parsing, and automatic discrepancy alerts.</p>
-                    </div>
-                  </div>
-
-                  {/* Card 3b: GSTIN Scan & Duplicate Logic (Emerald Accent) */}
-                  <div
-                    onClick={() => setAppRoute('gstin-scan')}
-                    className="glass-card-np neon-emerald p-6 rounded-2xl cursor-pointer flex flex-col justify-between min-h-[220px] relative group"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Search className="w-6 h-6" />
+                      <div className="pt-4 border-t border-emerald-500/15 flex items-center justify-between text-emerald-400 text-xs font-bold">
+                        <span>Open Suite 02</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-500 transition-colors uppercase tracking-widest">GSTIN Audit</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">GSTIN Scan</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Run duplicate-GSTIN and wrong-GSTIN checks, view conflicts found by the reconciliation engine, and understand matching rules.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 4: Tally XML Converter (Pink Accent) */}
-                  <div
-                    onClick={() => moduleConfig['TallyConverter'] !== 0 && setAppRoute('tally')}
-                    className={`glass-card-np neon-pink p-6 rounded-2xl ${moduleConfig['TallyConverter'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['TallyConverter'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-pink-500/10 border border-pink-500/20 text-pink-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <FileCode2 className="w-6 h-6" />
+                    {/* Card 03: Data Collector & Connectors */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('collector')}
+                      className="glass-card-np neon-pink p-6 md:p-7 rounded-3xl border border-pink-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-pink-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform shadow-lg shadow-pink-500/5">
+                            <Server className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black uppercase tracking-widest">
+                            2 Modules
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-pink-400 uppercase tracking-widest font-bold">Suite 03</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-pink-400 transition-colors">
+                            Data Collector &amp; Connectors
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Fast XML parsing &amp; real-time TallyPrime XML API direct data extractions.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. Tally XML Converter', '02. Tally Direct Import'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-pink-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-pink-500 transition-colors uppercase tracking-widest">Extraction</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-pink-400 transition-colors">Tally XML Converter</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Dual-engine parser that decodes raw Tally XML files into perfectly styled Excel books in 500ms.</p>
-                    </div>
-                  </div>
-
-                  {/* Card 4b: Tally Direct Import (Teal Accent) */}
-                  <div
-                    onClick={() => moduleConfig['TallyDirect'] !== 0 && setAppRoute('tally-direct')}
-                    className={`glass-card-np neon-teal p-6 rounded-2xl ${moduleConfig['TallyDirect'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['TallyDirect'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-teal-500/10 border border-teal-500/20 text-teal-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Server className="w-6 h-6" />
+                      <div className="pt-4 border-t border-pink-500/15 flex items-center justify-between text-pink-400 text-xs font-bold">
+                        <span>Open Suite 03</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-teal-500 transition-colors uppercase tracking-widest">Live API</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-teal-400 transition-colors">Tally Direct Import</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Connect directly to TallyPrime via XML API. Auto-fetch purchase, sales, journal & credit/debit notes.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 4c: GSTR-2B & 3B Compliance Tracker (Yellow Accent) */}
-                  <div
-                    onClick={() => moduleConfig['Tracker'] !== 0 && setAppRoute('tracker')}
-                    className={`glass-card-np neon-yellow p-6 rounded-2xl ${moduleConfig['Tracker'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['Tracker'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Search className="w-6 h-6" />
+                    {/* Card 04: Statutory Audit Modules */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('audit')}
+                      className="glass-card-np neon-indigo p-6 md:p-7 rounded-3xl border border-indigo-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-indigo-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/5">
+                            <ShieldAlert className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                            3 Modules
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-indigo-400 uppercase tracking-widest font-bold">Suite 04</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-indigo-400 transition-colors">
+                            Statutory Audit Modules
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Dual depreciation (Schedule II &amp; Sec 32), Form 3CD Clause 44 &amp; analytical audit sampling.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. Dual Depreciation', '02. Tax Audit Clause 44', '03. Analytical Audit Module'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-indigo-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-yellow-500 transition-colors uppercase tracking-widest">ITC Suite</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-yellow-400 transition-colors">GSTR-2B & 3B Tracker</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Invoice-wise GSTR-2B matching & monthly GSTR-3B summary returns analysis for full financial year (April to March).</p>
-                    </div>
-                  </div>
-
-                  {/* Card 5: Returns Prep & Filing (Purple Accent) */}
-                  <div
-                    onClick={() => moduleConfig['Returns'] !== 0 && setAppRoute('returns')}
-                    className={`glass-card-np neon-purple p-6 rounded-2xl ${moduleConfig['Returns'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['Returns'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 text-purple-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Send className="w-6 h-6" />
+                      <div className="pt-4 border-t border-indigo-500/15 flex items-center justify-between text-indigo-400 text-xs font-bold">
+                        <span>Open Suite 04</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-purple-500 transition-colors uppercase tracking-widest">Taxation Suite</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-purple-400 transition-colors">Returns Preparation</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Validate compliance registers offline, prepare draft filings, and auto-upload JSON returns safely.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 6: AI Vision OCR Engine (Yellow Accent) */}
-                  <div
-                    onClick={() => moduleConfig['OCR'] !== 0 && setAppRoute('ocr')}
-                    className={`glass-card-np neon-yellow p-6 rounded-2xl ${moduleConfig['OCR'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    {moduleConfig['OCR'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <ImageIcon className="w-6 h-6" />
+                    {/* Card 05: Taxation & Calculator Suite */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('tax')}
+                      className="glass-card-np neon-blue p-6 md:p-7 rounded-3xl border border-blue-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-blue-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/5">
+                            <Landmark className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+                            1 Module
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-blue-400 uppercase tracking-widest font-bold">Suite 05</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-blue-400 transition-colors">
+                            Taxation &amp; Calculator Suite
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Tax liability calculation for FY 2025-26 &amp; FY 2026-27 with Old vs New regime optimization.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. Income Tax Calculator'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-blue-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-yellow-500 transition-colors uppercase tracking-widest">Intelligence</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-yellow-400 transition-colors">AI Deep-Vision OCR</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Upload raw invoice pictures or screenshot slices. Vision models extract and format tabular rows instantly.</p>
-                    </div>
-                  </div>
-
-                  {/* Card 7: Financial Statements (Cyan Accent) */}
-                  <div
-                    onClick={() => moduleConfig['FinStatements'] !== 0 && setAppRoute('fin-statements')}
-                    className={`glass-card-np neon-blue p-6 rounded-2xl ${moduleConfig['FinStatements'] !== 0 ? 'cursor-pointer group' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[220px] relative`}
-                    style={{ '--card-hover-border': 'rgba(6, 182, 212, 0.3)', '--card-glow': 'rgba(6, 182, 212, 0.15)' } as React.CSSProperties}
-                  >
-                    {moduleConfig['FinStatements'] === 0 && <div className="absolute top-4 right-4"><Lock className="w-4 h-4 text-slate-500" /></div>}
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <FileSpreadsheet className="w-6 h-6" />
+                      <div className="pt-4 border-t border-blue-500/15 flex items-center justify-between text-blue-400 text-xs font-bold">
+                        <span>Open Suite 05</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <span className="text-[10px] font-black text-slate-500 group-hover:text-cyan-500 transition-colors uppercase tracking-widest">Schedule III</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">Financial Statements</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Automated BS, P&L, Cash Flow & Notes to Accounts compliant with the Companies Act, 2013.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 8: TDS Reconciliation */}
-                  <div
-                    onClick={() => setAppRoute('tds-reco')}
-                    className={`glass-card-np neon-purple p-6 rounded-2xl cursor-pointer group flex flex-col justify-between min-h-[220px] relative`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 text-purple-500 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                ) : (
+                  /* SELECTED CATEGORY CARD DRILL-DOWN VIEW */
+                  <div className="space-y-6 animate-fadeIn">
+                    
+                    {/* BACK NAVIGATION BAR */}
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                      <button
+                        onClick={() => setActiveCategoryCard(null)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all border border-slate-700/80 shadow-md hover:scale-[1.02]"
+                      >
+                        <ArrowLeft className="w-4 h-4 text-blue-400" />
+                        <span>← Back to All Suites</span>
+                      </button>
+
+                      <div className="text-xs text-slate-400 font-mono">
+                        Active Suite: <span className="text-amber-400 font-bold uppercase">{activeCategoryCard}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-purple-500 transition-colors uppercase tracking-widest">Tax Deducted</span>
                     </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-purple-400 transition-colors">TDS Reconciliation</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Match Tally Books against Form 26Q. Auto-detect nature of expense and entity types to identify short deductions.</p>
-                    </div>
-                  </div>
 
-                  {/* Card 9: CMA Data & Project Report */}
-                  <div
-                    onClick={() => setAppRoute('cma')}
-                    className="glass-card-np neon-blue p-6 rounded-2xl cursor-pointer group flex flex-col justify-between min-h-[220px] relative"
-                    style={{ '--card-hover-border': 'rgba(6, 182, 212, 0.3)', '--card-glow': 'rgba(6, 182, 212, 0.15)' } as React.CSSProperties}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <FileSpreadsheet className="w-6 h-6" />
+                    {/* CARD 1 DRILL-DOWN: WIP SUITE */}
+                    {activeCategoryCard === 'wip' && (
+                      <div className="glass-card-np neon-amber p-6 md:p-8 rounded-3xl border border-amber-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-amber-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/5">
+                              <Zap className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 01 • 8 Modules
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Work In Progress (WIP) Suite</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Comprehensive practice control, GSTIN auditing, returns tracking, AI vision OCR &amp; financial reports.
+                          </p>
+                        </div>
+
+                        {/* Modules inside Card 1 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                          {/* 01. Practice Dashboard */}
+                          <div
+                            onClick={() => moduleConfig['Dashboard'] !== 0 && setAppRoute('dashboard')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-amber-500/20 hover:border-amber-500/50 transition-all group ${moduleConfig['Dashboard'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                          >
+                            {moduleConfig['Dashboard'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-amber-500/80 uppercase tracking-widest">Module 1.1</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                                01. Practice Dashboard <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-amber-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Manage client lists, track filing due dates, and back up database tables.</p>
+                            </div>
+                          </div>
+
+                          {/* 02. GSTIN Smart Scanner */}
+                          <div
+                            onClick={() => setAppRoute('gstin-scan')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[170px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Search className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-widest">Module 1.2</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                                02. GSTIN Smart Scanner <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Run duplicate &amp; wrong-GSTIN checks and review matching rules.</p>
+                            </div>
+                          </div>
+
+                          {/* 03. GSTR-2B & 3B Tracker */}
+                          <div
+                            onClick={() => moduleConfig['Tracker'] !== 0 && setAppRoute('tracker')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-yellow-500/20 hover:border-yellow-500/50 transition-all group ${moduleConfig['Tracker'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                          >
+                            {moduleConfig['Tracker'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Search className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Module 1.3</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-yellow-400 transition-colors flex items-center gap-1.5">
+                                03. GSTR-2B &amp; 3B Tracker <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-yellow-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Invoice-wise 2B matching &amp; monthly GSTR-3B summary analysis.</p>
+                            </div>
+                          </div>
+
+                          {/* 04. Offline Return Preparation */}
+                          <div
+                            onClick={() => moduleConfig['Returns'] !== 0 && setAppRoute('returns')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-purple-500/20 hover:border-purple-500/50 transition-all group ${moduleConfig['Returns'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                          >
+                            {moduleConfig['Returns'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Send className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-purple-500/80 uppercase tracking-widest">Module 1.4</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
+                                04. Offline Return Preparation <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Validate registers offline &amp; auto-generate uploadable JSON returns.</p>
+                            </div>
+                          </div>
+
+                          {/* 05. AI Deep-Vision OCR */}
+                          <div
+                            onClick={() => moduleConfig['OCR'] !== 0 && setAppRoute('ocr')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-yellow-500/20 hover:border-yellow-500/50 transition-all group ${moduleConfig['OCR'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                          >
+                            {moduleConfig['OCR'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <ImageIcon className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Module 1.5</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-yellow-400 transition-colors flex items-center gap-1.5">
+                                05. AI Deep-Vision OCR <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-yellow-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Extract invoice data from pictures and screenshots instantly.</p>
+                            </div>
+                          </div>
+
+                          {/* 06. Financial Statements */}
+                          <div
+                            onClick={() => moduleConfig['FinStatements'] !== 0 && setAppRoute('fin-statements')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/50 transition-all group ${moduleConfig['FinStatements'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                          >
+                            {moduleConfig['FinStatements'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <FileSpreadsheet className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-cyan-500/80 uppercase tracking-widest">Module 1.6</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+                                06. Financial Statements Engine <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-cyan-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Automated BS, P&amp;L, Cash Flow compliant with Companies Act.</p>
+                            </div>
+                          </div>
+
+                          {/* 07. CMA Data & Project Report */}
+                          <div
+                            onClick={() => setAppRoute('cma')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-blue-500/20 hover:border-blue-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[170px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <FileSpreadsheet className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-blue-500/80 uppercase tracking-widest">Module 1.7</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
+                                07. CMA Data &amp; Project Report <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Credit monitoring arrangement reports &amp; amortization schedules.</p>
+                            </div>
+                          </div>
+
+                          {/* 08. Voucher Re-classifier */}
+                          <div
+                            onClick={() => setAppRoute('voucher-reclass')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-indigo-500/20 hover:border-indigo-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[170px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <ArrowRightLeft className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-indigo-500/80 uppercase tracking-widest">Module 1.8</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                                08. Voucher Re-classifier <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Batch reclassify Tally voucher entries from one ledger to another in one click.</p>
+                            </div>
+                          </div>
+
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-cyan-500 transition-colors uppercase tracking-widest">Credit Audit</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">CMA Data &amp; Report</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Automate credit monitoring arrangement reports with Tandon 2nd method, repayment amortization schedules, and dynamic forecast formulas.</p>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* Card 10: Depreciation Module */}
-                  <div
-                    onClick={() => setAppRoute('depreciation')}
-                    className="glass-card-np neon-emerald p-6 rounded-2xl cursor-pointer group flex flex-col justify-between min-h-[220px] relative"
-                    style={{ '--card-hover-border': 'rgba(16, 185, 129, 0.3)', '--card-glow': 'rgba(16, 185, 129, 0.15)' } as React.CSSProperties}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <FileSpreadsheet className="w-6 h-6" />
+                    {/* CARD 2 DRILL-DOWN: RECONCILIATION HUB */}
+                    {activeCategoryCard === 'reco' && (
+                      <div className="glass-card-np neon-emerald p-6 md:p-8 rounded-3xl border border-emerald-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-emerald-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/5">
+                              <ShieldCheck className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 02 • 3 Modules
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Reconciliation Engine Hub</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            High-performance matching engines for GST ledgers, debit note parsing &amp; Form 26Q TDS reconciliation.
+                          </p>
+                        </div>
+
+                        {/* Sub-groups inside Card 2 */}
+                        <div className="space-y-4">
+                          <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 2.1 — GST Ledger Reconciliation
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                            {/* 01. GST Data Consolidator */}
+                            <div
+                              onClick={() => moduleConfig['Consolidator'] !== 0 && setAppRoute('consolidation')}
+                              className={`p-5 rounded-2xl bg-slate-950/60 border border-blue-500/20 hover:border-blue-500/50 transition-all group ${moduleConfig['Consolidator'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[160px] relative`}
+                            >
+                              {moduleConfig['Consolidator'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                              <div className="flex items-center justify-between">
+                                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <Database className="w-5 h-5" />
+                                </div>
+                                <span className="text-[9px] font-black text-blue-500/80 uppercase tracking-widest">Module 2.1.1</span>
+                              </div>
+                              <div className="mt-4">
+                                <h4 className="text-base font-bold text-white group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
+                                  01. GST Data Consolidator <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-400" />
+                                </h4>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Merge decentralized multi-branch sales/purchase ledgers into a clean format.</p>
+                              </div>
+                            </div>
+
+                            {/* 02. GST Reconciliation Engine */}
+                            <div
+                              onClick={() => { if (moduleConfig['RecoEngine'] !== 0) { setAppRoute('reco'); setMode(null); setStep('upload'); } }}
+                              className={`p-5 rounded-2xl bg-slate-950/60 border border-emerald-500/20 hover:border-emerald-500/50 transition-all group ${moduleConfig['RecoEngine'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[160px] relative`}
+                            >
+                              {moduleConfig['RecoEngine'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                              <div className="flex items-center justify-between">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <ShieldCheck className="w-5 h-5" />
+                                </div>
+                                <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-widest">Module 2.1.2</span>
+                              </div>
+                              <div className="mt-4">
+                                <h4 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                                  02. GST Reconciliation Engine <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-400" />
+                                </h4>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">High-performance matching engine with custom thresholds &amp; debit note parsing.</p>
+                              </div>
+                            </div>
+
+                          </div>
+
+                          <div className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2 pt-2">
+                            <span className="w-2 h-2 rounded-full bg-purple-400"></span> 2.2 — TDS Deductions Audit
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                            {/* 03. TDS Reconciliation */}
+                            <div
+                              onClick={() => setAppRoute('tds-reco')}
+                              className="p-5 rounded-2xl bg-slate-950/60 border border-purple-500/20 hover:border-purple-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <FileSpreadsheet className="w-5 h-5" />
+                                </div>
+                                <span className="text-[9px] font-black text-purple-500/80 uppercase tracking-widest">Module 2.2.1</span>
+                              </div>
+                              <div className="mt-4">
+                                <h4 className="text-base font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
+                                  03. TDS Form 26Q Reconciliation <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+                                </h4>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Match Tally Books against Form 26Q &amp; detect short deductions automatically.</p>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-emerald-500 transition-colors uppercase tracking-widest">Automation</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">Dual Depreciation</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Fetch Fixed Assets from Tally to automate Companies Act (Schedule II) &amp; Income Tax (Sec 32) depreciation.</p>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* Card 11: Audit & Ageing Suite */}
-                  <div
-                    onClick={() => setAppRoute('audit')}
-                    className="glass-card-np neon-indigo p-6 rounded-2xl cursor-pointer group flex flex-col justify-between min-h-[220px] relative"
-                    style={{ '--card-hover-border': 'rgba(99, 102, 241, 0.3)', '--card-glow': 'rgba(99, 102, 241, 0.15)' } as React.CSSProperties}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <ShieldAlert className="w-6 h-6" />
+                    {/* CARD 3 DRILL-DOWN: DATA COLLECTOR */}
+                    {activeCategoryCard === 'collector' && (
+                      <div className="glass-card-np neon-pink p-6 md:p-8 rounded-3xl border border-pink-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-pink-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 shadow-lg shadow-pink-500/5">
+                              <Server className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 03 • 2 Modules
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Data Collector &amp; Connectors</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Fast XML parsing &amp; real-time TallyPrime XML API direct data extractions.
+                          </p>
+                        </div>
+
+                        {/* Modules inside Card 3 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {/* 01. Tally Dual-Engine Converter */}
+                          <div
+                            onClick={() => moduleConfig['TallyConverter'] !== 0 && setAppRoute('tally')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-pink-500/20 hover:border-pink-500/50 transition-all group ${moduleConfig['TallyConverter'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[160px] relative`}
+                          >
+                            {moduleConfig['TallyConverter'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 text-pink-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <FileCode2 className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-pink-500/80 uppercase tracking-widest">Module 3.1</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-pink-400 transition-colors flex items-center gap-1.5">
+                                01. Tally Dual-Engine XML Converter <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-pink-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Decode raw Tally XML files into styled Excel workbooks in 500ms.</p>
+                            </div>
+                          </div>
+
+                          {/* 02. Tally Direct Import */}
+                          <div
+                            onClick={() => moduleConfig['TallyDirect'] !== 0 && setAppRoute('tally-direct')}
+                            className={`p-5 rounded-2xl bg-slate-950/60 border border-teal-500/20 hover:border-teal-500/50 transition-all group ${moduleConfig['TallyDirect'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[160px] relative`}
+                          >
+                            {moduleConfig['TallyDirect'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Server className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-teal-500/80 uppercase tracking-widest">Module 3.2</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-teal-400 transition-colors flex items-center gap-1.5">
+                                02. Tally Direct XML API Import <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-teal-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Connect directly to TallyPrime via XML API to auto-fetch ledgers &amp; vouchers.</p>
+                            </div>
+                          </div>
+
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-indigo-500 transition-colors uppercase tracking-widest">Audit Suite</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">Audit Module</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Integrated analytical audits. Connect to Tally to run Debtors &amp; Creditors exception scans, chronological FIFO ageing, and compliance checks.</p>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* Card 12: Income Tax Calculator */}
-                  <div
-                    onClick={() => setAppRoute('income-tax')}
-                    className="glass-card-np neon-blue p-6 rounded-2xl cursor-pointer group flex flex-col justify-between min-h-[220px] relative"
-                    style={{ '--card-hover-border': 'rgba(59, 130, 246, 0.3)', '--card-glow': 'rgba(59, 130, 246, 0.15)' } as React.CSSProperties}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
-                        <Landmark className="w-6 h-6" />
+                    {/* CARD 4 DRILL-DOWN: STATUTORY AUDIT */}
+                    {activeCategoryCard === 'audit' && (
+                      <div className="glass-card-np neon-indigo p-6 md:p-8 rounded-3xl border border-indigo-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-indigo-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-500/5">
+                              <ShieldAlert className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 04 • 3 Modules
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Statutory Audit Modules</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Dual depreciation (Schedule II &amp; Sec 32), Form 3CD Clause 44 &amp; analytical audit sampling.
+                          </p>
+                        </div>
+
+                        {/* Modules inside Card 4 */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                          {/* 01. Dual Depreciation */}
+                          <div
+                            onClick={() => setAppRoute('depreciation')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-emerald-500/20 hover:border-emerald-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <FileSpreadsheet className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-widest">Module 4.1</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                                01. Dual Depreciation Engine <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Automate Companies Act (Schedule II) &amp; Income Tax (Sec 32) depreciation.</p>
+                            </div>
+                          </div>
+
+                          {/* 02. Tax Audit Clause 44 */}
+                          <div
+                            onClick={() => setAppRoute('clause44')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-violet-500/20 hover:border-violet-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <ShieldCheck className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-violet-500/80 uppercase tracking-widest">Module 4.2</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-violet-400 transition-colors flex items-center gap-1.5">
+                                02. Tax Audit — Clause 44 Parser <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-violet-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Bifurcate expenses into GST &amp; Non-GST buckets for Winman Form 3CD.</p>
+                            </div>
+                          </div>
+
+                          {/* 03. Analytical Audit Module */}
+                          <div
+                            onClick={() => setAppRoute('audit')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-indigo-500/20 hover:border-indigo-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <ShieldAlert className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-indigo-500/80 uppercase tracking-widest">Module 4.3</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                                03. Analytical Audit &amp; Sampling <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Integrated analytical audits, FIFO ageing &amp; SA 530 audit sampling.</p>
+                            </div>
+                          </div>
+
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-blue-500 transition-colors uppercase tracking-widest">Tax Planning</span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors">Income Tax Calculator</h3>
-                      <p className="text-xs text-slate-400 mt-2 leading-relaxed">Calculate tax liability for FY 2025-26 &amp; FY 2026-27. Compare Old vs New regimes, optimize deductions, and compute surcharge with marginal relief.</p>
-                    </div>
-                  </div>
+                    )}
 
-                </div>
+                    {/* CARD 5 DRILL-DOWN: TAXATION */}
+                    {activeCategoryCard === 'tax' && (
+                      <div className="glass-card-np neon-blue p-6 md:p-8 rounded-3xl border border-blue-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-blue-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shadow-lg shadow-blue-500/5">
+                              <Landmark className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 05 • 1 Module
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Taxation &amp; Calculator Suite</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Tax liability calculation for FY 2025-26 &amp; FY 2026-27 with Old vs New regime optimization.
+                          </p>
+                        </div>
+
+                        {/* Modules inside Card 5 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {/* 01. Income Tax Calculator */}
+                          <div
+                            onClick={() => setAppRoute('income-tax')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-blue-500/20 hover:border-blue-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Landmark className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-blue-500/80 uppercase tracking-widest">Module 5.1</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
+                                01. Income Tax Calculator <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Compare Old vs New regimes, optimize deductions &amp; compute surcharge with marginal relief.</p>
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                )}
 
                 {/* FOOTER TEXT */}
                 <div className="text-center pt-8 border-t border-slate-800/80">
-                  <p className="text-[9px] font-mono tracking-[0.3em] text-slate-500 uppercase">OFFLINE COMPLIANCE PLATFORM • RECO WITH VASWANI • ALL RIGHTS SECURED</p>
+                  <p className="text-[9px] font-mono tracking-[0.3em] text-slate-500 uppercase">OFFLINE COMPLIANCE PLATFORM • AUDIT WITH VASWANI • ALL RIGHTS SECURED</p>
                 </div>
               </div>
             )}
@@ -1993,11 +2442,15 @@ export default function Index() {
 
             {appRoute === 'cma' && <CmaReport onBack={() => setAppRoute('hub')} />}
 
+            {appRoute === 'voucher-reclass' && <VoucherReclassifier onBack={() => setAppRoute('hub')} />}
+
             {appRoute === 'depreciation' && <DepreciationModule onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'audit' && <AuditModule onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'income-tax' && <IncomeTaxDashboard onBack={() => setAppRoute('hub')} />}
+
+            {appRoute === 'clause44' && <TaxAuditClause44 onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'reco' && <Reconciliation
               setAppRoute={setAppRoute} mode={mode} setMode={setMode} step={step} setStep={setStep}

@@ -9,6 +9,7 @@ interface OutputDashboardProps {
 
 export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
   const [viewMode, setViewMode] = useState<'matrix' | 'party'>('matrix');
+  const [matrixFilter, setMatrixFilter] = useState<'b2b' | 'full'>('full');
   const summaries = results.monthlySummaries || [];
   const partySummaries = results.partySummaries || [];
 
@@ -117,93 +118,221 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
         </div>
       </div>
 
+      {/* KPI SUMMARY CARDS FOR ULTIMATE CLARITY */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-slate-900/80 border border-blue-500/30 rounded-xl p-4 backdrop-blur shadow-lg">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Portal B2B Taxable Total</p>
+          <p className="text-2xl font-black text-white mt-1">{formatCurrency(totals.portalB2b.taxable)}</p>
+          <p className="text-[10px] text-slate-400 mt-1">Exact GSTR-1 Portal B2B Taxable</p>
+        </div>
+        <div className="bg-slate-900/80 border border-purple-500/30 rounded-xl p-4 backdrop-blur shadow-lg">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Portal B2C Taxable Total</p>
+          <p className="text-2xl font-black text-white mt-1">{formatCurrency(totals.portalB2c.taxable)}</p>
+          <p className="text-[10px] text-slate-400 mt-1">Retail B2C Supplies</p>
+        </div>
+        <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-4 backdrop-blur shadow-lg">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Net Portal Data Total</p>
+          <p className="text-2xl font-black text-white mt-1">{formatCurrency(totals.portalNet.taxable)}</p>
+          <p className="text-[10px] text-slate-400 mt-1">Consolidated (B2B + B2C + Exports - CN)</p>
+        </div>
+        <div className="bg-slate-900/80 border border-amber-500/30 rounded-xl p-4 backdrop-blur shadow-lg">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Net Books vs Portal Variance</p>
+          <p className={`text-2xl font-black mt-1 ${totals.variance.taxable > 0 ? 'text-rose-400' : totals.variance.taxable < 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{formatCurrency(totals.variance.taxable)}</p>
+          <p className="text-[10px] text-slate-400 mt-1">Final Taxable Difference</p>
+        </div>
+      </div>
+
       {viewMode === 'matrix' && (
         <div className="dash-card p-0 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl relative">
-          <div className="bg-slate-900/90 backdrop-blur border-b border-slate-700/50 px-6 py-4 flex items-center justify-between sticky left-0 z-30">
+          <div className="bg-slate-900/90 backdrop-blur border-b border-slate-700/50 px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sticky left-0 z-30">
             <h3 className="font-black text-white tracking-wide flex items-center gap-2">
               Detailed Master Computation
               <ChevronRight className="w-4 h-4 text-slate-500" />
-              <span className="text-sm font-medium text-slate-400 tracking-normal">Scroll horizontally to view all tax heads</span>
+              <span className="text-sm font-medium text-slate-400 tracking-normal">Monthly Comparison</span>
             </h3>
+            
+            {/* VIEW MODE TOGGLE (B2B FOCUS vs FULL MATRIX) */}
+            <div className="flex p-1 bg-slate-950/80 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setMatrixFilter('full')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matrixFilter === 'full' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Full Matrix (All Columns)
+              </button>
+              <button
+                onClick={() => setMatrixFilter('b2b')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matrixFilter === 'b2b' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                🎯 B2B Focus View Only
+              </button>
+            </div>
           </div>
           
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-xs text-left border-collapse min-w-[4200px]">
-              <thead className="text-[10px] uppercase tracking-widest sticky top-0 z-20 shadow-sm">
-                {/* GROUP HEADER ROW */}
-                <tr className="bg-slate-950 text-slate-300">
-                  <th className="px-6 py-3 border-r border-slate-700 font-black sticky left-0 bg-slate-950 z-30 shadow-[4px_0_10px_rgba(0,0,0,0.4)]" rowSpan={2}>Month</th>
+          {matrixFilter === 'b2b' ? (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs text-left border-collapse min-w-[1200px]">
+                <thead className="text-[10px] uppercase tracking-widest sticky top-0 z-20 shadow-sm">
+                  <tr className="bg-slate-950 text-slate-300">
+                    <th className="px-6 py-3 border-r border-slate-700 font-black sticky left-0 bg-slate-950 z-30" rowSpan={2}>Month</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-blue-950/60 text-blue-300 font-black" colSpan={4}>Books B2B Outward Supplies</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-emerald-950/60 text-emerald-300 font-black" colSpan={4}>Portal B2B (GSTR-1 B2B Sheet)</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-slate-900 text-white font-black" colSpan={4}>B2B Taxable & Tax Variance</th>
+                  </tr>
+                  <tr className="bg-slate-900 text-slate-400">
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Taxable</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">CGST</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">SGST</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700">IGST</th>
+
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Taxable</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">CGST</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">SGST</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700">IGST</th>
+
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Taxable Diff</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">CGST Diff</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">SGST Diff</th>
+                    <th className="px-4 py-2 text-center font-bold border-r border-slate-700">IGST Diff</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
+                  {summaries.map((row) => {
+                    const bTax = row.booksSales.taxable;
+                    const pTax = row.portalB2b.taxable;
+                    const taxDiff = bTax - pTax;
+
+                    const bCgst = row.booksSales.cgst; const pCgst = row.portalB2b.cgst; const cgstDiff = bCgst - pCgst;
+                    const bSgst = row.booksSales.sgst; const pSgst = row.portalB2b.sgst; const sgstDiff = bSgst - pSgst;
+                    const bIgst = row.booksSales.igst; const pIgst = row.portalB2b.igst; const igstDiff = bIgst - pIgst;
+
+                    return (
+                      <tr key={row.month} className="hover:bg-slate-800/50 transition-colors group">
+                        <td className="px-6 py-4 font-black text-white border-r border-slate-700 sticky left-0 bg-slate-900 group-hover:bg-slate-800">{row.month}</td>
+
+                        {/* Books B2B */}
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 font-medium text-slate-200">{formatCurrency(bTax)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 text-slate-400">{formatCurrency(bCgst)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 text-slate-400">{formatCurrency(bSgst)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700 text-slate-400">{formatCurrency(bIgst)}</td>
+
+                        {/* Portal B2B */}
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 font-bold text-emerald-400 bg-emerald-950/10">{formatCurrency(pTax)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 text-emerald-300/80 bg-emerald-950/10">{formatCurrency(pCgst)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700/50 text-emerald-300/80 bg-emerald-950/10">{formatCurrency(pSgst)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-700 text-emerald-300/80 bg-emerald-950/10">{formatCurrency(pIgst)}</td>
+
+                        {/* Variances */}
+                        <td className={`px-4 py-3 text-right border-r border-slate-700/50 font-black ${getNetVarColor(taxDiff)}`}>{formatCurrency(taxDiff)}</td>
+                        <td className={`px-4 py-3 text-right border-r border-slate-700/50 font-bold ${getVarColor(cgstDiff)}`}>{formatCurrency(cgstDiff)}</td>
+                        <td className={`px-4 py-3 text-right border-r border-slate-700/50 font-bold ${getVarColor(sgstDiff)}`}>{formatCurrency(sgstDiff)}</td>
+                        <td className={`px-4 py-3 text-right border-r border-slate-700 font-bold ${getVarColor(igstDiff)}`}>{formatCurrency(igstDiff)}</td>
+                      </tr>
+                    );
+                  })}
                   
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-blue-950/40 text-blue-300 font-black" colSpan={6}>A1. Books Outward Supplies</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-orange-950/40 text-orange-300 font-black" colSpan={6}>A2. Less: Books Credit Notes</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-blue-900/40 text-blue-200 font-black" colSpan={6}>A. NET BOOKS DATA (A1 - A2)</th>
+                  {/* Totals Row for B2B View */}
+                  {summaries.length > 0 && (
+                    <tr className="bg-slate-800 font-black text-white border-t-2 border-slate-700">
+                      <td className="px-6 py-4 border-r border-slate-700 sticky left-0 bg-slate-800 uppercase tracking-widest">Total B2B</td>
+
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-blue-300">{formatCurrency(totals.booksSales.taxable)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-slate-300">{formatCurrency(totals.booksSales.cgst)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-slate-300">{formatCurrency(totals.booksSales.sgst)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700 text-slate-300">{formatCurrency(totals.booksSales.igst)}</td>
+
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-emerald-400 bg-emerald-950/30">{formatCurrency(totals.portalB2b.taxable)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-emerald-300 bg-emerald-950/30">{formatCurrency(totals.portalB2b.cgst)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700/50 text-emerald-300 bg-emerald-950/30">{formatCurrency(totals.portalB2b.sgst)}</td>
+                      <td className="px-4 py-4 text-right border-r border-slate-700 text-emerald-300 bg-emerald-950/30">{formatCurrency(totals.portalB2b.igst)}</td>
+
+                      <td className={`px-4 py-4 text-right border-r border-slate-700/50 text-base ${getNetVarColor(totals.booksSales.taxable - totals.portalB2b.taxable)}`}>{formatCurrency(totals.booksSales.taxable - totals.portalB2b.taxable)}</td>
+                      <td className={`px-4 py-4 text-right border-r border-slate-700/50 ${getVarColor(totals.booksSales.cgst - totals.portalB2b.cgst)}`}>{formatCurrency(totals.booksSales.cgst - totals.portalB2b.cgst)}</td>
+                      <td className={`px-4 py-4 text-right border-r border-slate-700/50 ${getVarColor(totals.booksSales.sgst - totals.portalB2b.sgst)}`}>{formatCurrency(totals.booksSales.sgst - totals.portalB2b.sgst)}</td>
+                      <td className={`px-4 py-4 text-right border-r border-slate-700 ${getVarColor(totals.booksSales.igst - totals.portalB2b.igst)}`}>{formatCurrency(totals.booksSales.igst - totals.portalB2b.igst)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs text-left border-collapse min-w-[4200px]">
+                <thead className="text-[10px] uppercase tracking-widest sticky top-0 z-20 shadow-sm">
+                  {/* GROUP HEADER ROW */}
+                  <tr className="bg-slate-950 text-slate-300">
+                    <th className="px-6 py-3 border-r border-slate-700 font-black sticky left-0 bg-slate-950 z-30 shadow-[4px_0_10px_rgba(0,0,0,0.4)]" rowSpan={2}>Month</th>
+                    
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-blue-950/40 text-blue-300 font-black" colSpan={6}>A1. Books Outward Supplies</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-orange-950/40 text-orange-300 font-black" colSpan={6}>A2. Less: Books Credit Notes</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-blue-900/40 text-blue-200 font-black" colSpan={6}>A. NET BOOKS DATA (A1 - A2)</th>
+                    
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-emerald-950/40 text-emerald-300 font-black" colSpan={6}>B1. Portal B2B</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-teal-950/40 text-teal-300 font-black" colSpan={6}>B2. Portal Exports</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-purple-950/40 text-purple-300 font-black" colSpan={6}>B3. Portal B2C & B2CL</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-slate-800 text-slate-300 font-black" colSpan={6}>B4. Portal Nil Rated</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-rose-950/40 text-rose-300 font-black" colSpan={6}>B5. Less: Portal CN</th>
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-emerald-900/40 text-emerald-200 font-black" colSpan={6}>B. NET PORTAL DATA (B1+B2+B3+B4 - B5)</th>
+                    
+                    <th className="px-4 py-2 text-center border-r border-slate-700 bg-slate-900 text-white font-black" colSpan={6}>FINAL VARIANCE (A - B)</th>
+                  </tr>
                   
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-emerald-950/40 text-emerald-300 font-black" colSpan={6}>B1. Portal B2B</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-teal-950/40 text-teal-300 font-black" colSpan={6}>B2. Portal Exports</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-purple-950/40 text-purple-300 font-black" colSpan={6}>B3. Portal B2C & B2CL</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-slate-800 text-slate-300 font-black" colSpan={6}>B4. Portal Nil Rated</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-rose-950/40 text-rose-300 font-black" colSpan={6}>B5. Less: Portal CN</th>
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-emerald-900/40 text-emerald-200 font-black" colSpan={6}>B. NET PORTAL DATA (B1+B2+B3+B4 - B5)</th>
-                  
-                  <th className="px-4 py-2 text-center border-r border-slate-700 bg-slate-900 text-white font-black" colSpan={6}>FINAL VARIANCE (A - B)</th>
-                </tr>
-                
-                {/* SUB HEADER ROW */}
-                <tr className="bg-slate-900 text-slate-400">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <React.Fragment key={i}>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Taxable</th>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">CGST</th>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">SGST</th>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">IGST</th>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Nil Rated</th>
-                      <th className="px-4 py-2 text-center font-bold border-r border-slate-700">Non Taxable</th>
-                    </React.Fragment>
+                  {/* SUB HEADER ROW */}
+                  <tr className="bg-slate-900 text-slate-400">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <React.Fragment key={i}>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Taxable</th>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">CGST</th>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">SGST</th>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">IGST</th>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700/50">Nil Rated</th>
+                        <th className="px-4 py-2 text-center font-bold border-r border-slate-700">Non Taxable</th>
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
+                  {summaries.map((row) => (
+                    <tr key={row.month} className="hover:bg-slate-800/50 transition-colors group">
+                      <td className="px-6 py-4 font-black text-white border-r border-slate-700 sticky left-0 bg-slate-900 shadow-[4px_0_10px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{row.month}</td>
+                      
+                      {renderCols(row.booksSales)}
+                      {renderCols(row.booksCn)}
+                      {renderCols(row.booksNet, true)}
+                      
+                      {renderCols(row.portalB2b)}
+                      {renderCols(row.portalExport || emptyTax)}
+                      {renderCols(row.portalB2c)}
+                      {renderCols(row.portalNil)}
+                      {renderCols(row.portalCn)}
+                      {renderCols(row.portalNet, true)}
+                      
+                      {renderNetVarCols(row.variance)}
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
-                {summaries.map((row) => (
-                  <tr key={row.month} className="hover:bg-slate-800/50 transition-colors group">
-                    <td className="px-6 py-4 font-black text-white border-r border-slate-700 sticky left-0 bg-slate-900 shadow-[4px_0_10px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{row.month}</td>
-                    
-                    {renderCols(row.booksSales)}
-                    {renderCols(row.booksCn)}
-                    {renderCols(row.booksNet, true)}
-                    
-                    {renderCols(row.portalB2b)}
-                    {renderCols(row.portalExport || emptyTax)}
-                    {renderCols(row.portalB2c)}
-                    {renderCols(row.portalNil)}
-                    {renderCols(row.portalCn)}
-                    {renderCols(row.portalNet, true)}
-                    
-                    {renderNetVarCols(row.variance)}
-                  </tr>
-                ))}
-                
-                {/* Grand Totals Row */}
-                {summaries.length > 0 && (
-                  <tr className="bg-slate-800 shadow-[0_-5px_15px_rgba(0,0,0,0.3)] relative z-10">
-                    <td className="px-6 py-5 font-black text-white border-r border-slate-700 uppercase tracking-widest sticky left-0 bg-slate-800 shadow-[4px_0_10px_rgba(0,0,0,0.4)]">Total</td>
-                    
-                    {renderCols(totals.booksSales)}
-                    {renderCols(totals.booksCn)}
-                    {renderCols(totals.booksNet, true)}
-                    
-                    {renderCols(totals.portalB2b)}
-                    {renderCols(totals.portalExport)}
-                    {renderCols(totals.portalB2c)}
-                    {renderCols(totals.portalNil)}
-                    {renderCols(totals.portalCn)}
-                    {renderCols(totals.portalNet, true)}
-                    
-                    {renderNetVarCols(totals.variance)}
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  
+                  {/* Grand Totals Row */}
+                  {summaries.length > 0 && (
+                    <tr className="bg-slate-800 shadow-[0_-5px_15px_rgba(0,0,0,0.3)] relative z-10">
+                      <td className="px-6 py-5 font-black text-white border-r border-slate-700 uppercase tracking-widest sticky left-0 bg-slate-800 shadow-[4px_0_10px_rgba(0,0,0,0.4)]">Total</td>
+                      
+                      {renderCols(totals.booksSales)}
+                      {renderCols(totals.booksCn)}
+                      {renderCols(totals.booksNet, true)}
+                      
+                      {renderCols(totals.portalB2b)}
+                      {renderCols(totals.portalExport)}
+                      {renderCols(totals.portalB2c)}
+                      {renderCols(totals.portalNil)}
+                      {renderCols(totals.portalCn)}
+                      {renderCols(totals.portalNet, true)}
+                      
+                      {renderNetVarCols(totals.variance)}
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

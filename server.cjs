@@ -16913,7 +16913,7 @@ function aggregateIncome(incomeRecords, profile, regime) {
       case IncomeType.DEEMED_INCOME_115BBE:
         deemedIncome115BBE = deemedIncome115BBE.add(netAmt);
         break;
-      case "CRYPTO_VDA":
+      case IncomeType.CRYPTO_VDA:
         cryptoVda = cryptoVda.add(netAmt);
         break;
       default:
@@ -17396,7 +17396,7 @@ function calculateNonIndividualTax(profile, incomeRecords, deductionRecords) {
     financialYear: profile.financial_year,
     assessmentYear: profile.assessment_year,
     regimeType: RegimeType.NEW,
-    ageCategory: AgeCategory.BELOW_60,
+    ageCategory: AgeCategory.NORMAL,
     standardDeductionAmount: step1.standardDeductionAmount,
     incomeBreakdown: step1.incomeBreakdown,
     grossTotalIncome: step1.grossTotalIncome,
@@ -18037,7 +18037,8 @@ var init_incomeTaxEngine = __esm({
       LTCG_112: "LTCG_112",
       CASUAL_INCOME: "CASUAL_INCOME",
       AGRICULTURAL_INCOME: "AGRICULTURAL_INCOME",
-      DEEMED_INCOME_115BBE: "DEEMED_INCOME_115BBE"
+      DEEMED_INCOME_115BBE: "DEEMED_INCOME_115BBE",
+      CRYPTO_VDA: "CRYPTO_VDA"
     };
     RegimeType = {
       OLD: "OLD",
@@ -19969,8 +19970,8 @@ function setupTdsRoutes(app2, db2) {
       { old_section: "194DA", new_section_2025: "393(1)_Sl_3ii", nature_of_payment: "Life Insurance Maturity", single_bill_threshold: null, annual_aggregate_threshold: 1e5, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
       { old_section: "194G", new_section_2025: "393(1)_Sl_1iv", nature_of_payment: "Lottery Commission", single_bill_threshold: null, annual_aggregate_threshold: 2e4, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
       { old_section: "194H", new_section_2025: "393(1)_Sl_1ii", nature_of_payment: "Commission or Brokerage", single_bill_threshold: null, annual_aggregate_threshold: 2e4, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
-      { old_section: "194I(a)", new_section_2025: "393(1)_Sl_2ii_Da", nature_of_payment: "Rent for Plant & Machinery", single_bill_threshold: null, annual_aggregate_threshold: 6e5, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
-      { old_section: "194I(b)", new_section_2025: "393(1)_Sl_2ii_Db", nature_of_payment: "Rent for Land, Building & Furniture", single_bill_threshold: null, annual_aggregate_threshold: 6e5, rate_individual_huf: 10, rate_company_others: 10, rate_missing_pan_206AA: 20 },
+      { old_section: "194I(a)", new_section_2025: "393(1)_Sl_2ii_Da", nature_of_payment: "Rent for Plant & Machinery", single_bill_threshold: 5e4, annual_aggregate_threshold: 6e5, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
+      { old_section: "194I(b)", new_section_2025: "393(1)_Sl_2ii_Db", nature_of_payment: "Rent for Land, Building & Furniture", single_bill_threshold: 5e4, annual_aggregate_threshold: 6e5, rate_individual_huf: 10, rate_company_others: 10, rate_missing_pan_206AA: 20 },
       { old_section: "194IA", new_section_2025: "393(1)_Sl_2ii_E", nature_of_payment: "Transfer of Immovable Property", single_bill_threshold: null, annual_aggregate_threshold: 5e6, rate_individual_huf: 1, rate_company_others: 1, rate_missing_pan_206AA: 20 },
       { old_section: "194IB", new_section_2025: "393(1)_Sl_2ii_F", nature_of_payment: "Payment of Rent by Individual/HUF (Non-Audit)", single_bill_threshold: 5e4, annual_aggregate_threshold: 6e5, rate_individual_huf: 2, rate_company_others: 2, rate_missing_pan_206AA: 20 },
       { old_section: "194IC", new_section_2025: "393(1)_Sl_2ii_G", nature_of_payment: "Consideration under Development Agreement", single_bill_threshold: null, annual_aggregate_threshold: 0, rate_individual_huf: 10, rate_company_others: 10, rate_missing_pan_206AA: 20 },
@@ -20244,6 +20245,18 @@ function setupTdsRoutes(app2, db2) {
       }
     );
   });
+  const removeUnmappedHandler = (req, res) => {
+    db2.run(
+      `DELETE FROM Tally_Ledgers WHERE (mapped_section_code IS NULL OR mapped_section_code = '') AND (is_tds_ledger = 0 OR is_tds_ledger IS NULL)`,
+      [],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deletedCount: this.changes });
+      }
+    );
+  };
+  app2.delete("/api/tds/ledgers-unmapped", removeUnmappedHandler);
+  app2.post("/api/tds/remove-unmapped", removeUnmappedHandler);
   app2.post("/api/tds/process-pan", (req, res) => {
     const { parties } = req.body;
     if (!parties || !Array.isArray(parties)) {
@@ -20299,7 +20312,8 @@ function setupTdsRoutes(app2, db2) {
     });
   });
   app2.post("/api/tds/reconcile", (req, res) => {
-    const { transactions, form26qRecords, confirmedMatches } = req.body;
+    const { transactions, form26qRecords, confirmedMatches, strictMode } = req.body;
+    const isStrict = strictMode !== false;
     try {
       import_fs.default.writeFileSync("scratch_all_txns.json", JSON.stringify(transactions, null, 2));
       import_fs.default.writeFileSync("scratch_all_traces.json", JSON.stringify(form26qRecords, null, 2));
@@ -20333,11 +20347,14 @@ function setupTdsRoutes(app2, db2) {
             }
             const normalizeLedger = (name) => (name || "").toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
             const ledgerMap = {};
+            const unmappedLedgers = /* @__PURE__ */ new Set();
             const tdsTaxLedgers = /* @__PURE__ */ new Set();
             ledgers.forEach((l) => {
               const norm = normalizeLedger(l.ledger_name);
               if (l.mapped_section_code) {
                 ledgerMap[norm] = l.mapped_section_code;
+              } else if (l.is_tds_ledger === 0) {
+                unmappedLedgers.add(norm);
               }
               if (l.is_tds_ledger === 1) {
                 tdsTaxLedgers.add(norm);
@@ -20347,6 +20364,9 @@ function setupTdsRoutes(app2, db2) {
               const normLedger = normalizeLedger(txn.ledgerName);
               if (ledgerMap[normLedger]) {
                 return ledgerMap[normLedger];
+              }
+              if (isStrict || unmappedLedgers.has(normLedger)) {
+                return null;
               }
               const hierarchy = [];
               if (txn.parentGroup) hierarchy.push(txn.parentGroup.toUpperCase().trim());
@@ -20362,6 +20382,21 @@ function setupTdsRoutes(app2, db2) {
               }
               return null;
             };
+            const tracesPanSectionMap = {};
+            const tracesNameSectionMap = {};
+            if (form26qRecords && Array.isArray(form26qRecords)) {
+              form26qRecords.forEach((r) => {
+                let cleanPan = (r.partyPan || "").toUpperCase().trim().replace(/\s+/g, "");
+                let cleanName = (r.partyName || "").toUpperCase().trim();
+                let sec = (r.section || "").trim();
+                const rule = rulesMap[sec];
+                const sectionCode = rule ? rule.old_section : sec;
+                if (sectionCode) {
+                  if (cleanPan && cleanPan !== "PAN-MISSING") tracesPanSectionMap[cleanPan] = sectionCode;
+                  if (cleanName) tracesNameSectionMap[cleanName] = sectionCode;
+                }
+              });
+            }
             const partySectionMap = {};
             transactions.forEach((t) => {
               const sectionCode = getSectionForTxn(t);
@@ -20373,6 +20408,20 @@ function setupTdsRoutes(app2, db2) {
                 partySectionMap[partyKey].add(sectionCode);
               }
             });
+            const extractSectionFromName = (str) => {
+              if (!str) return null;
+              const cleanName = str.toUpperCase();
+              if (cleanName.includes("194C") || cleanName.includes("194-C")) return "194C";
+              if (cleanName.includes("194I") || cleanName.includes("194-I")) {
+                return cleanName.includes("MACHINERY") || cleanName.includes("HIRE") || cleanName.includes("PLANT") ? "194I(a)" : "194I(b)";
+              }
+              if (cleanName.includes("194J") || cleanName.includes("194-J")) {
+                return cleanName.includes("PROF") || cleanName.includes("SERVICE") || cleanName.includes("FEES") ? "194J(b)" : "194J(a)";
+              }
+              if (cleanName.includes("194H") || cleanName.includes("194-H")) return "194H";
+              if (cleanName.includes("194Q") || cleanName.includes("194-Q")) return "194Q";
+              return null;
+            };
             const groupedTxns = {};
             const partyNameMap = {};
             transactions.forEach((t) => {
@@ -20383,39 +20432,31 @@ function setupTdsRoutes(app2, db2) {
               const cleanLedger = (t.ledgerName || "").toLowerCase().trim();
               t.isTdsTax = tdsTaxLedgers.has(normLedger) || cleanLedger.includes("tds") || cleanLedger.includes("tax deducted") || cleanLedger.includes("tax payable");
               let resolvedSection = sectionCode;
+              if (!resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
+                resolvedSection = extractSectionFromName(t.tdsLedgerName || t.tds_ledger_name);
+              }
+              if (!resolvedSection && t.ledgerName) {
+                resolvedSection = extractSectionFromName(t.ledgerName);
+              }
               if (!resolvedSection) {
-                const isTds = t.isTdsTax || t.actualTdsDeducted > 0 && t.amount === 0;
-                if (isTds) {
-                  const cleanName = (t.ledgerName || "").toUpperCase();
-                  let extractedSec = "";
-                  if (cleanName.includes("194C") || cleanName.includes("194-C")) {
-                    extractedSec = "194C";
-                  } else if (cleanName.includes("194I") || cleanName.includes("194-I")) {
-                    if (cleanName.includes("MACHINERY") || cleanName.includes("HIRE") || cleanName.includes("PLANT")) {
-                      extractedSec = "194I(a)";
-                    } else {
-                      extractedSec = "194I(b)";
-                    }
-                  } else if (cleanName.includes("194J") || cleanName.includes("194-J")) {
-                    if (cleanName.includes("PROF") || cleanName.includes("SERVICE") || cleanName.includes("FEES")) {
-                      extractedSec = "194J(b)";
-                    } else {
-                      extractedSec = "194J(a)";
-                    }
-                  } else if (cleanName.includes("194H") || cleanName.includes("194-H")) {
-                    extractedSec = "194H";
-                  } else if (cleanName.includes("194Q") || cleanName.includes("194-Q")) {
-                    extractedSec = "194Q";
-                  }
-                  if (extractedSec) {
-                    resolvedSection = extractedSec;
-                  } else {
-                    const partySections = partySectionMap[partyKey];
-                    if (partySections && partySections.size > 0) {
-                      resolvedSection = Array.from(partySections)[0];
-                    }
-                  }
+                const partySections = partySectionMap[partyKey];
+                if (partySections && partySections.size > 0) {
+                  resolvedSection = Array.from(partySections)[0];
                 }
+              }
+              if (!resolvedSection && dbParty && (dbParty.mapped_section_code || dbParty.section_code)) {
+                resolvedSection = dbParty.mapped_section_code || dbParty.section_code;
+              }
+              if (!resolvedSection) {
+                let panVal = (dbParty && dbParty.pan || t.partyPan || t.pan || "").toUpperCase().trim().replace(/\s+/g, "");
+                if (panVal && tracesPanSectionMap[panVal]) {
+                  resolvedSection = tracesPanSectionMap[panVal];
+                } else if (partyKey && tracesNameSectionMap[partyKey]) {
+                  resolvedSection = tracesNameSectionMap[partyKey];
+                }
+              }
+              if (!resolvedSection && !isStrict) {
+                resolvedSection = "194C";
               }
               if (!resolvedSection) return;
               let origPan = (t.partyPan || t.pan || "").toUpperCase().trim();
@@ -20431,7 +20472,8 @@ function setupTdsRoutes(app2, db2) {
               const isPanValid = PAN_REGEX.test(rawPan);
               const isOrigPanInvalid = origPan === "" || !PAN_REGEX.test(origPan);
               const isNameMatched = isPanValid && isOrigPanInvalid;
-              const groupKey = isPanValid ? `${rawPan}_${resolvedSection}` : `NOPAN-${t.partyName.toUpperCase().trim()}_${resolvedSection}`;
+              const cleanName = (t.partyName || "Unknown").toUpperCase().trim();
+              const groupKey = isPanValid ? `${cleanName}_${rawPan}_${resolvedSection}` : `NOPAN-${cleanName}_${resolvedSection}`;
               if (!groupedTxns[groupKey]) {
                 groupedTxns[groupKey] = [];
               }
@@ -20447,8 +20489,10 @@ function setupTdsRoutes(app2, db2) {
             const booksLiability = {};
             for (const [groupKey, txns] of Object.entries(groupedTxns)) {
               const lastUnderscore = groupKey.lastIndexOf("_");
-              const pan = groupKey.substring(0, lastUnderscore);
               const sectionCode = groupKey.substring(lastUnderscore + 1);
+              const prefix = groupKey.substring(0, lastUnderscore);
+              const secondLastUnderscore = prefix.lastIndexOf("_");
+              const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
               const rule = rulesMap[sectionCode];
               if (!rule) continue;
               txns.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -20507,52 +20551,87 @@ function setupTdsRoutes(app2, db2) {
                   }
                 } else if (breachesSingleBill) {
                   isTaxable = true;
-                  taxableAmountForThisTxn = txn.amount;
+                  if (breachedSingleCount === 0) {
+                    taxableAmountForThisTxn = cumulativeSpend - cumulativeTaxable;
+                  } else {
+                    taxableAmountForThisTxn = txn.amount;
+                  }
                   breachedSingleCount++;
+                } else if (breachedSingleCount > 0) {
+                  isTaxable = true;
+                  taxableAmountForThisTxn = txn.amount;
                 }
                 if (isTaxable) {
                   cumulativeTaxable += taxableAmountForThisTxn;
                 }
               });
+              let finalTaxable = cumulativeTaxable;
+              let finalRequiredTds = Math.round(cumulativeTaxable * rate / 100);
               let reason = "";
-              if (cumulativeTaxable > 0) {
-                const breachType = [];
-                if (breachedAnnual) {
-                  breachType.push(`Annual spend \u20B9${cumulativeSpend.toLocaleString("en-IN")} > annual limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`);
-                } else if (breachedSingleCount > 0) {
-                  breachType.push(`${breachedSingleCount} bill(s) > single limit \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}`);
+              let taxableBasis = "";
+              if (sectionCode === "194Q") {
+                const threshold = rule.annual_aggregate_threshold || 5e6;
+                finalTaxable = Math.max(0, cumulativeSpend - threshold);
+                finalRequiredTds = Math.round(finalTaxable * rate / 100);
+                const isApp = finalTaxable > 0;
+                taxableBasis = isApp ? `Total Spend (\u20B9${cumulativeSpend.toLocaleString("en-IN")}) - Exempt Limit (\u20B9${threshold.toLocaleString("en-IN")}) = \u20B9${finalTaxable.toLocaleString("en-IN")}` : `\u20B90 Taxable (Total Spend \u20B9${cumulativeSpend.toLocaleString("en-IN")} <= Exempt Limit \u20B9${threshold.toLocaleString("en-IN")})`;
+                let reasonStr = isApp ? `TDS Status: Applicable | Total Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")} | Exempt Threshold: \u20B9${threshold.toLocaleString("en-IN")} | Taxable Base: \u20B9${finalTaxable.toLocaleString("en-IN")} | Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}` : `TDS Status: Not Applicable (Below threshold) | Total Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")} | Exempt Threshold: \u20B9${threshold.toLocaleString("en-IN")} | Taxable Base: \u20B90 | Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}`;
+                if (isPanMissing) {
+                  reasonStr += ` | PAN: Missing (${rate}% rate)`;
+                }
+                if (reversalAmount > 0) {
+                  reasonStr += ` | Gross: \u20B9${grossSpend.toLocaleString("en-IN")} | Reversals: \u20B9${reversalAmount.toLocaleString("en-IN")}`;
+                }
+                reason = reasonStr;
+              } else {
+                if (cumulativeTaxable > 0) {
+                  const breachType = [];
+                  const breachBasis = [];
+                  if (breachedAnnual) {
+                    breachType.push(`Annual spend \u20B9${cumulativeSpend.toLocaleString("en-IN")} > annual limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`);
+                    breachBasis.push(`Annual Limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`);
+                  }
+                  if (breachedSingleCount > 0) {
+                    breachType.push(`${breachedSingleCount} bill(s) > single limit \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}`);
+                    breachBasis.push(`${breachedSingleCount} Bill(s) >= \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}`);
+                  }
+                  if (breachType.length === 0) {
+                    breachType.push(`Threshold crossed`);
+                    breachBasis.push(`Threshold crossed`);
+                  }
+                  taxableBasis = `Full Spend (\u20B9${cumulativeSpend.toLocaleString("en-IN")}) taken [${breachBasis.join(" & ")}]`;
+                  reason = `TDS Status: Applicable (${breachType.join(" or ")})`;
+                  if (totalActualTds > 0) {
+                    reason += ` | Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}`;
+                  }
                 } else {
-                  breachType.push(`Threshold crossed`);
+                  const limitInfo = rule.single_bill_threshold ? `Annual Limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")} & Single Bills < \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}` : `Annual Limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`;
+                  taxableBasis = `\u20B90 Taxable (Total Spend \u20B9${cumulativeSpend.toLocaleString("en-IN")} < ${limitInfo})`;
+                  reason = `TDS Status: Not Applicable (Below threshold)`;
+                  if (totalActualTds > 0) {
+                    reason += ` | Voluntary Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}`;
+                  }
                 }
-                reason = `TDS Status: Applicable (${breachType.join(" or ")})`;
-                if (totalActualTds > 0) {
-                  reason += ` | Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}`;
+                if (isPanMissing) {
+                  reason += ` | PAN: Missing (${rate}% rate)`;
                 }
-              } else {
-                reason = `TDS Status: Not Applicable (Below threshold)`;
-                if (totalActualTds > 0) {
-                  reason += ` | Voluntary Book TDS: \u20B9${totalActualTds.toLocaleString("en-IN")}`;
+                if (reversalAmount > 0) {
+                  reason += ` | Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")} (Gross: \u20B9${grossSpend.toLocaleString("en-IN")} | Reversals: \u20B9${reversalAmount.toLocaleString("en-IN")})`;
+                } else {
+                  reason += ` | Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")}`;
                 }
+                const limitParts = [`Annual limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`];
+                if (rule.single_bill_threshold) {
+                  limitParts.push(`Single limit \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}`);
+                }
+                reason += ` | Limits: ${limitParts.join(" / ")}`;
               }
-              if (isPanMissing) {
-                reason += ` | PAN: Missing (${rate}% rate)`;
-              }
-              if (reversalAmount > 0) {
-                reason += ` | Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")} (Gross: \u20B9${grossSpend.toLocaleString("en-IN")} | Reversals: \u20B9${reversalAmount.toLocaleString("en-IN")})`;
-              } else {
-                reason += ` | Spend: \u20B9${cumulativeSpend.toLocaleString("en-IN")}`;
-              }
-              const limitParts = [`Annual limit \u20B9${rule.annual_aggregate_threshold.toLocaleString("en-IN")}`];
-              if (rule.single_bill_threshold) {
-                limitParts.push(`Single limit \u20B9${rule.single_bill_threshold.toLocaleString("en-IN")}`);
-              }
-              reason += ` | Limits: ${limitParts.join(" / ")}`;
-              const requiredTds = cumulativeTaxable * rate / 100;
               booksLiability[groupKey] = {
                 partyName: partyNameMap[groupKey] || "Unknown Party",
                 booksSpend: cumulativeSpend,
-                booksTaxable: cumulativeTaxable,
-                booksRequiredTds: Math.round(requiredTds),
+                booksTaxable: finalTaxable,
+                taxableBasis,
+                booksRequiredTds: finalRequiredTds,
                 booksActualTds: totalActualTds,
                 ledgers: Array.from(ledgerNames).join(", "),
                 tdsLedgers: Array.from(tdsLedgerNames).join(", "),
@@ -20596,7 +20675,7 @@ function setupTdsRoutes(app2, db2) {
             const isLocalPanValid = (p) => p && LOCAL_PAN_REGEX.test(p);
             const normalizePartyName = (name) => {
               if (!name) return "";
-              let n = name.toUpperCase().replace(/[-\s\(\)]+(CR|DR)\b$/g, "").replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, "").replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, "").replace(/[^A-Z0-9]/g, "").trim();
+              let n = name.toUpperCase().replace(/[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,4}[-\s]?\d{1,4}/gi, "").replace(/\(.*?\)/g, "").replace(/\b(DRIVER|VEHICLE|LORRY|TRUCK|TANKER|CAB|AUTO|TRANSPORTER|TRANSPORT|TEMPO|BUS|TRAILER)\b/gi, "").replace(/[-\s\(\)]+(CR|DR)\b$/gi, "").replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/gi, "").replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/gi, "").replace(/[^A-Z0-9]/g, "").trim();
               if (n.endsWith("S")) n = n.slice(0, -1);
               return n;
             };
@@ -20626,8 +20705,10 @@ function setupTdsRoutes(app2, db2) {
             for (const bKey of unmatchedBooks) {
               const books = booksLiability[bKey];
               const lastUnderscore = bKey.lastIndexOf("_");
-              const pan = bKey.substring(0, lastUnderscore);
               const section = bKey.substring(lastUnderscore + 1);
+              const prefix = bKey.substring(0, lastUnderscore);
+              const secondLastUnderscore = prefix.lastIndexOf("_");
+              const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
               if (isLocalPanValid(pan)) {
                 const tKeyExact = `${pan}_${section}`;
                 if (unmatchedTraces.has(tKeyExact)) {
@@ -20635,7 +20716,6 @@ function setupTdsRoutes(app2, db2) {
                   matchedTraces[tKeyExact] = books;
                   matchMethods[bKey] = "PAN";
                   unmatchedBooks.delete(bKey);
-                  unmatchedTraces.delete(tKeyExact);
                   continue;
                 }
                 const tKeyEmpty = `${pan}_`;
@@ -20687,9 +20767,9 @@ function setupTdsRoutes(app2, db2) {
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                       let allowed = true;
-                      if (confirmedMatches) {
+                      if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
                         allowed = confirmedMatches.some(
-                          (cm) => cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() && cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                          (cm) => normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) && normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                         );
                       }
                       if (allowed) {
@@ -20706,9 +20786,9 @@ function setupTdsRoutes(app2, db2) {
                       const tracesNormName = normalizePartyName(traces.partyName);
                       if (booksNormName === tracesNormName) {
                         let allowed = true;
-                        if (confirmedMatches) {
+                        if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
                           allowed = confirmedMatches.some(
-                            (cm) => cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() && cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                            (cm) => normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) && normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                           );
                         }
                         if (allowed) {
@@ -20725,9 +20805,9 @@ function setupTdsRoutes(app2, db2) {
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                       let allowed = true;
-                      if (confirmedMatches) {
+                      if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
                         allowed = confirmedMatches.some(
-                          (cm) => cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() && cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                          (cm) => normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) && normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                         );
                       }
                       if (allowed) {
@@ -20775,9 +20855,9 @@ function setupTdsRoutes(app2, db2) {
                       }
                       if (sim >= highestSim) {
                         let allowed = true;
-                        if (confirmedMatches) {
+                        if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
                           allowed = confirmedMatches.some(
-                            (cm) => cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() && cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                            (cm) => normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) && normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                           );
                         }
                         if (allowed) {
@@ -20805,9 +20885,9 @@ function setupTdsRoutes(app2, db2) {
                       }
                       if (sim >= highestSim) {
                         let allowed = true;
-                        if (confirmedMatches) {
+                        if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
                           allowed = confirmedMatches.some(
-                            (cm) => cm.booksName.toUpperCase().trim() === books.partyName.toUpperCase().trim() && cm.tracesName.toUpperCase().trim() === traces.partyName.toUpperCase().trim()
+                            (cm) => normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) && normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
                           );
                         }
                         if (allowed) {
@@ -20843,8 +20923,10 @@ function setupTdsRoutes(app2, db2) {
             for (const bKey of Object.keys(booksLiability)) {
               const books = booksLiability[bKey];
               const lastUnderscore = bKey.lastIndexOf("_");
-              const pan = bKey.substring(0, lastUnderscore);
               const section = bKey.substring(lastUnderscore + 1);
+              const prefix = bKey.substring(0, lastUnderscore);
+              const secondLastUnderscore = prefix.lastIndexOf("_");
+              const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
               const rule = rulesMap[section] || {};
               const matchedTracesGroup = matchedBooks[bKey];
               let panInBooks = pan.startsWith("NOPAN-") ? "PAN-MISSING" : pan;
@@ -20918,6 +21000,7 @@ function setupTdsRoutes(app2, db2) {
                 tds_ledgers: books.tdsLedgers,
                 books_spend: books.booksSpend,
                 books_taxable: books.booksTaxable,
+                taxable_basis: books.taxableBasis,
                 books_rate_applied: books.rateApplied,
                 books_required_tds: books.booksRequiredTds,
                 books_actual_tds: books.booksActualTds,
@@ -20959,6 +21042,7 @@ function setupTdsRoutes(app2, db2) {
                 tds_ledgers: "",
                 books_spend: 0,
                 books_taxable: 0,
+                taxable_basis: `Form 26Q Reported (\u20B9${tracesTaxable.toLocaleString("en-IN")})`,
                 books_rate_applied: 0,
                 books_required_tds: 0,
                 books_actual_tds: 0,
@@ -21051,11 +21135,19 @@ function setupTdsRoutes(app2, db2) {
   });
   app2.post("/api/tds/reset", (req, res) => {
     db2.serialize(() => {
-      db2.run("DELETE FROM Tally_Transactions");
-      db2.run("DELETE FROM Tally_Ledgers");
-      db2.run("DELETE FROM Tally_Group_Mappings");
-      db2.run("DELETE FROM Party_Masters");
-      db2.run("DELETE FROM Recon_Results", [], (err) => {
+      db2.run("DELETE FROM Recon_Results", (err) => {
+        if (err) console.error("Reset Recon_Results error:", err);
+      });
+      db2.run("DELETE FROM Tally_Transactions", (err) => {
+        if (err) console.error("Reset Tally_Transactions error:", err);
+      });
+      db2.run("DELETE FROM Tally_Ledgers", (err) => {
+        if (err) console.error("Reset Tally_Ledgers error:", err);
+      });
+      db2.run("DELETE FROM Tally_Group_Mappings", (err) => {
+        if (err) console.error("Reset Tally_Group_Mappings error:", err);
+      });
+      db2.run("DELETE FROM Party_Masters", [], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
       });
@@ -21228,10 +21320,16 @@ function setupTaxRoutes(app2, db2) {
     try {
       const { profile_id, incomes } = req.body;
       if (!profile_id) return res.status(400).json({ error: "Missing profile_id" });
+      await runAsync(
+        `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+        [profile_id]
+      );
       await runAsync("BEGIN TRANSACTION");
       try {
         await runAsync(`DELETE FROM Income_Records WHERE profile_id = ?`, [profile_id]);
-        for (const inc of incomes) {
+        for (const inc of incomes || []) {
           await runAsync(
             `INSERT INTO Income_Records 
                         (id, profile_id, income_type, description, gross_amount, exempt_amount, net_amount, section_code, use_indexation) 
@@ -21250,7 +21348,7 @@ function setupTaxRoutes(app2, db2) {
           );
         }
         await runAsync("COMMIT");
-        res.json({ success: true, count: incomes.length });
+        res.json({ success: true, count: (incomes || []).length });
       } catch (err) {
         await runAsync("ROLLBACK");
         throw err;
@@ -21264,10 +21362,16 @@ function setupTaxRoutes(app2, db2) {
     try {
       const { profile_id, deductions } = req.body;
       if (!profile_id) return res.status(400).json({ error: "Missing profile_id" });
+      await runAsync(
+        `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+        [profile_id]
+      );
       await runAsync("BEGIN TRANSACTION");
       try {
         await runAsync(`DELETE FROM Deduction_Records WHERE profile_id = ?`, [profile_id]);
-        for (const ded of deductions) {
+        for (const ded of deductions || []) {
           await runAsync(
             `INSERT INTO Deduction_Records (id, profile_id, section_code, claimed_amount, eligible_amount) 
                         VALUES (?, ?, ?, ?, ?)`,
@@ -21281,7 +21385,7 @@ function setupTaxRoutes(app2, db2) {
           );
         }
         await runAsync("COMMIT");
-        res.json({ success: true, count: deductions.length });
+        res.json({ success: true, count: (deductions || []).length });
       } catch (err) {
         await runAsync("ROLLBACK");
         throw err;
@@ -21396,10 +21500,13 @@ function setupTaxRoutes(app2, db2) {
         return res.status(400).json({ success: false, error: "Invalid JSON file structure." });
       }
       const profileId = req.query.profile_id || "CURRENT_USER";
+      await runAsync(
+        `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', '', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+        [profileId]
+      );
       const profile = await getAsync(`SELECT * FROM Taxpayer_Profiles WHERE profile_id = ?`, [profileId]);
-      if (!profile) {
-        return res.status(404).json({ success: false, error: "Taxpayer profile not found." });
-      }
       const filePan = aisData.PartA?.PAN || aisData.PartA?.pan || aisData.pan || aisData.PAN;
       if (filePan && profile.pan && filePan.toUpperCase() !== profile.pan.toUpperCase()) {
         return res.status(400).json({

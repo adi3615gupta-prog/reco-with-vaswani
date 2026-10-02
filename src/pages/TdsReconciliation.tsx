@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    ArrowLeft, UploadCloud, Database, Settings2, FileSpreadsheet, CheckCircle2, Trash2, GitCompare, Activity, AlertTriangle, Download, Search, Server, Loader2, RefreshCw, X, ShieldAlert, Edit2, Check, Plus, FileText, ChevronDown, ChevronRight, ChevronUp, Zap, Users, ArrowRight, Wallet, Eye, EyeOff
+    ArrowLeft, UploadCloud, Database, Settings2, FileSpreadsheet, CheckCircle2, Trash2, GitCompare, Activity, AlertTriangle, Download, Search, Server, Loader2, RefreshCw, X, ShieldAlert, Edit2, Check, Plus, FileText, ChevronDown, ChevronRight, ChevronUp, Zap, Users, ArrowRight, Wallet, Eye, EyeOff, CalendarClock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx-js-style';
 import ExcelJS from 'exceljs';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { parseFile } from '@/lib/fileParser';
-import { exportTdsReport } from '@/lib/tdsEngine';
+import { exportTdsReport, computeAdvanceTdsAudit, computeMultiLedgerPans, exportMultiLedgerPanWorkbook, type AdvanceTdsResult, type MultiLedgerPanInfo } from '@/lib/tdsEngine';
 import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo } from '@/lib/tallyApi';
 import { getApiBase, getAuthToken } from '@/lib/api';
 
@@ -36,8 +36,8 @@ const FALLBACK_TDS_SECTIONS: TdsSection[] = [
     { old_section: '194DA', new_section_2025: '393(1)_Sl_3ii', nature_of_payment: 'Life Insurance Maturity', single_bill_threshold: null, annual_aggregate_threshold: 100000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
     { old_section: '194G', new_section_2025: '393(1)_Sl_1iv', nature_of_payment: 'Lottery Commission', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
     { old_section: '194H', new_section_2025: '393(1)_Sl_1ii', nature_of_payment: 'Commission or Brokerage', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
-    { old_section: '194I(a)', new_section_2025: '393(1)_Sl_2ii_Da', nature_of_payment: 'Rent for Plant & Machinery', single_bill_threshold: null, annual_aggregate_threshold: 600000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
-    { old_section: '194I(b)', new_section_2025: '393(1)_Sl_2ii_Db', nature_of_payment: 'Rent for Land, Building & Furniture', single_bill_threshold: null, annual_aggregate_threshold: 600000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+    { old_section: '194I(a)', new_section_2025: '393(1)_Sl_2ii_Da', nature_of_payment: 'Rent for Plant & Machinery', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+    { old_section: '194I(b)', new_section_2025: '393(1)_Sl_2ii_Db', nature_of_payment: 'Rent for Land, Building & Furniture', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
     { old_section: '194IA', new_section_2025: '393(1)_Sl_2ii_E', nature_of_payment: 'Transfer of Immovable Property', single_bill_threshold: null, annual_aggregate_threshold: 5000000, rate_individual_huf: 1.0, rate_company_others: 1.0, rate_missing_pan_206AA: 20.0 },
     { old_section: '194IB', new_section_2025: '393(1)_Sl_2ii_F', nature_of_payment: 'Payment of Rent by Individual/HUF (Non-Audit)', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
     { old_section: '194IC', new_section_2025: '393(1)_Sl_2ii_G', nature_of_payment: 'Consideration under Development Agreement', single_bill_threshold: null, annual_aggregate_threshold: 0, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
@@ -201,14 +201,55 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     // Ingestion State
     const [form26qFile, setForm26qFile] = useState<File | null>(null);
-    const [tallyFile, setTallyFile] = useState<File | null>(null);
+    const [strictModeOnlyMapped, setStrictModeOnlyMapped] = useState<boolean>(false);
+
+    const today = new Date();
+
+    // Financial Year Selection
+    const currentFY = today.getMonth() >= 3 ? `${today.getFullYear()}-${String(today.getFullYear() + 1).slice(-2)}` : `${today.getFullYear() - 1}-${String(today.getFullYear()).slice(-2)}`;
+    const FY_OPTIONS = [
+        `${today.getFullYear() - 3}-${String(today.getFullYear() - 2).slice(-2)}`,
+        `${today.getFullYear() - 2}-${String(today.getFullYear() - 1).slice(-2)}`,
+        `${today.getFullYear() - 1}-${String(today.getFullYear()).slice(-2)}`,
+        `${today.getFullYear()}-${String(today.getFullYear() + 1).slice(-2)}`,
+    ];
+    const [selectedFY, setSelectedFY] = useState<string>(currentFY);
 
     // Multi-Channel Ingestion State
-    const [tdsIngestChannel, setTdsIngestChannel] = useState<'TALLY_EXCEL' | 'ITR_JSON' | 'MANUAL'>('TALLY_EXCEL');
+    const [tdsIngestChannel, setTdsIngestChannel] = useState<'ITR_JSON' | 'MANUAL'>('ITR_JSON');
     const [itrJsonFile, setItrJsonFile] = useState<File | null>(null);
     const [itrParsedTdsRecords, setItrParsedTdsRecords] = useState<any[] | null>(null);
 
-    const today = new Date();
+    // Imported Ledger Filter State (for filtering ledger mappings by uploaded template)
+    const [importedLedgerNames, setImportedLedgerNames] = useState<Set<string>>(new Set());
+    const [ledgerFilterMode, setLedgerFilterMode] = useState<'mapped' | 'unmapped' | 'all' | 'imported'>('mapped');
+
+    // Compute fromDate and toDate from selected Financial Year
+    const fyStartYear = parseInt(selectedFY.split('-')[0]);
+    const fyFromDate = `${fyStartYear}-04-01`;
+    const fyToDate = `${fyStartYear + 1}-03-31`;
+
+    // Tally Live API State
+    const [tallyPort, setTallyPort] = useState(9000);
+    const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+    const [companyInfo, setCompanyInfo] = useState<TallyCompanyInfo | null>(null);
+    const [fromDate, setFromDate] = useState(fyFromDate);
+    const [toDate, setToDate] = useState(fyToDate);
+    const [isFetchingTally, setIsFetchingTally] = useState(false);
+    const [tallyDirectData, setTallyDirectData] = useState<any[] | null>(null);
+    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+    const [showGroupTemplateMenu, setShowGroupTemplateMenu] = useState(false);
+
+    const unmappedFetchedLedgers = useMemo(() => {
+        if (!tallyDirectData || tallyDirectData.length === 0) return [];
+        const distinctLedgers = Array.from(new Set(tallyDirectData.map((t: any) => t.ledgerName))).filter((l: any) => l && typeof l === 'string' && !l.toUpperCase().includes('CGST') && !l.toUpperCase().includes('SGST') && !l.toUpperCase().includes('IGST') && !l.toUpperCase().includes('ROUND OFF') && !l.toUpperCase().includes('ROUNDING'));
+        const mappedSet = new Set(ledgerMappings.filter(m => m.sectionCode || m.isTdsLedger).map(m => m.ledgerName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '')));
+        return distinctLedgers.filter((l: string) => {
+            const norm = l.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+            return !mappedSet.has(norm);
+        });
+    }, [tallyDirectData, ledgerMappings]);
+
     // Manual Entry States
     const [manualBooksTransactions, setManualBooksTransactions] = useState<any[]>([
         { id: 'm-books-1', date: today.toISOString().slice(0, 10), partyName: 'DUMMY VENDOR PVT LTD', partyPan: 'ABCDE1234F', ledgerName: 'Audit Fees', amount: 120000, actualTdsDeducted: 12000, voucherNumber: 'PUR-001' }
@@ -225,20 +266,12 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [reconSummary, setReconSummary] = useState<any>(null);
     const [reconResults, setReconResults] = useState<any[] | null>(null);
+    const [multiLedgerPans, setMultiLedgerPans] = useState<MultiLedgerPanInfo[]>([]);
+    const [advanceTdsResults, setAdvanceTdsResults] = useState<AdvanceTdsResult[]>([]);
+    const [activeResultsSubTab, setActiveResultsSubTab] = useState<'RECONCILIATION' | 'ADVANCE_AUDIT'>('RECONCILIATION');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
-
-    // Tally Live API State
-    const [tallyPort, setTallyPort] = useState(9000);
-    const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-    const [companyInfo, setCompanyInfo] = useState<TallyCompanyInfo | null>(null);
-    const [fromDate, setFromDate] = useState(today.getMonth() >= 3 ? `${today.getFullYear()}-04-01` : `${today.getFullYear() - 1}-04-01`);
-    const [toDate, setToDate] = useState(today.toISOString().slice(0, 10));
-    const [isFetchingTally, setIsFetchingTally] = useState(false);
-    const [tallyDirectData, setTallyDirectData] = useState<any[] | null>(null);
-    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
-    const [showGroupTemplateMenu, setShowGroupTemplateMenu] = useState(false);
 
     // Party Balance State
     const [partyBalances, setPartyBalances] = useState<Map<string, number>>(new Map());
@@ -706,6 +739,30 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         window.URL.revokeObjectURL(url);
     };
 
+    const handleRemoveUnmappedLedgers = async () => {
+        const unmapped = ledgerMappings.filter(m => !m.sectionCode && !m.inheritedSectionCode && !m.isTdsLedger);
+        if (unmapped.length === 0) {
+            toast.info("No unmapped ledgers found in list.");
+            return;
+        }
+        if (!window.confirm(`Are you sure you want to remove ${unmapped.length} unmapped ledgers from the list?`)) return;
+        
+        // Optimistically remove unmapped ledgers & switch filter to mapped
+        const removedCount = unmapped.length;
+        setLedgerMappings(prev => prev.filter(m => !!m.sectionCode || !!m.inheritedSectionCode || m.isTdsLedger));
+        setLedgerFilterMode('mapped');
+        toast.success(`Removed ${removedCount} unmapped ledgers.`);
+
+        try {
+            let res = await fetch(`${getApiBase()}/api/tds/remove-unmapped`, { method: 'POST' });
+            if (!res.ok) {
+                await fetch(`${getApiBase()}/api/tds/ledgers-unmapped`, { method: 'DELETE' });
+            }
+        } catch (err) {
+            console.error("Backend delete call:", err);
+        }
+    };
+
     const importLedgerMappings = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]; if (!file) return;
         const reader = new FileReader();
@@ -724,7 +781,14 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                 }).filter(m => m.ledgerName && (m.isTdsLedger || validSections.has(m.sectionCode || '')));
                 if (newMappings.length > 0) {
                     const res = await fetch(`${getApiBase()}/api/tds/confirm-mapping`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mappings: newMappings }) });
-                    if (res.ok) { toast.success(`Imported ${newMappings.length} mappings!`); loadMappings(); loadSuggestions(); }
+                    if (res.ok) { 
+                        toast.success(`Imported ${newMappings.length} mappings!`);
+                        const importedSet = new Set(newMappings.map(m => m.ledgerName.toLowerCase().trim()));
+                        setImportedLedgerNames(importedSet);
+                        setLedgerFilterMode('imported');
+                        loadMappings(); 
+                        loadSuggestions(); 
+                    }
                     else toast.error("Database import mapping save failed");
                 } else toast.error('No valid ledger mappings found in Excel file');
             } catch (error) { toast.error('Invalid Excel file'); }
@@ -866,18 +930,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const fetchBalances = async (overridePartyNames?: string[]) => {
         setIsFetchingBalances(true);
         try {
-            // If explicit names are provided, use them. Otherwise, try to fallback to tallyDirectData.
-            // Never fall back to the full database parties map to avoid massive TTDL queries (limits to 80 names max).
             const distinctNames = overridePartyNames && overridePartyNames.length > 0
                 ? overridePartyNames
                 : (tallyDirectData && tallyDirectData.length > 0
                     ? Array.from(new Set(tallyDirectData.map(t => t.partyName)))
-                    : []);
-            const partyNamesList = distinctNames.length > 0 && distinctNames.length < 80
-                ? distinctNames
-                : undefined;
+                    : undefined);
 
-            const balances = await fetchPartyBalances(fromDate, toDate, { host: 'localhost', port: tallyPort }, partyNamesList);
+            const balances = await fetchPartyBalances(fromDate, toDate, { host: 'localhost', port: tallyPort }, distinctNames);
             setPartyBalances(balances);
             toast.success(`Scanned ${balances.size} party balances from Tally`);
         } catch (err) {
@@ -908,16 +967,21 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     // ─── Reconciliation Engine ───────────────────────────────
     const handleRunEngine = async () => {
-        if (tdsIngestChannel === 'TALLY_EXCEL') {
-            if (!tallyFile && !tallyDirectData) return toast.error("Please provide Tally data via API or File Upload.");
-            if (!form26qFile) return toast.error("Please upload Form 26Q data.");
-        } else if (tdsIngestChannel === 'ITR_JSON') {
-            if (!tallyFile && !tallyDirectData) return toast.error("Please provide Tally data via API or File Upload.");
-            if (!itrParsedTdsRecords || itrParsedTdsRecords.length === 0) return toast.error("Please upload and parse a valid ITR JSON file first.");
-        } else if (tdsIngestChannel === 'MANUAL') {
-            if (manualBooksTransactions.length === 0) return toast.error("Please add at least one Books transaction in the Manual grid.");
-            if (manualTdsRecords.length === 0) return toast.error("Please add at least one TDS/Traces record in the Manual grid.");
+        let effectiveChannel: 'FORM26Q' | 'ITR_JSON' | 'MANUAL' = 'FORM26Q';
+        if (form26qFile) {
+            effectiveChannel = 'FORM26Q';
+        } else if (itrParsedTdsRecords && itrParsedTdsRecords.length > 0) {
+            effectiveChannel = 'ITR_JSON';
+        } else if (manualTdsRecords.length > 0 || manualBooksTransactions.length > 0) {
+            effectiveChannel = 'MANUAL';
+        } else {
+            return toast.error("Please upload Form 26Q Excel file or ITR JSON first.");
         }
+
+        if (effectiveChannel !== 'MANUAL' && !tallyDirectData) {
+            return toast.error("Please fetch Tally data via Live API.");
+        }
+
         setIsProcessing(true);
         try {
             const parseTallyAmount = (amountStr: string, isTdsLedger: boolean, row: any) => {
@@ -940,132 +1004,18 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             };
 
             let tallyTransactions: any[] = [];
-            if (tdsIngestChannel === 'MANUAL') {
+            if (effectiveChannel === 'MANUAL') {
                 tallyTransactions = manualBooksTransactions.map(t => ({ date: t.date, partyName: t.partyName, partyPan: t.partyPan, ledgerName: t.ledgerName, amount: parseFloat(String(t.amount)), actualTdsDeducted: parseFloat(String(t.actualTdsDeducted)), voucherNumber: t.voucherNumber }));
             } else {
                 tallyTransactions = tallyDirectData || [];
-                if (!tallyDirectData && tallyFile) {
-                    const parsedTally = await parseFile(tallyFile, { findHeader: true, raw: false });
-                    const hasLedgerColumn = parsedTally.headers.some(h => { const hl = h.toLowerCase().trim(); return hl === 'ledger name' || hl === 'expense ledger' || hl === 'ledger' || hl === 'account name'; });
-                    const tdsLedgersSet = new Set(ledgerMappings.filter(m => m.isTdsLedger).map(m => m.ledgerName.toUpperCase().trim()));
-                    const mappedExpenseLedgersSet = new Set(ledgerMappings.filter(m => m.sectionCode).map(m => m.ledgerName.toUpperCase().trim()));
-                    if (hasLedgerColumn) {
-                        const vouchersMap = new Map<string, any[]>();
-                        parsedTally.rows.forEach(r => {
-                            const vchNo = String(r['Voucher No'] || r['Voucher Number'] || r['Voucher No.'] || r['Vch No.'] || r['Vch No'] || '').trim();
-                            const party = String(r['Party Name'] || r['Particulars'] || 'Unknown Party').trim().toUpperCase();
-                            const dateVal = String(r['Date'] || r['Voucher Date'] || '');
-                            const key = vchNo ? `VCH-${vchNo}` : `TR-${dateVal}-${party}`;
-                            if (!vouchersMap.has(key)) vouchersMap.set(key, []);
-                            vouchersMap.get(key)!.push(r);
-                        });
-                        tallyTransactions = [];
-                        for (const [key, rows] of vouchersMap.entries()) {
-                            const firstRow = rows[0];
-                            let dateStr = '';
-                            const dateVal = firstRow['Date'] || firstRow['Voucher Date'];
-                            if (typeof dateVal === 'number') { const d = new Date(Math.round((dateVal - 25569) * 86400 * 1000)); dateStr = d.toISOString().split('T')[0]; }
-                            else { const d = new Date(String(dateVal || new Date())); dateStr = isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]; }
-                            let partyName = '', partyPan = '', voucherNumber = '';
-                            for (const r of rows) { const pName = String(r['Party Name'] || r['Particulars'] || '').trim(); if (pName && !partyName) partyName = pName; const pPan = String(r['PAN'] || r['Party PAN'] || r['PAN No'] || r['PAN Number'] || '').trim(); if (pPan && !partyPan) partyPan = pPan; const vNum = String(r['Voucher No'] || r['Voucher Number'] || r['Voucher No.'] || r['Vch No.'] || r['Vch No'] || '').trim(); if (vNum && !voucherNumber) voucherNumber = vNum; }
-                            if (!partyName) partyName = 'Unknown Party';
-
-                            const expenseRows = [];
-                            let totalTdsAmount = 0;
-                            let tdsLedgerName = '';
-
-                            for (const r of rows) {
-                                const ledgerNameRaw = String(r['Ledger Name'] || r['Expense Ledger'] || r['Ledger'] || r['Account Name'] || '').trim();
-                                const ledgerNameUpper = ledgerNameRaw.toUpperCase().trim();
-                                const amountStr = String(r['Amount'] || r['Gross Amount'] || r['Debit'] || r['Credit'] || '0');
-                                const isTdsCol = tdsLedgersSet.has(ledgerNameUpper) || ledgerNameUpper.includes('TDS') || ledgerNameUpper.includes('TAX DEDUCTED') || ledgerNameUpper.includes('TAX PAYABLE');
-                                const val = parseTallyAmount(amountStr, isTdsCol, r);
-
-                                if (isTdsCol) {
-                                    totalTdsAmount += val;
-                                    tdsLedgerName = ledgerNameRaw;
-                                } else if (Math.abs(val) > 0 && !ledgerNameUpper.includes('CGST') && !ledgerNameUpper.includes('SGST') && !ledgerNameUpper.includes('IGST') && !ledgerNameUpper.includes('ROUND OFF') && !ledgerNameUpper.includes('ROUNDING')) {
-                                    expenseRows.push({ name: ledgerNameRaw, nameUpper: ledgerNameUpper, amount: val });
-                                }
-
-                                const rowTdsDeductedStr = String(r['TDS Deducted'] || r['TDS Amount'] || r['Actual TDS'] || '0');
-                                const rowTdsDeducted = parseTallyAmount(rowTdsDeductedStr, true, r);
-                                if (rowTdsDeducted > 0) {
-                                    totalTdsAmount += rowTdsDeducted;
-                                    if (!tdsLedgerName) tdsLedgerName = 'TDS';
-                                }
-                            }
-
-                            const mappedExpenseRows = expenseRows.filter(e => mappedExpenseLedgersSet.has(e.nameUpper));
-                            const targets = mappedExpenseRows.length > 0 ? mappedExpenseRows : expenseRows;
-                            const totalTargetAmount = targets.reduce((sum, e) => sum + Math.abs(e.amount), 0);
-
-                            if (expenseRows.length > 0) {
-                                expenseRows.forEach(e => {
-                                    const isTarget = targets.includes(e);
-                                    const allocatedTds = isTarget && totalTargetAmount > 0 ? (Math.abs(e.amount) / totalTargetAmount) * totalTdsAmount : 0;
-                                    tallyTransactions.push({ date: dateStr, partyName, partyPan, ledgerName: e.name, amount: e.amount, actualTdsDeducted: Math.round(allocatedTds * 100) / 100, tdsLedgerName: allocatedTds > 0 ? (tdsLedgerName || 'TDS') : '', voucherNumber });
-                                });
-                            } else if (totalTdsAmount > 0) {
-                                tallyTransactions.push({ date: dateStr, partyName, partyPan, ledgerName: tdsLedgerName || 'TDS', amount: 0, actualTdsDeducted: totalTdsAmount, tdsLedgerName: tdsLedgerName || 'TDS', voucherNumber });
-                            }
-                        }
-                    } else {
-                        const stdKeys = new Set(['date', 'particulars', 'voucher type', 'voucher no.', 'voucher no', 'voucher ref. no.', 'voucher ref. no', 'voucher ref. date', 'gstin/uin', 'gstin', 'narration', 'value', 'gross total', 'addi. cost', 'amount', 'pan', 'party name', 'ledger name', 'tds deducted']);
-                        tallyTransactions = [];
-                        parsedTally.rows.forEach(r => {
-                            const dateVal = r['Date'] || r['Voucher Date']; if (!dateVal) return;
-                            let dateStr = '';
-                            if (typeof dateVal === 'number') { const d = new Date(Math.round((dateVal - 25569) * 86400 * 1000)); dateStr = d.toISOString().split('T')[0]; }
-                            else { const d = new Date(String(dateVal)); dateStr = isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]; }
-                            const partyNameStr = String(r['Particulars'] || r['Party Name'] || 'Unknown Party').trim();
-                            const gstinVal = String(r['GSTIN/UIN'] || r['GSTIN'] || '').trim();
-                            const vchNo = String(r['Voucher No.'] || r['Voucher No'] || r['Voucher Number'] || '');
-                            let extractedPan = ''; if (gstinVal && gstinVal.length === 15) extractedPan = gstinVal.substring(2, 12).toUpperCase();
-
-                            const expenseColumns = [];
-                            let rowTdsAmount = 0;
-                            let tdsLedgerName = '';
-                            Object.keys(r).forEach(k => {
-                                const kLower = k.toLowerCase().trim(); if (stdKeys.has(kLower)) return;
-                                const valStr = String(r[k] || '0');
-                                if (!valStr || valStr === '0') return;
-                                const isTdsCol = tdsLedgersSet.has(k.toUpperCase().trim()) || kLower.includes('tds') || kLower.includes('tax deducted') || kLower.includes('tax payable');
-                                const val = parseTallyAmount(valStr, isTdsCol, r);
-                                if (val === 0) return;
-
-                                if (isTdsCol) {
-                                    rowTdsAmount += val;
-                                    tdsLedgerName = k;
-                                } else {
-                                    expenseColumns.push({ name: k, nameUpper: k.toUpperCase().trim(), amount: val });
-                                }
-                            });
-
-                            const mappedExpenseColumns = expenseColumns.filter(e => mappedExpenseLedgersSet.has(e.nameUpper));
-                            const targets = mappedExpenseColumns.length > 0 ? mappedExpenseColumns : expenseColumns;
-                            const totalTargetAmount = targets.reduce((sum, e) => sum + Math.abs(e.amount), 0);
-
-                            if (expenseColumns.length > 0) {
-                                expenseColumns.forEach(e => {
-                                    const isTarget = targets.includes(e);
-                                    const allocatedTds = isTarget && totalTargetAmount > 0 ? (Math.abs(e.amount) / totalTargetAmount) * rowTdsAmount : 0;
-                                    tallyTransactions.push({ date: dateStr, partyName: partyNameStr, partyPan: extractedPan, ledgerName: e.name, amount: e.amount, actualTdsDeducted: Math.round(allocatedTds * 100) / 100, tdsLedgerName: allocatedTds > 0 ? (tdsLedgerName || 'TDS') : '', voucherNumber: vchNo });
-                                });
-                            } else if (rowTdsAmount > 0) {
-                                tallyTransactions.push({ date: dateStr, partyName: partyNameStr, partyPan: extractedPan, ledgerName: tdsLedgerName || 'TDS', amount: 0, actualTdsDeducted: rowTdsAmount, tdsLedgerName: tdsLedgerName || 'TDS', voucherNumber: vchNo });
-                            }
-                        });
-                    }
-                }
             }
             if (tallyTransactions.length === 0) throw new Error("No valid Books transactions found.");
-            if (tdsIngestChannel !== 'MANUAL') { await syncPartiesFromTallyData(tallyTransactions); await syncLedgersFromTallyData(tallyTransactions); }
+            if (effectiveChannel !== 'MANUAL') { await syncPartiesFromTallyData(tallyTransactions); await syncLedgersFromTallyData(tallyTransactions); }
 
             let form26qRecords: any[] = [];
-            if (tdsIngestChannel === 'MANUAL') {
+            if (effectiveChannel === 'MANUAL') {
                 form26qRecords = manualTdsRecords.map(t => ({ partyPan: t.partyPan, partyName: t.partyName, section: t.section, amountPaid: parseFloat(String(t.amountPaid)), tdsDeducted: parseFloat(String(t.tdsDeducted)) }));
-            } else if (tdsIngestChannel === 'ITR_JSON') {
+            } else if (effectiveChannel === 'ITR_JSON') {
                 form26qRecords = itrParsedTdsRecords || [];
             } else {
                 const parsed26Q = await parseFile(form26qFile!, { findHeader: true });
@@ -1116,9 +1066,12 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const normalizePartyName = (name: string) => {
             if (!name) return '';
             let n = name.toUpperCase()
-                .replace(/[-\s\(\)]+(CR|DR)\b$/g, '')
-                .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, '')
-                .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
+                .replace(/[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,4}[-\s]?\d{1,4}/gi, '')
+                .replace(/\(.*?\)/g, '')
+                .replace(/\b(DRIVER|VEHICLE|LORRY|TRUCK|TANKER|CAB|AUTO|TRANSPORTER|TRANSPORT|TEMPO|BUS|TRAILER)\b/gi, '')
+                .replace(/[-\s\(\)]+(CR|DR)\b$/gi, '')
+                .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/gi, '')
+                .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/gi, '')
                 .replace(/[^A-Z0-9]/g, '')
                 .trim();
             if (n.endsWith('S')) n = n.slice(0, -1);
@@ -1248,38 +1201,67 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                 body: JSON.stringify({
                     transactions: tallyTxns,
                     form26qRecords: tracesRecords,
-                    confirmedMatches: confirmedNameMatchesList
+                    confirmedMatches: confirmedNameMatchesList,
+                    strictMode: strictModeOnlyMapped
                 })
             });
             if (!response.ok) throw new Error("Failed to process reconciliation on the server.");
             const data = await response.json();
             const mappedResults = data.results.map((r: any) => {
-                const partyNameUpper = (r.name_in_books || r.name_in_26q || r.party_name || '').toUpperCase().trim();
-                const closingBal = partyBalances.get(partyNameUpper) || 0;
+                const candidates = [
+                    r.name_in_books,
+                    r.party_name,
+                    r.name_in_26q
+                ].filter(Boolean).map((n: string) => n.toUpperCase().trim());
+
+                let closingBal = 0;
+                for (const name of candidates) {
+                    if (partyBalances.has(name)) { closingBal = partyBalances.get(name)!; break; }
+                    const clean = name.replace(/\s*\([^)]*\)/g, '').trim();
+                    if (clean && partyBalances.has(clean)) { closingBal = partyBalances.get(clean)!; break; }
+                    const alpha = name.replace(/[^A-Z0-9]/g, '');
+                    if (alpha && partyBalances.has(alpha)) { closingBal = partyBalances.get(alpha)!; break; }
+                }
+
                 return {
                     partyName: r.party_name, partyPan: r.party_pan, panInBooks: r.pan_in_books || '—', panIn26Q: r.pan_in_26q || '—',
                     nameInBooks: r.name_in_books || '—', nameIn26Q: r.name_in_26q || '—', section: r.section_code,
                     ledgers: r.ledgers, tdsLedgers: r.tds_ledgers, booksSpend: r.books_spend || 0,
-                    booksTaxable: r.books_taxable, rateApplied: r.books_rate_applied || 0, booksRequiredTds: r.books_required_tds,
+                    booksTaxable: r.books_taxable, taxableBasis: r.taxable_basis || r.taxableBasis || '', rateApplied: r.books_rate_applied || 0, booksRequiredTds: r.books_required_tds,
                     booksActualTds: r.books_actual_tds, tracesTaxable: r.traces_taxable, tracesTds: r.traces_tds,
                     taxableVariance: r.taxable_variance, tdsVariance: r.tds_variance, status: r.status,
                     reason: r.reason || '', closingBalance: closingBal
                 };
             });
-            setReconSummary(data.summary); setReconResults(mappedResults); setActiveStep(4); setExpandedRows(new Set());
+            const partyMasterSectionMap = new Map<string, string>();
+            parties.forEach(p => {
+                if (p.party_name && (p as any).mapped_section_code) {
+                    partyMasterSectionMap.set(p.party_name.toUpperCase().trim(), (p as any).mapped_section_code);
+                }
+            });
+            const advanceAuditResults = computeAdvanceTdsAudit(tallyTxns, ledgerMappings, rules, partyMasterSectionMap, (partyBalances as any).openingBalancesCr || partyBalances);
+            setAdvanceTdsResults(advanceAuditResults);
+
+            const splitPans = computeMultiLedgerPans(mappedResults);
+            setMultiLedgerPans(splitPans);
+
+            setReconSummary(data.summary);
+            setReconResults(mappedResults);
+            setActiveStep(splitPans.length > 0 ? 3 : 4);
+            setExpandedRows(new Set());
             toast.success("TDS Reconciliation engine executed successfully!");
         } catch (err: any) { toast.error("Reconciliation failed", { description: err.message }); }
         finally { setIsProcessing(false); }
     };
 
-    const handleReset = () => { setTallyFile(null); setForm26qFile(null); setItrJsonFile(null); setItrParsedTdsRecords(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null); setActiveStep(0); toast.info("Reconciliation state cleared."); };
+    const handleReset = () => { setForm26qFile(null); setItrJsonFile(null); setItrParsedTdsRecords(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null); setMultiLedgerPans([]); setActiveStep(0); toast.info("Reconciliation state cleared."); };
 
     const handleFullReset = async () => {
         if (!window.confirm("Are you sure you want to completely reset the TDS module? This will delete all ledger mappings, transactions, and vendor edits from the database to start fresh.")) return;
         try {
             const res = await fetch(`${getApiBase()}/api/tds/reset`, { method: 'POST' });
             if (res.ok) {
-                setTallyFile(null); setForm26qFile(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null);
+                setForm26qFile(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null);
                 setLedgerMappings([]); setGroupMappings([]); setSuggestions([]); setSelectedSuggestions({});
                 setSuggestedSections({}); setParties([]); setPartyBalances(new Map()); setActiveStep(0);
                 toast.success("TDS Module completely reset successfully!");
@@ -1323,16 +1305,15 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     };
 
     // ─── Stepper readiness ───────────────────────────────────
-    const step1Ready = !!(tallyDirectData || tallyFile);
-    const step2Ready = ledgerMappings.length > 0 || groupMappings.length > 0;
-    const step3Ready = !!form26qFile;
-    const step4Ready = parties.length > 0;
+    const step1Ready = !!tallyDirectData;
+    const step2Ready = !!form26qFile;
+    const step3Ready = parties.length > 0;
 
     const steps = [
-        { label: 'Tally Ingestion', icon: Database, ready: step1Ready, info: tallyDirectData ? `${tallyDirectData.length} vouchers` : (tallyFile ? tallyFile.name.slice(0, 12) : 'Fetch Tally Data') },
-        { label: 'Ledger Mappings', icon: Settings2, ready: step2Ready, info: ledgerMappings.length > 0 ? `${ledgerMappings.length} mappings` : 'Map ledgers' },
-        { label: '26Q Ingestion', icon: UploadCloud, ready: step3Ready, info: form26qFile ? form26qFile.name.slice(0, 12) : 'Upload 26Q' },
-        { label: 'Vendor Review', icon: Users, ready: step4Ready, info: step4Ready ? `${parties.length} vendors` : 'Review Vendors' },
+        { label: 'Data & Mappings', icon: Database, ready: step1Ready, info: tallyDirectData ? `${tallyDirectData.length} vouchers` : 'Fetch Tally Data' },
+        { label: '26Q Ingestion', icon: UploadCloud, ready: step2Ready, info: form26qFile ? form26qFile.name.slice(0, 12) : 'Upload 26Q' },
+        { label: 'Vendor Review', icon: Users, ready: step3Ready, info: step3Ready ? `${parties.length} vendors` : 'Review Vendors' },
+        { label: 'Multi-Ledger PAN Audit', icon: AlertTriangle, ready: multiLedgerPans.length > 0, info: multiLedgerPans.length > 0 ? `${multiLedgerPans.length} split PANs` : 'No split PANs', disabled: !reconResults },
         { label: 'Results', icon: Activity, ready: !!reconResults, info: reconResults ? `${reconResults.length} records` : 'Run engine', disabled: !reconResults }
     ];
 
@@ -1402,14 +1383,40 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             {/* Navigation Stepper */}
             <StepperNav steps={steps} activeStep={activeStep} onStepClick={setActiveStep} />
 
-            {/* ═══════════════ STEP 0: TALLY DATA INGESTION ═══════════════ */}
+            {/* ═══════════════ STEP 0: DATA & MAPPINGS (MERGED) ═══════════════ */}
             {activeStep === 0 && (
                 <div className="space-y-5 animate-pop-in">
+
+                    {/* Financial Year Selector */}
+                    <div className="bg-gradient-to-r from-purple-950/40 to-indigo-950/30 border border-purple-500/20 rounded-2xl p-5 shadow-xl">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2"><CalendarClock className="w-5 h-5 text-purple-400" /> Financial Year</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Select the assessment period for TDS reconciliation</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {FY_OPTIONS.map(fy => (
+                                    <button
+                                        key={fy}
+                                        onClick={() => { setSelectedFY(fy); const yr = parseInt(fy.split('-')[0]); setFromDate(`${yr}-04-01`); setToDate(`${yr + 1}-03-31`); }}
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${selectedFY === fy
+                                            ? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-900/30'
+                                            : 'bg-slate-900/60 text-slate-400 border-slate-700 hover:border-purple-500/50 hover:text-white'
+                                        }`}
+                                    >
+                                        FY {fy}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Tally Live API Connection */}
                     <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
                         <h3 className="text-lg font-bold text-white mb-1.5 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-400" /> Tally Data Ingestion</h3>
-                        <p className="text-xs text-slate-400 mb-5">Fetch ledger balances and transactions directly from Tally or upload your Tally Books registers.</p>
+                        <p className="text-xs text-slate-400 mb-5">Fetch ledger balances and transactions directly from TallyPrime via Live API.</p>
                         
-                        <div className="mb-5 p-4 bg-slate-950 rounded-xl border border-slate-800">
+                        <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                             <div className="flex items-center justify-between mb-3">
                                 <span className="text-xs font-bold text-slate-300 flex items-center gap-2"><Server className="w-4 h-4 text-teal-400" /> Live Tally API Connection</span>
                                 <div className="flex items-center gap-2">
@@ -1433,21 +1440,81 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 </div>
                             )}
                         </div>
-                        
-                        {!tallyDirectData && (!tallyFile ? <FileUploadZone onFileSelect={async (f) => { setTallyFile(f); toast.success('Tally Books Loaded'); }} label="Upload Tally Registers (Excel)" description="Accepts Tally Vouchers Excel Export (.xlsx)" /> : <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-center justify-between"><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-400 w-5 h-5" /><span className="text-indigo-100 font-medium text-sm">{tallyFile.name}</span></div><button onClick={() => setTallyFile(null)} className="text-indigo-400 hover:text-white"><X className="w-4 h-4" /></button></div>)}
                     </div>
-                    
-                    <div className="flex justify-end pt-2">
-                        <button onClick={() => setActiveStep(1)} disabled={!tallyDirectData && !tallyFile} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
-                            Continue to Ledger Mappings <ArrowRight className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
 
-            {/* ═══════════════ STEP 1: LEDGER MAPPINGS ═══════════════ */}
-            {activeStep === 1 && (
-                <div className="space-y-4 animate-pop-in">
+                    {/* Strict Mode Toggle Checkbox */}
+                    <div className="bg-slate-900/40 border border-purple-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
+                        <div className="flex items-center gap-3">
+                            <input 
+                                type="checkbox" 
+                                id="strictModeCheckbox"
+                                checked={strictModeOnlyMapped}
+                                onChange={(e) => setStrictModeOnlyMapped(e.target.checked)}
+                                className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
+                            />
+                            <div>
+                                <label htmlFor="strictModeCheckbox" className="text-xs font-bold text-white cursor-pointer flex items-center gap-2">
+                                    <ShieldAlert className="w-4 h-4 text-purple-400" />
+                                    Strict Reconciliation Mode: Use ONLY explicitly mapped expense ledgers
+                                </label>
+                                <p className="text-[11px] text-slate-400 mt-0.5">When checked, unmapped ledgers will be strictly ignored and excluded from TDS calculations.</p>
+                            </div>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${strictModeOnlyMapped ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-400'}`}>
+                            {strictModeOnlyMapped ? 'Strict Mode ON' : 'Standard Mode'}
+                        </span>
+                    </div>
+
+                    {/* Unmapped Fetched Ledgers Section */}
+                    {tallyDirectData && unmappedFetchedLedgers.length > 0 && (
+                        <div className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 shadow-xl">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                        Unmapped Fetched Ledgers ({unmappedFetchedLedgers.length})
+                                    </h4>
+                                    <p className="text-xs text-slate-400 mt-0.5">Assign TDS sections directly here or use the Ledger Mapping section below.</p>
+                                </div>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950/50">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                                        <tr>
+                                            <th className="px-3 py-2 font-medium">Ledger Name</th>
+                                            <th className="px-3 py-2 font-medium">Assign TDS Section</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/40">
+                                        {unmappedFetchedLedgers.map((ledgerName, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-800/20">
+                                                <td className="px-3 py-2 text-white font-medium">{ledgerName}</td>
+                                                <td className="px-3 py-2">
+                                                    <select 
+                                                        defaultValue=""
+                                                        onChange={(e) => {
+                                                            if (e.target.value) {
+                                                                handleUpdateLedgerConfig(ledgerName, { sectionCode: e.target.value, isTdsLedger: false });
+                                                            }
+                                                        }}
+                                                        className="h-7 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-purple-300 font-medium focus:border-purple-500 outline-none"
+                                                    >
+                                                        <option value="">-- Unmapped (Select Section) --</option>
+                                                        {rules.map((r, ri) => (
+                                                            <option key={ri} value={r.old_section}>{r.old_section} - {r.nature_of_payment}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ────── MERGED LEDGER MAPPINGS SECTION ────── */}
+
                     {/* Auto Map Preview */}
                     {suggestions.length > 0 && (
                         <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/60 border border-indigo-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden">
@@ -1504,40 +1571,100 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     <CollapsibleSection title="Tally Ledger Mappings" subtitle="Define which expense ledgers attract TDS and under which section" icon={FileSpreadsheet} defaultOpen={ledgerMappings.length === 0}
                         badge={ledgerMappings.length > 0 ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">{ledgerMappings.length} mapped</span> : undefined}>
                         <div className="space-y-4 pt-4">
-                            <div className="flex justify-end gap-2 mb-2">
-                                <button onClick={exportLedgerMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700"><Download className="w-3 h-3" /> Export</button>
-                                <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importLedgerMappings} /></label>
-                            </div>
+                            {(() => {
+                                const mappedCount = ledgerMappings.filter(m => !!m.sectionCode || !!m.inheritedSectionCode || m.isTdsLedger).length;
+                                const unmappedCount = ledgerMappings.length - mappedCount;
+                                return (
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
+                                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+                                            <button
+                                                type="button"
+                                                onClick={() => setLedgerFilterMode('mapped')}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'mapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                Mapped Only ({mappedCount})
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setLedgerFilterMode('all')}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'all' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                All ({ledgerMappings.length})
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setLedgerFilterMode('unmapped')}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'unmapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                Unmapped ({unmappedCount})
+                                            </button>
+                                            {importedLedgerNames.size > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLedgerFilterMode('imported')}
+                                                    className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'imported' ? 'bg-amber-600 text-white shadow-md' : 'text-amber-400 hover:text-white'}`}
+                                                >
+                                                    Imported Sheet ({importedLedgerNames.size})
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {unmappedCount > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleRemoveUnmappedLedgers}
+                                                    className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 px-2.5 py-1.5 rounded-lg border border-rose-500/20 transition-colors"
+                                                    title="Remove all unmapped ledgers from database list"
+                                                >
+                                                    <Trash2 className="w-3 h-3" /> Remove Unmapped ({unmappedCount})
+                                                </button>
+                                            )}
+                                            <button onClick={exportLedgerMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700"><Download className="w-3 h-3" /> Export</button>
+                                            <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importLedgerMappings} /></label>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             <div className="flex flex-col md:flex-row gap-3 p-4 bg-slate-950 rounded-xl border border-slate-800">
                                 <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tally Ledger Name</label><input type="text" value={newLedgerName} onChange={e => setNewLedgerName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddMapping()} placeholder="e.g. Audit Fees" className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none" /></div>
                                 <div className="flex items-center gap-2 md:mt-5 px-2"><input type="checkbox" id="isNewLedgerTds" checked={isNewLedgerTds} onChange={e => setIsNewLedgerTds(e.target.checked)} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700 cursor-pointer" /><label htmlFor="isNewLedgerTds" className="text-xs font-medium text-slate-300 cursor-pointer select-none whitespace-nowrap">TDS Tax Ledger</label></div>
                                 <div className="w-full md:w-56"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Section</label><select value={newSectionCode} onChange={e => setNewSectionCode(e.target.value)} disabled={isNewLedgerTds} className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none disabled:opacity-40">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
                                 <div className="flex items-end"><button onClick={handleAddMapping} className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors whitespace-nowrap">Add Ledger</button></div>
                             </div>
-                            {ledgerMappings.length > 0 && (
+                            {(() => {
+                                let filteredMappings = ledgerMappings;
+                                if (ledgerFilterMode === 'mapped') {
+                                    filteredMappings = ledgerMappings.filter(m => !!m.sectionCode || !!m.inheritedSectionCode || m.isTdsLedger);
+                                } else if (ledgerFilterMode === 'unmapped') {
+                                    filteredMappings = ledgerMappings.filter(m => !m.sectionCode && !m.inheritedSectionCode && !m.isTdsLedger);
+                                } else if (ledgerFilterMode === 'imported' && importedLedgerNames.size > 0) {
+                                    filteredMappings = ledgerMappings.filter(m => importedLedgerNames.has(m.ledgerName.toLowerCase().trim()));
+                                }
+                                return filteredMappings.length > 0 ? (
                                 <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20 max-h-[300px] overflow-y-auto">
                                     <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium">Tally Ledger</th><th className="px-4 py-2.5 font-medium text-center w-32">TDS Tax?</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
-                                        <tbody className="divide-y divide-slate-800/50">{ledgerMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-800/30"><td className="px-4 py-2.5 text-white font-medium flex items-center gap-2">{map.ledgerName}{map.inheritedGroupName && !map.sectionCode && (<span className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[9px] font-bold text-indigo-400 whitespace-nowrap" title={`Inherited from group mapping: ${map.inheritedGroupName}`}>Group: {map.inheritedGroupName}</span>)}</td><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={map.isTdsLedger} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { isTdsLedger: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5"><select value={map.sectionCode || map.inheritedSectionCode || ''} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { sectionCode: e.target.value || null })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"><option value="">-- Unmapped (Select Section) --</option>{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveMapping(map.ledgerName)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
+                                        <tbody className="divide-y divide-slate-800/50">{filteredMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-800/30"><td className="px-4 py-2.5 text-white font-medium flex items-center gap-2">{map.ledgerName}{map.inheritedGroupName && !map.sectionCode && (<span className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[9px] font-bold text-indigo-400 whitespace-nowrap" title={`Inherited from group mapping: ${map.inheritedGroupName}`}>Group: {map.inheritedGroupName}</span>)}</td><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={map.isTdsLedger} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { isTdsLedger: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5"><select value={map.sectionCode || map.inheritedSectionCode || ''} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { sectionCode: e.target.value || null })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"><option value="">-- Unmapped (Select Section) --</option>{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveMapping(map.ledgerName)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
                                     </table>
                                 </div>
-                            )}
+                            ) : (
+                                <div className="p-6 text-center text-xs text-slate-500 border border-slate-800/60 rounded-xl bg-slate-950/30">
+                                    No ledgers match current filter mode ({ledgerFilterMode}). Switch tab above or add a ledger.
+                                </div>
+                            );
+                            })()}
                         </div>
                     </CollapsibleSection>
 
-                    {/* Buttons */}
-                    <div className="flex justify-between pt-2">
-                        <button onClick={() => setActiveStep(0)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
-                            <ArrowLeft className="w-4 h-4" /> Back to Ingestion
-                        </button>
-                        <button onClick={() => setActiveStep(2)} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
+                    <div className="flex justify-end pt-2">
+                        <button onClick={() => setActiveStep(1)} disabled={!tallyDirectData} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
                             Continue to Form 26Q Ingestion <ArrowRight className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ═══════════════ STEP 2: Form 26Q INGESTION ═══════════════ */}
-            {activeStep === 2 && (
+            {/* ═══════════════ STEP 1: Form 26Q INGESTION ═══════════════ */}
+            {activeStep === 1 && (
                 <div className="space-y-5 animate-pop-in">
                     <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
                         <div className="flex items-center justify-between mb-1.5">
@@ -1616,18 +1743,18 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     </CollapsibleSection>
 
                     <div className="flex justify-between pt-2">
-                        <button onClick={() => setActiveStep(1)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
+                        <button onClick={() => setActiveStep(0)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
                             <ArrowLeft className="w-4 h-4" /> Back to Mappings
                         </button>
-                        <button onClick={() => setActiveStep(3)} disabled={!form26qFile && !itrParsedTdsRecords && manualTdsRecords.length === 0} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
+                        <button onClick={() => setActiveStep(2)} disabled={!form26qFile && !itrParsedTdsRecords && manualTdsRecords.length === 0} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
                             Continue to Vendor Review <ArrowRight className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ═══════════════ STEP 3: VENDOR MASTERS ═══════════════ */}
-            {activeStep === 3 && (
+            {/* ═══════════════ STEP 2: VENDOR MASTERS ═══════════════ */}
+            {activeStep === 2 && (
                 <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl animate-pop-in">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
                         <div>
@@ -1656,7 +1783,10 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500"><div className="flex flex-col items-center gap-2"><Users className="w-8 h-8 text-slate-700" /><span>No parties registered. Sync or import Tally books in the Data tab.</span></div></td></tr>
                                 ) : filteredParties.map((p) => {
                                     const isEditing = editingPartyId === p.id;
-                                    const bal = partyBalances.get(p.party_name.toUpperCase()) || 0;
+                                    const pUpper = p.party_name.toUpperCase().trim();
+                                    const pClean = pUpper.replace(/\s*\([^)]*\)/g, '').trim();
+                                    const pAlpha = pUpper.replace(/[^A-Z0-9]/g, '');
+                                    const bal = partyBalances.get(pUpper) ?? partyBalances.get(pClean) ?? partyBalances.get(pAlpha) ?? 0;
                                     return (
                                         <tr key={p.id} className="hover:bg-slate-800/20">
                                             <td className="px-4 py-2.5 text-white font-medium max-w-[250px] truncate" title={p.party_name}>{p.party_name}</td>
@@ -1690,7 +1820,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                     {/* Run Engine */}
                     <div className="flex justify-between items-center gap-4 pt-3">
-                        <button onClick={() => setActiveStep(2)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
+                        <button onClick={() => setActiveStep(1)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
                             <ArrowLeft className="w-4 h-4" /> Back to 26Q Ingestion
                         </button>
                         <div className="flex gap-3">
@@ -1699,10 +1829,147 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                                 {isProcessing ? 'Analyzing Thresholds & Verifying...' : 'Run Reconciliation Engine'}
                             </button>
-                            {(tallyFile || tallyDirectData || form26qFile || itrJsonFile) && (
+                            {(tallyDirectData || form26qFile || itrJsonFile) && (
                                 <button onClick={handleReset} className="h-12 px-5 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl font-bold transition-all border border-slate-800 flex items-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Clear Data</button>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ═══════════════ STEP 3: MULTI-LEDGER PAN AUDIT ═══════════════ */}
+            {activeStep === 3 && (
+                <div className="space-y-5 animate-pop-in">
+                    {/* Header Banner */}
+                    <div className="bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-xl">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
+                                    <AlertTriangle className="w-4 h-4" /> Multiple Ledger Audit Warning
+                                </div>
+                                <h2 className="text-xl font-extrabold text-white">PANs with Multiple Tally Party Names Detected</h2>
+                                <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                                    The following PANs have 2 or more distinct vendor ledger names in Tally (e.g. driver accounts, vehicle prefixes, or branch ledgers). They are presented separately below to preserve book integrity while auditing aggregate TDS liabilities against 26Q.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')}
+                                className="h-10 px-5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-lg shadow-amber-900/30 shrink-0"
+                            >
+                                <Download className="w-4 h-4" /> Export Split PAN Error Workbook (.xlsx)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Flagged PANs</span>
+                            <span className="text-3xl font-black text-amber-400">{multiLedgerPans.length}</span>
+                        </div>
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Total Split Party Ledgers</span>
+                            <span className="text-3xl font-black text-purple-400">
+                                {multiLedgerPans.reduce((sum, p) => sum + p.ledgers.length, 0)}
+                            </span>
+                        </div>
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Total Spend Across Split PANs</span>
+                            <span className="text-3xl font-black text-emerald-400">
+                                {fmtAmt(multiLedgerPans.reduce((sum, p) => sum + p.totalSpend, 0))}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Split PAN Table */}
+                    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/40 shadow-xl">
+                        <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <Users className="w-4 h-4 text-amber-400" /> Multi-Ledger Party Breakdown
+                            </h3>
+                            <span className="text-xs text-slate-400 font-medium">
+                                Showing {multiLedgerPans.length} PAN groups
+                            </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs whitespace-nowrap">
+                                <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">PAN Number</th>
+                                        <th className="px-4 py-3 font-medium">Tally Party Name (Books)</th>
+                                        <th className="px-4 py-3 font-medium text-center">Section</th>
+                                        <th className="px-4 py-3 font-medium text-right">Ledger Spend (₹)</th>
+                                        <th className="px-4 py-3 font-medium text-right">Ledger Actual TDS (₹)</th>
+                                        <th className="px-4 py-3 font-medium text-right">Total PAN Spend (₹)</th>
+                                        <th className="px-4 py-3 font-medium text-right">26Q Taxable (₹)</th>
+                                        <th className="px-4 py-3 font-medium text-right">26Q TDS (₹)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/40">
+                                    {multiLedgerPans.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                                                No PANs with multiple ledger names were found.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        multiLedgerPans.map((panGroup, groupIdx) => (
+                                            <React.Fragment key={groupIdx}>
+                                                {panGroup.ledgers.map((l, ledgerIdx) => (
+                                                    <tr key={ledgerIdx} className="hover:bg-slate-800/30 transition-colors">
+                                                        {ledgerIdx === 0 && (
+                                                            <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 font-mono font-bold text-amber-400 align-top border-r border-slate-800 bg-slate-950/20">
+                                                                {panGroup.pan}
+                                                                <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                                                                    {panGroup.ledgers.length} ledgers
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                        <td className="px-4 py-3 text-white font-medium">
+                                                            {l.partyName}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                                                {l.section}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-300">
+                                                            {fmtAmt(l.spend)}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-mono font-bold text-purple-400">
+                                                            {fmtAmt(l.actualTds)}
+                                                        </td>
+                                                        {ledgerIdx === 0 && (
+                                                            <>
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-emerald-400 align-top border-l border-slate-800 bg-slate-950/20">
+                                                                    {fmtAmt(panGroup.totalSpend)}
+                                                                </td>
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-slate-300 align-top bg-slate-950/20">
+                                                                    {fmtAmt(panGroup.tracesTaxable)}
+                                                                </td>
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-teal-400 align-top bg-slate-950/20">
+                                                                    {fmtAmt(panGroup.tracesTds)}
+                                                                </td>
+                                                            </>
+                                                        )}
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Navigation Footer */}
+                    <div className="flex justify-between items-center pt-3">
+                        <button onClick={() => setActiveStep(2)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
+                            <ArrowLeft className="w-4 h-4" /> Back to Vendor Review
+                        </button>
+                        <button onClick={() => setActiveStep(4)} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-purple-900/30 flex items-center gap-2">
+                            Proceed to Reconciliation Results <ArrowRight className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
             )}
@@ -1729,62 +1996,107 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                         </div>
                     )}
 
-                    {/* Controls Bar */}
+                    {/* Controls Bar & Sub-Tabs */}
                     <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
                         <div className="flex flex-col gap-4 mb-5">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                <h2 className="text-lg font-bold text-white">Party-Wise TDS Report</h2>
+                                <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                    <button
+                                        onClick={() => setActiveResultsSubTab('RECONCILIATION')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeResultsSubTab === 'RECONCILIATION' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                        26Q Reconciliation Report
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveResultsSubTab('ADVANCE_AUDIT')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeResultsSubTab === 'ADVANCE_AUDIT' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                        <span>Advance TDS Audit (Pay &gt; Exp)</span>
+                                        {advanceTdsResults.length > 0 && (
+                                            <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full text-[10px]">
+                                                {advanceTdsResults.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
                                 <div className="flex items-center gap-2 w-full sm:w-auto">
                                     <div className="relative flex-1 sm:w-56">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                         <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search party, PAN..." className="w-full h-9 bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 text-sm text-white focus:border-purple-500 outline-none" />
                                     </div>
-                                    <button onClick={() => exportTdsReport(reconResults, 'TDS_Report')} className="h-9 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-purple-900/20"><Download className="w-3.5 h-3.5" /> Excel</button>
+                                    {multiLedgerPans.length > 0 && (
+                                        <button onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')} className="h-9 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-amber-900/20"><Download className="w-3.5 h-3.5" /> Multi-Ledger PAN Error Workbook</button>
+                                    )}
+                                    <button onClick={() => exportTdsReport(reconResults, companyInfo?.name || 'TDS_Report', advanceTdsResults)} className="h-9 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-purple-900/20"><Download className="w-3.5 h-3.5" /> Excel (With Advance TDS)</button>
                                     <button onClick={handleReset} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded-lg font-bold text-xs flex items-center gap-1.5 border border-slate-700"><Trash2 className="w-3.5 h-3.5" /> Reset</button>
                                 </div>
                             </div>
-                            <StatusFilterChips active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                            {activeResultsSubTab === 'RECONCILIATION' && (
+                                <StatusFilterChips active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                            )}
                         </div>
 
-                        {/* Expandable Accordion Table */}
-                        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30">
-                            <table className="w-full text-left text-sm">
+                        {/* SUB TAB 1: 26Q Reconciliation Table */}
+                        {activeResultsSubTab === 'RECONCILIATION' && (
+                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30 overflow-x-auto">
+                            <table className="w-full text-left text-xs whitespace-nowrap">
                                 <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
                                     <tr>
-                                        <th className="px-3 py-2.5 font-medium w-8"></th>
-                                        <th className="px-3 py-2.5 font-medium">Party Name</th>
-                                        <th className="px-3 py-2.5 font-medium">PAN</th>
+                                        <th className="px-2 py-2.5 font-medium w-6"></th>
+                                        <th className="px-3 py-2.5 font-medium">Party Name (Books)</th>
+                                        <th className="px-3 py-2.5 font-medium">Party Name (26Q)</th>
+                                        <th className="px-3 py-2.5 font-medium">PAN (Books)</th>
+                                        <th className="px-3 py-2.5 font-medium">PAN (26Q)</th>
                                         <th className="px-3 py-2.5 font-medium text-center">Section</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">Closing Bal</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">TDS Variance</th>
+                                        <th className="px-3 py-2.5 font-medium text-right">Req. TDS</th>
+                                        <th className="px-3 py-2.5 font-medium text-right">Actual TDS (Books)</th>
+                                        <th className="px-3 py-2.5 font-medium text-right">TDS (26Q)</th>
+                                        <th className="px-3 py-2.5 font-medium text-right">Books Var (Req - Actual)</th>
+                                        <th className="px-3 py-2.5 font-medium text-right">Return Var (Req - 26Q)</th>
                                         <th className="px-3 py-2.5 font-medium text-center">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/40">
                                     {filteredResults.length === 0 ? (
-                                        <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No parties match your filter.</td></tr>
+                                        <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-500">No parties match your filter.</td></tr>
                                     ) : filteredResults.map((r, i) => {
                                         const isExpanded = expandedRows.has(i);
                                         return (
                                             (() => {
                                                 const sectionRule = rules.find(rule => rule.old_section === r.section);
                                                 const applicableRate = getApplicableTdsRate(r.partyPan, r.party_entity_type || 'Unknown', sectionRule);
-                                                const requiredTds = r.booksTaxable * applicableRate;
-                                                const newTdsVariance = r.booksActualTds - requiredTds;
+                                                const requiredTds = r.booksRequiredTds !== undefined ? r.booksRequiredTds : Math.round(r.booksTaxable * applicableRate);
+                                                const booksTdsVariance = requiredTds - (r.booksActualTds || 0);
+                                                const returnTdsVariance = requiredTds - (r.tracesTds || 0);
+
                                                 return (
                                                     <React.Fragment key={i}>
-                                                        <tr onClick={() => toggleRowExpand(i)} className="hover:bg-slate-800/30 cursor-pointer transition-colors group">
-                                                            <td className="px-3 py-2.5 text-center"><ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} /></td>
-                                                            <td className="px-3 py-2.5 text-white font-medium max-w-[220px] truncate" title={r.partyName}>{r.partyName}</td>
-                                                            <td className="px-3 py-2.5 font-mono text-xs text-slate-400">{r.partyPan === 'PAN-MISSING' ? <span className="text-red-400 italic">Missing</span> : r.partyPan}</td>
-                                                            <td className="px-3 py-2.5 text-center"><span className="text-xs font-bold text-purple-400">{r.section}</span></td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-xs ${(r.closingBalance || 0) < 0 ? 'text-rose-400' : (r.closingBalance || 0) > 0 ? 'text-teal-400' : 'text-slate-500'}`}>{fmtBal(r.closingBalance || 0)}</td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-xs font-bold ${newTdsVariance > 5 ? 'text-amber-400' : newTdsVariance < -5 ? 'text-purple-400' : 'text-slate-400'}`}>{newTdsVariance !== 0 ? fmtAmt(newTdsVariance) : '—'}</td>
+                                                        <tr onClick={() => toggleRowExpand(i)} className={`hover:bg-slate-800/30 cursor-pointer transition-colors group ${r.isMultiLedgerPan ? 'bg-amber-500/10 hover:bg-amber-500/20 border-l-2 border-amber-500' : ''}`}>
+                                                            <td className="px-2 py-2.5 text-center"><ChevronRight className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} /></td>
+                                                            <td className="px-3 py-2.5 text-white font-medium max-w-[200px] truncate" title={r.nameInBooks || r.partyName}>
+                                                                <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                    <span className="truncate">{r.nameInBooks && r.nameInBooks !== '—' ? r.nameInBooks : (r.partyName || '—')}</span>
+                                                                    {r.isMultiLedgerPan && (
+                                                                        <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30" title={`Multi-ledger PAN: Shared by ${r.multiLedgerCount || 2} distinct Tally Party Ledgers`}>
+                                                                            <AlertTriangle className="w-2.5 h-2.5 text-amber-400" /> Split PAN
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-slate-300 max-w-[180px] truncate" title={r.nameIn26Q}>{r.nameIn26Q || '—'}</td>
+                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-400">{r.panInBooks === 'PAN-MISSING' ? <span className="text-red-400 italic">Missing</span> : r.panInBooks}</td>
+                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-400">{r.panIn26Q || '—'}</td>
+                                                            <td className="px-3 py-2.5 text-center"><span className="text-[11px] font-bold text-purple-400">{r.section}</span></td>
+                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-rose-400 font-bold">{fmtAmt(requiredTds)}</td>
+                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</td>
+                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</td>
+                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-slate-400'}`}>{booksTdsVariance !== 0 ? fmtAmt(booksTdsVariance) : '—'}</td>
+                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-slate-400'}`}>{returnTdsVariance !== 0 ? fmtAmt(returnTdsVariance) : '—'}</td>
                                                             <td className="px-3 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusStyle(r.status)}`}>{r.status}</span></td>
                                                         </tr>
                                                         {isExpanded && (
                                                             <tr>
-                                                                <td colSpan={7} className="bg-slate-950/60 px-6 py-4 border-t border-slate-800/50">
+                                                                <td colSpan={12} className="bg-slate-950/60 px-6 py-4 border-t border-slate-800/50">
                                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                                                                         {/* Books */}
                                                                         <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-800">
@@ -1797,6 +2109,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                                                 <div className="border-t border-slate-800 pt-1.5 mt-1.5"></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Total Spend</span><span className="text-white font-bold">{fmtAmt(r.booksSpend)}</span></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Taxable Amount</span><span className="text-white font-bold">{fmtAmt(r.booksTaxable)}</span></div>
+                                                                                <div className="flex justify-between gap-2"><span className="text-slate-400">Taxable Basis</span><span className="text-indigo-300 font-medium text-right text-[11px] truncate max-w-[220px]" title={r.taxableBasis}>{r.taxableBasis || '—'}</span></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Rate Applied</span><span className="text-white">{applicableRate * 100}%</span></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Required TDS</span><span className="text-rose-400 font-bold">{fmtAmt(requiredTds)}</span></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Actual TDS</span><span className="text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</span></div>
@@ -1818,7 +2131,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                                             <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">⚖️ Variance & Analysis</div>
                                                                             <div className="space-y-1.5">
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Taxable Variance</span><span className={`font-bold ${r.taxableVariance > 0 ? 'text-amber-400' : r.taxableVariance < 0 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(r.taxableVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">TDS Variance</span><span className={`font-bold ${newTdsVariance > 5 ? 'text-amber-400' : newTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(newTdsVariance)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-400">Books TDS Variance</span><span className={`font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(booksTdsVariance)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-400">26Q TDS Variance</span><span className={`font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(returnTdsVariance)}</span></div>
                                                                                 <div className="flex justify-between"><span className="text-slate-400">Closing Balance</span><span className={`font-bold font-mono ${(r.closingBalance || 0) < 0 ? 'text-rose-400' : 'text-teal-400'}`}>{fmtBal(r.closingBalance || 0)}</span></div>
                                                                                 <div className="border-t border-slate-800 pt-1.5 mt-1.5"></div>
                                                                                 <div><span className="text-slate-400 block mb-1">Reason</span><span className="text-slate-300 text-[11px] leading-relaxed block">{r.reason || '—'}</span></div>
@@ -1836,6 +2150,77 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 </tbody>
                             </table>
                         </div>
+                        )}
+
+                        {/* SUB TAB 2: Advance Payment TDS Audit Table */}
+                        {activeResultsSubTab === 'ADVANCE_AUDIT' && (
+                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                                        <tr>
+                                            <th className="px-3.5 py-2.5 font-medium">Party Name</th>
+                                            <th className="px-3.5 py-2.5 font-medium">PAN</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-center">Section</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Expenses Credited</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Opening Balance (Cr)</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Payments Made</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Advance (Pay &gt; Exp)</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Req TDS</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Actual TDS</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-right">Shortfall</th>
+                                            <th className="px-3.5 py-2.5 font-medium text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/40">
+                                        {advanceTdsResults.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <CheckCircle2 className="w-8 h-8 text-emerald-500/50" />
+                                                        <span className="text-sm font-medium text-slate-300">No Advance Payment TDS Shortfalls Found!</span>
+                                                        <span className="text-xs text-slate-500">Current year payments made to all Sundry Creditors are fully covered by expense bills or TDS.</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : advanceTdsResults
+                                            .filter(r => !searchTerm || r.partyName.toLowerCase().includes(searchTerm.toLowerCase()) || r.partyPan.toLowerCase().includes(searchTerm.toLowerCase()))
+                                            .map((r, i) => {
+                                                const getAdvBadgeStyle = (st: string) => {
+                                                    if (st === 'Un-deducted Advance TDS' || st === 'Short Deducted') return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                                                    if (st === 'Unmapped Advance Payment') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                                                    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                                                };
+                                                return (
+                                                    <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                                                        <td className="px-3.5 py-3 text-white font-medium max-w-[220px] truncate" title={r.partyName}>{r.partyName}</td>
+                                                        <td className="px-3.5 py-3 font-mono text-xs text-slate-400">{r.partyPan}</td>
+                                                        <td className="px-3.5 py-3 text-center">
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.section === 'UNMAPPED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+                                                                {r.section}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-300">{fmtAmt(r.currentYearExpenses)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-teal-300 font-medium">{fmtAmt(r.openingBalanceCr || 0)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-indigo-300 font-bold">{fmtAmt(r.currentYearPayments)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-amber-400 font-bold">{fmtAmt(r.advanceAmount)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-rose-400 font-bold">{fmtAmt(r.requiredTdsOnAdvance)} ({r.rateApplied}%)</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-purple-400 font-bold">{fmtAmt(r.actualTdsDeducted)}</td>
+                                                        <td className={`px-3.5 py-3 text-right font-mono text-xs font-black ${r.tdsShortfallOnAdvance > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                            {r.tdsShortfallOnAdvance > 0 ? fmtAmt(r.tdsShortfallOnAdvance) : '₹0'}
+                                                        </td>
+                                                        <td className="px-3.5 py-3 text-center">
+                                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getAdvBadgeStyle(r.status)}`}>
+                                                                {r.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

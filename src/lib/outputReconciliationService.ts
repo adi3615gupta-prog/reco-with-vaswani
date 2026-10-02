@@ -1,5 +1,6 @@
-import * as XLSX from 'xlsx-js-style';
-import { appendExecutiveSummary } from './fileParser';
+import XLSXStyle from 'xlsx-js-style';
+const XLSX: any = (XLSXStyle as any).default || XLSXStyle;
+import { appendExecutiveSummary } from './fileParser.ts';
 
 // ==========================================
 // TYPE DEFINITIONS & INTERFACES
@@ -101,6 +102,85 @@ function parseString(val: any, isIdentifier = false): string {
   return str;
 }
 
+/**
+ * Standardizes any date format to DD-MMM-YYYY (e.g. 02-Jan-2026).
+ * Handles: YYYY-MM-DD, DD/MM/YY, M/D/YY, DD-MMM-YYYY, Excel serial numbers, etc.
+ */
+function standardizeDate(val: any): string {
+  if (val == null || val === '') return '';
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const formatYMD = (y: number, m: number, d: number): string => {
+    if (y < 1900 || m < 1 || m > 12 || d < 1 || d > 31) return String(val).trim();
+    return `${String(d).padStart(2, '0')}-${MONTHS[m - 1]}-${y}`;
+  };
+
+  // Handle Date objects
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return formatYMD(val.getFullYear(), val.getMonth() + 1, val.getDate());
+  }
+
+  // Handle Excel serial date numbers
+  if (typeof val === 'number') {
+    if (val > 20000 && val < 90000) {
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime())) {
+        return formatYMD(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+      }
+    }
+    return String(val);
+  }
+
+  const s = String(val).trim();
+  if (!s) return '';
+
+  // Already in DD-MMM-YYYY format
+  const alreadyFormatted = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  if (alreadyFormatted) return s;
+
+  // YYYY-MM-DD (ISO format)
+  const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (iso) {
+    return formatYMD(+iso[1], +iso[2], +iso[3]);
+  }
+
+  // DD-MMM-YY or DD/MMM/YYYY (e.g. "10-Oct-2025", "08-Dec-2025")
+  const dmy_named = s.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})[-/\s](\d{2,4})$/);
+  if (dmy_named) {
+    const mIdx = MONTHS.findIndex(m => m.toLowerCase() === dmy_named[2].toLowerCase().slice(0, 3));
+    if (mIdx !== -1) {
+      let y = +dmy_named[3];
+      if (y < 100) y += 2000;
+      return formatYMD(y, mIdx + 1, +dmy_named[1]);
+    }
+  }
+
+  // DD/MM/YYYY, DD-MM-YYYY, M/D/YY, etc.
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (dmy) {
+    let p1 = +dmy[1], p2 = +dmy[2], p3 = +dmy[3];
+    if (p3 < 100) p3 += 2000;
+    // Disambiguate: if p2 > 12, it must be day (so p1 is month — US format M/D/Y)
+    if (p2 > 12) {
+      return formatYMD(p3, p1, p2);
+    }
+    // If p1 > 12, it must be day (DD/MM/YYYY)
+    if (p1 > 12) {
+      return formatYMD(p3, p2, p1);
+    }
+    // Both <= 12: assume DD/MM/YYYY (Indian convention)
+    return formatYMD(p3, p2, p1);
+  }
+
+  // Fallback: try JS Date parse
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return formatYMD(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+
+  return s;
+}
+
 const MONTH_MAP: Record<string, string> = {
   'jan': 'Jan', 'january': 'Jan', '01': 'Jan', '1': 'Jan',
   'feb': 'Feb', 'february': 'Feb', '02': 'Feb', '2': 'Feb',
@@ -116,115 +196,149 @@ const MONTH_MAP: Record<string, string> = {
   'dec': 'Dec', 'december': 'Dec', '12': 'Dec',
 };
 
-/**
- * Standardizes diverse date/month formats to 'MMM-YY' (e.g., 'Apr-23').
- */
-function parseMonth(val: any, dateFallback?: any, globalYear?: string): string {
-  let strVal = val ? String(val).trim() : '';
-  if (!strVal || strVal.toLowerCase() === 'unknown') {
-    if (dateFallback) {
-      strVal = String(dateFallback).trim();
-    } else {
-      return 'Unknown';
-    }
-  }
-  let str = strVal.toLowerCase();
+function parseSingleMonthString(s: string): string | null {
+  if (!s) return null;
+  const str = s.trim().toLowerCase();
+  if (!str || str === 'unknown') return null;
 
-  // If Excel serial date
+  // 1. Check if Excel serial date
   if (/^\d{5}$/.test(str)) {
     const serial = parseInt(str, 10);
     const d = new Date(Math.round((serial - 25569) * 86400 * 1000));
     if (!isNaN(d.getTime())) {
       const m = d.toLocaleString('default', { month: 'short' });
-      // Return ONLY the 3-letter month (e.g. "Apr") to match the FY_MONTH_ORDER
       return m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
     }
   }
 
-  let fallbackYear = '';
-  if (dateFallback) {
-    const dStr = String(dateFallback).trim();
-    const yMatch4 = dStr.match(/\d{4}/);
-    const yMatch2 = dStr.match(/[-/](\d{2})$/);
-    if (yMatch4) fallbackYear = yMatch4[0].slice(-2);
-    else if (yMatch2) fallbackYear = yMatch2[1];
-  }
-
-  // Validate fallback year (GST started in 2017)
-  if (fallbackYear) {
-    const fNum = parseInt(fallbackYear, 10);
-    if (isNaN(fNum) || fNum < 17 || fNum > 35) {
-      fallbackYear = '';
+  // 2. Check for month name keywords anywhere in the string (e.g. "30/05/2025 May", "May-2025", "03/05/2025 May")
+  const monthNames = [
+    'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+    'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+  ];
+  for (const mName of monthNames) {
+    const regex = new RegExp(`\\b${mName}\\b`, 'i');
+    if (regex.test(str)) {
+      const canonical = MONTH_MAP[mName];
+      if (canonical) return canonical;
     }
   }
 
-  let monthPart = str;
-  let yearPart = '';
-
-  // Match full dates DD-MMM-YYYY or DD/MM/YYYY
-  const fullDate1 = str.match(/^(\d{1,2})[-/.\s]([a-z]+|\d{1,2})[-/.\s](\d{2,4})$/);
-  const fullDate2 = str.match(/^(\d{4})[-/.\s]([a-z]+|\d{1,2})[-/.\s](\d{1,2})$/);
-
-  if (fullDate1) {
-    monthPart = fullDate1[2];
-    yearPart = fullDate1[3];
-  } else if (fullDate2) {
-    yearPart = fullDate2[1];
-    monthPart = fullDate2[2];
-  } else {
-    // Match Month-Year like Oct-23, 10-2023, 10/23
-    const match = str.match(/^([a-z]+|\d{1,2})[-/.\s,]+(\d{2,4})$/);
-    if (match) {
-      monthPart = match[1];
-      yearPart = match[2];
-      if (yearPart.length === 4) yearPart = yearPart.slice(-2);
-
-      const yNum = parseInt(yearPart, 10);
-      // If the extracted "year" is < 17 or > 35, it's definitely a DAY, not a year.
-      if (!isNaN(yNum) && (yNum < 17 || yNum > 35)) {
-        yearPart = ''; // Discard the fake year (it's a day)
+  // 3. Parse date patterns DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, M/D/YY, or DD.MM.YYYY
+  const dateMatch = str.match(/(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})/);
+  if (dateMatch) {
+    let mNum = 0;
+    if (dateMatch[1].length === 4) {
+      // YYYY-MM-DD
+      mNum = parseInt(dateMatch[2], 10);
+    } else if (dateMatch[3].length === 4) {
+      // DD/MM/YYYY e.g. "03/05/2025" or "30/05/2025"
+      mNum = parseInt(dateMatch[2], 10);
+      if (mNum > 12) mNum = parseInt(dateMatch[1], 10);
+    } else {
+      // 2-digit year e.g. "5/3/25" (M/D/YY) or "30/5/25" (DD/M/YY)
+      const p1 = parseInt(dateMatch[1], 10);
+      const p2 = parseInt(dateMatch[2], 10);
+      if (p1 > 12) {
+        mNum = p2;
+      } else if (p2 > 12) {
+        mNum = p1;
+      } else {
+        // Both <= 12 (e.g. 5/3/25). Standard M/D/YY exported by Excel has M in p1
+        mNum = p1;
       }
-    } else if (/^\d{6}$/.test(str)) {
-      monthPart = str.slice(0, 2);
-      yearPart = str.slice(2, 4); // Only take last 2 digits of YYYY
+    }
+    if (mNum >= 1 && mNum <= 12) {
+      const mKeys = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      return MONTH_MAP[mKeys[mNum - 1]];
     }
   }
 
-  if (yearPart.length === 4) yearPart = yearPart.slice(-2);
-
-  // Normalize month name
-  const normalizedMonth = MONTH_MAP[monthPart] || MONTH_MAP[monthPart.slice(0, 3)] || monthPart;
-
-  // Return ONLY the 3-letter Capitalized month (e.g. "Apr", "Aug")
-  // because we are compiling exactly 12 months for the FY (April to March)
-  const finalMonth = normalizedMonth.charAt(0).toUpperCase() + normalizedMonth.slice(1).toLowerCase();
-
-  // Ensure it's max 3 letters for standard months to avoid "August" vs "Aug"
-  if (finalMonth.length > 3 && MONTH_MAP[finalMonth.toLowerCase()]) {
-    const mapped = MONTH_MAP[finalMonth.toLowerCase()];
-    return mapped.charAt(0).toUpperCase() + mapped.slice(1).toLowerCase();
+  // 4. Check 6-digit MMYYYY format (e.g. "052024", "042025", "122024")
+  const mmyyyyMatch = str.match(/^(\d{2})(\d{4})$/);
+  if (mmyyyyMatch) {
+    const mNum = parseInt(mmyyyyMatch[1], 10);
+    if (mNum >= 1 && mNum <= 12) {
+      const mKeys = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      return MONTH_MAP[mKeys[mNum - 1]];
+    }
   }
 
-  return finalMonth.slice(0, 3);
+  // 5. Match Month-Year like Oct-23, 10-2023, 10/23, 05/2025, 05-2025
+  const match = str.match(/^([a-z]+|\d{1,2})[-/.\s,]+(\d{2,4})$/);
+  if (match) {
+    const monthPart = match[1];
+    const normalizedMonth = MONTH_MAP[monthPart] || MONTH_MAP[monthPart.slice(0, 3)];
+    if (normalizedMonth) return normalizedMonth;
+  }
+
+  // 5. Direct month map lookup
+  if (MONTH_MAP[str]) return MONTH_MAP[str];
+
+  return null;
+}
+
+/**
+ * Standardizes diverse date/month formats to 'MMM' (e.g., 'May').
+ */
+function parseMonth(val: any, dateFallback?: any, globalYear?: string): string {
+  let parsed = parseSingleMonthString(val ? String(val) : '');
+  if (!parsed && dateFallback) {
+    parsed = parseSingleMonthString(String(dateFallback));
+  }
+  return parsed || 'Unknown';
+}
+
+function getRowVal(row: RawDataRow, candidateKeys: string[]): any {
+  if (!row) return undefined;
+  for (const k of candidateKeys) {
+    if (row[k] !== undefined && row[k] !== '') return row[k];
+  }
+  const normKeys: Record<string, any> = {};
+  for (const origKey of Object.keys(row)) {
+    normKeys[origKey.trim().toLowerCase()] = row[origKey];
+  }
+  for (const k of candidateKeys) {
+    const normK = k.trim().toLowerCase();
+    if (normKeys[normK] !== undefined && normKeys[normK] !== '') return normKeys[normK];
+  }
+  return undefined;
 }
 
 export function sanitizeData(rows: RawDataRow[], globalYear?: string): CleanedRow[] {
-  return rows.map(row => ({
-    invoiceNo: parseString(row['Invoice No.'] || row['Note No.'] || row['Invoice No'] || row['Note No'], true),
-    invoiceDate: parseString(row['Invoice Date'] || row['Note Date']),
-    month: parseMonth(row['Month'] || row['Return Period'], row['Invoice Date'] || row['Note Date'], globalYear),
-    party: parseString(row['Party'] || row['Receiver Name']),
-    gstNo: parseString(row['GST No.'] || row['GSTIN'], true).toUpperCase(),
-    taxable: parseNumber(row['Taxable'] || row['Taxable Value']),
-    nilRated: parseNumber(row['Nil Rated'] || row['Nil Rated Supplies']),
-    nonTaxable: parseNumber(row['Non Taxable'] || row['Non-GST'] || row['Non-GST Supplies'] || row['Exempted'] || row['Exempted Supplies'] || row['Exempt'] || row['Non-GST Outward Supplies'] || row['Non GST Outward Supplies']),
-    cgst: parseNumber(row['CGST']),
-    sgst: parseNumber(row['SGST']),
-    igst: parseNumber(row['IGST']),
-    total: parseNumber(row['Total'] || row['Invoice Value']),
-    pos: parseString(row['POS']),
-    voucherType: parseString(row['Voucher Type'] || row['Voucher Type Name'] || row['Vch Type'])
-  }));
+  return rows.map(row => {
+    const invNo = getRowVal(row, ['Invoice No.', 'Note No.', 'Invoice No', 'Note No', 'Invoice Number']);
+    const invDate = getRowVal(row, ['Invoice Date', 'Note Date', 'Date']);
+    const mStr = getRowVal(row, ['Month', 'Return Period', 'Filing Period']);
+    const partyStr = getRowVal(row, ['Party', 'Receiver Name', 'Party Name', 'Customer Name', 'Particulars']);
+    const gstinStr = getRowVal(row, ['GST No.', 'GSTIN', 'GST No']);
+    const taxVal = getRowVal(row, ['Taxable', 'Taxable Value', 'Taxable Amount']);
+    const nilVal = getRowVal(row, ['Nil Rated', 'Nil Rated Supplies']);
+    const nonTaxVal = getRowVal(row, ['Non Taxable', 'Non-GST', 'Non-GST Supplies', 'Exempted', 'Exempted Supplies', 'Exempt', 'Non-GST Outward Supplies']);
+    const cgstVal = getRowVal(row, ['CGST']);
+    const sgstVal = getRowVal(row, ['SGST']);
+    const igstVal = getRowVal(row, ['IGST']);
+    const totalVal = getRowVal(row, ['Total', 'Invoice Value', 'Invoice Amount']);
+    const posVal = getRowVal(row, ['POS', 'Place of Supply']);
+    const vchVal = getRowVal(row, ['Voucher Type', 'Voucher Type Name', 'Vch Type', 'Note Type']);
+
+    return {
+      invoiceNo: parseString(invNo, true),
+      invoiceDate: standardizeDate(invDate),
+      month: parseMonth(invDate || mStr, mStr || invDate, globalYear),
+      party: parseString(partyStr),
+      gstNo: parseString(gstinStr, true).toUpperCase(),
+      taxable: parseNumber(taxVal),
+      nilRated: parseNumber(nilVal),
+      nonTaxable: parseNumber(nonTaxVal),
+      cgst: parseNumber(cgstVal),
+      sgst: parseNumber(sgstVal),
+      igst: parseNumber(igstVal),
+      total: parseNumber(totalVal),
+      pos: parseString(posVal),
+      voucherType: parseString(vchVal)
+    };
+  });
 }
 
 // ==========================================
@@ -287,36 +401,117 @@ function snapToGstRate(taxable: number, totalTax: number): number {
   );
 }
 
-function matchLineLevel(books: CleanedRow[], portal: CleanedRow[]): VarianceResult[] {
-  const results: VarianceResult[] = [];
-  const portalMap = new Map<string, CleanedRow>();
+function consolidateByInvoice(rows: CleanedRow[]): CleanedRow[] {
+  const map = new Map<string, CleanedRow>();
+  const unkeyed: CleanedRow[] = [];
 
-  // Index portal data by composite key
-  portal.forEach(p => {
-    const key = `${p.gstNo}_${p.invoiceNo}`.toUpperCase();
-    portalMap.set(key, p);
+  rows.forEach(r => {
+    const invKey = r.invoiceNo ? r.invoiceNo.trim().toUpperCase() : '';
+    const gstKey = r.gstNo ? r.gstNo.trim().toUpperCase() : '';
+    if (!invKey) {
+      unkeyed.push({ ...r });
+      return;
+    }
+    const key = gstKey ? `${gstKey}_${invKey}` : invKey;
+    if (!map.has(key)) {
+      map.set(key, { ...r });
+    } else {
+      const existing = map.get(key)!;
+      existing.taxable += r.taxable;
+      existing.cgst += r.cgst;
+      existing.sgst += r.sgst;
+      existing.igst += r.igst;
+      existing.nilRated += r.nilRated;
+      existing.nonTaxable += r.nonTaxable;
+      existing.total += r.total;
+      if (!existing.invoiceDate && r.invoiceDate) existing.invoiceDate = r.invoiceDate;
+      if ((!existing.month || existing.month === 'Unknown') && r.month) existing.month = r.month;
+      if (!existing.party && r.party) existing.party = r.party;
+      if (!existing.pos && r.pos) existing.pos = r.pos;
+      if (!existing.voucherType && r.voucherType) existing.voucherType = r.voucherType;
+    }
   });
 
-  // Match Books against Portal
-  books.forEach(b => {
-    const key = `${b.gstNo}_${b.invoiceNo}`.toUpperCase();
-    const pMatch = portalMap.get(key);
+  return [...Array.from(map.values()), ...unkeyed];
+}
 
-    if (pMatch) {
+function getPan(gstNo: string): string {
+  if (!gstNo) return '';
+  const cleaned = gstNo.trim().toUpperCase().replace(/^GSTIN-/i, '');
+  return cleaned.length >= 12 ? cleaned.slice(2, 12) : cleaned;
+}
+
+function matchLineLevel(books: CleanedRow[], portal: CleanedRow[]): VarianceResult[] {
+  const consolidatedBooks = consolidateByInvoice(books);
+  const consolidatedPortal = consolidateByInvoice(portal);
+
+  const results: VarianceResult[] = [];
+  const remainingPortal = [...consolidatedPortal];
+
+  consolidatedBooks.forEach(b => {
+    let matchIdx = -1;
+    const bInv = (b.invoiceNo || '').trim().toUpperCase();
+    const bGst = (b.gstNo || '').trim().toUpperCase();
+    const bPan = getPan(bGst);
+
+    // Tier 1: Exact GSTIN + Invoice No
+    if (bGst && bInv) {
+      const bKey = `${bGst}_${bInv}`;
+      matchIdx = remainingPortal.findIndex(p => {
+        const pGst = (p.gstNo || '').trim().toUpperCase();
+        const pInv = (p.invoiceNo || '').trim().toUpperCase();
+        return `${pGst}_${pInv}` === bKey;
+      });
+    }
+
+    // Tier 2: PAN + Invoice No (Handles branch GSTIN differences)
+    if (matchIdx === -1 && bPan && bInv) {
+      matchIdx = remainingPortal.findIndex(p => {
+        const pPan = getPan(p.gstNo);
+        const pInv = (p.invoiceNo || '').trim().toUpperCase();
+        return pPan === bPan && pInv === bInv && (p.month === b.month || !b.month || !p.month);
+      });
+    }
+
+    // Tier 3: Same GSTIN / PAN + Same Month + Matching Taxable (within Rs 10 or 1%)
+    if (matchIdx === -1 && bPan && b.taxable > 0) {
+      matchIdx = remainingPortal.findIndex(p => {
+        const pPan = getPan(p.gstNo);
+        const tol = Math.max(10, b.taxable * 0.01);
+        return pPan === bPan && (p.month === b.month || !b.month || !p.month) && Math.abs(b.taxable - p.taxable) <= tol;
+      });
+    }
+
+    // Tier 4: Same Invoice No + Same Month + Matching Taxable (within Rs 10 or 1%)
+    if (matchIdx === -1 && bInv && b.taxable > 0) {
+      matchIdx = remainingPortal.findIndex(p => {
+        const pInv = (p.invoiceNo || '').trim().toUpperCase();
+        const tol = Math.max(10, b.taxable * 0.01);
+        return pInv === bInv && (p.month === b.month || !b.month || !p.month) && Math.abs(b.taxable - p.taxable) <= tol;
+      });
+    }
+
+    if (matchIdx !== -1) {
+      const pMatch = remainingPortal.splice(matchIdx, 1)[0];
       const taxVar = Math.abs(b.taxable - pMatch.taxable);
       const cgstVar = Math.abs(b.cgst - pMatch.cgst);
       const sgstVar = Math.abs(b.sgst - pMatch.sgst);
       const igstVar = Math.abs(b.igst - pMatch.igst);
 
-      const isMismatch = taxVar > 2 || cgstVar > 2 || sgstVar > 2 || igstVar > 2;
+      const totalTaxB = b.cgst + b.sgst + b.igst;
+      const totalTaxP = pMatch.cgst + pMatch.sgst + pMatch.igst;
+      const totalTaxVar = Math.abs(totalTaxB - totalTaxP);
+
+      const booksHasTax = totalTaxB > 0;
+      const isMismatch = taxVar > 5 || (booksHasTax && totalTaxVar > 5);
 
       results.push({
         'Match Status': isMismatch ? 'Value Mismatch' : 'Perfect Match',
-        'Month': b.month,
-        'Invoice Date': b.invoiceDate,
-        'GST No': b.gstNo,
-        'Invoice/Note No': b.invoiceNo,
-        'Party Name': b.party,
+        'Month': b.month || pMatch.month,
+        'Invoice Date': b.invoiceDate || pMatch.invoiceDate,
+        'GST No': b.gstNo || pMatch.gstNo,
+        'Invoice/Note No': b.invoiceNo || pMatch.invoiceNo,
+        'Party Name': b.party || pMatch.party,
         'Taxable (Books)': b.taxable,
         'Taxable (Portal)': pMatch.taxable,
         'Taxable Variance': b.taxable - pMatch.taxable,
@@ -330,7 +525,6 @@ function matchLineLevel(books: CleanedRow[], portal: CleanedRow[]): VarianceResu
         'SGST (Portal)': pMatch.sgst,
         'SGST Variance': b.sgst - pMatch.sgst,
       });
-      portalMap.delete(key); // Remove matched record
     } else {
       results.push({
         'Match Status': 'Missing in Portal',
@@ -356,7 +550,7 @@ function matchLineLevel(books: CleanedRow[], portal: CleanedRow[]): VarianceResu
   });
 
   // Remaining Portal records are missing in books
-  portalMap.forEach(p => {
+  remainingPortal.forEach(p => {
     results.push({
       'Match Status': 'Missing in Books',
       'Month': p.month,
@@ -553,8 +747,24 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
   const cleanPortalCN = sanitizeData(inputs.portalCN, globalYear);
   const cleanPortalNil = sanitizeData(inputs.portalNil, globalYear);
 
+  // DEBUG: Log after sanitization
+  console.log('=== DEBUG SANITIZED DATA ===');
+  console.log('cleanBooksSales count:', cleanBooksSales.length);
+  console.log('cleanPortalB2B count:', cleanPortalB2B.length);
+  const aprilB2B = cleanPortalB2B.filter(r => r.month === 'Apr');
+  const aprilB2BTaxable = aprilB2B.reduce((sum, r) => sum + r.taxable, 0);
+  console.log('cleanPortalB2B April rows:', aprilB2B.length, 'Taxable:', aprilB2BTaxable);
+  const aprilBooksSales = cleanBooksSales.filter(r => r.month === 'Apr');
+  const aprilBooksTaxable = aprilBooksSales.reduce((sum, r) => sum + r.taxable, 0);
+  console.log('cleanBooksSales April rows:', aprilBooksSales.length, 'Taxable:', aprilBooksTaxable);
+
   // 2. Segregate Books Data
   const { b2bBooks, b2cBooks, b2clBooks, nilBooks, expBooks } = segregateBooks(cleanBooksSales);
+
+  console.log('b2bBooks count:', b2bBooks.length, 'b2cBooks:', b2cBooks.length, 'expBooks:', expBooks.length);
+  const aprilB2bBooks = b2bBooks.filter(r => r.month === 'Apr');
+  console.log('b2bBooks April rows:', aprilB2bBooks.length, 'Taxable:', aprilB2bBooks.reduce((s, r) => s + r.taxable, 0));
+  console.log('=== END DEBUG SANITIZED ===');
 
   // 3. Execute Matches (portalCN has CN & DN, treated as unified returns block)
   const b2bResults = matchLineLevel([...b2bBooks, ...b2clBooks], [...cleanPortalB2B, ...cleanPortalB2CL]);
@@ -895,16 +1105,40 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
       s.month,
       s.booksNet.taxable, s.booksNet.igst, s.booksNet.cgst, s.booksNet.sgst, s.booksNet.nilRated, s.booksNet.nonTaxable,
       s.portalNet.taxable, s.portalNet.igst, s.portalNet.cgst, s.portalNet.sgst, s.portalNet.nilRated, s.portalNet.nonTaxable,
-      { t: 'n', f: `B${rowNum}-H${rowNum}` },
-      { t: 'n', f: `C${rowNum}-I${rowNum}` },
-      { t: 'n', f: `D${rowNum}-J${rowNum}` },
-      { t: 'n', f: `E${rowNum}-K${rowNum}` },
-      { t: 'n', f: `F${rowNum}-L${rowNum}` },
-      { t: 'n', f: `G${rowNum}-M${rowNum}` }
+      { t: 'n', v: s.variance.taxable, f: `B${rowNum}-H${rowNum}` },
+      { t: 'n', v: s.variance.igst, f: `C${rowNum}-I${rowNum}` },
+      { t: 'n', v: s.variance.cgst, f: `D${rowNum}-J${rowNum}` },
+      { t: 'n', v: s.variance.sgst, f: `E${rowNum}-K${rowNum}` },
+      { t: 'n', v: s.variance.nilRated, f: `F${rowNum}-L${rowNum}` },
+      { t: 'n', v: s.variance.nonTaxable, f: `G${rowNum}-M${rowNum}` }
     ]);
   });
   const sec1TotalRow: any[] = ['TOTAL'];
-  for (let c = 1; c <= 18; c++) sec1TotalRow.push({ t: 'n', f: `SUM(${C(c)}${sec1Row + 3}:${C(c)}${sec1Row + 2 + monthlySummaries.length})` });
+  for (let c = 1; c <= 18; c++) {
+    const colName = C(c);
+    const sumVal = monthlySummaries.reduce((sum, s) => {
+      if (c === 1) return sum + s.booksNet.taxable;
+      if (c === 2) return sum + s.booksNet.igst;
+      if (c === 3) return sum + s.booksNet.cgst;
+      if (c === 4) return sum + s.booksNet.sgst;
+      if (c === 5) return sum + s.booksNet.nilRated;
+      if (c === 6) return sum + s.booksNet.nonTaxable;
+      if (c === 7) return sum + s.portalNet.taxable;
+      if (c === 8) return sum + s.portalNet.igst;
+      if (c === 9) return sum + s.portalNet.cgst;
+      if (c === 10) return sum + s.portalNet.sgst;
+      if (c === 11) return sum + s.portalNet.nilRated;
+      if (c === 12) return sum + s.portalNet.nonTaxable;
+      if (c === 13) return sum + s.variance.taxable;
+      if (c === 14) return sum + s.variance.igst;
+      if (c === 15) return sum + s.variance.cgst;
+      if (c === 16) return sum + s.variance.sgst;
+      if (c === 17) return sum + s.variance.nilRated;
+      if (c === 18) return sum + s.variance.nonTaxable;
+      return sum;
+    }, 0);
+    sec1TotalRow.push({ t: 'n', v: sumVal, f: `SUM(${colName}3:${colName}${2 + monthlySummaries.length})` });
+  }
   if (monthlySummaries.length > 0) masterAoA.push(sec1TotalRow);
   const sec1EndRow = masterAoA.length - 1;
 
@@ -935,16 +1169,42 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
       s.month,
       s.booksSales.taxable, s.booksSales.igst, s.booksSales.cgst, s.booksSales.sgst, s.booksSales.nilRated, s.booksSales.nonTaxable,
       s.booksCn.taxable, s.booksCn.igst, s.booksCn.cgst, s.booksCn.sgst, s.booksCn.nilRated, s.booksCn.nonTaxable,
-      { t: 'n', f: `B${rowNum}-H${rowNum}` },
-      { t: 'n', f: `C${rowNum}-I${rowNum}` },
-      { t: 'n', f: `D${rowNum}-J${rowNum}` },
-      { t: 'n', f: `E${rowNum}-K${rowNum}` },
-      { t: 'n', f: `F${rowNum}-L${rowNum}` },
-      { t: 'n', f: `G${rowNum}-M${rowNum}` }
+      { t: 'n', v: s.booksNet.taxable, f: `B${rowNum}-H${rowNum}` },
+      { t: 'n', v: s.booksNet.igst, f: `C${rowNum}-I${rowNum}` },
+      { t: 'n', v: s.booksNet.cgst, f: `D${rowNum}-J${rowNum}` },
+      { t: 'n', v: s.booksNet.sgst, f: `E${rowNum}-K${rowNum}` },
+      { t: 'n', v: s.booksNet.nilRated, f: `F${rowNum}-L${rowNum}` },
+      { t: 'n', v: s.booksNet.nonTaxable, f: `G${rowNum}-M${rowNum}` }
     ]);
   });
   const sec2TotalRow: any[] = ['TOTAL'];
-  for (let c = 1; c <= 18; c++) sec2TotalRow.push({ t: 'n', f: `SUM(${C(c)}${sec2Row + 3}:${C(c)}${sec2Row + 2 + monthlySummaries.length})` });
+  const sec2Start = sec2Row + 3;
+  const sec2End = sec2Row + 2 + monthlySummaries.length;
+  for (let c = 1; c <= 18; c++) {
+    const colName = C(c);
+    const sumVal = monthlySummaries.reduce((sum, s) => {
+      if (c === 1) return sum + s.booksSales.taxable;
+      if (c === 2) return sum + s.booksSales.igst;
+      if (c === 3) return sum + s.booksSales.cgst;
+      if (c === 4) return sum + s.booksSales.sgst;
+      if (c === 5) return sum + s.booksSales.nilRated;
+      if (c === 6) return sum + s.booksSales.nonTaxable;
+      if (c === 7) return sum + s.booksCn.taxable;
+      if (c === 8) return sum + s.booksCn.igst;
+      if (c === 9) return sum + s.booksCn.cgst;
+      if (c === 10) return sum + s.booksCn.sgst;
+      if (c === 11) return sum + s.booksCn.nilRated;
+      if (c === 12) return sum + s.booksCn.nonTaxable;
+      if (c === 13) return sum + s.booksNet.taxable;
+      if (c === 14) return sum + s.booksNet.igst;
+      if (c === 15) return sum + s.booksNet.cgst;
+      if (c === 16) return sum + s.booksNet.sgst;
+      if (c === 17) return sum + s.booksNet.nilRated;
+      if (c === 18) return sum + s.booksNet.nonTaxable;
+      return sum;
+    }, 0);
+    sec2TotalRow.push({ t: 'n', v: sumVal, f: `SUM(${colName}${sec2Start}:${colName}${sec2End})` });
+  }
   if (monthlySummaries.length > 0) masterAoA.push(sec2TotalRow);
   const sec2EndRow = masterAoA.length - 1;
 
@@ -987,16 +1247,30 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
       s.portalB2c.taxable, s.portalB2c.igst, s.portalB2c.cgst, s.portalB2c.sgst, s.portalB2c.nilRated, s.portalB2c.nonTaxable,
       s.portalNil.taxable, s.portalNil.igst, s.portalNil.cgst, s.portalNil.sgst, s.portalNil.nilRated, s.portalNil.nonTaxable,
       s.portalCn.taxable, s.portalCn.igst, s.portalCn.cgst, s.portalCn.sgst, s.portalCn.nilRated, s.portalCn.nonTaxable,
-      { t: 'n', f: `B${rowNum}+H${rowNum}+N${rowNum}+T${rowNum}-Z${rowNum}` },
-      { t: 'n', f: `C${rowNum}+I${rowNum}+O${rowNum}+U${rowNum}-AA${rowNum}` },
-      { t: 'n', f: `D${rowNum}+J${rowNum}+P${rowNum}+V${rowNum}-AB${rowNum}` },
-      { t: 'n', f: `E${rowNum}+K${rowNum}+Q${rowNum}+W${rowNum}-AC${rowNum}` },
-      { t: 'n', f: `F${rowNum}+L${rowNum}+R${rowNum}+X${rowNum}-AD${rowNum}` },
-      { t: 'n', f: `G${rowNum}+M${rowNum}+S${rowNum}+Y${rowNum}-AE${rowNum}` }
+      { t: 'n', v: s.portalNet.taxable, f: `B${rowNum}+H${rowNum}+N${rowNum}+T${rowNum}-Z${rowNum}` },
+      { t: 'n', v: s.portalNet.igst, f: `C${rowNum}+I${rowNum}+O${rowNum}+U${rowNum}-AA${rowNum}` },
+      { t: 'n', v: s.portalNet.cgst, f: `D${rowNum}+J${rowNum}+P${rowNum}+V${rowNum}-AB${rowNum}` },
+      { t: 'n', v: s.portalNet.sgst, f: `E${rowNum}+K${rowNum}+Q${rowNum}+W${rowNum}-AC${rowNum}` },
+      { t: 'n', v: s.portalNet.nilRated, f: `F${rowNum}+L${rowNum}+R${rowNum}+X${rowNum}-AD${rowNum}` },
+      { t: 'n', v: s.portalNet.nonTaxable, f: `G${rowNum}+M${rowNum}+S${rowNum}+Y${rowNum}-AE${rowNum}` }
     ]);
   });
   const sec3TotalRow: any[] = ['TOTAL'];
-  for (let c = 1; c <= 36; c++) sec3TotalRow.push({ t: 'n', f: `SUM(${C(c)}${sec3Row + 3}:${C(c)}${sec3Row + 2 + monthlySummaries.length})` });
+  const sec3Start = sec3Row + 3;
+  const sec3End = sec3Row + 2 + monthlySummaries.length;
+  for (let c = 1; c <= 36; c++) {
+    const colName = C(c);
+    const sumVal = monthlySummaries.reduce((sum, s) => {
+      if (c === 31) return sum + s.portalNet.taxable;
+      if (c === 32) return sum + s.portalNet.igst;
+      if (c === 33) return sum + s.portalNet.cgst;
+      if (c === 34) return sum + s.portalNet.sgst;
+      if (c === 35) return sum + s.portalNet.nilRated;
+      if (c === 36) return sum + s.portalNet.nonTaxable;
+      return sum;
+    }, 0);
+    sec3TotalRow.push({ t: 'n', v: sumVal, f: `SUM(${colName}${sec3Start}:${colName}${sec3End})` });
+  }
   if (monthlySummaries.length > 0) masterAoA.push(sec3TotalRow);
   const sec3EndRow = masterAoA.length - 1;
 
@@ -1047,13 +1321,28 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
     masterAoA.push([
       s.month,
       v3b.taxable, v3b.igst, v3b.cgst, v3b.sgst, v3b.nilRated, v3b.nonTaxable,
-      { t: 'n', f: `B${rowNum}-B${bRow}` }, { t: 'n', f: `C${rowNum}-C${bRow}` }, { t: 'n', f: `D${rowNum}-D${bRow}` }, { t: 'n', f: `E${rowNum}-E${bRow}` }, { t: 'n', f: `F${rowNum}-F${bRow}` }, { t: 'n', f: `G${rowNum}-G${bRow}` },
-      { t: 'n', f: `B${rowNum}-H${pRow}` }, { t: 'n', f: `C${rowNum}-I${pRow}` }, { t: 'n', f: `D${rowNum}-J${pRow}` }, { t: 'n', f: `E${rowNum}-J${pRow}` }, { t: 'n', f: `F${rowNum}-K${pRow}` }, { t: 'n', f: `G${rowNum}-L${pRow}` }
+      { t: 'n', v: v3b.taxable - s.booksNet.taxable, f: `B${rowNum}-B${bRow}` },
+      { t: 'n', v: v3b.igst - s.booksNet.igst, f: `C${rowNum}-C${bRow}` },
+      { t: 'n', v: v3b.cgst - s.booksNet.cgst, f: `D${rowNum}-D${bRow}` },
+      { t: 'n', v: v3b.sgst - s.booksNet.sgst, f: `E${rowNum}-E${bRow}` },
+      { t: 'n', v: v3b.nilRated - s.booksNet.nilRated, f: `F${rowNum}-F${bRow}` },
+      { t: 'n', v: v3b.nonTaxable - s.booksNet.nonTaxable, f: `G${rowNum}-G${bRow}` },
+      { t: 'n', v: v3b.taxable - s.portalNet.taxable, f: `B${rowNum}-H${pRow}` },
+      { t: 'n', v: v3b.igst - s.portalNet.igst, f: `C${rowNum}-I${pRow}` },
+      { t: 'n', v: v3b.cgst - s.portalNet.cgst, f: `D${rowNum}-J${pRow}` },
+      { t: 'n', v: v3b.sgst - s.portalNet.sgst, f: `E${rowNum}-K${pRow}` },
+      { t: 'n', v: v3b.nilRated - s.portalNet.nilRated, f: `F${rowNum}-L${pRow}` },
+      { t: 'n', v: v3b.nonTaxable - s.portalNet.nonTaxable, f: `G${rowNum}-M${pRow}` }
     ]);
   });
 
   const sec4TotalRow: any[] = ['TOTAL'];
-  for (let c = 1; c <= 18; c++) sec4TotalRow.push({ t: 'n', f: `SUM(${C(c)}${sec4Row + 3}:${C(c)}${sec4Row + 2 + monthlySummaries.length})` });
+  const sec4Start = sec4Row + 3;
+  const sec4End = sec4Row + 2 + monthlySummaries.length;
+  for (let c = 1; c <= 18; c++) {
+    const colName = C(c);
+    sec4TotalRow.push({ t: 'n', f: `SUM(${colName}${sec4Start}:${colName}${sec4End})` });
+  }
   if (monthlySummaries.length > 0) masterAoA.push(sec4TotalRow);
   const sec4EndRow = masterAoA.length - 1;
 
@@ -1078,38 +1367,65 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
       const isTotal = (isSec1 && R === sec1EndRow) || (isSec2 && R === sec2EndRow) || (isSec3 && R === sec3EndRow) || (isSec4 && R === sec4EndRow);
 
       let fgColorHeader = '1E3A8A';
-      if (isSec3) fgColorHeader = '0F766E';
-      if (isSec4) fgColorHeader = '334155';
-      if (isSec1 && C_idx >= 11) fgColorHeader = '334155';
+      if (isSec1) {
+        if (C_idx >= 1 && C_idx <= 6) fgColorHeader = '1E3A8A'; // Navy Blue for Net Books
+        else if (C_idx >= 7 && C_idx <= 12) fgColorHeader = '0F766E'; // Dark Teal for Net Portal
+        else if (C_idx >= 13 && C_idx <= 18) fgColorHeader = '581C87'; // Deep Purple for Net Variance
+        else fgColorHeader = '0F172A';
+      } else if (isSec2) {
+        fgColorHeader = '1E3A8A';
+      } else if (isSec3) {
+        fgColorHeader = '0F766E';
+      } else if (isSec4) {
+        fgColorHeader = '334155';
+      }
+
+      // Column boundary borders separating sections visually
+      const isSecBoundary = C_idx === 6 || C_idx === 12 || C_idx === 18 || C_idx === 24 || C_idx === 30 || C_idx === 36;
+      const rBorder = isSecBoundary ? { style: 'medium', color: { rgb: '334155' } } : { style: 'hair', color: { rgb: 'CBD5E1' } };
 
       if (isHeader1) {
         wsMaster[cellRef].s = {
           font: { name: 'Segoe UI', bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
           fill: { fgColor: { rgb: fgColorHeader } },
           alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'thin', color: { rgb: '334155' } }, right: { style: 'thin', color: { rgb: '334155' } } }
+          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'thin', color: { rgb: '334155' } }, right: { style: 'medium', color: { rgb: '0F172A' } } }
         };
       } else if (isHeader2) {
         wsMaster[cellRef].s = {
-          font: { name: 'Segoe UI', bold: true, color: { rgb: '1F2937' }, sz: 10 },
+          font: { name: 'Segoe UI', bold: true, color: { rgb: '0F172A' }, sz: 10 },
           fill: { fgColor: { rgb: 'F1F5F9' } },
           alignment: { horizontal: 'center', vertical: 'center' },
-          border: { bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'hair', color: { rgb: 'CBD5E1' } }, right: { style: 'hair', color: { rgb: 'CBD5E1' } } }
+          border: { bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'hair', color: { rgb: 'CBD5E1' } }, right: rBorder }
         };
       } else if (isTotal) {
+        let totalBg = '1E293B';
+        let totalFontColor = 'FFFFFF';
+        if (isSec1) { totalBg = '0F172A'; totalFontColor = 'F59E0B'; } // Gold font for Section 1 Total
+        else if (isSec2) { totalBg = '1E3A8A'; }
+        else if (isSec3) { totalBg = '0F766E'; }
+
         wsMaster[cellRef].s = {
-          font: { name: 'Segoe UI', bold: true, color: { rgb: '1F2937' }, sz: 10 },
-          fill: { fgColor: { rgb: 'F8FAFC' } },
+          font: { name: 'Segoe UI', bold: true, color: { rgb: totalFontColor }, sz: 10 },
+          fill: { fgColor: { rgb: totalBg } },
           alignment: { horizontal: C_idx > 0 ? 'right' : 'left' },
-          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'double', color: { rgb: '0F172A' } } },
+          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'double', color: { rgb: '0F172A' } }, right: rBorder },
           numFmt: C_idx > 0 ? '#,##0.00' : undefined
         };
       } else {
+        // Section specific data row background tints
+        let bgTint = 'FFFFFF';
+        if (isSec1) {
+          if (C_idx >= 1 && C_idx <= 6) bgTint = 'F8FAFC'; // Books cool blue tint
+          else if (C_idx >= 7 && C_idx <= 12) bgTint = 'F0FDF4'; // Portal mint tint
+          else if (C_idx >= 13 && C_idx <= 18) bgTint = 'FFFBEB'; // Variance amber tint
+        }
+
         wsMaster[cellRef].s = {
-          font: { name: 'Segoe UI', sz: 10, color: { rgb: isSec4 ? '0F172A' : '334155' }, bold: isSec4 },
-          fill: { fgColor: { rgb: isSec4 ? 'F8FAFC' : 'FFFFFF' } },
+          font: { name: 'Segoe UI', sz: 10, color: { rgb: isSec4 ? '0F172A' : '334155' }, bold: isSec4 || (isSec1 && C_idx >= 13 && wsMaster[cellRef].v !== 0) },
+          fill: { fgColor: { rgb: bgTint } },
           alignment: { horizontal: C_idx > 0 ? 'right' : 'left' },
-          border: { bottom: { style: 'hair', color: { rgb: 'CBD5E1' } }, right: { style: 'hair', color: { rgb: 'E2E8F0' } } },
+          border: { bottom: { style: 'hair', color: { rgb: 'CBD5E1' } }, right: rBorder },
           numFmt: C_idx > 0 ? '#,##0.00' : undefined
         };
       }
@@ -1120,6 +1436,19 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
 
   // Create Party Working Sheet
   const partyAoA: any[][] = [];
+  const partySuperHeaders = [
+    'PARTY IDENTIFICATION', '', '', '', '',
+    'B2B SALES', '', '',
+    'EXPORTS', '', '',
+    'CREDIT NOTES', '', '',
+    'NET TAXABLE SUMMARY', '', '',
+    'B2C SALES', '', '',
+    'NIL RATED', '', '',
+    'NON TAXABLE', '', '',
+    'IGST TAX', '', '',
+    'CGST TAX', '', '',
+    'SGST TAX', '', ''
+  ];
   const partyHeaders = [
     'Month', 'Party Name (Books)', 'Party Name (R1)', 'GST No. (Books)', 'GST No. (R1)',
     'Books B2B Taxable', 'Portal B2B Taxable', 'B2B Taxable Var',
@@ -1133,7 +1462,22 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
     'Books CGST', 'Portal CGST', 'CGST Var',
     'Books SGST', 'Portal SGST', 'SGST Var'
   ];
+  partyAoA.push(partySuperHeaders);
   partyAoA.push(partyHeaders);
+
+  const partyMerges: XLSX.Range[] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },   // Party ID
+    { s: { r: 0, c: 5 }, e: { r: 0, c: 7 } },   // B2B Sales
+    { s: { r: 0, c: 8 }, e: { r: 0, c: 10 } },  // Exports
+    { s: { r: 0, c: 11 }, e: { r: 0, c: 13 } }, // Credit Notes
+    { s: { r: 0, c: 14 }, e: { r: 0, c: 16 } }, // Net Taxable
+    { s: { r: 0, c: 17 }, e: { r: 0, c: 19 } }, // B2C Sales
+    { s: { r: 0, c: 20 }, e: { r: 0, c: 22 } }, // Nil Rated
+    { s: { r: 0, c: 23 }, e: { r: 0, c: 25 } }, // Non Taxable
+    { s: { r: 0, c: 26 }, e: { r: 0, c: 28 } }, // IGST
+    { s: { r: 0, c: 29 }, e: { r: 0, c: 31 } }, // CGST
+    { s: { r: 0, c: 32 }, e: { r: 0, c: 34 } }  // SGST
+  ];
 
   const partyRowsConfig: any[] = [];
   const months = Array.from(new Set(partySummaries.map(s => s.month)));
@@ -1144,95 +1488,116 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
     const firstChildIdx = monthStartRow + 2;
     const lastChildIdx = monthStartRow + 1 + monthRows.length;
     const monthStartRowIdx = monthStartRow + 1;
+    const mB2bTax = monthRows.reduce((s, r) => s + r.booksB2b.taxable, 0);
+    const mPB2bTax = monthRows.reduce((s, r) => s + r.portalB2b.taxable, 0);
+    const mExpTax = monthRows.reduce((s, r) => s + r.booksExport.taxable, 0);
+    const mPExpTax = monthRows.reduce((s, r) => s + r.portalExport.taxable, 0);
+    const mCnTax = monthRows.reduce((s, r) => s + r.booksCn.taxable, 0);
+    const mPCnTax = monthRows.reduce((s, r) => s + r.portalCn.taxable, 0);
+    const mNetTax = monthRows.reduce((s, r) => s + r.booksNet.taxable, 0);
+    const mPNetTax = monthRows.reduce((s, r) => s + r.portalNet.taxable, 0);
+    const mB2cTax = monthRows.reduce((s, r) => s + r.booksB2c.taxable, 0);
+    const mPB2cTax = monthRows.reduce((s, r) => s + r.portalB2c.taxable, 0);
+    const mNilTax = monthRows.reduce((s, r) => s + r.booksNil.taxable, 0);
+    const mPNilTax = monthRows.reduce((s, r) => s + r.portalNil.taxable, 0);
+    const mNonTax = monthRows.reduce((s, r) => s + r.booksNil.nonTaxable, 0);
+    const mPNonTax = monthRows.reduce((s, r) => s + r.portalNil.nonTaxable, 0);
+    const mIgstB2b = monthRows.reduce((s, r) => s + r.booksB2b.igst + r.booksExport.igst + r.booksB2c.igst - r.booksCn.igst, 0);
+    const mPIgstB2b = monthRows.reduce((s, r) => s + r.portalB2b.igst + r.portalExport.igst + r.portalB2c.igst - r.portalCn.igst, 0);
+    const mCgstB2b = monthRows.reduce((s, r) => s + r.booksB2b.cgst + r.booksB2c.cgst - r.booksCn.cgst, 0);
+    const mPCgstB2b = monthRows.reduce((s, r) => s + r.portalB2b.cgst + r.portalB2c.cgst - r.portalCn.cgst, 0);
+    const mSgstB2b = monthRows.reduce((s, r) => s + r.booksB2b.sgst + r.booksB2c.sgst - r.booksCn.sgst, 0);
+    const mPSgstB2b = monthRows.reduce((s, r) => s + r.portalB2b.sgst + r.portalB2c.sgst - r.portalCn.sgst, 0);
 
     partyAoA.push([
       m, 'MONTH TOTAL', '', '', '',
-      { t: 'n', f: `SUM(F${firstChildIdx}:F${lastChildIdx})` },
-      { t: 'n', f: `SUM(G${firstChildIdx}:G${lastChildIdx})` },
-      { t: 'n', f: `F${monthStartRowIdx}-G${monthStartRowIdx}` },
+      { t: 'n', v: mB2bTax, f: `SUM(F${firstChildIdx}:F${lastChildIdx})` },
+      { t: 'n', v: mPB2bTax, f: `SUM(G${firstChildIdx}:G${lastChildIdx})` },
+      { t: 'n', v: mB2bTax - mPB2bTax, f: `F${monthStartRowIdx}-G${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(I${firstChildIdx}:I${lastChildIdx})` },
-      { t: 'n', f: `SUM(J${firstChildIdx}:J${lastChildIdx})` },
-      { t: 'n', f: `I${monthStartRowIdx}-J${monthStartRowIdx}` },
+      { t: 'n', v: mExpTax, f: `SUM(I${firstChildIdx}:I${lastChildIdx})` },
+      { t: 'n', v: mPExpTax, f: `SUM(J${firstChildIdx}:J${lastChildIdx})` },
+      { t: 'n', v: mExpTax - mPExpTax, f: `I${monthStartRowIdx}-J${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(L${firstChildIdx}:L${lastChildIdx})` },
-      { t: 'n', f: `SUM(M${firstChildIdx}:M${lastChildIdx})` },
-      { t: 'n', f: `L${monthStartRowIdx}-M${monthStartRowIdx}` },
+      { t: 'n', v: mCnTax, f: `SUM(L${firstChildIdx}:L${lastChildIdx})` },
+      { t: 'n', v: mPCnTax, f: `SUM(M${firstChildIdx}:M${lastChildIdx})` },
+      { t: 'n', v: mCnTax - mPCnTax, f: `L${monthStartRowIdx}-M${monthStartRowIdx}` },
 
-      { t: 'n', f: `F${monthStartRowIdx}+I${monthStartRowIdx}+R${monthStartRowIdx}+U${monthStartRowIdx}+X${monthStartRowIdx}-L${monthStartRowIdx}` },
-      { t: 'n', f: `G${monthStartRowIdx}+J${monthStartRowIdx}+S${monthStartRowIdx}+V${monthStartRowIdx}+Y${monthStartRowIdx}-M${monthStartRowIdx}` },
-      { t: 'n', f: `O${monthStartRowIdx}-P${monthStartRowIdx}` },
+      { t: 'n', v: mNetTax, f: `F${monthStartRowIdx}+I${monthStartRowIdx}+R${monthStartRowIdx}+U${monthStartRowIdx}+X${monthStartRowIdx}-L${monthStartRowIdx}` },
+      { t: 'n', v: mPNetTax, f: `G${monthStartRowIdx}+J${monthStartRowIdx}+S${monthStartRowIdx}+V${monthStartRowIdx}+Y${monthStartRowIdx}-M${monthStartRowIdx}` },
+      { t: 'n', v: mNetTax - mPNetTax, f: `O${monthStartRowIdx}-P${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(R${firstChildIdx}:R${lastChildIdx})` },
-      { t: 'n', f: `SUM(S${firstChildIdx}:S${lastChildIdx})` },
-      { t: 'n', f: `R${monthStartRowIdx}-S${monthStartRowIdx}` },
+      { t: 'n', v: mB2cTax, f: `SUM(R${firstChildIdx}:R${lastChildIdx})` },
+      { t: 'n', v: mPB2cTax, f: `SUM(S${firstChildIdx}:S${lastChildIdx})` },
+      { t: 'n', v: mB2cTax - mPB2cTax, f: `R${monthStartRowIdx}-S${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(U${firstChildIdx}:U${lastChildIdx})` },
-      { t: 'n', f: `SUM(V${firstChildIdx}:V${lastChildIdx})` },
-      { t: 'n', f: `U${monthStartRowIdx}-V${monthStartRowIdx}` },
+      { t: 'n', v: mNilTax, f: `SUM(U${firstChildIdx}:U${lastChildIdx})` },
+      { t: 'n', v: mPNilTax, f: `SUM(V${firstChildIdx}:V${lastChildIdx})` },
+      { t: 'n', v: mNilTax - mPNilTax, f: `U${monthStartRowIdx}-V${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(X${firstChildIdx}:X${lastChildIdx})` },
-      { t: 'n', f: `SUM(Y${firstChildIdx}:Y${lastChildIdx})` },
-      { t: 'n', f: `X${monthStartRowIdx}-Y${monthStartRowIdx}` },
+      { t: 'n', v: mNonTax, f: `SUM(X${firstChildIdx}:X${lastChildIdx})` },
+      { t: 'n', v: mPNonTax, f: `SUM(Y${firstChildIdx}:Y${lastChildIdx})` },
+      { t: 'n', v: mNonTax - mPNonTax, f: `X${monthStartRowIdx}-Y${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(AA${firstChildIdx}:AA${lastChildIdx})` },
-      { t: 'n', f: `SUM(AB${firstChildIdx}:AB${lastChildIdx})` },
-      { t: 'n', f: `AA${monthStartRowIdx}-AB${monthStartRowIdx}` },
+      { t: 'n', v: mIgstB2b, f: `SUM(AA${firstChildIdx}:AA${lastChildIdx})` },
+      { t: 'n', v: mPIgstB2b, f: `SUM(AB${firstChildIdx}:AB${lastChildIdx})` },
+      { t: 'n', v: mIgstB2b - mPIgstB2b, f: `AA${monthStartRowIdx}-AB${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(AD${firstChildIdx}:AD${lastChildIdx})` },
-      { t: 'n', f: `SUM(AE${firstChildIdx}:AE${lastChildIdx})` },
-      { t: 'n', f: `AD${monthStartRowIdx}-AE${monthStartRowIdx}` },
+      { t: 'n', v: mCgstB2b, f: `SUM(AD${firstChildIdx}:AD${lastChildIdx})` },
+      { t: 'n', v: mPCgstB2b, f: `SUM(AE${firstChildIdx}:AE${lastChildIdx})` },
+      { t: 'n', v: mCgstB2b - mPCgstB2b, f: `AD${monthStartRowIdx}-AE${monthStartRowIdx}` },
 
-      { t: 'n', f: `SUM(AG${firstChildIdx}:AG${lastChildIdx})` },
-      { t: 'n', f: `SUM(AH${firstChildIdx}:AH${lastChildIdx})` },
-      { t: 'n', f: `AG${monthStartRowIdx}-AH${monthStartRowIdx}` }
+      { t: 'n', v: mSgstB2b, f: `SUM(AG${firstChildIdx}:AG${lastChildIdx})` },
+      { t: 'n', v: mPSgstB2b, f: `SUM(AH${firstChildIdx}:AH${lastChildIdx})` },
+      { t: 'n', v: mSgstB2b - mPSgstB2b, f: `AG${monthStartRowIdx}-AH${monthStartRowIdx}` }
     ]);
     partyRowsConfig.push({ level: 0 });
 
     monthRows.forEach(s => {
       const rIdx = partyAoA.length + 1;
+      const gKey = `IF(D${rIdx}<>"",D${rIdx},E${rIdx})`;
       partyAoA.push([
         s.month, s.booksPartyName, s.portalPartyName, s.booksGstNo, s.portalGstNo,
         // B2B
-        { t: 'n', f: `SUMIFS(B2B_Details!G:G, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(B2B_Details!H:H, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `F${rIdx}-G${rIdx}` },
+        { t: 'n', v: s.booksB2b.taxable, f: `SUMIFS(B2B_Details!G:G, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalB2b.taxable, f: `SUMIFS(B2B_Details!H:H, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksB2b.taxable - s.portalB2b.taxable, f: `F${rIdx}-G${rIdx}` },
         // Export
-        { t: 'n', f: `SUMIFS(Export_Details!G:G, Export_Details!D:D, D${rIdx}, Export_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(Export_Details!H:H, Export_Details!D:D, D${rIdx}, Export_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `I${rIdx}-J${rIdx}` },
+        { t: 'n', v: s.booksExport.taxable, f: `SUMIFS(Export_Details!G:G, Export_Details!D:D, ${gKey}, Export_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalExport.taxable, f: `SUMIFS(Export_Details!H:H, Export_Details!D:D, ${gKey}, Export_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksExport.taxable - s.portalExport.taxable, f: `I${rIdx}-J${rIdx}` },
         // CN
-        { t: 'n', f: `SUMIFS(CN_Details!G:G, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(CN_Details!H:H, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `L${rIdx}-M${rIdx}` },
+        { t: 'n', v: s.booksCn.taxable, f: `SUMIFS(CN_Details!G:G, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalCn.taxable, f: `SUMIFS(CN_Details!H:H, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksCn.taxable - s.portalCn.taxable, f: `L${rIdx}-M${rIdx}` },
         // Net
-        { t: 'n', f: `F${rIdx}+I${rIdx}+R${rIdx}+U${rIdx}+X${rIdx}-L${rIdx}` },
-        { t: 'n', f: `G${rIdx}+J${rIdx}+S${rIdx}+V${rIdx}+Y${rIdx}-M${rIdx}` },
-        { t: 'n', f: `O${rIdx}-P${rIdx}` },
+        { t: 'n', v: s.booksNet.taxable, f: `F${rIdx}+I${rIdx}+R${rIdx}+U${rIdx}+X${rIdx}-L${rIdx}` },
+        { t: 'n', v: s.portalNet.taxable, f: `G${rIdx}+J${rIdx}+S${rIdx}+V${rIdx}+Y${rIdx}-M${rIdx}` },
+        { t: 'n', v: s.variance.taxable, f: `O${rIdx}-P${rIdx}` },
         // B2C
-        { t: 'n', f: `SUMIFS(B2C_Details!I:I, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(B2C_Details!J:J, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `R${rIdx}-S${rIdx}` },
+        { t: 'n', v: s.booksB2c.taxable, f: `SUMIFS(B2C_Details!I:I, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalB2c.taxable, f: `SUMIFS(B2C_Details!J:J, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksB2c.taxable - s.portalB2c.taxable, f: `R${rIdx}-S${rIdx}` },
         // Nil
-        { t: 'n', f: `SUMIFS(Nil_Rated_Details!E:E, Nil_Rated_Details!C:C, D${rIdx}, Nil_Rated_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(Nil_Rated_Details!G:G, Nil_Rated_Details!C:C, D${rIdx}, Nil_Rated_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `U${rIdx}-V${rIdx}` },
+        { t: 'n', v: s.booksNil.taxable, f: `SUMIFS(Nil_Rated_Details!E:E, Nil_Rated_Details!C:C, ${gKey}, Nil_Rated_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalNil.taxable, f: `SUMIFS(Nil_Rated_Details!G:G, Nil_Rated_Details!C:C, ${gKey}, Nil_Rated_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksNil.taxable - s.portalNil.taxable, f: `U${rIdx}-V${rIdx}` },
         // Non Taxable
-        { t: 'n', f: `SUMIFS(Nil_Rated_Details!F:F, Nil_Rated_Details!C:C, D${rIdx}, Nil_Rated_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(Nil_Rated_Details!H:H, Nil_Rated_Details!C:C, D${rIdx}, Nil_Rated_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `X${rIdx}-Y${rIdx}` },
+        { t: 'n', v: s.booksNil.nonTaxable, f: `SUMIFS(Nil_Rated_Details!F:F, Nil_Rated_Details!C:C, ${gKey}, Nil_Rated_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalNil.nonTaxable, f: `SUMIFS(Nil_Rated_Details!H:H, Nil_Rated_Details!C:C, ${gKey}, Nil_Rated_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.booksNil.nonTaxable - s.portalNil.nonTaxable, f: `X${rIdx}-Y${rIdx}` },
         // IGST
-        { t: 'n', f: `SUMIFS(B2B_Details!J:J, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(Export_Details!J:J, Export_Details!D:D, D${rIdx}, Export_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!L:L, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!J:J, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(B2B_Details!K:K, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(Export_Details!K:K, Export_Details!D:D, D${rIdx}, Export_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!M:M, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!K:K, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `AA${rIdx}-AB${rIdx}` },
+        { t: 'n', v: s.booksB2b.igst + s.booksExport.igst + s.booksB2c.igst - s.booksCn.igst, f: `SUMIFS(B2B_Details!J:J, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(Export_Details!J:J, Export_Details!D:D, ${gKey}, Export_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!L:L, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!J:J, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalB2b.igst + s.portalExport.igst + s.portalB2c.igst - s.portalCn.igst, f: `SUMIFS(B2B_Details!K:K, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(Export_Details!K:K, Export_Details!D:D, ${gKey}, Export_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!M:M, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!K:K, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.variance.igst, f: `AA${rIdx}-AB${rIdx}` },
         // CGST
-        { t: 'n', f: `SUMIFS(B2B_Details!M:M, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!O:O, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!M:M, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(B2B_Details!N:N, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!P:P, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!N:N, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `AD${rIdx}-AE${rIdx}` },
+        { t: 'n', v: s.booksB2b.cgst + s.booksB2c.cgst - s.booksCn.cgst, f: `SUMIFS(B2B_Details!M:M, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!O:O, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!M:M, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalB2b.cgst + s.portalB2c.cgst - s.portalCn.cgst, f: `SUMIFS(B2B_Details!N:N, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!P:P, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!N:N, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.variance.cgst, f: `AD${rIdx}-AE${rIdx}` },
         // SGST
-        { t: 'n', f: `SUMIFS(B2B_Details!P:P, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!R:R, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!P:P, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `SUMIFS(B2B_Details!Q:Q, B2B_Details!D:D, D${rIdx}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!S:S, B2C_Details!C:C, D${rIdx}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!Q:Q, CN_Details!D:D, D${rIdx}, CN_Details!B:B, A${rIdx})` },
-        { t: 'n', f: `AG${rIdx}-AH${rIdx}` }
+        { t: 'n', v: s.booksB2b.sgst + s.booksB2c.sgst - s.booksCn.sgst, f: `SUMIFS(B2B_Details!P:P, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!R:R, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!P:P, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.portalB2b.sgst + s.portalB2c.sgst - s.portalCn.sgst, f: `SUMIFS(B2B_Details!Q:Q, B2B_Details!D:D, ${gKey}, B2B_Details!B:B, A${rIdx}) + SUMIFS(B2C_Details!S:S, B2C_Details!C:C, ${gKey}, B2C_Details!B:B, A${rIdx}) - SUMIFS(CN_Details!Q:Q, CN_Details!D:D, ${gKey}, CN_Details!B:B, A${rIdx})` },
+        { t: 'n', v: s.variance.sgst, f: `AG${rIdx}-AH${rIdx}` }
       ]);
       partyRowsConfig.push({ level: 1, hidden: true });
     });
@@ -1241,50 +1606,51 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
   const grandTotalRowIdx = partyAoA.length + 1;
   partyAoA.push([
     'GRAND TOTAL', '', '', '', '',
-    { t: 'n', f: `SUMIFS(F2:F${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(G2:G${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(F3:F${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(G3:G${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `F${grandTotalRowIdx}-G${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(I2:I${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(J2:J${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(I3:I${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(J3:J${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `I${grandTotalRowIdx}-J${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(L2:L${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(M2:M${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(L3:L${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(M3:M${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `L${grandTotalRowIdx}-M${grandTotalRowIdx}` },
 
     { t: 'n', f: `F${grandTotalRowIdx}+I${grandTotalRowIdx}+R${grandTotalRowIdx}+U${grandTotalRowIdx}+X${grandTotalRowIdx}-L${grandTotalRowIdx}` },
     { t: 'n', f: `G${grandTotalRowIdx}+J${grandTotalRowIdx}+S${grandTotalRowIdx}+V${grandTotalRowIdx}+Y${grandTotalRowIdx}-M${grandTotalRowIdx}` },
     { t: 'n', f: `O${grandTotalRowIdx}-P${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(R2:R${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(S2:S${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(R3:R${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(S3:S${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `R${grandTotalRowIdx}-S${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(U2:U${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(V2:V${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(U3:U${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(V3:V${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `U${grandTotalRowIdx}-V${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(X2:X${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(Y2:Y${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(X3:X${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(Y3:Y${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `X${grandTotalRowIdx}-Y${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(AA2:AA${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(AB2:AB${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AA3:AA${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AB3:AB${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `AA${grandTotalRowIdx}-AB${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(AD2:AD${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(AE2:AE${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AD3:AD${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AE3:AE${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `AD${grandTotalRowIdx}-AE${grandTotalRowIdx}` },
 
-    { t: 'n', f: `SUMIFS(AG2:AG${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
-    { t: 'n', f: `SUMIFS(AH2:AH${grandTotalRowIdx - 1}, B2:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AG3:AG${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
+    { t: 'n', f: `SUMIFS(AH3:AH${grandTotalRowIdx - 1}, B3:B${grandTotalRowIdx - 1}, "MONTH TOTAL")` },
     { t: 'n', f: `AG${grandTotalRowIdx}-AH${grandTotalRowIdx}` }
   ]);
   partyRowsConfig.push({ level: 0, hpt: 30 });
 
   const wsParty = XLSX.utils.aoa_to_sheet(partyAoA);
-  wsParty['!rows'] = [{ hpt: 24 }, ...partyRowsConfig];
+  wsParty['!merges'] = partyMerges;
+  wsParty['!rows'] = [{ hpt: 24 }, { hpt: 20 }, ...partyRowsConfig];
   wsParty['!outline'] = { above: true, summaryBelow: false };
 
   // Style Party Working Sheet
@@ -1294,43 +1660,65 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
       const cellRef = XLSX.utils.encode_cell({ c: C_idx, r: R });
       if (!wsParty[cellRef]) wsParty[cellRef] = { t: 's', v: '' };
 
-      const isHeader = R === 0;
-      const isMonthTotal = partyAoA[R][1] === 'MONTH TOTAL';
-      const isGrandTotal = partyAoA[R][0] === 'GRAND TOTAL';
+      const isSuperHeader = R === 0;
+      const isSubHeader = R === 1;
+      const isMonthTotal = partyAoA[R] && partyAoA[R][1] === 'MONTH TOTAL';
+      const isGrandTotal = partyAoA[R] && partyAoA[R][0] === 'GRAND TOTAL';
 
-      let bgHeader = '1E3A8A';
-      if (C_idx === 6 || C_idx === 9 || C_idx === 12 || C_idx === 15 || C_idx === 18 || C_idx === 21 || C_idx === 24 || C_idx === 27 || C_idx === 30 || C_idx === 33) {
-        bgHeader = '0F766E';
-      } else if (C_idx === 7 || C_idx === 10 || C_idx === 13 || C_idx === 16 || C_idx === 19 || C_idx === 22 || C_idx === 25 || C_idx === 28 || C_idx === 31 || C_idx === 34) {
-        bgHeader = '334155';
-      }
+      let bgSuperHeader = '334155';
+      if (C_idx >= 5 && C_idx <= 13) bgSuperHeader = '1E3A8A'; // Navy for Books (B2B, Exp, CN)
+      else if (C_idx >= 14 && C_idx <= 16) bgSuperHeader = '0F172A'; // Midnight Navy for Net Taxable Summary
+      else if (C_idx >= 17 && C_idx <= 25) bgSuperHeader = '0F766E'; // Dark Teal for Portal (B2C, Nil, Non-Tax)
+      else if (C_idx >= 26 && C_idx <= 34) bgSuperHeader = '581C87'; // Deep Purple for Taxes
 
-      if (isHeader) {
+      const isSecBoundary = C_idx === 4 || C_idx === 7 || C_idx === 10 || C_idx === 13 || C_idx === 16 || C_idx === 19 || C_idx === 22 || C_idx === 25 || C_idx === 28 || C_idx === 31 || C_idx === 34;
+      const rBorder = isSecBoundary ? { style: 'medium', color: { rgb: '334155' } } : { style: 'hair', color: { rgb: 'CBD5E1' } };
+
+      if (isSuperHeader) {
         wsParty[cellRef].s = {
-          font: { name: 'Segoe UI', bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-          fill: { fgColor: { rgb: bgHeader } },
+          font: { name: 'Segoe UI', bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+          fill: { fgColor: { rgb: bgSuperHeader } },
           alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'thin', color: { rgb: '334155' } }, right: { style: 'thin', color: { rgb: '334155' } } }
+          border: { top: { style: 'medium', color: { rgb: '0F172A' } }, bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'thin', color: { rgb: '334155' } }, right: { style: 'medium', color: { rgb: '0F172A' } } }
+        };
+      } else if (isSubHeader) {
+        let subHeaderBg = 'F1F5F9';
+        let subFontColor = '0F172A';
+        if (C_idx === 7 || C_idx === 10 || C_idx === 13 || C_idx === 16 || C_idx === 19 || C_idx === 22 || C_idx === 25 || C_idx === 28 || C_idx === 31 || C_idx === 34) {
+          subHeaderBg = 'E2E8F0'; // Variance sub-header column highlight
+          subFontColor = '581C87';
+        }
+        wsParty[cellRef].s = {
+          font: { name: 'Segoe UI', bold: true, color: { rgb: subFontColor }, sz: 10 },
+          fill: { fgColor: { rgb: subHeaderBg } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: { bottom: { style: 'medium', color: { rgb: '0F172A' } }, left: { style: 'hair', color: { rgb: 'CBD5E1' } }, right: rBorder }
         };
       } else if (isMonthTotal || isGrandTotal) {
         wsParty[cellRef].s = {
-          font: { name: 'Segoe UI', bold: true, sz: isGrandTotal ? 11 : 10, color: { rgb: isGrandTotal ? 'FFFFFF' : '0F172A' } },
-          fill: { fgColor: { rgb: isGrandTotal ? '1E293B' : 'F1F5F9' } },
+          font: { name: 'Segoe UI', bold: true, sz: isGrandTotal ? 11 : 10, color: { rgb: isGrandTotal ? 'F59E0B' : '0F172A' } },
+          fill: { fgColor: { rgb: isGrandTotal ? '0F172A' : 'E2E8F0' } },
           alignment: { horizontal: typeof wsParty[cellRef].v === 'number' || wsParty[cellRef].f ? 'right' : 'left' },
-          border: { top: { style: 'thin', color: { rgb: '94A3B8' } }, bottom: { style: 'thin', color: { rgb: '94A3B8' } } },
+          border: { top: { style: 'thin', color: { rgb: '94A3B8' } }, bottom: { style: isGrandTotal ? 'double' : 'thin', color: { rgb: '0F172A' } }, right: rBorder },
           numFmt: '#,##0.00'
         };
       } else {
+        const isVarCol = C_idx === 7 || C_idx === 10 || C_idx === 13 || C_idx === 16 || C_idx === 19 || C_idx === 22 || C_idx === 25 || C_idx === 28 || C_idx === 31 || C_idx === 34;
+        const cellVal = typeof wsParty[cellRef].v === 'number' ? wsParty[cellRef].v : 0;
+        const hasVar = isVarCol && Math.abs(cellVal) > 0.01;
+
         wsParty[cellRef].s = {
-          font: { name: 'Segoe UI', sz: 10, color: { rgb: '334155' }, bold: wsParty[cellRef].v === 'B2C Consumers & Nil Rated' },
-          fill: { fgColor: { rgb: wsParty[cellRef].v === 'B2C Consumers & Nil Rated' ? 'F8FAFC' : 'FFFFFF' } },
+          font: { name: 'Segoe UI', sz: 10, color: { rgb: hasVar ? 'B91C1C' : '334155' }, bold: hasVar || wsParty[cellRef].v === 'B2C Consumers & Nil Rated' },
+          fill: { fgColor: { rgb: hasVar ? 'FEF2F2' : (isVarCol ? 'FFFBEB' : 'FFFFFF') } },
           alignment: { horizontal: typeof wsParty[cellRef].v === 'number' || wsParty[cellRef].f ? 'right' : 'left' },
-          border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } }, right: { style: 'hair', color: { rgb: 'F1F5F9' } } },
+          border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } }, right: rBorder },
           numFmt: typeof wsParty[cellRef].v === 'number' || wsParty[cellRef].f ? '#,##0.00' : undefined
         };
       }
     }
   }
+  wsParty['!cols'] = [{ wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 18 }];
+  for (let i = 5; i <= 34; i++) wsParty['!cols'].push({ wch: 16 });
 
   wsParty['!cols'] = [
     { wch: 10 }, { wch: 35 }, { wch: 35 }, { wch: 18 }, { wch: 18 },

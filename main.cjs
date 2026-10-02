@@ -346,9 +346,12 @@ ipcMain.handle('restart_app', () => {
 ipcMain.handle('get_app_mode', () => {
   const modeFilePath = path.join(app.getPath('userData'), 'app_mode.json');
   if (fs.existsSync(modeFilePath)) {
-    try { return JSON.parse(fs.readFileSync(modeFilePath)).mode; } catch (e) {}
+    try { 
+      const mode = JSON.parse(fs.readFileSync(modeFilePath)).mode;
+      if (mode) return mode;
+    } catch (e) {}
   }
-  return null;
+  return 'server';
 });
 
 ipcMain.handle('set_app_mode', (event, mode) => {
@@ -394,6 +397,9 @@ ipcMain.handle('save_activation_info', (event, info) => {
 
     // Define the PowerShell script contents
     const psScript = `$actFile = Join-Path $PSScriptRoot "activation_info.json"
+if (-Not (Test-Path $actFile)) {
+    $actFile = Join-Path $env:APPDATA "AUDIT WITH VASWANI\\activation_info.json"
+}
 if (-Not (Test-Path $actFile)) {
     $actFile = Join-Path $env:APPDATA "RECO WITH VASWANI\\activation_info.json"
 }

@@ -1,8 +1,8 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.4.35",
-  "description": "RECO WITH VASWANI - Electron Application",
+  "version": "1.4.39",
+  "description": "AUDIT WITH VASWANI - Electron Application",
   "author": "adi3615gupta-prog",
   "main": "main.cjs",
   "type": "module",
@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "obfuscate": "node obfuscate.cjs",
     "build:exe": "npm run obfuscate && vite build && electron-builder -w -p never",
-    "release": "npm run obfuscate && vite build && electron-builder --publish always",
+    "release": "npm version patch --no-git-tag-version && npm run obfuscate && vite build && electron-builder --publish always",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\""
   },
@@ -98,7 +98,7 @@
   },
   "build": {
     "appId": "com.vite.react.shadcn.ts",
-    "productName": "RECO WITH VASWANI",
+    "productName": "AUDIT WITH VASWANI",
     "directories": {
       "output": "dist-electron"
     },

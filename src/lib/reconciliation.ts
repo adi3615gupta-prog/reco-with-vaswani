@@ -84,7 +84,34 @@ export interface ReconciliationSummary {
   nameMismatch: number;
 }
 
-// --- Cleaning helpers ---
+export function extractCoreInvoiceNumber(inv: string): string {
+  if (!inv) return '';
+  let s = String(inv).toUpperCase().trim();
+  
+  // 1. Remove financial year tokens (e.g. 2024-25, 2024-2025, 24-25, FY24-25) where y2 - y1 = 1
+  s = s.replace(/(?:FY\s*)?20(\d{2})[-/\\]+(?:20)?(\d{2})/gi, (match, y1, y2) => {
+    const diff = (parseInt(y2, 10) - parseInt(y1, 10) + 100) % 100;
+    return diff === 1 ? '' : match;
+  });
+  s = s.replace(/(?:FY\s*)?(\d{2})[-/\\]+(\d{2})/gi, (match, y1, y2) => {
+    const diff = (parseInt(y2, 10) - parseInt(y1, 10) + 100) % 100;
+    return diff === 1 ? '' : match;
+  });
+  
+  // 2. Remove standalone 4-digit years (e.g. 2024, 2025)
+  s = s.replace(/(?:^|[^0-9])(?:20\d{2}|19\d{2})(?=[^0-9]|$)/g, '');
+  
+  // 3. Extract numeric sequences and strip leading zeros
+  const digitMatches = s.match(/\d+/g);
+  if (digitMatches && digitMatches.length > 0) {
+    const lastSeq = digitMatches[digitMatches.length - 1];
+    const stripped = lastSeq.replace(/^0+/, '');
+    if (stripped) return stripped;
+  }
+  
+  // 4. Fallback to cleaned alphanumeric string stripped of leading zeros
+  return s.replace(/[^A-Z0-9]/g, '').replace(/^0+/, '');
+}
 
 export function cleanInvoiceNumber(inv: string): string {
   if (!inv) return '';
@@ -114,6 +141,19 @@ export function parseDate(dateStr: string): Date | null {
   if (dmy) return new Date(+dmy[3], +dmy[2] - 1, +dmy[1]);
   const ymd = s.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
   if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
+
+  const dmyText = s.match(/^(\d{1,2})[\-\/\s]([A-Za-z]{3})[\-\/\s](\d{2,4})$/);
+  if (dmyText) {
+    const dd = +dmyText[1];
+    const monthStr = dmyText[2].toLowerCase();
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const mm = months.indexOf(monthStr);
+    if (mm !== -1) {
+      let yy = +dmyText[3]; if (yy < 100) yy += 2000;
+      return new Date(yy, mm, dd);
+    }
+  }
+
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -256,10 +296,21 @@ export function reconcile(
   const results: ReconciliationResult[] = [];
   const matched2B = new Set<number>();
 
+  type MatchCandidate = {
+    pIndex: number;
+    pRecord: InvoiceRecord;
+    candidateIdxs: number[];
+    invoiceMatchIdx?: number;
+    matchMethod?: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)';
+    vendorRemark?: string;
+  };
+
+  const pendingPR: MatchCandidate[] = [];
+
+  // Pass 1: Strict & Fuzzy Invoice / Value Matching
   for (let i = 0; i < pr.length; i++) {
     const p = pr[i];
 
-    // ---- Step 1: Identify the party ----
     let candidateIdxs: number[] | null = null;
     let matchMethod: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)' | undefined;
     let vendorRemark: string | undefined;
@@ -284,7 +335,6 @@ export function reconcile(
       matchMethod = 'Name (Exact)';
       vendorRemark = `${partyType} matched by exact name (GSTIN missing/mismatch). ${bookName} GSTIN: "${p.gstin || '—'}"`;
     } else {
-      // Try substring match before falling back to full fuzzy Fuse.js match
       let foundSubstring = false;
       if (pNorm && pNorm.length >= 5) {
         const tempCandidates: number[] = [];
@@ -303,7 +353,7 @@ export function reconcile(
       }
 
       if (!foundSubstring && pNorm && pNorm.length >= 4) {
-        const hits = fuse.search(pNorm).filter((h) => (h.score ?? 1) <= 0.4);
+        const hits = fuse.search(pNorm).filter((h) => (h.score ?? 1) <= 0.25);
         if (hits.length > 0) {
           candidateIdxs = hits.flatMap((h) => h.item.indices);
           matchMethod = 'Name (Fuzzy)';
@@ -315,43 +365,59 @@ export function reconcile(
     if (!candidateIdxs || candidateIdxs.length === 0) {
       results.push({
         prRecord: p,
-        status: 'Unmatched Vendor',
+        status: 'Not in 2B',
         cgstDiff: p.cgst, sgstDiff: p.sgst, igstDiff: p.igst, gstDiff: p.cgst + p.sgst + p.igst,
         taxableDiff: p.taxableValue,
+        remark: `${partyType} "${p.supplierName}" not found in ${govtName}`,
       });
       continue;
     }
 
-    // ---- Step 2: Match invoice number within candidates ----
     const availableCandidates = candidateIdxs.filter((j) => !matched2B.has(j));
     let invoiceMatchIdx = availableCandidates.find(
       (j) => twoB[j].cleanedInvoice === p.cleanedInvoice && p.cleanedInvoice !== ''
     );
 
+    if (invoiceMatchIdx === undefined && p.invoiceNo) {
+      const pCore = extractCoreInvoiceNumber(p.invoiceNo);
+      if (pCore) {
+        const coreMatchIdx = availableCandidates.find((j) => {
+          const tCore = extractCoreInvoiceNumber(twoB[j].invoiceNo);
+          return tCore !== '' && tCore === pCore;
+        });
+        if (coreMatchIdx !== undefined) {
+          invoiceMatchIdx = coreMatchIdx;
+          vendorRemark = vendorRemark ? `${vendorRemark} | Matched by core invoice number` : 'Matched by core invoice number';
+        }
+      }
+    }
+
     if (invoiceMatchIdx === undefined && p.cleanedInvoice) {
-      // Fallback: Partial Invoice Match (e.g., "93" vs "932526", "GST/93" vs "93")
-      // Applies if exact value match and one ends/starts with the other, or purely numeric parts match
       const fallbackIdx = availableCandidates.find((j) => {
         const t = twoB[j];
         const pInv = p.cleanedInvoice!;
         const tInv = t.cleanedInvoice!;
         if (!tInv) return false;
         
-        const pNum = pInv.replace(/\D/g, '');
-        const tNum = tInv.replace(/\D/g, '');
+        const pRaw = (p.invoiceNo || '').trim().toUpperCase();
+        const tRaw = (t.invoiceNo || '').trim().toUpperCase();
+
+        const pNum = pRaw.replace(/\D/g, '');
+        const tNum = tRaw.replace(/\D/g, '');
         
-        const isPartial = 
-          pInv.startsWith(tInv) || pInv.endsWith(tInv) || 
-          tInv.startsWith(pInv) || tInv.endsWith(pInv) ||
-          (pNum && tNum && (pNum === tNum || pNum.startsWith(tNum) || pNum.endsWith(tNum) || tNum.startsWith(pNum) || tNum.endsWith(pNum)));
+        // Exact numeric match (e.g. "0012" vs "12" -> pNum = "12", tNum = "12")
+        if (pNum && tNum && pNum === tNum) {
+          return true;
+        }
+
+        // Bounded string prefix/suffix match for strings with length >= 3 (e.g., "INV-2024-0012" vs "0012")
+        if (pRaw.length >= 3 && tRaw.length >= 3) {
+          if (pRaw.startsWith(tRaw) || pRaw.endsWith(tRaw) || tRaw.startsWith(pRaw) || tRaw.endsWith(pRaw)) {
+            return true;
+          }
+        }
         
-        // If there's any partial string or numeric match, link the invoices.
-        // Tax values will be verified in Step 3, triggering "Value Mismatch" if they don't match.
-        if (isPartial) return true;
-        
-        return Math.abs(p.igst - t.igst) <= tolerance && 
-               Math.abs(p.cgst - t.cgst) <= tolerance && 
-               Math.abs(p.sgst - t.sgst) <= tolerance;
+        return false;
       });
       if (fallbackIdx !== undefined) {
         invoiceMatchIdx = fallbackIdx;
@@ -360,34 +426,28 @@ export function reconcile(
     }
 
     if (invoiceMatchIdx === undefined) {
-      // Fallback: Aggressive Date + Value Match (even if invoice numbers are completely missing or different)
-      // This handles cases where invoice numbers are entered differently or missing entirely.
       const fuzzyIdx = availableCandidates.find((j) => {
         const t = twoB[j];
         
-        // Must match values closely (already rounded to nearest integer)
+        // If BOTH records have explicit non-matching invoice numbers, do NOT pair them
+        if (p.cleanedInvoice && t.cleanedInvoice && p.cleanedInvoice !== t.cleanedInvoice) {
+          return false;
+        }
+
         const valMatch = 
                Math.abs(p.igst - t.igst) <= tolerance && 
                Math.abs(p.cgst - t.cgst) <= tolerance && 
                Math.abs(p.sgst - t.sgst) <= tolerance &&
-               (p.igst > 0 || p.cgst > 0 || p.sgst > 0); // avoid matching zero-value records
+               (p.igst > 0 || p.cgst > 0 || p.sgst > 0);
         
         if (!valMatch) return false;
 
-        // Match dates within a 15-day window (as per user request for "around same date")
         if (p.normalizedDate && t.normalizedDate) {
           const diffDays = Math.abs(p.normalizedDate.getTime() - t.normalizedDate.getTime()) / (1000 * 60 * 60 * 24);
           if (diffDays <= 15) return true;
         }
         
-        // If invoice numbers are empty/missing for both, and values match, it's a match.
         if (!p.cleanedInvoice && !t.cleanedInvoice) return true;
-        
-        // If values match perfectly and it's the same month/year
-        if (p.financialYear === t.financialYear && p.normalizedDate && t.normalizedDate && 
-            p.normalizedDate.getMonth() === t.normalizedDate.getMonth()) {
-          return true;
-        }
 
         return false;
       });
@@ -398,7 +458,10 @@ export function reconcile(
       }
     }
 
-    if (invoiceMatchIdx === undefined) {
+    if (invoiceMatchIdx !== undefined) {
+      matched2B.add(invoiceMatchIdx);
+      processMatchedPair(p, twoB[invoiceMatchIdx], matchMethod, vendorRemark);
+    } else {
       results.push({
         prRecord: p,
         status: 'Not in 2B',
@@ -407,12 +470,19 @@ export function reconcile(
         cgstDiff: p.cgst, sgstDiff: p.sgst, igstDiff: p.igst, gstDiff: p.cgst + p.sgst + p.igst,
         taxableDiff: p.taxableValue,
       });
-      continue;
     }
+  }
 
-    const t = twoB[invoiceMatchIdx];
+  function processMatchedPair(
+    p: InvoiceRecord,
+    t: InvoiceRecord,
+    matchMethod?: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)',
+    vendorRemark?: string
+  ) {
+    const isOut = mode === 'output';
+    const govtName = isOut ? 'GSTR-1' : '2B';
+    const bookName = isOut ? 'Sales' : 'PR';
 
-    // ---- Step 3: Verify GST values ----
     const cgstDiff = +(p.cgst - t.cgst).toFixed(2);
     const sgstDiff = +(p.sgst - t.sgst).toFixed(2);
     const igstDiff = +(p.igst - t.igst).toFixed(2);
@@ -427,13 +497,10 @@ export function reconcile(
 
     let status: MatchStatus = within ? 'Perfect Match' : 'Value Mismatch';
 
-    // Check for Tax Type Error (Mixed IGST with CGST/SGST)
     if ((p.igst > 0 && (p.cgst > 0 || p.sgst > 0)) || (t.igst > 0 && (t.cgst > 0 || t.sgst > 0))) {
       status = 'Tax Type Error';
     }
 
-    // Date-bypass: if amounts/invoice/GSTIN are a perfect match but invoice
-    // dates differ, mark as 'Matched (Diff Date)' instead of splitting.
     if (status === 'Perfect Match') {
       const pDate = p.normalizedDate ? p.normalizedDate.getTime() : null;
       const tDate = t.normalizedDate ? t.normalizedDate.getTime() : null;
@@ -442,7 +509,6 @@ export function reconcile(
       }
     }
 
-    // Cross-flag wrong GSTIN if matched by name but GSTINs differ
     let extraRemark = vendorRemark;
     if ((matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
       extraRemark = `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
@@ -464,23 +530,45 @@ export function reconcile(
       remark: extraRemark,
       matchMethod,
     });
-    matched2B.add(invoiceMatchIdx);
   }
 
-  // 2B records with no PR counterpart
+  // 2B records with no PR counterpart — build descriptive remark mirroring "Not in 2B" style
+  // Build reverse-lookup indexes for PR records
+  const prGstinSet = new Set<string>();
+  const prNormNameSet = new Set<string>();
+  for (const p of pr) {
+    if (p.gstin) prGstinSet.add(p.gstin);
+    const pn = normalizePartyName(p.supplierName);
+    if (pn) prNormNameSet.add(pn);
+  }
+
+  const isOut = mode === 'output';
+  const partyTypeRev = isOut ? 'Customer' : 'Vendor';
+  const bookNameRev = isOut ? 'Sales' : 'Books';
+
   for (let j = 0; j < twoB.length; j++) {
     if (!matched2B.has(j)) {
       const t = twoB[j];
+      let notInBooksRemark = '';
+      const tNorm = normalizePartyName(t.supplierName);
+      if (t.gstin && prGstinSet.has(t.gstin)) {
+        notInBooksRemark = `${partyTypeRev} found in ${bookNameRev} but invoice "${t.invoiceNo}" not present`;
+      } else if (tNorm && prNormNameSet.has(tNorm)) {
+        notInBooksRemark = `${partyTypeRev} matched by exact name (GSTIN missing/mismatch). Invoice "${t.invoiceNo}" not in ${bookNameRev}`;
+      } else {
+        notInBooksRemark = `${partyTypeRev} not found in ${bookNameRev}. Invoice "${t.invoiceNo}"`;
+      }
+
       results.push({
         twoBRecord: t,
         status: 'Not in Books',
+        remark: notInBooksRemark,
         cgstDiff: -t.cgst, sgstDiff: -t.sgst, igstDiff: -t.igst, gstDiff: -(t.cgst + t.sgst + t.igst),
         taxableDiff: t.taxableValue !== undefined ? -t.taxableValue : undefined,
       });
     }
   }
 
-  // Append excluded prior FY records to the results so they appear in exports but don't affect variance
   for (const t of priorTwoB) {
     results.push({
       twoBRecord: t,
@@ -492,50 +580,56 @@ export function reconcile(
   }
 
   // ---- Post-process: Auto-clear records if Party Net Balance is Nil ----
-  const partyMap = new Map<string, { records: ReconciliationResult[]; prIgst: number; prCgst: number; prSgst: number; tbIgst: number; tbCgst: number; tbSgst: number; }>();
-  const nameIndex = new Map<string, string>();
-  let unknownIndex = 0;
+  const gstinToName = new Map<string, string>();
+  const panToName = new Map<string, string>();
   
   for (const r of results) {
-    if (r.status === 'Prior FY (Excluded)') continue; // Skip excluded records from net balance calculations
+    if (r.status === 'Prior FY (Excluded)') continue;
     const pr = r.prRecord;
     const tb = r.twoBRecord;
-    const gstin = pr?.gstin || tb?.gstin || '';
     const name = pr?.supplierName || tb?.supplierName || '';
     const normName = normalizePartyName(name);
+    if (!normName) continue;
     
-    let key = gstin ? gstin : (normName ? `NAME::${normName}` : `UNKNOWN::${++unknownIndex}`);
-    
-    if (!gstin && normName && nameIndex.has(normName)) {
-      key = nameIndex.get(normName)!;
-    }
-    if (gstin && normName && nameIndex.has(normName) && nameIndex.get(normName) !== gstin) {
-      const existingKey = nameIndex.get(normName)!;
-      if (existingKey.startsWith('NAME::') || existingKey.startsWith('UNKNOWN::')) {
-        const existing = partyMap.get(existingKey);
-        if (existing) {
-          let pAgg = partyMap.get(gstin);
-          if (!pAgg) {
-            pAgg = { records: [], prIgst: 0, prCgst: 0, prSgst: 0, tbIgst: 0, tbCgst: 0, tbSgst: 0 };
-            partyMap.set(gstin, pAgg);
-          }
-          pAgg.records.push(...existing.records);
-          pAgg.prIgst += existing.prIgst; pAgg.prCgst += existing.prCgst; pAgg.prSgst += existing.prSgst;
-          pAgg.tbIgst += existing.tbIgst; pAgg.tbCgst += existing.tbCgst; pAgg.tbSgst += existing.tbSgst;
-          partyMap.delete(existingKey);
-        }
-        nameIndex.set(normName, gstin);
+    const gstin = pr?.gstin || tb?.gstin || '';
+    if (gstin) {
+      gstinToName.set(gstin, normName);
+      if (gstin.length >= 12) {
+        panToName.set(gstin.slice(2, 12), normName);
       }
-      key = gstin;
+    }
+  }
+
+  const partyMap = new Map<string, { records: ReconciliationResult[]; prIgst: number; prCgst: number; prSgst: number; tbIgst: number; tbCgst: number; tbSgst: number; }>();
+  let unknownIndex = 0;
+
+  for (const r of results) {
+    if (r.status === 'Prior FY (Excluded)') continue;
+    const pr = r.prRecord;
+    const tb = r.twoBRecord;
+    const name = pr?.supplierName || tb?.supplierName || '';
+    const normName = normalizePartyName(name);
+    const gstin = pr?.gstin || tb?.gstin || '';
+    
+    let key = '';
+    if (normName) {
+      key = normName;
+    } else if (gstin) {
+      if (gstinToName.has(gstin)) {
+        key = gstinToName.get(gstin)!;
+      } else if (gstin.length >= 12 && panToName.has(gstin.slice(2, 12))) {
+        key = panToName.get(gstin.slice(2, 12))!;
+      } else {
+        key = gstin;
+      }
+    } else {
+      key = `UNKNOWN::${++unknownIndex}`;
     }
 
     let pAgg = partyMap.get(key);
     if (!pAgg) {
       pAgg = { records: [], prIgst: 0, prCgst: 0, prSgst: 0, tbIgst: 0, tbCgst: 0, tbSgst: 0 };
       partyMap.set(key, pAgg);
-      if (normName && (!nameIndex.has(normName) || nameIndex.get(normName)!.startsWith('NAME::'))) {
-        nameIndex.set(normName, key);
-      }
     }
     pAgg.records.push(r);
     if (pr) { pAgg.prIgst += pr.igst; pAgg.prCgst += pr.cgst; pAgg.prSgst += pr.sgst; }

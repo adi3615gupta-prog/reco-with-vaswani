@@ -86,9 +86,17 @@ export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides
   );
 }
 
-export function isMappingComplete(mapping: Partial<ColumnMapping>, requireTaxable = false): mapping is ColumnMapping {
-  const required: (keyof ColumnMapping)[] = requireTaxable
+export function isMappingComplete(mapping: Partial<ColumnMapping>, requireTaxable = false, docType?: string): mapping is ColumnMapping {
+  if (!mapping) return false;
+  let required: (keyof ColumnMapping)[] = requireTaxable
     ? ['gstin', 'invoiceNo', 'taxableValue']
     : ['gstin', 'invoiceNo'];
-  return required.every((f) => mapping[f] && mapping[f] !== '__none__');
+
+  if (docType === 'nil') {
+    required = ['nilRated'];
+  } else if (docType === 'b2c') {
+    required = ['taxableValue'];
+  }
+
+  return required.every((f) => !!mapping[f] && mapping[f] !== '__none__');
 }

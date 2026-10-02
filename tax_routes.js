@@ -199,12 +199,19 @@ export default function setupTaxRoutes(app, db) {
             const { profile_id, incomes } = req.body;
             if (!profile_id) return res.status(400).json({ error: "Missing profile_id" });
 
+            await runAsync(
+                `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                [profile_id]
+            );
+
             // Using transaction to replace all incomes
             await runAsync('BEGIN TRANSACTION');
             try {
                 await runAsync(`DELETE FROM Income_Records WHERE profile_id = ?`, [profile_id]);
 
-                for (const inc of incomes) {
+                for (const inc of incomes || []) {
                     await runAsync(
                         `INSERT INTO Income_Records 
                         (id, profile_id, income_type, description, gross_amount, exempt_amount, net_amount, section_code, use_indexation) 
@@ -217,7 +224,7 @@ export default function setupTaxRoutes(app, db) {
                     );
                 }
                 await runAsync('COMMIT');
-                res.json({ success: true, count: incomes.length });
+                res.json({ success: true, count: (incomes || []).length });
             } catch (err) {
                 await runAsync('ROLLBACK');
                 throw err;
@@ -237,11 +244,18 @@ export default function setupTaxRoutes(app, db) {
             const { profile_id, deductions } = req.body;
             if (!profile_id) return res.status(400).json({ error: "Missing profile_id" });
 
+            await runAsync(
+                `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                [profile_id]
+            );
+
             await runAsync('BEGIN TRANSACTION');
             try {
                 await runAsync(`DELETE FROM Deduction_Records WHERE profile_id = ?`, [profile_id]);
 
-                for (const ded of deductions) {
+                for (const ded of deductions || []) {
                     await runAsync(
                         `INSERT INTO Deduction_Records (id, profile_id, section_code, claimed_amount, eligible_amount) 
                         VALUES (?, ?, ?, ?, ?)`,
@@ -252,7 +266,7 @@ export default function setupTaxRoutes(app, db) {
                     );
                 }
                 await runAsync('COMMIT');
-                res.json({ success: true, count: deductions.length });
+                res.json({ success: true, count: (deductions || []).length });
             } catch (err) {
                 await runAsync('ROLLBACK');
                 throw err;
@@ -402,11 +416,15 @@ export default function setupTaxRoutes(app, db) {
 
             const profileId = req.query.profile_id || 'CURRENT_USER';
             
+            await runAsync(
+                `INSERT OR IGNORE INTO Taxpayer_Profiles 
+                (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
+                VALUES (?, 'Default User', '', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                [profileId]
+            );
+
             // 2. Fetch client profile for PAN validation
             const profile = await getAsync(`SELECT * FROM Taxpayer_Profiles WHERE profile_id = ?`, [profileId]);
-            if (!profile) {
-                return res.status(404).json({ success: false, error: 'Taxpayer profile not found.' });
-            }
 
             // PAN Validation Lock
             const filePan = aisData.PartA?.PAN || aisData.PartA?.pan || aisData.pan || aisData.PAN;

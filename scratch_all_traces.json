@@ -1,9 +1,226 @@
 [
   {
-    "partyPan": "ABCDE1234F",
-    "partyName": "Example Vendor Pvt Ltd",
-    "section": "194C",
-    "amountPaid": 100000,
+    "partyPan": "AAICS 7389 B",
+    "partyName": "Surface Modification Technologies Pvt.Ltd.(P)",
+    "section": "",
+    "amountPaid": 5000,
+    "tdsDeducted": 100
+  },
+  {
+    "partyPan": "AACFE 9000 C",
+    "partyName": "Excellent Tool Tech",
+    "section": "",
+    "amountPaid": 335000,
+    "tdsDeducted": 33500
+  },
+  {
+    "partyPan": "BCUPR 3034 C",
+    "partyName": "SWAGATA GHOSH ROY",
+    "section": "",
+    "amountPaid": 35000,
+    "tdsDeducted": 3500
+  },
+  {
+    "partyPan": "AAPFV 6973 L",
+    "partyName": "Vcan & Associates LLP",
+    "section": "",
+    "amountPaid": 20000,
     "tdsDeducted": 2000
+  },
+  {
+    "partyPan": "AAXFB 9015 B",
+    "partyName": "BEST CARBIDE TOOLINGS(P)",
+    "section": "",
+    "amountPaid": 33525,
+    "tdsDeducted": 34
+  },
+  {
+    "partyPan": "AACCK 4472 B",
+    "partyName": "Kennametal India Limited (P)",
+    "section": "",
+    "amountPaid": 494000,
+    "tdsDeducted": 494
+  },
+  {
+    "partyPan": "AAIFG 4821 F",
+    "partyName": "G.S.CUTTING TOOLS (P)",
+    "section": "",
+    "amountPaid": 7960,
+    "tdsDeducted": 159
+  },
+  {
+    "partyPan": "AAJCP 5763 D",
+    "partyName": "PRIMCOAT PVD TECHNOLOGY INDIA PVT LTD-PUNE",
+    "section": "",
+    "amountPaid": 810,
+    "tdsDeducted": 16
+  },
+  {
+    "partyPan": "AANFP 9489 R",
+    "partyName": "Pune Carbide (P)",
+    "section": "",
+    "amountPaid": 51328,
+    "tdsDeducted": 1027
+  },
+  {
+    "partyPan": "AABCM 9407 D",
+    "partyName": "SHREE MARUTI INTEGRATED LOGISTICS LIMITED",
+    "section": "",
+    "amountPaid": 6963,
+    "tdsDeducted": 139
+  },
+  {
+    "partyPan": "ADUFS 6333 F",
+    "partyName": "SMART TOOLING (P)",
+    "section": "",
+    "amountPaid": 24455,
+    "tdsDeducted": 489
+  },
+  {
+    "partyPan": "ADUFS 6333 F",
+    "partyName": "SMART TOOLING (P)",
+    "section": "",
+    "amountPaid": 600,
+    "tdsDeducted": 12
+  },
+  {
+    "partyPan": "AECFS 5864 G",
+    "partyName": "STALWART TECHNOLOGY (P)",
+    "section": "",
+    "amountPaid": 33384,
+    "tdsDeducted": 668
+  },
+  {
+    "partyPan": "AAICS 7389 B",
+    "partyName": "Surface Modification Technologies Pvt.Ltd.(P)",
+    "section": "",
+    "amountPaid": 144613,
+    "tdsDeducted": 2892
+  },
+  {
+    "partyPan": "AAICS 7389 B",
+    "partyName": "Surface Modification Technologies Pvt.Ltd.(P)",
+    "section": "",
+    "amountPaid": 10927,
+    "tdsDeducted": 219
+  },
+  {
+    "partyPan": "AAICS 7389 B",
+    "partyName": "Surface Modification Technologies Pvt.Ltd.(P)",
+    "section": "",
+    "amountPaid": 634,
+    "tdsDeducted": 13
+  },
+  {
+    "partyPan": "AAABT 7249 N",
+    "partyName": "TEERTH INDUSTRIAL BUSINESS PREMISES.CO.OP SOC.LTD",
+    "section": "",
+    "amountPaid": 18393,
+    "tdsDeducted": 368
+  },
+  {
+    "partyPan": "AFJPL 5560 Q",
+    "partyName": "Kavita Nitin Landge",
+    "section": "",
+    "amountPaid": 8000,
+    "tdsDeducted": 80
+  },
+  {
+    "partyPan": "AAUPW 5029 K",
+    "partyName": "MACHINEART",
+    "section": "",
+    "amountPaid": 1500,
+    "tdsDeducted": 15
+  },
+  {
+    "partyPan": "AAUPO 1922 H",
+    "partyName": "AJAY ENTERPRISE",
+    "section": "",
+    "amountPaid": 4600,
+    "tdsDeducted": 46
+  },
+  {
+    "partyPan": "ATPPJ 2418 M",
+    "partyName": "Bharati Enterprises (P)",
+    "section": "",
+    "amountPaid": 9645,
+    "tdsDeducted": 96
+  },
+  {
+    "partyPan": "BATPB 9749 P",
+    "partyName": "D-Tech Tools  (P)",
+    "section": "",
+    "amountPaid": 27110,
+    "tdsDeducted": 271
+  },
+  {
+    "partyPan": "BUOPP 0346 P",
+    "partyName": "Morya Enterprises",
+    "section": "",
+    "amountPaid": 438,
+    "tdsDeducted": 4
+  },
+  {
+    "partyPan": "EZPPK 7115 A",
+    "partyName": "PRAJNA ENTERPRISES(P)",
+    "section": "",
+    "amountPaid": 7460,
+    "tdsDeducted": 75
+  },
+  {
+    "partyPan": "AFJPL 5560 Q",
+    "partyName": "Kavita Nitin Landge",
+    "section": "",
+    "amountPaid": 8500,
+    "tdsDeducted": 85
+  },
+  {
+    "partyPan": "AHLPG 6456 C",
+    "partyName": "GAWADE GREEN POWER SOLUTIONS",
+    "section": "",
+    "amountPaid": 30000,
+    "tdsDeducted": 600
+  },
+  {
+    "partyPan": "BCUPR 3034 C",
+    "partyName": "SWAGATA GHOSH ROY",
+    "section": "",
+    "amountPaid": 35000,
+    "tdsDeducted": 3500
+  },
+  {
+    "partyPan": "BCUPR 3034 C",
+    "partyName": "SWAGATA GHOSH ROY",
+    "section": "",
+    "amountPaid": 35000,
+    "tdsDeducted": 3500
+  },
+  {
+    "partyPan": "AHLPG 6456 C",
+    "partyName": "GAWADE GREEN POWER SOLUTIONS",
+    "section": "",
+    "amountPaid": 30000,
+    "tdsDeducted": 600
+  },
+  {
+    "partyPan": "AAPFV 6973 L",
+    "partyName": "Vcan & Associates LLP",
+    "section": "",
+    "amountPaid": 20000,
+    "tdsDeducted": 2000
+  },
+  {
+    "partyPan": "CKXPK 6508 E",
+    "partyName": "SAHIL ENTERPRISES",
+    "section": "",
+    "amountPaid": 10000,
+    "tdsDeducted": 100
+  },
+  {
+    "partyPan": "AAICS 7389 B",
+    "partyName": "Surface Modification Technologies Pvt.Ltd.(P)",
+    "section": "",
+    "amountPaid": 5000,
+    "tdsDeducted": 100
   }
 ]

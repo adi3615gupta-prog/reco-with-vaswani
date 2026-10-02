@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ArrowRight, FileSpreadsheet, CheckCircle2, ShieldCheck, Plus,
-  RotateCcw, CloudDownload, ChevronRight, GitCompare, Database,
+  RotateCcw, CloudDownload, ChevronRight, ChevronDown, GitCompare, Database,
   Server, Settings, Activity, X, Star, Sparkles, Building2, Lightbulb
 } from 'lucide-react';
 import { ModeSelector } from '../components/ModeSelector';
@@ -14,6 +14,7 @@ import { GSTVerification } from '../components/GSTVerification';
 import { OutputDashboard } from '../components/OutputDashboard';
 import { SummaryCards } from '../components/SummaryCards';
 import { ResultsCategoryTabs } from '../components/ResultsCategoryTabs';
+import { getSummary } from '../lib/reconciliation';
 import { cn, safeSetItem } from '../lib/utils';
 import { toast } from 'sonner';
 import { TERMS } from '../lib/mode';
@@ -23,6 +24,7 @@ type Step = 'upload' | 'map' | 'review' | 'results';
 
 export default function Reconciliation(props: any) {
   const [showQuickGuide, setShowQuickGuide] = React.useState(false);
+  const [auditLedgerCollapsed, setAuditLedgerCollapsed] = React.useState(false);
   const {
     setAppRoute, mode, setMode, step, setStep, companyName, setCompanyName,
     tolerance, setTolerance, fuzzyStrictness, setFuzzyStrictness,
@@ -190,8 +192,8 @@ export default function Reconciliation(props: any) {
                       <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Organization Name..." className="w-full h-10 bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl pl-9 pr-4 text-sm text-slate-900 dark:text-white outline-none focus:border-purple-500 transition-all placeholder:text-slate-400 dark:placeholder:text-white/30" />
                     </div>
                     <div className="relative group w-full sm:w-36 shrink-0">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 dark:text-white/40 group-focus-within:text-purple-500 dark:group-focus-within:text-purple-400 transition-colors">â‚¹</div>
-                      <input type="number" min="0" step="0.5" value={tolerance} onChange={(e) => setTolerance(parseFloat(e.target.value) || 0)} className="w-full h-10 bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl pl-7 pr-3 text-sm font-mono text-slate-900 dark:text-white outline-none focus:border-purple-500 transition-all" title="Match Tolerance" />
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 dark:text-white/40 group-focus-within:text-purple-500 dark:group-focus-within:text-purple-400 transition-colors">₹</div>
+                      <input type="number" min="0" step="0.5" value={tolerance} onChange={(e) => setTolerance(parseFloat(e.target.value) || 0)} className="w-full h-10 bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl pl-7 pr-3 text-sm font-mono text-slate-900 dark:text-white outline-none focus:border-purple-500 transition-all" title="Match Tolerance (Amount Difference in ₹)" />
                     </div>
                     <button
                       onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
@@ -582,7 +584,12 @@ export default function Reconciliation(props: any) {
                 ) : (
                   <button
                     onClick={handleReconcile}
-                    disabled={!isMappingComplete(prMapping, mode === 'output') || (mode === 'input' && !isMappingComplete(twoBMapping, false)) || (mode === 'output' && !!twoBFile && !isMappingComplete(twoBMapping, false)) || journals.some((j) => !isMappingComplete(j.mapping, mode === 'output'))}
+                    disabled={
+                      !isMappingComplete(prMapping, false) ||
+                      (mode === 'input' && !isMappingComplete(twoBMapping, false)) ||
+                      (mode === 'output' && portalMappings && Object.entries(portalMappings as Record<string, any>).some(([_, pMap]) => !isMappingComplete(pMap.mapping, false, pMap.docType))) ||
+                      journals.some((j) => !isMappingComplete(j.mapping, false))
+                    }
                     className="btn-np-primary h-11 px-8 text-xs uppercase tracking-widest gap-2 flex items-center disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     Execute Match Engine <Sparkles className="w-4 h-4" />
@@ -722,22 +729,44 @@ export default function Reconciliation(props: any) {
 
               {/* Detailed results tabs */}
               <div className="dash-card shadow-2xl">
-                <div className="dash-topbar bg-slate-950/20">
-                  <div className="dash-dots"><span style={{ background: '#4A9EE8' }}></span><span style={{ background: '#7EC8F0' }}></span></div>
-                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Reconciliation Audit Ledger</span>
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <div className="dash-topbar bg-slate-950/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="dash-dots"><span style={{ background: '#4A9EE8' }}></span><span style={{ background: '#7EC8F0' }}></span></div>
+                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Reconciliation Audit Ledger</span>
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                  </div>
+                  <button
+                    onClick={() => setAuditLedgerCollapsed(!auditLedgerCollapsed)}
+                    className="btn-np-outline gap-1.5 !py-1 text-[9px] uppercase tracking-widest font-bold hover:text-white"
+                    title={auditLedgerCollapsed ? "Expand Audit Ledger" : "Collapse Audit Ledger"}
+                  >
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", auditLedgerCollapsed && "rotate-180")} />
+                    {auditLedgerCollapsed ? "Expand" : "Collapse"}
+                  </button>
                 </div>
-                <div className="p-1">
-                  <ResultsCategoryTabs results={results} summary={summary} companyName={companyName} mode={mode} debitNotes={parsedDebitNotes} />
-                </div>
+                {!auditLedgerCollapsed && (
+                  <div className="p-1">
+                    <ResultsCategoryTabs results={results} summary={summary} companyName={companyName} mode={mode} debitNotes={parsedDebitNotes} />
+                  </div>
+                )}
               </div>
 
-              {/* Breakdown grids */}
-              <div className="grid lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 min-w-0">
-                  <PartyWiseReport results={results} companyName={companyName} mode={mode} debitNotes={parsedDebitNotes} />
+              {/* Breakdown sections - Full Width for Party-wise Intelligence & Monthly Suite */}
+              <div className="space-y-6">
+                <div className="w-full min-w-0">
+                  <PartyWiseReport
+                    results={results}
+                    companyName={companyName}
+                    mode={mode}
+                    debitNotes={parsedDebitNotes}
+                    onResultsChange={(newRes) => {
+                      setResults(newRes);
+                      setSummary(getSummary(newRes));
+                      safeSetItem('np_reco_results', JSON.stringify(newRes));
+                    }}
+                  />
                 </div>
-                <div className="min-w-0">
+                <div className="w-full min-w-0">
                   <MonthlyBreakdown results={results} debitNotes={parsedDebitNotes} companyName={companyName} gstr3bData={gstr3bData} />
                 </div>
               </div>

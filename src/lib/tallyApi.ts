@@ -1,3 +1,4 @@
+export {};
 /**
  * tallyApi.ts — Standalone Tally XML HTTP API connector.
  * 
@@ -19,7 +20,8 @@ export type TallyVoucherType =
   | 'Sales'
   | 'Journal'
   | 'Credit Note'
-  | 'Debit Note';
+  | 'Debit Note'
+  | 'Payment';
 
 export interface TallyConnectionConfig {
   host: string;   // e.g. "localhost"
@@ -46,6 +48,8 @@ export interface TallyFlatVoucher {
   cgstLedger?: string;
   sgstLedger?: string;
   igstLedger?: string;
+  // New field: list of ledger names involved in this voucher (for UI filtering)
+  ledgerNames?: string[];
 }
 
 export interface TallyCompanyInfo {
@@ -54,6 +58,22 @@ export interface TallyCompanyInfo {
   gstin: string;
   state: string;
   financialYear: string;
+}
+
+export function extractLedgerNameFromBlock(tagHeader: string, blockContent: string): string {
+  const attrMatch = tagHeader.match(/NAME="([^"]+)"/i);
+  if (attrMatch && attrMatch[1].trim()) {
+    return unescapeXml(attrMatch[1]).replace(/\s+/g, ' ').trim();
+  }
+  const listMatch = blockContent.match(/<NAME\.LIST[^>]*>[\s\S]*?<NAME\b[^>]*>([^<]+)<\/NAME>/i);
+  if (listMatch && listMatch[1].trim()) {
+    return unescapeXml(listMatch[1]).replace(/\s+/g, ' ').trim();
+  }
+  const tagMatch = blockContent.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i);
+  if (tagMatch && tagMatch[1].trim()) {
+    return unescapeXml(tagMatch[1]).replace(/\s+/g, ' ').trim();
+  }
+  return '';
 }
 
 // ─── XML Request Builders ────────────────────────────────────
@@ -88,9 +108,23 @@ function buildCompanyInfoXml(): string {
 </ENVELOPE>`;
 }
 
+export function formatToTallyDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const clean = dateStr.trim();
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    return `${parts[0]}${parts[1].padStart(2, '0')}${parts[2].padStart(2, '0')}`;
+  }
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    return `${parts[2]}${parts[1].padStart(2, '0')}${parts[0].padStart(2, '0')}`;
+  }
+  return clean.replace(/[^0-9]/g, '');
+}
+
 function buildVoucherNumberQueryXml(voucherType: string, fromDate: string, toDate: string): string {
-  const from = fromDate.replace(/-/g, '');
-  const to = toDate.replace(/-/g, '');
+  const from = formatToTallyDate(fromDate);
+  const to = formatToTallyDate(toDate);
   const baseName = voucherType.replace(/[\s&]/g, '');
   const collName = `VoucherNumbers_${baseName}`;
 
@@ -126,8 +160,8 @@ function buildVoucherNumberQueryXml(voucherType: string, fromDate: string, toDat
 }
 
 function buildForensicVoucherQueryXml(voucherType: string, fromDate: string, toDate: string): string {
-  const from = fromDate.replace(/-/g, '');
-  const to = toDate.replace(/-/g, '');
+  const from = formatToTallyDate(fromDate);
+  const to = formatToTallyDate(toDate);
   const baseName = voucherType.replace(/[\s&]/g, '');
   const collName = `VoucherNumbers_Forensic_${baseName}`;
 
@@ -163,9 +197,9 @@ function buildForensicVoucherQueryXml(voucherType: string, fromDate: string, toD
 }
 
 function buildVoucherQueryXml(voucherTypes: string[], fromDate: string, toDate: string): string {
-  // Convert YYYY-MM-DD to YYYYMMDD for Tally
-  const from = fromDate.replace(/-/g, '');
-  const to = toDate.replace(/-/g, '');
+  // Convert any date format to YYYYMMDD for Tally
+  const from = formatToTallyDate(fromDate);
+  const to = formatToTallyDate(toDate);
 
   const baseName = voucherTypes[0].replace(/[\s&]/g, '');
   const collName = `MyLedgerEntries_${baseName}`;
@@ -308,6 +342,7 @@ function parseXml(xmlStr: string): Document {
   if (errorNode) {
     console.error("XML Parsing Error detected:", errorNode.textContent);
     console.error("Snippet of failed XML:", sanitized.substring(0, 500) + "...");
+    throw new Error("XML parsing failed: " + errorNode.textContent);
   }
   return doc;
 }
@@ -521,7 +556,7 @@ export async function fetchTallyMetadata(
       if (nameAttrMatch) {
         name = unescapeXml(nameAttrMatch[1]);
       } else {
-        const nameTagMatch = block.match(/<NAME[^>]*>([^<]+)<\/NAME>/i);
+        const nameTagMatch = block.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i);
         if (nameTagMatch) name = unescapeXml(nameTagMatch[1]);
       }
       name = name.replace(/\s+/g, ' ').trim().toUpperCase();
@@ -553,17 +588,19 @@ export async function fetchTallyMetadata(
     };
 
     const getTaxCategory = (ledgerName: string, startGroup: string): 'CGST' | 'SGST' | 'IGST' | null => {
+      const normName = ledgerName.replace(/\s+/g, ' ').toUpperCase();
       // Check ledger name first
-      if (ledgerName.includes('IGST') || ledgerName.includes('INTEGRATED')) return 'IGST';
-      if (ledgerName.includes('CGST') || ledgerName.includes('CENTRAL')) return 'CGST';
-      if (ledgerName.includes('SGST') || ledgerName.includes('STATE') || ledgerName.includes('UTGST')) return 'SGST';
+      if (normName.includes('IGST') || normName.includes('INTEGRATED') || normName.includes('I GST')) return 'IGST';
+      if (normName.includes('CGST') || normName.includes('CENTRAL') || normName.includes('C GST')) return 'CGST';
+      if (normName.includes('SGST') || normName.includes('STATE') || normName.includes('UTGST') || normName.includes('S GST')) return 'SGST';
 
       // Check parent groups in hierarchy
       const hierarchy = getGroupHierarchy(startGroup);
       for (const current of hierarchy) {
-        if (current.includes('IGST') || current.includes('INTEGRATED')) return 'IGST';
-        if (current.includes('CGST') || current.includes('CENTRAL')) return 'CGST';
-        if (current.includes('SGST') || current.includes('STATE') || current.includes('UTGST')) return 'SGST';
+        const normGroup = current.replace(/\s+/g, ' ').toUpperCase();
+        if (normGroup.includes('IGST') || normGroup.includes('INTEGRATED') || normGroup.includes('I GST')) return 'IGST';
+        if (normGroup.includes('CGST') || normGroup.includes('CENTRAL') || normGroup.includes('C GST')) return 'CGST';
+        if (normGroup.includes('SGST') || normGroup.includes('STATE') || normGroup.includes('UTGST') || normGroup.includes('S GST')) return 'SGST';
       }
       return null;
     };
@@ -578,10 +615,10 @@ export async function fetchTallyMetadata(
     const ledgerParentMap = new Map<string, string>();
 
     // Extract GSTIN and Parent from each <LEDGER> block using regex
-    const ledgerBlockRegex = /<LEDGER\s+NAME="([^"]*)"[^>]*>([\s\S]*?)<\/LEDGER>/g;
+    const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
     let match: RegExpExecArray | null;
     while ((match = ledgerBlockRegex.exec(ledgerResp)) !== null) {
-      const ledgerName = unescapeXml(match[1]).replace(/\s+/g, ' ').trim();
+      const ledgerName = extractLedgerNameFromBlock(match[1], match[2]);
       const block = match[0];
 
       let gstinMatch = block.match(/<PARTYGSTIN[^>]*>([^<]+)<\/PARTYGSTIN>/i);
@@ -606,12 +643,12 @@ export async function fetchTallyMetadata(
       }
 
       let panMatch = block.match(/<INCOMETAXNUMBER[^>]*>([^<]+)<\/INCOMETAXNUMBER>/i) || block.match(/<PARTXPAN[^>]*>([^<]+)<\/PARTXPAN>/i);
-      if (panMatch) {
+      if (panMatch && ledgerName) {
         panMap.set(ledgerName.toUpperCase(), panMatch[1].replace(/\s+/g, '').trim());
       }
 
       let parentMatch = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
-      if (parentMatch) {
+      if (parentMatch && ledgerName) {
         ledgerParentMap.set(ledgerName.toUpperCase(), unescapeXml(parentMatch[1]).replace(/\s+/g, ' ').trim().toUpperCase());
       }
     }
@@ -622,13 +659,14 @@ export async function fetchTallyMetadata(
     const taxMap = new Map<string, TaxLedgerInfo>();
     ledgerBlockRegex.lastIndex = 0;
     while ((match = ledgerBlockRegex.exec(ledgerResp)) !== null) {
-      const ledgerName = unescapeXml(match[1]).replace(/\s+/g, ' ').trim();
+      const ledgerName = extractLedgerNameFromBlock(match[1], match[2]);
+      const normLedgerName = ledgerName.replace(/\s+/g, ' ').trim().toUpperCase();
       const block = match[0];
 
       const parentMatch = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
       const parent = parentMatch ? unescapeXml(parentMatch[1]).replace(/\s+/g, ' ').trim() : '';
 
-      const customLedger = customTaxLedgers.find(cl => cl.name.trim().toUpperCase() === ledgerName.toUpperCase());
+      const customLedger = customTaxLedgers.find(cl => cl.name.replace(/\s+/g, ' ').trim().toUpperCase() === normLedgerName);
 
       let isITC = false, isOutput = false, isRCM = false, taxCategory: any = null;
 
@@ -642,14 +680,15 @@ export async function fetchTallyMetadata(
         const hierarchy = getGroupHierarchy(parent);
         isRCM = hierarchy.some(g => g === 'RCM' || g.includes('REVERSE'));
 
-        const hasInputKeyword = hierarchy.some(g => g.includes('INPUT') || g === 'ITC' || g.includes('INWARD')) ||
-          ledgerName.toUpperCase().includes('INPUT') ||
-          ledgerName.toUpperCase().includes('ITC') ||
-          ledgerName.toUpperCase().includes('INWARD');
+        const hasInputKeyword = hierarchy.some(g => g.includes('INPUT') || g.includes('IN PUT') || g === 'ITC' || g.includes('INWARD')) ||
+          normLedgerName.includes('INPUT') ||
+          normLedgerName.includes('IN PUT') ||
+          normLedgerName.includes('ITC') ||
+          normLedgerName.includes('INWARD');
 
         const hasOutputKeyword = hierarchy.some(g => g.includes('OUTPUT') || g.includes('OUTWARD')) ||
-          ledgerName.toUpperCase().includes('OUTPUT') ||
-          ledgerName.toUpperCase().includes('OUTWARD');
+          normLedgerName.includes('OUTPUT') ||
+          normLedgerName.includes('OUTWARD');
 
         if (hasInputKeyword) {
           isITC = true;
@@ -662,18 +701,21 @@ export async function fetchTallyMetadata(
           }
         }
 
-        taxCategory = getTaxCategory(ledgerName.toUpperCase(), parent.toUpperCase());
+        taxCategory = getTaxCategory(normLedgerName, parent.toUpperCase());
       }
 
       if (isITC || isOutput || isRCM) {
         const gstin = gstinMap.get(ledgerName.toUpperCase()) || '';
-        taxMap.set(ledgerName.toUpperCase(), {
+        const info = {
           gstin,
           isOutput,
           isRCM,
           isITC,
           taxCategory,
-        });
+        };
+        taxMap.set(normLedgerName, info);
+        taxMap.set(ledgerName.toUpperCase(), info);
+        taxMap.set(ledgerName.trim().toUpperCase(), info);
       }
     }
 
@@ -760,9 +802,12 @@ export async function fetchFixedAssets(
 
   // Find all groups under Fixed Assets (case-insensitive)
   const fixedAssetGroups = new Set<string>();
+  fixedAssetGroups.add('FIXED ASSETS');
   for (const [groupName, parentName] of meta.groupParentMap.entries()) {
     let current = groupName;
-    while (current) {
+    const visited = new Set<string>();
+    while (current && !visited.has(current)) {
+      visited.add(current);
       if (current.toUpperCase().trim() === 'FIXED ASSETS') {
         fixedAssetGroups.add(groupName.toUpperCase().trim());
         break;
@@ -774,7 +819,21 @@ export async function fetchFixedAssets(
   // Find all ledgers under those groups (case-insensitive)
   const fixedAssetLedgers = new Set<string>();
   for (const [ledgerName, parentName] of meta.ledgerParentMap.entries()) {
-    if (fixedAssetGroups.has(parentName.toUpperCase().trim())) {
+    const parentUpper = parentName.toUpperCase().trim();
+    let isFA = parentUpper === 'FIXED ASSETS' || fixedAssetGroups.has(parentUpper);
+    if (!isFA) {
+      let current = parentUpper;
+      const visited = new Set<string>();
+      while (current && !visited.has(current)) {
+        visited.add(current);
+        if (current === 'FIXED ASSETS' || fixedAssetGroups.has(current)) {
+          isFA = true;
+          break;
+        }
+        current = (meta.groupParentMap.get(current) || '').toUpperCase().trim();
+      }
+    }
+    if (isFA) {
       fixedAssetLedgers.add(ledgerName.toUpperCase().trim());
     }
   }
@@ -832,6 +891,7 @@ export async function fetchFixedAssets(
 
       faMap.set(name, {
         ledgerName: name,
+        name: name,
         parentGroup: parent,
         openingBalance: ob,
         additions: [],
@@ -959,7 +1019,7 @@ export async function fetchVouchers(
 ): Promise<TallyFlatVoucher[]> {
   clearTallyMetadataCache();
   const xml = buildVoucherQueryXml(customVoucherTypes, fromDate, toDate);
-  const resp = await sendTallyRequest(xml, config);
+  const resp = await sendTallyRequest(xml, config, 120000);
   return parseTallyVouchers([resp], config, baseVoucherType, customInputTaxGroups, customOutputTaxGroups, customTaxLedgers, strictMode);
 }
 
@@ -974,15 +1034,66 @@ export async function parseTallyVouchers(
 ): Promise<TallyFlatVoucher[]> {
   let gstinMap: Map<string, string>;
   let taxMap: Map<string, TaxLedgerInfo>;
+  let ledgerParentMap: Map<string, string> = new Map();
+  let groupParentMap: Map<string, string> = new Map();
   try {
     const meta = await fetchTallyMetadata(config, customInputTaxGroups, customOutputTaxGroups, customTaxLedgers);
     gstinMap = meta.gstinMap;
     taxMap = meta.taxMap;
+    ledgerParentMap = meta.ledgerParentMap;
+    groupParentMap = meta.groupParentMap;
   } catch (err) {
     console.error("Failed to fetch Tally metadata:", err);
     gstinMap = new Map();
     taxMap = new Map();
   }
+
+  const getLedgerHierarchy = (lName: string): string[] => {
+    const path: string[] = [];
+    let currentGroup = ledgerParentMap.get(lName.toUpperCase());
+    const visited = new Set<string>();
+    while (currentGroup && !visited.has(currentGroup)) {
+      path.push(currentGroup.toUpperCase());
+      visited.add(currentGroup.toUpperCase());
+      currentGroup = groupParentMap.get(currentGroup.toUpperCase()) || '';
+    }
+    return path;
+  };
+
+  const isMainSalesOrPurchaseLedger = (lName: string, vType: string): boolean => {
+    const lUpper = lName.toUpperCase().trim();
+    const hierarchy = getLedgerHierarchy(lUpper);
+
+    if (hierarchy.length > 0) {
+      if (vType === 'Sales' || vType === 'Credit Note') {
+        return hierarchy.some(g => g === 'SALES ACCOUNTS' || g === 'SALES ACCOUNT' || g === 'SALES');
+      } else if (vType === 'Purchase' || vType === 'Debit Note') {
+        return hierarchy.some(g => g === 'PURCHASE ACCOUNTS' || g === 'PURCHASE ACCOUNT' || g === 'PURCHASE');
+      }
+    }
+
+    // Secondary fallback ONLY if group hierarchy is completely missing:
+    const isExcl = lUpper.includes('FREIGHT') ||
+      lUpper.includes('INSURANCE') ||
+      lUpper.includes('PACKING') ||
+      lUpper.includes('ROUND') ||
+      lUpper.includes('TCS') ||
+      lUpper.includes('TRANSPORT') ||
+      lUpper.includes('DISCOUNT') ||
+      lUpper.includes('EXPENSE') ||
+      lUpper.includes('CHARGE') ||
+      lUpper.includes('DUTY') ||
+      lUpper.includes('TAX');
+
+    if (isExcl) return false;
+
+    if (vType === 'Sales' || vType === 'Credit Note') {
+      return lUpper.includes('SALE') || lUpper.includes('SALES');
+    } else if (vType === 'Purchase' || vType === 'Debit Note') {
+      return lUpper.includes('PURCHASE') || lUpper.includes('BUY');
+    }
+    return true;
+  };
 
   const results: TallyFlatVoucher[] = [];
 
@@ -1032,9 +1143,12 @@ export async function parseTallyVouchers(
       const anomalies: string[] = [];
       const taxLedgersBreakdown: { ledgerName: string; amount: number; category: string; type: string }[] = [];
 
+      let partyAmount = 0;
+      let nonTaxRevenueAmount = 0;
+
       for (const entry of entries) {
         const ledgerNameRaw = getTextContent(entry, 'LEDGERNAME');
-        const ledgerName = ledgerNameRaw.toUpperCase().trim();
+        const ledgerName = ledgerNameRaw.replace(/\s+/g, ' ').toUpperCase().trim();
         const amountStr = getTextContent(entry, 'AMOUNT');
         const amount = safeNum(amountStr);
         const isDeemedPositiveStr = getTextContent(entry, 'ISDEEMEDPOSITIVE');
@@ -1042,7 +1156,7 @@ export async function parseTallyVouchers(
 
         let taxInfo = undefined;
 
-        const customMapping = customTaxLedgers.find(l => l.name.trim().toUpperCase() === ledgerName);
+        const customMapping = customTaxLedgers.find(l => l.name.replace(/\s+/g, ' ').trim().toUpperCase() === ledgerName);
 
         if (customMapping) {
           const typeUpper = (customMapping.type || '').toUpperCase();
@@ -1055,17 +1169,30 @@ export async function parseTallyVouchers(
           };
         } else if (!strictMode) {
           // Auto-detection Mode: Rely on Tally Group inheritance and aggressive string matching
-          taxInfo = taxMap.get(ledgerName);
+          taxInfo = taxMap.get(ledgerName) || taxMap.get(ledgerNameRaw.toUpperCase().trim()) || taxMap.get(ledgerNameRaw.replace(/\s+/g, ' ').trim().toUpperCase());
 
-          // Hard fallback: if it wasn't mapped by group or exact name, but contains GST keywords, force it!
-          // (We ensure we don't accidentally match the primary party name just because it has "GST" in it)
-          if (!taxInfo && ledgerName !== knownPartyName && !ledgerName.includes('PURCHASE') && !ledgerName.includes('SALES') && !ledgerName.includes('DISCOUNT') && !ledgerName.includes('ROUND')) {
-            if (ledgerName.includes('IGST') || ledgerName.includes('INTEGRATED TAX')) {
-              taxInfo = { gstin: '', isOutput: ledgerName.includes('OUTPUT'), isRCM: false, isITC: !ledgerName.includes('OUTPUT'), taxCategory: 'IGST' };
-            } else if (ledgerName.includes('CGST') || ledgerName.includes('CENTRAL TAX')) {
-              taxInfo = { gstin: '', isOutput: ledgerName.includes('OUTPUT'), isRCM: false, isITC: !ledgerName.includes('OUTPUT'), taxCategory: 'CGST' };
-            } else if (ledgerName.includes('SGST') || ledgerName.includes('STATE TAX') || ledgerName.includes('UTGST')) {
-              taxInfo = { gstin: '', isOutput: ledgerName.includes('OUTPUT'), isRCM: false, isITC: !ledgerName.includes('OUTPUT'), taxCategory: 'SGST' };
+          // Hard fallback: ONLY if it's NOT a Sales/Purchase/Service/Supply/Income/Expense ledger!
+          if (
+            !taxInfo &&
+            ledgerName !== knownPartyName &&
+            !ledgerName.includes('SALE') &&
+            !ledgerName.includes('SALES') &&
+            !ledgerName.includes('PURCHASE') &&
+            !ledgerName.includes('SERVICE') &&
+            !ledgerName.includes('SUPPLY') &&
+            !ledgerName.includes('INCOME') &&
+            !ledgerName.includes('EXPENSE') &&
+            !ledgerName.includes('DISCOUNT') &&
+            !ledgerName.includes('ROUND')
+          ) {
+            const isOut = voucherType === 'Sales' || ledgerName.includes('OUTPUT');
+            const isIn = voucherType === 'Purchase' || voucherType === 'Journal' || voucherType === 'Debit Note' || voucherType === 'Credit Note' || ledgerName.includes('INPUT') || ledgerName.includes('IN PUT') || ledgerName.includes('ITC') || ledgerName.includes('INWARD');
+            if (ledgerName.includes('IGST') || ledgerName.includes('INTEGRATED TAX') || ledgerName.includes('I GST')) {
+              taxInfo = { gstin: '', isOutput: isOut, isRCM: false, isITC: !isOut, taxCategory: 'IGST' as const };
+            } else if (ledgerName.includes('CGST') || ledgerName.includes('CENTRAL TAX') || ledgerName.includes('C GST')) {
+              taxInfo = { gstin: '', isOutput: isOut, isRCM: false, isITC: !isOut, taxCategory: 'CGST' as const };
+            } else if (ledgerName.includes('SGST') || ledgerName.includes('STATE TAX') || ledgerName.includes('UTGST') || ledgerName.includes('S GST')) {
+              taxInfo = { gstin: '', isOutput: isOut, isRCM: false, isITC: !isOut, taxCategory: 'SGST' as const };
             }
           }
         }
@@ -1090,30 +1217,33 @@ export async function parseTallyVouchers(
           } else if (voucherType === 'Sales') {
             isValidTax = taxInfo.isITC || taxInfo.isOutput || taxInfo.isRCM;
             if (isValidTax) {
-              effectiveAmount = isDebit ? -amount : amount;
+              effectiveAmount = amount;
               if (taxInfo.isITC) {
                 anomalies.push(`Input Tax on Sales: ${category} ₹${amount.toFixed(2)}`);
-              } else if (isDebit) {
-                anomalies.push(`Output Tax Reversal (Debit Balance): ${category} ₹${amount.toFixed(2)}`);
               }
             }
           } else if (voucherType === 'Credit Note') {
-            // ONLY import ledgers that are explicitly mentioned in the mapping table
-            isValidTax = !!customMapping;
-            effectiveAmount = amount;
-            if (isValidTax && taxInfo.isITC) {
-              effectiveAmount = -amount;
-              anomalies.push(`Input Tax on Credit Note: ${category} ₹${amount.toFixed(2)}`);
+            isValidTax = taxInfo.isITC || taxInfo.isOutput || taxInfo.isRCM;
+            if (isValidTax) {
+              if (taxInfo.isITC) {
+                effectiveAmount = !isDebit ? -amount : amount;
+              } else {
+                effectiveAmount = isDebit ? -amount : amount;
+              }
             }
           } else if (voucherType === 'Debit Note') {
-            // ONLY import ledgers that are explicitly mentioned in the mapping table
-            isValidTax = !!customMapping;
-            effectiveAmount = amount;
-            if (isValidTax && taxInfo.isOutput) {
-              effectiveAmount = -amount;
-              anomalies.push(`Output Tax on Debit Note: ${category} ₹${amount.toFixed(2)}`);
+            isValidTax = taxInfo.isITC || taxInfo.isOutput || taxInfo.isRCM;
+            if (isValidTax) {
+              if (taxInfo.isITC) {
+                effectiveAmount = !isDebit ? -amount : amount;
+                if (!isDebit) {
+                  anomalies.push(`Input Tax Reversal on Debit Note: ${category} ₹${amount.toFixed(2)}`);
+                }
+              } else {
+                effectiveAmount = !isDebit ? amount : -amount;
+              }
             }
-          } else if (voucherType === 'Journal') {
+          } else if (voucherType === 'Journal' || voucherType === 'Payment') {
             isValidTax = taxInfo.isITC || taxInfo.isOutput || taxInfo.isRCM;
             if (isValidTax) {
               effectiveAmount = !isDebit ? -amount : amount;
@@ -1143,18 +1273,41 @@ export async function parseTallyVouchers(
           if (ledgerName.includes('GST')) {
             debugLog.push(`Unmapped GST ledger: ${ledgerName} (Amt: ${amountStr})`);
           }
-          // Non-tax ledger
-          if (
-            !ledgerName.includes('PURCHASE') &&
-            !ledgerName.includes('SALES') &&
-            !ledgerName.includes('DISCOUNT') &&
-            !ledgerName.includes('ROUND')
-          ) {
-            // If it's not a known tax, purchase, or sales ledger, it's likely the Party ledger!
+
+          // ── Party vs Sales/Purchase detection ──
+          // PRIORITY 1: If the ledger name matches the known party name from the voucher header,
+          // it is ALWAYS the party ledger — even if its group hierarchy includes Purchase/Sales Accounts.
+          // This prevents doubling when party ledgers (e.g. Sundry Creditors) are under Purchase Accounts.
+          const isExplicitPartyMatch = ledgerName === knownPartyName;
+
+          // Check if ledger belongs to a party-type group (Sundry Creditors, Sundry Debtors, etc.)
+          const ledgerGroupHierarchy = getLedgerHierarchy(ledgerName);
+          const isUnderPartyGroup = ledgerGroupHierarchy.some(g =>
+            g === 'SUNDRY CREDITORS' || g === 'SUNDRY DEBTORS' ||
+            g === 'CURRENT LIABILITIES' || g === 'CURRENT ASSETS' ||
+            g === 'LOANS & ADVANCES (ASSET)' || g === 'LOANS (LIABILITY)' ||
+            g === 'BANK ACCOUNTS' || g === 'BANK OD A/C' || g === 'CASH-IN-HAND' ||
+            g === 'SECURED LOANS' || g === 'UNSECURED LOANS'
+          );
+
+          const isSalesOrPurchase = isExplicitPartyMatch ? false :
+            (isUnderPartyGroup ? false : isMainSalesOrPurchaseLedger(ledgerName, voucherType));
+
+          const isPartyLedger = isExplicitPartyMatch || (!isSalesOrPurchase && (
+            (voucherType === 'Sales' || voucherType === 'Credit Note') ? isDebit :
+            (voucherType === 'Purchase' || voucherType === 'Debit Note') ? !isDebit :
+            amount > maxAmount
+          ));
+
+          if (isPartyLedger && (isExplicitPartyMatch || amount >= partyAmount)) {
+            partyAmount = amount;
             if (amount > maxAmount) {
               maxAmount = amount;
               fallbackPartyName = ledgerNameRaw;
             }
+          } else if (isSalesOrPurchase) {
+            // Only add to nonTaxRevenueAmount if it belongs to SALES ACCOUNTS or PURCHASE ACCOUNTS
+            nonTaxRevenueAmount += amount;
           }
         }
       }
@@ -1186,31 +1339,17 @@ export async function parseTallyVouchers(
 
       const totalGst = igst + cgst + sgst;
 
+      // For Payment vouchers, ONLY keep vouchers that actually contain GST tax!
+      if (voucherType === 'Payment' && Math.abs(igst) < 0.01 && Math.abs(cgst) < 0.01 && Math.abs(sgst) < 0.01) {
+        continue;
+      }
+
       if (Math.abs(cgst - sgst) > 1.00 && (cgst > 0 || sgst > 0)) {
         anomalies.push(`CGST and SGST mismatch: CGST ₹${cgst.toFixed(2)}, SGST ₹${sgst.toFixed(2)}`);
       }
 
-      // Total amount: fallback to maxAmount (Party ledger amount)
-      let totalAmount = maxAmount;
-
-      // If there are NO GST values at all, don't calculate taxable value or total
-      // (these are non-GST entries like TDS journals, plain payments, etc.)
-      if (totalGst === 0) {
-        taxableValue = 0;
-        totalAmount = 0;
-      } else if (totalAmount === 0) {
-        // If totalAmount is still 0 but there IS GST, sum up purchase/sales ledgers
-        for (const entry of entries) {
-          const ln = getTextContent(entry, 'LEDGERNAME').toUpperCase();
-          if (ln.includes('PURCHASE') || ln.includes('SALES')) {
-            taxableValue += safeNum(getTextContent(entry, 'AMOUNT'));
-          }
-        }
-        totalAmount = taxableValue + igst + cgst + sgst;
-      } else {
-        // Since igst, cgst, sgst already have the anomalies subtracted mathematically, we just subtract them from totalAmount!
-        taxableValue = Math.max(0, totalAmount - (igst + cgst + sgst));
-      }
+      let totalAmount = partyAmount > 0 ? partyAmount : (nonTaxRevenueAmount + totalGst);
+      taxableValue = nonTaxRevenueAmount > 0 ? nonTaxRevenueAmount : Math.max(0, totalAmount - totalGst);
 
       results.push({
         voucherType,
@@ -1248,6 +1387,8 @@ export interface TallyTdsTransaction {
   tdsLedgerName?: string;
   parentGroup?: string;
   parentGroupPath?: string;
+  isPayment?: boolean;
+  paymentAmount?: number;
 }
 
 export async function fetchTdsTransactions(
@@ -1317,164 +1458,191 @@ export async function fetchTdsTransactions(
     const dateStr = getTextContent(firstEntry, 'VCHDATE');
     const date = new Date(tallyDateToISO(dateStr));
 
-    let partyName = '';
+    const isBankOrTaxLedger = (name: string, h: string[]): boolean => {
+      const u = name.toUpperCase().trim();
+      if (u.includes('BANK') || u.includes('CASH') || u.includes('TDS') || u.includes('CGST') || u.includes('SGST') || u.includes('IGST') || u.includes('ROUND OFF')) return true;
+      return h.some(g =>
+        g.includes('BANK ACCOUNTS') || g.includes('BANK OCC') || g.includes('BANK OD') ||
+        g.includes('CASH-IN-HAND') || g.includes('DUTIES & TAXES') || g.includes('DUTIES AND TAXES')
+      );
+    };
 
     const isPartyLedger = (name: string, h: string[]): boolean => {
       const nameUpper = name.toUpperCase().trim();
+      if (isBankOrTaxLedger(nameUpper, h)) return false;
       if (panMap.has(nameUpper)) return true;
-      if (partyName && nameUpper === partyName.toUpperCase().trim()) return true;
-      return h.some(g => g.includes('SUNDRY CREDITORS') || g.includes('SUNDRY DEBTORS'));
+      const clean = nameUpper.replace(/\s*\([^)]*\)/g, '').trim();
+      if (clean && panMap.has(clean)) return true;
+      const alpha = nameUpper.replace(/[^A-Z0-9]/g, '');
+      if (alpha && panMap.has(alpha)) return true;
+      return h.some(g =>
+        g.includes('SUNDRY CREDITORS') || g.includes('SUNDRY DEBTORS') ||
+        g.includes('CREDITOR') || g.includes('DEBTOR') || g.includes('VENDOR') ||
+        g.includes('SUPPLIER') || g.includes('PARTY') || g.includes('TRANSPORTER') ||
+        g.includes('CONTRACT DRIVERS')
+      );
     };
 
-    // Step 1: Pre-scan to identify the Party Ledger
-    for (const entry of entries) {
+    // Pre-classify entries in this voucher
+    interface EntryInfo {
+      ledgerNameRaw: string;
+      ledgerNameUpper: string;
+      hierarchy: string[];
+      amount: number;
+      isDebit: boolean;
+      isParty: boolean;
+      isBankOrTax: boolean;
+      isTds: boolean;
+    }
+
+    const processedEntries: EntryInfo[] = entries.map(entry => {
       const ledgerNameRaw = getTextContent(entry, 'LEDGERNAME');
+      const ledgerNameUpper = ledgerNameRaw.toUpperCase().trim();
       const hierarchy = getHierarchy(ledgerNameRaw);
-      if (isPartyLedger(ledgerNameRaw, hierarchy)) {
-        partyName = ledgerNameRaw;
-        break;
-      }
-    }
-
-    // Fallback if no Sundry Creditor/Debtor found:
-    if (!partyName) {
-      for (const entry of entries) {
-        const ledgerNameRaw = getTextContent(entry, 'LEDGERNAME');
-        const ledgerName = ledgerNameRaw.toUpperCase().trim();
-        const amountStr = getTextContent(entry, 'AMOUNT');
-        const amount = safeNum(amountStr);
-        const isDebit = getTextContent(entry, 'ISDEEMEDPOSITIVE') === 'Yes';
-
-        const isTds = tdsLedgersSet.has(ledgerName) || ledgerName.includes('TDS') || ledgerName.includes('TAX DEDUCTED');
-        const isGst = ledgerName.includes('CGST') || ledgerName.includes('SGST') || ledgerName.includes('IGST') || ledgerName.includes('TAX');
-
-        if (!isTds && !isGst && !isDebit && amount > 0) {
-          partyName = ledgerNameRaw;
-          break;
-        }
-      }
-    }
-
-    if (!partyName) partyName = getTextContent(firstEntry, 'PARTYNAME') || getTextContent(firstEntry, 'PARTYLEDGERNAME') || 'Unknown Party';
-
-    const partyNameUpper = partyName.toUpperCase().trim();
-    const partyPan = panMap.get(partyNameUpper) || '';
-
-    let tdsAmount = 0;
-    let tdsLedgerName = '';
-    const expenses: { name: string, amount: number }[] = [];
-
-    // Step 2: Scan for Expense lines and TDS
-    for (const entry of entries) {
-      const ledgerNameRaw = getTextContent(entry, 'LEDGERNAME');
-      const ledgerName = ledgerNameRaw.toUpperCase().trim();
       const amountStr = getTextContent(entry, 'AMOUNT');
       const amount = safeNum(amountStr);
       const isDebit = getTextContent(entry, 'ISDEEMEDPOSITIVE') === 'Yes';
+      const isBankOrTax = isBankOrTaxLedger(ledgerNameUpper, hierarchy);
+      const isParty = isPartyLedger(ledgerNameUpper, hierarchy);
+      const isTds = tdsLedgersSet.has(ledgerNameUpper) || ledgerNameUpper.includes('TDS') || ledgerNameUpper.includes('TAX DEDUCTED');
 
-      const isTdsLedger = tdsLedgersSet.has(ledgerName) || ledgerName.includes('TDS') || ledgerName.includes('TAX DEDUCTED');
+      return {
+        ledgerNameRaw,
+        ledgerNameUpper,
+        hierarchy,
+        amount,
+        isDebit,
+        isParty,
+        isBankOrTax,
+        isTds
+      };
+    });
 
-      if (isTdsLedger) {
-        if (!isDebit) {
-          tdsAmount += amount;
-          tdsLedgerName = ledgerNameRaw;
-        } else {
-          tdsAmount -= amount;
-        }
-      } else if (ledgerName !== partyNameUpper) {
-        if (!ledgerName.includes('CGST') && !ledgerName.includes('SGST') && !ledgerName.includes('IGST') && !ledgerName.includes('TAX') && !ledgerName.includes('ROUND OFF') && !ledgerName.includes('ROUNDING')) {
-          const expenseAmount = isDebit ? amount : -amount;
-          expenses.push({ name: ledgerNameRaw, amount: expenseAmount });
-        }
+    // 1. Identify Party ledgers in voucher (never treat a party ledger as an expense of another party)
+    const partyLedgerEntries = processedEntries.filter(e => e.isParty && !e.isBankOrTax);
+
+    // 2. Identify Non-Party Expense ledgers in voucher
+    const expenseEntries = processedEntries.filter(e => !e.isParty && !e.isBankOrTax && !e.isTds && e.amount > 0);
+
+    // 3. Identify TDS ledgers
+    const tdsEntries = processedEntries.filter(e => e.isTds);
+    let totalTdsAmount = 0;
+    let mainTdsLedgerName = '';
+    for (const t of tdsEntries) {
+      if (!t.isDebit) {
+        totalTdsAmount += t.amount;
+        mainTdsLedgerName = t.ledgerNameRaw;
+      } else {
+        totalTdsAmount -= t.amount;
       }
     }
 
-    if (expenses.length > 0) {
-      expenses.sort((a, b) => b.amount - a.amount);
-      const mainExpenseLedger = expenses[0].name;
-      const hierarchyForMain = getHierarchy(mainExpenseLedger);
+    // Determine target parties in voucher
+    const targetPartiesMap = new Map<string, { name: string; pan: string; creditAmount: number; debitAmount: number }>();
 
-      // Check if this is a separate TDS deduction adjustment voucher (debits party, credits TDS)
-      if (isPartyLedger(mainExpenseLedger, hierarchyForMain) && tdsAmount > 0) {
-        let adjTdsLedgerName = 'TDS';
-        for (const entry of entries) {
-          const lnRaw = getTextContent(entry, 'LEDGERNAME');
-          const ln = lnRaw.toUpperCase().trim();
-          const isTds = tdsLedgersSet.has(ln) || ln.includes('TDS') || ln.includes('TAX DEDUCTED');
-          if (isTds) {
-            adjTdsLedgerName = lnRaw;
-            break;
-          }
+    if (partyLedgerEntries.length > 0) {
+      for (const p of partyLedgerEntries) {
+        const key = p.ledgerNameUpper;
+        if (!targetPartiesMap.has(key)) {
+          const cleanName = key.replace(/\s*\([^)]*\)/g, '').trim();
+          const alphaName = key.replace(/[^A-Z0-9]/g, '');
+          const pan = panMap.get(key) || panMap.get(cleanName) || panMap.get(alphaName) || '';
+          targetPartiesMap.set(key, { name: p.ledgerNameRaw, pan, creditAmount: 0, debitAmount: 0 });
         }
+        const partyObj = targetPartiesMap.get(key)!;
+        if (p.isDebit) {
+          partyObj.debitAmount += p.amount;
+        } else {
+          partyObj.creditAmount += p.amount;
+        }
+      }
+    } else {
+      // Fallback if no party ledger recognized
+      const rawXmlParty = (
+        getTextContent(firstEntry, 'PARTYLEDGERNAME') ||
+        getTextContent(firstEntry, 'PARTYNAME') ||
+        getTextContent(firstEntry, 'BASICBUYERNAME')
+      ).replace(/\s+/g, ' ').trim();
 
+      if (rawXmlParty && !isBankOrTaxLedger(rawXmlParty, getHierarchy(rawXmlParty))) {
+        const key = rawXmlParty.toUpperCase().trim();
+        const cleanName = key.replace(/\s*\([^)]*\)/g, '').trim();
+        const alphaName = key.replace(/[^A-Z0-9]/g, '');
+        const pan = panMap.get(key) || panMap.get(cleanName) || panMap.get(alphaName) || '';
+        targetPartiesMap.set(key, { name: rawXmlParty, pan, creditAmount: 0, debitAmount: 0 });
+      }
+    }
+
+    const targetParties = Array.from(targetPartiesMap.values());
+    if (targetParties.length === 0) continue;
+
+    const totalPartyWeight = targetParties.reduce((sum, p) => sum + (p.creditAmount || p.debitAmount || 1), 0);
+
+    const hasBankOrCash = processedEntries.some(e =>
+      e.hierarchy.some(g => g.includes('BANK ACCOUNTS') || g.includes('BANK OCC') || g.includes('BANK OD') || g.includes('CASH-IN-HAND')) ||
+      e.ledgerNameUpper.includes('BANK') || e.ledgerNameUpper.includes('CASH')
+    );
+
+    for (const party of targetParties) {
+      const partyWeight = totalPartyWeight > 0 ? (party.creditAmount || party.debitAmount || 1) / totalPartyWeight : 1;
+
+      // Scenario 1: Bank Payment / Disbursement
+      if (hasBankOrCash && party.debitAmount > 0) {
+        const allocatedPaymentTds = Math.round((totalTdsAmount * partyWeight) * 100) / 100;
         results.push({
           date,
-          partyName: mainExpenseLedger, // The party is the one debited
-          partyPan: panMap.get(mainExpenseLedger.toUpperCase().trim()) || '',
-          ledgerName: adjTdsLedgerName, // The TDS ledger name
+          partyName: party.name,
+          partyPan: party.pan,
+          ledgerName: 'Payment / Disbursement',
           amount: 0,
-          actualTdsDeducted: tdsAmount,
-          tdsLedgerName: adjTdsLedgerName,
-          parentGroup: 'TDS Tax Liability',
-          parentGroupPath: 'TDS Tax Liability'
+          actualTdsDeducted: allocatedPaymentTds,
+          tdsLedgerName: allocatedPaymentTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
+          isPayment: true,
+          paymentAmount: party.debitAmount
         });
-        continue;
       }
+      // Scenario 2: Invoice / Expense Voucher
+      else if (expenseEntries.length > 0) {
+        const totalVoucherExpense = expenseEntries.reduce((sum, e) => sum + e.amount, 0);
 
-      // Otherwise, it is a normal expense voucher. We process each expense ledger line separately!
-      const isExpenseOrPurchaseGroup = (hierarchy: string[]): boolean => {
-        return hierarchy.some(g => {
-          const gu = g.toUpperCase().trim();
-          return gu === 'INDIRECT EXPENSES' || gu === 'DIRECT EXPENSES' || gu === 'PURCHASE ACCOUNTS' ||
-            gu.includes('EXPENSES') || gu.includes('PURCHASE ACCOUNTS') ||
-            gu === 'DIRECT EXPENSE' || gu === 'INDIRECT EXPENSE';
-        });
-      };
+        for (const exp of expenseEntries) {
+          const expAmountForParty = exp.amount * partyWeight;
+          if (expAmountForParty === 0) continue;
 
-      const mappedExpenses = expenses.filter(e => {
-        const hierarchy = getHierarchy(e.name);
-        if (!isExpenseOrPurchaseGroup(hierarchy)) return false;
-        const fullPath = [e.name.replace(/\s+/g, ' ').toUpperCase().trim(), ...hierarchy];
-        return !groupMappings || groupMappings.length === 0 || groupMappings.some(m => matchesMapping(fullPath, m));
-      });
+          const allocatedTds = totalVoucherExpense > 0
+            ? Math.round(((exp.amount / totalVoucherExpense) * (totalTdsAmount * partyWeight)) * 100) / 100
+            : 0;
 
-      if (mappedExpenses.length === 0) {
-        continue; // Discard since none of the expense lines match the expense groups or templates
+          results.push({
+            date,
+            partyName: party.name,
+            partyPan: party.pan,
+            ledgerName: exp.ledgerNameRaw,
+            amount: exp.isDebit ? expAmountForParty : -expAmountForParty,
+            actualTdsDeducted: allocatedTds,
+            tdsLedgerName: allocatedTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
+            parentGroup: exp.hierarchy[0] || 'Expense',
+            parentGroupPath: exp.hierarchy.join(', ')
+          });
+        }
       }
-
-      const targetExpenses = mappedExpenses;
-      const totalTargetAmount = targetExpenses.reduce((sum, e) => sum + Math.abs(e.amount), 0);
-
-      for (const expense of targetExpenses) {
-        if (expense.amount === 0) continue;
-        const hierarchy = getHierarchy(expense.name);
-        const allocatedTds = totalTargetAmount > 0 ? (Math.abs(expense.amount) / totalTargetAmount) * tdsAmount : 0;
+      // Scenario 3: Pure TDS Adjustment / Journal Voucher (No bank/cash, no expense lines)
+      else if (totalTdsAmount > 0 || party.creditAmount > 0) {
+        const partyCreditExp = party.creditAmount;
+        const allocatedTds = Math.round((totalTdsAmount * partyWeight) * 100) / 100;
 
         results.push({
           date,
-          partyName,
-          partyPan,
-          ledgerName: expense.name,
-          amount: expense.amount,
-          actualTdsDeducted: Math.round(allocatedTds * 100) / 100,
-          tdsLedgerName: allocatedTds > 0 ? (tdsLedgerName || 'TDS') : '',
-          parentGroup: hierarchy[0] || 'Expense',
-          parentGroupPath: hierarchy.join(', ')
+          partyName: party.name,
+          partyPan: party.pan,
+          ledgerName: mainTdsLedgerName || 'Vehicle Hire / Journal Entry',
+          amount: partyCreditExp,
+          actualTdsDeducted: allocatedTds,
+          tdsLedgerName: allocatedTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
+          parentGroup: 'Direct Expenses',
+          parentGroupPath: 'Direct Expenses'
         });
       }
-    } else if (tdsAmount > 0 && partyName) {
-      // Separate TDS adjustment voucher (e.g. debits party, credits TDS) with no other expense lines
-      results.push({
-        date,
-        partyName,
-        partyPan: panMap.get(partyName.toUpperCase().trim()) || '',
-        ledgerName: tdsLedgerName || 'TDS',
-        amount: 0,
-        actualTdsDeducted: tdsAmount,
-        tdsLedgerName: tdsLedgerName || 'TDS',
-        parentGroup: 'TDS Tax Liability',
-        parentGroupPath: 'TDS Tax Liability'
-      });
     }
   }
   return results;
@@ -1586,24 +1754,23 @@ export async function fetchVouchersForForensics(
 
 function buildLedgerBalanceXml(partyNames?: string[]): string {
   let collectionXml = '';
-  if (partyNames && partyNames.length > 0) {
+  if (partyNames && partyNames.length > 0 && partyNames.length <= 250) {
     const escapedNames = partyNames.map(name => escapeXml(name.replace(/\s+/g, ' ').trim()));
     const conditions = escapedNames.map(name => `$Name = "${name}"`).join(' OR ');
     collectionXml = `
           <COLLECTION NAME="PartyBalances">
             <TYPE>Ledger</TYPE>
             <FILTER>IsTargetParty</FILTER>
-            <FETCH>Name, Parent, ClosingBalance</FETCH>
+            <FETCH>Name, Parent, OpeningBalance, ClosingBalance</FETCH>
           </COLLECTION>
           <SYSTEM TYPE="FORMULAS" NAME="IsTargetParty">${conditions}</SYSTEM>`;
   } else {
+    // Fetch all ledgers without restricted TDL filter to ensure no ledger balance is missed regardless of parent group
     collectionXml = `
           <COLLECTION NAME="PartyBalances">
             <TYPE>Ledger</TYPE>
-            <FILTER>IsPartyLedger</FILTER>
-            <FETCH>Name, Parent, ClosingBalance</FETCH>
-          </COLLECTION>
-          <SYSTEM TYPE="FORMULAS" NAME="IsPartyLedger">$$IsBelongsTo:$$GroupSundryCreditors OR $$IsBelongsTo:$$GroupSundryDebtors</SYSTEM>`;
+            <FETCH>Name, Parent, OpeningBalance, ClosingBalance</FETCH>
+          </COLLECTION>`;
   }
 
   return `<ENVELOPE>
@@ -1637,12 +1804,13 @@ export async function fetchPartyBalances(
   const resp = await sendTallyRequest(xml, config, 15000);
 
   const balanceMap = new Map<string, number>();
+  const openingBalanceCrMap = new Map<string, number>();
 
   // Parse using regex for robustness
-  const ledgerBlockRegex = /<LEDGER\s+NAME="([^"]*)"[^>]*>([\s\S]*?)<\/LEDGER>/g;
+  const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
   let match: RegExpExecArray | null;
   while ((match = ledgerBlockRegex.exec(resp)) !== null) {
-    const ledgerName = unescapeXml(match[1]).replace(/\s+/g, ' ').trim();
+    const ledgerName = extractLedgerNameFromBlock(match[1], match[2]);
     const block = match[0];
 
     const balMatch = block.match(/<CLOSINGBALANCE[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
@@ -1658,11 +1826,41 @@ export async function fetchPartyBalances(
       } else {
         balance = Math.abs(balance);
       }
-      balanceMap.set(ledgerName.toUpperCase(), balance);
+      
+      const nameUpper = ledgerName.toUpperCase().trim();
+      balanceMap.set(nameUpper, balance);
+
+      // Store normalized keys to ensure matching even if party names have extra suffixes like (Vendor)
+      const cleanName = nameUpper.replace(/\s*\([^)]*\)/g, '').trim();
+      if (cleanName && !balanceMap.has(cleanName)) {
+        balanceMap.set(cleanName, balance);
+      }
+      const alphaKey = nameUpper.replace(/[^A-Z0-9]/g, '');
+      if (alphaKey && !balanceMap.has(alphaKey)) {
+        balanceMap.set(alphaKey, balance);
+      }
+    }
+
+    const opMatch = block.match(/<OPENINGBALANCE[^>]*>([^<]+)<\/OPENINGBALANCE>/i);
+    if (ledgerName && opMatch) {
+      const opStr = opMatch[1].replace(/[₹,\s]/g, '').replace(/Dr|Cr/gi, '').trim();
+      let opBal = parseFloat(opStr);
+      if (isNaN(opBal)) opBal = 0;
+      const isOpCredit = opMatch[1].toUpperCase().includes('CR') || parseFloat(opStr) < 0;
+      const nameUpper = ledgerName.toUpperCase().trim();
+      const cleanName = nameUpper.replace(/\s*\([^)]*\)/g, '').trim();
+      const alphaKey = nameUpper.replace(/[^A-Z0-9]/g, '');
+      const opVal = isOpCredit ? Math.abs(opBal) : 0;
+
+      openingBalanceCrMap.set(nameUpper, opVal);
+      if (cleanName && !openingBalanceCrMap.has(cleanName)) openingBalanceCrMap.set(cleanName, opVal);
+      if (alphaKey && !openingBalanceCrMap.has(alphaKey)) openingBalanceCrMap.set(alphaKey, opVal);
     }
   }
 
-  console.log(`[TallyAPI] Party balances fetched: ${balanceMap.size} entries (filtered by: ${partyNames ? partyNames.length : 'Sundry Creditors'})`);
+  (balanceMap as any).openingBalancesCr = openingBalanceCrMap;
+
+  console.log(`[TallyAPI] Party balances fetched: ${balanceMap.size} entries (filtered by: ${partyNames ? partyNames.length : 'All Ledgers'})`);
   return balanceMap;
 }
 
@@ -1696,7 +1894,6 @@ function buildFixedAssetBalancesXml(): string {
         <TDLMESSAGE>
           <COLLECTION NAME="FixedAssetBalances">
             <TYPE>Ledger</TYPE>
-            <CHILDOF>Fixed Assets</CHILDOF>
             <FETCH>Name, Parent, OpeningBalance, ClosingBalance</FETCH>
           </COLLECTION>
         </TDLMESSAGE>
@@ -1762,13 +1959,46 @@ export async function fetchFixedAssetsFromTally(
 
     const assetsMap = new Map<string, TallyFixedAsset>();
 
+    const meta = await fetchTallyMetadata(config);
+    const fixedAssetGroups = new Set<string>();
+    fixedAssetGroups.add('FIXED ASSETS');
+    for (const [groupName, parentName] of meta.groupParentMap.entries()) {
+      let current = groupName;
+      const visited = new Set<string>();
+      while (current && !visited.has(current)) {
+        visited.add(current);
+        if (current.toUpperCase().trim() === 'FIXED ASSETS') {
+          fixedAssetGroups.add(groupName.toUpperCase().trim());
+          break;
+        }
+        current = meta.groupParentMap.get(current) || '';
+      }
+    }
+
     ledgerNodes.forEach(node => {
       let name = getTextContent(node, 'NAME') || node.getAttribute('NAME') || '';
       name = unescapeXml(name).replace(/\s+/g, ' ').trim();
       if (!name) return;
 
       const parent = unescapeXml(getTextContent(node, 'PARENT')).replace(/\s+/g, ' ').trim();
-      
+      const parentUpper = parent.toUpperCase().trim();
+
+      let isFA = parentUpper === 'FIXED ASSETS' || fixedAssetGroups.has(parentUpper);
+      if (!isFA) {
+        let current = parentUpper;
+        const visited = new Set<string>();
+        while (current && !visited.has(current)) {
+          visited.add(current);
+          if (current === 'FIXED ASSETS' || fixedAssetGroups.has(current)) {
+            isFA = true;
+            break;
+          }
+          current = (meta.groupParentMap.get(current) || '').toUpperCase().trim();
+        }
+      }
+
+      if (!isFA) return;
+
       const opStr = getTextContent(node, 'OPENINGBALANCE').replace(/[₹,\s]/g, '').trim();
       let openingBalance = parseFloat(opStr);
       if (isNaN(openingBalance)) openingBalance = 0;
@@ -1838,10 +2068,676 @@ export async function fetchFixedAssetsFromTally(
     });
 
     return Array.from(assetsMap.values());
-  } catch (error) {
-    console.error('[TallyAPI] Failed to fetch Fixed Asset details:', error);
+  } catch (err) {
+    console.error('[TallyAPI] Error fetching fixed assets:', err);
     return [];
   }
 }
 
-// fetchFixedAssets is defined at line 752
+// ─── Direct Tally Finalisation Scrutiny API ─────────────────
+
+export interface TallyFinalisationParty {
+  partyName: string;
+  parentGroup: string;
+  openingBalance: number;
+  closingBalance: number;
+  vouchers: {
+    date: string;
+    voucherType: string;
+    voucherNumber: string;
+    amount: number;
+    isDebit: boolean;
+    counterpartyLedger: string;
+    narration: string;
+  }[];
+}
+
+export interface TallyFinalisationData {
+  parties: Map<string, TallyFinalisationParty>;
+  allVouchers: {
+    guid: string;
+    date: string;
+    voucherType: string;
+    voucherNumber: string;
+    narration: string;
+    entries: {
+      ledgerName: string;
+      amount: number;
+      isDebit: boolean;
+    }[];
+  }[];
+}
+
+export async function fetchFinalisationDataFromTally(
+  fromDate: string,
+  toDate: string,
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<TallyFinalisationData> {
+  const meta = await fetchTallyMetadata(config);
+
+  // 1. Identify all Sundry Creditors & Sundry Debtors ledgers
+  const targetGroups = new Set<string>();
+  for (const [groupName, parentName] of meta.groupParentMap.entries()) {
+    let current = groupName;
+    while (current) {
+      const cu = current.toUpperCase().trim();
+      if (cu === 'SUNDRY CREDITORS' || cu === 'SUNDRY DEBTORS') {
+        targetGroups.add(groupName.toUpperCase().trim());
+        break;
+      }
+      current = meta.groupParentMap.get(current) || '';
+    }
+  }
+  targetGroups.add('SUNDRY CREDITORS');
+  targetGroups.add('SUNDRY DEBTORS');
+
+  const partyGroupMap = new Map<string, string>(); // Party -> 'Sundry Creditors' | 'Sundry Debtors'
+  for (const [ledgerName, parentName] of meta.ledgerParentMap.entries()) {
+    let current = parentName;
+    while (current) {
+      const cu = current.toUpperCase().trim();
+      if (cu === 'SUNDRY CREDITORS') {
+        partyGroupMap.set(ledgerName.toUpperCase().trim(), 'Sundry Creditors');
+        break;
+      }
+      if (cu === 'SUNDRY DEBTORS') {
+        partyGroupMap.set(ledgerName.toUpperCase().trim(), 'Sundry Debtors');
+        break;
+      }
+      current = meta.groupParentMap.get(current) || '';
+    }
+  }
+
+  // 2. Fetch Opening & Closing Balances for these ledgers
+  const ledgerXml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>PartyScrutinyLedgers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="PartyScrutinyLedgers">
+            <TYPE>Ledger</TYPE>
+            <FILTER>IsTargetPartyLedger</FILTER>
+            <FETCH>Name, Parent, OpeningBalance, ClosingBalance</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="FORMULAS" NAME="IsTargetPartyLedger">
+            $$IsBelongsTo:$$GroupSundryCreditors OR $$IsBelongsTo:$$GroupSundryDebtors
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+  const partyMap = new Map<string, TallyFinalisationParty>();
+
+  try {
+    const ledgerResp = await sendTallyRequest(ledgerXml, config, 20000);
+    const ledgerDoc = parseXml(ledgerResp);
+    const ledgerNodes = getAllElements(ledgerDoc, 'LEDGER');
+
+    for (const node of ledgerNodes) {
+      let name = getTextContent(node, 'NAME') || node.getAttribute('NAME') || '';
+      name = unescapeXml(name).replace(/\s+/g, ' ').trim();
+      if (!name) continue;
+
+      const nameUpper = name.toUpperCase();
+      const parent = unescapeXml(getTextContent(node, 'PARENT')).trim();
+      const groupType = partyGroupMap.get(nameUpper) || (parent.toUpperCase().includes('DEBTOR') ? 'Sundry Debtors' : 'Sundry Creditors');
+
+      const opStr = getTextContent(node, 'OPENINGBALANCE').replace(/[₹,\s]/g, '').trim();
+      let openingBalance = parseFloat(opStr);
+      if (isNaN(openingBalance)) openingBalance = 0;
+      if (getTextContent(node, 'OPENINGBALANCE').toUpperCase().includes('CR')) openingBalance = -Math.abs(openingBalance);
+      else openingBalance = Math.abs(openingBalance);
+
+      const clStr = getTextContent(node, 'CLOSINGBALANCE').replace(/[₹,\s]/g, '').trim();
+      let closingBalance = parseFloat(clStr);
+      if (isNaN(closingBalance)) closingBalance = 0;
+      if (getTextContent(node, 'CLOSINGBALANCE').toUpperCase().includes('CR')) closingBalance = -Math.abs(closingBalance);
+      else closingBalance = Math.abs(closingBalance);
+
+      partyMap.set(nameUpper, {
+        partyName: name,
+        parentGroup: groupType,
+        openingBalance,
+        closingBalance,
+        vouchers: []
+      });
+    }
+  } catch (err) {
+    console.error('[TallyAPI] Error fetching party ledger balances for finalisation scrutiny:', err);
+  }
+
+  // 3. Fetch Vouchers for the period
+  const from = fromDate.replace(/-/g, '');
+  const to = toDate.replace(/-/g, '');
+
+  const vchXml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>ScrutinyVouchers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${from}</SVFROMDATE>
+        <SVTODATE>${to}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="MyScrutinyVch">
+            <TYPE>Voucher</TYPE>
+            <FILTER>IsScrutinyVch</FILTER>
+          </COLLECTION>
+          <SYSTEM TYPE="FORMULAS" NAME="IsScrutinyVch">
+            NOT $IsCancelled AND NOT $IsOptional
+          </SYSTEM>
+
+          <COLLECTION NAME="ScrutinyVouchers">
+            <SOURCECOLLECTION>MyScrutinyVch</SOURCECOLLECTION>
+            <WALK>AllLedgerEntries</WALK>
+            <COMPUTE>Guid : $..GUID</COMPUTE>
+            <COMPUTE>VchDate : $..Date</COMPUTE>
+            <COMPUTE>VchNumber : $..VoucherNumber</COMPUTE>
+            <COMPUTE>VchType : $..VoucherTypeName</COMPUTE>
+            <COMPUTE>Narration : $..Narration</COMPUTE>
+            <COMPUTE>LedgerName : $LedgerName</COMPUTE>
+            <COMPUTE>Amount : $Amount</COMPUTE>
+            <COMPUTE>IsDeemedPositive : $IsDeemedPositive</COMPUTE>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+  const allVouchers: TallyFinalisationData['allVouchers'] = [];
+
+  try {
+    const vchResp = await sendTallyRequest(vchXml, config, 60000);
+    const vchDoc = parseXml(vchResp);
+    const vchNodes = getAllElements(vchDoc, 'VOUCHER');
+
+    const vchMap = new Map<string, { guid: string; date: string; voucherType: string; voucherNumber: string; narration: string; entries: { ledgerName: string; amount: number; isDebit: boolean }[] }>();
+
+    vchNodes.forEach(node => {
+      const guid = getTextContent(node, 'GUID') || getTextContent(node, 'VCHNUMBER');
+      if (!guid) return;
+
+      if (!vchMap.has(guid)) {
+        vchMap.set(guid, {
+          guid,
+          date: tallyDateToISO(getTextContent(node, 'VCHDATE')),
+          voucherType: getTextContent(node, 'VCHTYPE'),
+          voucherNumber: getTextContent(node, 'VCHNUMBER'),
+          narration: unescapeXml(getTextContent(node, 'NARRATION')),
+          entries: []
+        });
+      }
+
+      const vch = vchMap.get(guid)!;
+      let ledgerName = unescapeXml(getTextContent(node, 'LEDGERNAME')).replace(/\s+/g, ' ').trim();
+      const amtStr = getTextContent(node, 'AMOUNT').replace(/[₹,\s]/g, '').trim();
+      let amount = parseFloat(amtStr);
+      if (isNaN(amount)) amount = 0;
+      const isDebit = getTextContent(node, 'ISDEEMEDPOSITIVE').toUpperCase() === 'YES' || amount < 0;
+
+      if (ledgerName) {
+        vch.entries.push({ ledgerName, amount: Math.abs(amount), isDebit });
+      }
+    });
+
+    for (const [, vch] of vchMap.entries()) {
+      allVouchers.push(vch);
+
+      // Link voucher entries to parties
+      vch.entries.forEach(entry => {
+        const partyKey = entry.ledgerName.toUpperCase().trim();
+        let party = partyMap.get(partyKey);
+
+        if (!party && (partyGroupMap.has(partyKey) || entry.ledgerName.toLowerCase().includes('enterprise') || entry.ledgerName.toLowerCase().includes('trader') || entry.ledgerName.toLowerCase().includes('pvt ltd'))) {
+          party = {
+            partyName: entry.ledgerName,
+            parentGroup: partyGroupMap.get(partyKey) || 'Sundry Creditors',
+            openingBalance: 0,
+            closingBalance: 0,
+            vouchers: []
+          };
+          partyMap.set(partyKey, party);
+        }
+
+        if (party) {
+          const counterparty = vch.entries.find(e => e.ledgerName.toUpperCase().trim() !== partyKey)?.ledgerName || 'General Account';
+          party.vouchers.push({
+            date: vch.date,
+            voucherType: vch.voucherType,
+            voucherNumber: vch.voucherNumber,
+            amount: entry.amount,
+            isDebit: entry.isDebit,
+            counterpartyLedger: counterparty,
+            narration: vch.narration
+          });
+        }
+      });
+    }
+  } catch (err) {
+    console.error('[TallyAPI] Error fetching vouchers for finalisation scrutiny:', err);
+  }
+
+  return { parties: partyMap, allVouchers };
+}
+
+
+// ─── Clause 44 (Form 3CD) ────────────────────────────────────
+
+export interface Clause44Row {
+  ledgerName: string;
+  amount: number;
+  primaryGroup?: string;
+  subGroup1?: string;
+  subGroup2?: string;
+  /** Per-voucher breakdown for drill-down detail sheet */
+  voucherBreakdown?: { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[];
+}
+
+export interface Clause44ManualReview {
+  voucherNumber: string;
+  date: string;
+  voucherType: string;
+  expenseLedgers: { name: string; amount: number }[];
+  taxLedgersFound: string[];
+  reason: string;
+}
+
+export interface Clause44Result {
+  /** Table A: Expenses where GST-tagged tax ledger found in same voucher */
+  gstApplicable: Clause44Row[];
+  /** Table B: Expenses where no tax ledger was found in voucher */
+  nonGst: Clause44Row[];
+  /** Table C: Composite vouchers that require human review */
+  manualReview: Clause44ManualReview[];
+  companyName: string;
+}
+
+/**
+ * fetchClause44Data — Form 3CD, Clause 44 bifurcation engine.
+ *
+ * Queries TallyPrime for all vouchers in the date range, then:
+ * 1. Builds a recursive ledger-hierarchy to identify ALL ledgers under
+ *    "Direct Expenses", "Indirect Expenses", and "Purchase Accounts".
+ * 2. For each voucher, reads ALLLEDGERENTRIES.LIST to get exact ledger names.
+ * 3. Checks the user's custom tax-ledger list (strict trimmed match) against
+ *    every entry in the same voucher.
+ * 4. Bifurcates into GST-applicable, Non-GST, and Manual Review buckets.
+ */
+export async function fetchClause44Data(
+  fromDate: string,
+  toDate: string,
+  taxLedgersRaw: string,    // comma-separated list of "Duties & Taxes" ledger names
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<Clause44Result> {
+  // ── FIX 1: Bulletproof date → YYYYMMDD converter ─────────────────────────
+  const toTallyDate = (d: string): string => {
+    const s = d.replace(/[^0-9\/\-]/g, '').trim();
+    if (/^\d{8}$/.test(s)) return s;
+    if (/^\d{4}[\-\/]\d{2}[\-\/]\d{2}$/.test(s)) return s.replace(/[\-\/]/g, '');
+    if (/^\d{2}[\-\/]\d{2}[\-\/]\d{4}$/.test(s)) {
+      const p = s.split(/[\-\/]/);
+      return `${p[2]}${p[1]}${p[0]}`;
+    }
+    return s.replace(/[\-\/]/g, '');
+  };
+
+  // ── FIX 2: Parse & normalise tax-ledger template with strict trimming ─────
+  const userTaxLedgers = new Set<string>(
+    taxLedgersRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  );
+
+  const cleanName = (str: string): string =>
+    unescapeXml(str)
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+
+
+  // ── 2. Fetch all ledger master with parent groups ─────────────
+  const ledgerMasterXml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>Clause44LedgerMaster</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="Clause44LedgerMaster">
+            <TYPE>Ledger</TYPE>
+            <FETCH>Name, Parent</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+  // ── Step B: Fetch group hierarchy and ledger master in parallel ───────────
+  const groupsXml = buildGroupsXml();
+
+  let companyInfo: TallyCompanyInfo = { name: 'Unknown', address: '', gstin: '', state: '', financialYear: '' };
+  try { companyInfo = await fetchCompanyInfo(config); } catch { /* non-fatal */ }
+
+  const [groupResp, ledgerResp] = await Promise.all([
+    sendTallyRequest(groupsXml, config, 15000),
+    sendTallyRequest(ledgerMasterXml, config, 30000),
+  ]);
+
+  console.log('[Clause44] RAW TALLY RESPONSE (Groups, first 400 chars):', groupResp.substring(0, 400));
+  console.log('[Clause44] RAW TALLY RESPONSE (Ledgers, first 400 chars):', ledgerResp.substring(0, 400));
+
+  // ── Step C: Build group → parent map via parseXml (FIX 3) ────────────────
+  const groupParentMap = new Map<string, string>();
+  try {
+    const groupDoc = parseXml(groupResp);
+    const groupNodes = getAllElements(groupDoc, 'GROUP');
+    for (const node of groupNodes) {
+      const name = cleanName(node.getAttribute('NAME') || getTextContent(node, 'NAME') || '');
+      const parent = cleanName(getTextContent(node, 'PARENT'));
+      if (name) groupParentMap.set(name, parent);
+    }
+  } catch {
+    const groupBlockRegex = /<GROUP([^>]*)>([\s\S]*?)<\/GROUP>/g;
+    let gMatch: RegExpExecArray | null;
+    while ((gMatch = groupBlockRegex.exec(groupResp)) !== null) {
+      const block = gMatch[1] + gMatch[2];
+      let rawName = '';
+      const nameAttrMatch = gMatch[0].match(/<GROUP\s+NAME="([^"]*)"/i);
+      if (nameAttrMatch) rawName = nameAttrMatch[1];
+      else { const nt = block.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i); if (nt) rawName = nt[1]; }
+      const name = cleanName(rawName);
+      const pm = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
+      const parent = pm ? cleanName(pm[1]) : '';
+      if (name) groupParentMap.set(name, parent);
+    }
+  }
+
+  console.log('[Clause44] Groups loaded:', groupParentMap.size);
+
+  // Helper: walk parent chain to see if a group is under a target root
+  const isUnder = (groupName: string, target: string): boolean => {
+    let current = cleanName(groupName);
+    const targetClean = cleanName(target);
+    const visited = new Set<string>();
+    while (current && !visited.has(current)) {
+      if (current === targetClean) return true;
+      visited.add(current);
+      current = groupParentMap.get(current) || '';
+    }
+    return false;
+  };
+
+  // ── Step D: Collect all expense groups recursively ────────────────────────
+  const EXPENSE_ROOTS = new Set(['DIRECT EXPENSES', 'INDIRECT EXPENSES', 'PURCHASE ACCOUNTS', 'FIXED ASSETS']);
+  const expenseGroups = new Set<string>(EXPENSE_ROOTS);
+  for (const [grp] of groupParentMap.entries()) {
+    for (const root of EXPENSE_ROOTS) {
+      if (isUnder(grp, root)) { expenseGroups.add(grp); break; }
+    }
+  }
+  console.log('[Clause44] Expense groups (total incl sub-groups):', expenseGroups.size);
+
+  // ── Step E: Build expense ledger set via parseXml (FIX 3) ────────────────
+  const expenseLedgerSet = new Set<string>();
+  const ledgerParentMap = new Map<string, string>();
+  try {
+    const ledgerDoc = parseXml(ledgerResp);
+    const ledgerNodes = getAllElements(ledgerDoc, 'LEDGER');
+    for (const node of ledgerNodes) {
+      const name = cleanName(node.getAttribute('NAME') || getTextContent(node, 'NAME') || '');
+      const parent = cleanName(getTextContent(node, 'PARENT'));
+      if (name && (expenseGroups.has(parent) || isUnder(parent, 'DIRECT EXPENSES') || isUnder(parent, 'INDIRECT EXPENSES') || isUnder(parent, 'PURCHASE ACCOUNTS') || isUnder(parent, 'FIXED ASSETS'))) {
+        expenseLedgerSet.add(name);
+        ledgerParentMap.set(name, parent);
+      }
+    }
+  } catch {
+    const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
+    let lMatch: RegExpExecArray | null;
+    while ((lMatch = ledgerBlockRegex.exec(ledgerResp)) !== null) {
+      const ledgerName = extractLedgerNameFromBlock(lMatch[1], lMatch[2]);
+      const pm = lMatch[2].match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
+      if (ledgerName && pm) {
+        const n = cleanName(ledgerName);
+        const p = cleanName(pm[1]);
+        if (expenseGroups.has(p) || isUnder(p, 'DIRECT EXPENSES') || isUnder(p, 'INDIRECT EXPENSES') || isUnder(p, 'PURCHASE ACCOUNTS') || isUnder(p, 'FIXED ASSETS')) {
+          expenseLedgerSet.add(n);
+          ledgerParentMap.set(n, p);
+        }
+      }
+    }
+  }
+  console.log('[Clause44] Expense ledgers identified:', expenseLedgerSet.size, '— first 10:', [...expenseLedgerSet].slice(0, 10));
+
+  // ── Step F: Fetch all voucher line-items via WALK on AllLedgerEntries ──────
+  // FIX 4: Use YYYYMMDD date (via toTallyDate), correct collection ID,
+  //         remove VchGuid COMPUTE (unreliable in WALK), use VoucherNumber as key.
+  const from = toTallyDate(fromDate);
+  const to   = toTallyDate(toDate);
+
+  console.log('[Clause44] Date range sent to Tally:', from, '->', to);
+  console.log('[Clause44] Tax ledgers to match:', [...userTaxLedgers]);
+
+  const voucherXml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>Clause44LedgerEntries</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${from}</SVFROMDATE>
+        <SVTODATE>${to}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="Clause44Vouchers">
+            <TYPE>Voucher</TYPE>
+            <FILTER>IsClause44Vch</FILTER>
+          </COLLECTION>
+          <SYSTEM TYPE="FORMULAS" NAME="IsClause44Vch">NOT $IsCancelled AND NOT $IsOptional</SYSTEM>
+
+          <COLLECTION NAME="Clause44LedgerEntries">
+            <SOURCECOLLECTION>Clause44Vouchers</SOURCECOLLECTION>
+            <WALK>AllLedgerEntries</WALK>
+            <COMPUTE>VchGuid    : $..GUID</COMPUTE>
+            <COMPUTE>VchDate    : $..Date</COMPUTE>
+            <COMPUTE>VchNumber  : $..VoucherNumber</COMPUTE>
+            <COMPUTE>VchType    : $..VoucherTypeName</COMPUTE>
+            <COMPUTE>LedgerName : $LedgerName</COMPUTE>
+            <COMPUTE>Amount     : $Amount</COMPUTE>
+            <COMPUTE>IsDeemedPositive : $IsDeemedPositive</COMPUTE>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+  console.log('[Clause44] SENDING XML TO TALLY:', voucherXml);
+
+  const voucherResp = await sendTallyRequest(voucherXml, config, 90000);
+
+  console.log('[Clause44] RAW TALLY RESPONSE (Vouchers, first 1000 chars):', voucherResp.substring(0, 1000));
+
+  // ── Step G: Parse LEDGERENTRY nodes ──────────────────────────────────────
+  type VchEntry = { ledgerName: string; amount: number; isDebit: boolean };
+  type VchRecord = {
+    key: string;
+    date: string;
+    voucherNumber: string;
+    voucherType: string;
+    entries: VchEntry[];
+  };
+
+  const voucherMap = new Map<string, VchRecord>();
+
+  const vchDoc = parseXml(voucherResp);
+  // FIX: Tally WALK returns <LEDGERENTRY> elements
+  const entryNodes = getAllElements(vchDoc, 'LEDGERENTRY');
+
+  console.log('[Clause44] LEDGERENTRY nodes found in response:', entryNodes.length);
+
+  for (const node of entryNodes) {
+    const vchGuid    = getTextContent(node, 'VCHGUID').trim();
+    const vchNumber  = getTextContent(node, 'VCHNUMBER').trim();
+    const vchDate    = tallyDateToISO(getTextContent(node, 'VCHDATE'));
+    const vchType    = getTextContent(node, 'VCHTYPE').trim();
+    const ledgerName = unescapeXml(getTextContent(node, 'LEDGERNAME')).replace(/\s+/g, ' ').trim().toUpperCase();
+    const amtStr     = getTextContent(node, 'AMOUNT').replace(/[₹,\s]/g, '').trim();
+    const amount     = Math.abs(parseFloat(amtStr) || 0);
+    // FIX 5: Exact same isDebit logic
+    const isDebit    = getTextContent(node, 'ISDEEMEDPOSITIVE').toUpperCase() === 'YES' || parseFloat(amtStr) < 0;
+
+    if (!ledgerName || amount === 0) continue;
+
+    // Group by GUID (or fallback to VoucherNumber+Date if GUID is somehow missing)
+    const key = vchGuid || `${vchNumber}||${vchDate}`;
+    if (!voucherMap.has(key)) {
+      voucherMap.set(key, { key, date: vchDate, voucherNumber: vchNumber, voucherType: vchType, entries: [] });
+    }
+    voucherMap.get(key)!.entries.push({ ledgerName, amount, isDebit });
+  }
+
+  console.log('[Clause44] Distinct vouchers assembled:', voucherMap.size);
+
+  // ── Step H: Bifurcate into Table A, B, C ─────────────────────────────────
+  const gstMap    = new Map<string, number>();
+  const nonGstMap = new Map<string, number>();
+  const manualReview: Clause44ManualReview[] = [];
+  // Per-voucher detail for each ledger
+  const gstVoucherMap    = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
+  const nonGstVoucherMap = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
+
+  let vouchersWithExpenses = 0;
+
+  for (const [, vch] of voucherMap.entries()) {
+    // Include both DR and CR entries so credits are correctly subtracted
+    const expenseEntries = vch.entries.filter(e => 
+      expenseLedgerSet.has(e.ledgerName) && 
+      e.amount > 0 &&
+      !e.ledgerName.includes('ROUND OFF') &&
+      !e.ledgerName.includes('ROUNDING')
+    );
+    if (expenseEntries.length === 0) continue;
+    vouchersWithExpenses++;
+
+    const foundTaxLedgers = vch.entries
+      .filter(e => userTaxLedgers.has(e.ledgerName))
+      .map(e => e.ledgerName);
+
+    const hasTax = foundTaxLedgers.length > 0;
+
+    const uniqueLedgers = Array.from(new Set(expenseEntries.map(e => e.ledgerName)));
+
+    if (!hasTax) {
+      for (const entry of expenseEntries) {
+        const netAmt = entry.isDebit ? entry.amount : -entry.amount;
+        nonGstMap.set(entry.ledgerName, (nonGstMap.get(entry.ledgerName) || 0) + netAmt);
+        if (!nonGstVoucherMap.has(entry.ledgerName)) nonGstVoucherMap.set(entry.ledgerName, []);
+        nonGstVoucherMap.get(entry.ledgerName)!.push({
+          voucherNumber: vch.voucherNumber,
+          date: vch.date,
+          voucherType: vch.voucherType,
+          amount: netAmt,
+          taxLedgersFound: [],
+        });
+      }
+    } else {
+      // GST-Applicable (both single and composite)
+      for (const entry of expenseEntries) {
+        const netAmt = entry.isDebit ? entry.amount : -entry.amount;
+        gstMap.set(entry.ledgerName, (gstMap.get(entry.ledgerName) || 0) + netAmt);
+        if (!gstVoucherMap.has(entry.ledgerName)) gstVoucherMap.set(entry.ledgerName, []);
+        gstVoucherMap.get(entry.ledgerName)!.push({
+          voucherNumber: vch.voucherNumber,
+          date: vch.date,
+          voucherType: vch.voucherType,
+          amount: netAmt,
+          taxLedgersFound: foundTaxLedgers,
+        });
+      }
+
+      if (uniqueLedgers.length > 1) {
+        manualReview.push({
+          voucherNumber: vch.voucherNumber,
+          date: vch.date,
+          voucherType: vch.voucherType,
+          expenseLedgers: expenseEntries.map(e => ({ name: e.ledgerName, amount: e.isDebit ? e.amount : -e.amount })),
+          taxLedgersFound: foundTaxLedgers,
+          reason: `Composite voucher: ${uniqueLedgers.length} unique expense ledgers. All expense lines have been automatically aggregated into Table A, but are listed here for audit reference.`,
+        });
+      }
+    }
+  }
+
+  const getGroupLevels = (groupName: string): { primary: string; sub1: string; sub2: string } => {
+    let current = cleanName(groupName);
+    const path: string[] = [];
+    const visited = new Set<string>();
+    while (current && !visited.has(current)) {
+      if (current && current !== 'PRIMARY') {
+        path.unshift(current);
+      }
+      visited.add(current);
+      current = groupParentMap.get(current) || '';
+    }
+    return {
+      primary: path[0] || '',
+      sub1: path[1] || '',
+      sub2: path.length > 2 ? path[path.length - 1] : ''
+    };
+  };
+
+  const toRows = (m: Map<string, number>, vMap: Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>): Clause44Row[] =>
+    Array.from(m.entries())
+      .map(([ledgerName, amount]) => {
+        const parent = ledgerParentMap.get(ledgerName) || '';
+        const lvls = parent ? getGroupLevels(parent) : { primary: '', sub1: '', sub2: '' };
+        return {
+          ledgerName,
+          amount,
+          primaryGroup: lvls.primary,
+          subGroup1: lvls.sub1,
+          subGroup2: lvls.sub2,
+          voucherBreakdown: (vMap.get(ledgerName) || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+  return {
+    gstApplicable: toRows(gstMap, gstVoucherMap),
+    nonGst: toRows(nonGstMap, nonGstVoucherMap),
+    manualReview: manualReview.sort((a, b) => b.expenseLedgers.reduce((s, e) => s + e.amount, 0) - a.expenseLedgers.reduce((s, e) => s + e.amount, 0)),
+    companyName: companyInfo.name,
+  };
+}

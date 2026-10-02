@@ -533,9 +533,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   const [calcIsNilVal, setCalcIsNilVal] = useState(false);
 
   // Late Fee logic
-  const dailyLateRate = calcIsNilVal ? 20 : 50; // Nil return â‚¹20/day, standard return â‚¹50/day (CGST+SGST)
+  const dailyLateRate = calcIsNilVal ? 20 : 50; // Nil return ₹20/day, standard return ₹50/day (CGST+SGST)
   const rawLateFeeVal = calcDelayVal * dailyLateRate;
-  const calculatedLateFeeVal = Math.min(rawLateFeeVal, 10000); // capped at â‚¹10,000 max per return
+  const calculatedLateFeeVal = Math.min(rawLateFeeVal, 10000); // capped at ₹10,000 max per return
   const cgstLateFeeVal = calculatedLateFeeVal / 2;
   const sgstLateFeeVal = calculatedLateFeeVal / 2;
 
@@ -936,7 +936,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                       className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg px-2 text-white outline-none focus:border-blue-500"
                     >
                       <option value="tax">Tax Payable Return</option>
-                      <option value="nil">Nil Return (â‚¹0 Liability)</option>
+                      <option value="nil">Nil Return (₹0 Liability)</option>
                     </select>
                   </div>
                 </div>
@@ -944,7 +944,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 {/* Net Cash Tax Liability */}
                 {!calcIsNilVal && (
                   <div className="animate-pop-in">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Net Cash Tax Liability (â‚¹)</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Net Cash Tax Liability (₹)</label>
                     <input 
                       type="number"
                       value={calcTaxVal}
@@ -991,8 +991,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Late Fee Capped</span>
                   <div>
-                    <p className="text-lg font-black text-white font-mono mt-1">â‚¹{calculatedLateFeeVal.toLocaleString('en-IN')}</p>
-                    <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">â‚¹{dailyLateRate}/Day Delay</p>
+                    <p className="text-lg font-black text-white font-mono mt-1">₹{calculatedLateFeeVal.toLocaleString('en-IN')}</p>
+                    <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">₹{dailyLateRate}/Day Delay</p>
                   </div>
                 </div>
                 
@@ -1000,7 +1000,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Interest u/s 50</span>
                   <div>
-                    <p className="text-lg font-black text-white font-mono mt-1">â‚¹{Math.round(calculatedInterestVal).toLocaleString('en-IN')}</p>
+                    <p className="text-lg font-black text-white font-mono mt-1">₹{Math.round(calculatedInterestVal).toLocaleString('en-IN')}</p>
                     <p className="text-[8px] text-slate-500 font-semibold uppercase mt-1">18% P.A. on Cash Liability</p>
                   </div>
                 </div>
@@ -1009,7 +1009,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <div className="bg-gradient-to-br from-purple-900/20 to-pink-900/10 border border-purple-500/20 rounded-xl p-4 flex flex-col justify-between">
                   <span className="text-[9px] font-bold text-purple-400 uppercase tracking-wider">Total Outflow</span>
                   <div>
-                    <p className="text-xl font-black text-pink-400 font-mono mt-1">â‚¹{Math.round(totalFilingLiabilityVal).toLocaleString('en-IN')}</p>
+                    <p className="text-xl font-black text-pink-400 font-mono mt-1">₹{Math.round(totalFilingLiabilityVal).toLocaleString('en-IN')}</p>
                     <p className="text-[8px] text-purple-400/70 font-semibold uppercase mt-1">Estim. Total Penalty</p>
                   </div>
                 </div>
@@ -1022,7 +1022,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>SGST / CGST Late Fee Breakdown</span>
-                  <span className="font-mono font-bold text-white">â‚¹{cgstLateFeeVal} CGST + â‚¹{sgstLateFeeVal} SGST</span>
+                  <span className="font-mono font-bold text-white">₹{cgstLateFeeVal} CGST + ₹{sgstLateFeeVal} SGST</span>
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>Filing Delay Status Grade</span>
