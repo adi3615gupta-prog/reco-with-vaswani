@@ -6,7 +6,7 @@ import {
   Check, AlertTriangle, ArrowUpDown, Eye, ArrowRight, Smartphone,
   Laptop, Globe, CheckCheck, FileJson, Key, EyeOff,
   Zap, Play, Pause, SkipForward, Square, FolderSearch, Loader2,
-  DownloadCloud, Layers, ArrowDownToLine, Database
+  DownloadCloud, Layers, ArrowDownToLine, Database, ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBase, safeApiFetch } from '@/lib/api';
@@ -129,6 +129,7 @@ export default function Gstr2bMasterDownloader({
   const [detailInvoices, setDetailInvoices] = useState<Gstr2bInvoiceItem[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailSectionFilter, setDetailSectionFilter] = useState<string>('ALL');
+  const [detailPartyFilter, setDetailPartyFilter] = useState<string>('ALL');
   const [detailSearch, setDetailSearch] = useState('');
 
   // Dropzone & Single Portal Modal
@@ -434,6 +435,7 @@ export default function Gstr2bMasterDownloader({
     setActiveClientDetail(client);
     setLoadingDetail(true);
     setDetailSectionFilter('ALL');
+    setDetailPartyFilter('ALL');
     setDetailSearch('');
     try {
       const endpoint = viewMode === 'FULL_YEAR'
@@ -456,7 +458,25 @@ export default function Gstr2bMasterDownloader({
     }
   };
 
-  // Filtered detail invoices
+  // Unique parties in the current client detail invoices
+  const detailParties = useMemo(() => {
+    const map = new Map<string, { gstin: string; name: string; count: number }>();
+    detailInvoices.forEach(inv => {
+      const gstin = (inv.ctin || '').trim().toUpperCase();
+      if (!gstin) return;
+      const name = (inv.supplier_name || '').trim();
+      const existing = map.get(gstin);
+      if (existing) {
+        existing.count += 1;
+        if (!existing.name && name) existing.name = name;
+      } else {
+        map.set(gstin, { gstin, name: name || gstin, count: 1 });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (a.name || a.gstin).localeCompare(b.name || b.gstin));
+  }, [detailInvoices]);
+
+  // Filtered detail invoices by Section, Party, and Search text
   const filteredDetailInvoices = useMemo(() => {
     return detailInvoices.filter(inv => {
       if (detailSectionFilter !== 'ALL') {
@@ -465,6 +485,9 @@ export default function Gstr2bMasterDownloader({
         } else {
           if (!inv.section.toUpperCase().includes(detailSectionFilter)) return false;
         }
+      }
+      if (detailPartyFilter !== 'ALL') {
+        if ((inv.ctin || '').trim().toUpperCase() !== detailPartyFilter) return false;
       }
       if (detailSearch) {
         const q = detailSearch.toLowerCase().trim();
@@ -476,7 +499,37 @@ export default function Gstr2bMasterDownloader({
       }
       return true;
     });
-  }, [detailInvoices, detailSectionFilter, detailSearch]);
+  }, [detailInvoices, detailSectionFilter, detailPartyFilter, detailSearch]);
+
+  // Live dynamic totals based on current filtered invoices
+  const modalSummaryStats = useMemo(() => {
+    let eligibleIgst = 0;
+    let eligibleCgstSgst = 0;
+    let totalEligible = 0;
+    let ineligibleTotal = 0;
+
+    filteredDetailInvoices.forEach(inv => {
+      const isEligible = inv.itc_available !== 'N';
+      const taxIgst = Number(inv.igst) || 0;
+      const taxCgst = Number(inv.cgst) || 0;
+      const taxSgst = Number(inv.sgst) || 0;
+
+      if (isEligible) {
+        eligibleIgst += taxIgst;
+        eligibleCgstSgst += (taxCgst + taxSgst);
+        totalEligible += (taxIgst + taxCgst + taxSgst);
+      } else {
+        ineligibleTotal += (taxIgst + taxCgst + taxSgst);
+      }
+    });
+
+    return {
+      eligibleIgst,
+      eligibleCgstSgst,
+      totalEligible,
+      ineligibleTotal
+    };
+  }, [filteredDetailInvoices]);
 
   // Export line items to Excel
   const handleExportInvoicesExcel = () => {
@@ -1003,7 +1056,7 @@ export default function Gstr2bMasterDownloader({
                     <span>•</span>
                     <span>Scope: {viewMode === 'FULL_YEAR' ? `Full FY ${financialYear} (12 Months)` : activePeriod}</span>
                     <span>•</span>
-                    <span>Invoices: {detailInvoices.length}</span>
+                    <span>Invoices: {filteredDetailInvoices.length}{filteredDetailInvoices.length !== detailInvoices.length ? ` (of ${detailInvoices.length})` : ''}</span>
                   </div>
                 </div>
               </div>
@@ -1025,30 +1078,30 @@ export default function Gstr2bMasterDownloader({
               </div>
             </div>
 
-            {/* Sub-header ITC summary cards */}
+            {/* Sub-header ITC summary cards (Live dynamic with filters) */}
             <div className="p-4 bg-slate-950/40 border-b border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
                 <span className="text-[11px] text-slate-400 uppercase font-bold block">Eligible IGST</span>
                 <span className="text-base font-black text-cyan-300 font-mono">
-                  {formatCur(activeClientDetail.stats.eligibleItc.igst)}
+                  {formatCur(modalSummaryStats.eligibleIgst)}
                 </span>
               </div>
               <div className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
                 <span className="text-[11px] text-slate-400 uppercase font-bold block">Eligible CGST + SGST</span>
                 <span className="text-base font-black text-cyan-300 font-mono">
-                  {formatCur(activeClientDetail.stats.eligibleItc.cgst + activeClientDetail.stats.eligibleItc.sgst)}
+                  {formatCur(modalSummaryStats.eligibleCgstSgst)}
                 </span>
               </div>
               <div className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
                 <span className="text-[11px] text-slate-400 uppercase font-bold block">Total 2B ITC</span>
                 <span className="text-base font-black text-emerald-400 font-mono">
-                  {formatCur(activeClientDetail.stats.eligibleItc.total)}
+                  {formatCur(modalSummaryStats.totalEligible)}
                 </span>
               </div>
               <div className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
                 <span className="text-[11px] text-slate-400 uppercase font-bold block">Ineligible ITC</span>
                 <span className="text-base font-black text-rose-400 font-mono">
-                  {formatCur(activeClientDetail.stats.ineligibleTotal)}
+                  {formatCur(modalSummaryStats.ineligibleTotal)}
                 </span>
               </div>
             </div>
@@ -1078,15 +1131,37 @@ export default function Gstr2bMasterDownloader({
                 ))}
               </div>
 
-              <div className="relative w-64">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Filter supplier, GSTIN, invoice..."
-                  value={detailSearch}
-                  onChange={e => setDetailSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500"
-                />
+              {/* Party-wise Dropdown Filter & Search Bar */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Party-wise Filter Dropdown */}
+                <div className="relative">
+                  <select
+                    value={detailPartyFilter}
+                    onChange={e => setDetailPartyFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold rounded-xl pl-3 pr-8 py-1.5 outline-none focus:border-cyan-500 transition-all max-w-[220px] sm:max-w-[260px] truncate cursor-pointer appearance-none shadow-inner"
+                    title="Filter line items by supplier party"
+                  >
+                    <option value="ALL">All Parties ({detailParties.length})</option>
+                    {detailParties.map(p => (
+                      <option key={p.gstin} value={p.gstin}>
+                        {p.name.length > 25 ? p.name.slice(0, 25) + '...' : p.name} ({p.count})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {/* Text Filter */}
+                <div className="relative w-52 sm:w-60">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filter supplier, GSTIN, invoice..."
+                    value={detailSearch}
+                    onChange={e => setDetailSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
             </div>
 
