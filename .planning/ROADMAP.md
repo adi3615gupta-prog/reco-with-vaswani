@@ -10,6 +10,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 2: Spreadsheet Export Modularity & Memory Optimization** - Modularize `fileParser.ts` and optimize 12-month consolidated Excel generation. (completed 2026-10-22)
 - [x] **Phase 3: Automated Scrutiny Tests & Audit Trail Hardening** - Add end-to-end unit tests for batch solvers and implement immutable force-match audit logging. (completed 2026-10-22)
 - [x] **Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening** - Harden 1-login 12-month autonomous loop, zero data loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny tests. (completed 2026-10-22)
+- [ ] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules.
 
 ## Phase Details
 
@@ -79,6 +80,23 @@ Plans:
 - [x] 04-01: Autopilot 12M loop resilience, error recovery, and zero-data-loss protection
 - [x] 04-02: Consolidated 8-sheet Zero-Merge Excel validation, UI sync hardening, and automated scrutiny tests
 
+### Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell
+
+**Goal**: Deliver a cohesive, premium, high-density financial workstation experience across all modules with a persistent collapsible sidebar, top command bar (active client, FY, status HUD, quick search), centralized obsidian glass styling, and high-density table aesthetics without modifying calculation logic or Excel exports.
+**Depends on**: Phase 1, Phase 2, Phase 3, Phase 4
+**Requirements**: UI-01, UI-02, UI-03, UI-04
+**Success Criteria** (what must be TRUE):
+  1. Persistent App Shell (collapsible sidebar + topbar) wraps all routes, enabling 1-click navigation between all modules without losing workspace state or relying on raw "back to hub" buttons.
+  2. Centralized Obsidian Glass theme tokens in `src/index.css` elevate visual contrast, typography, and card aesthetics consistently across all modules.
+  3. Live System Status HUD in the shell displays active database status, Tally connection state, and current client/FY context.
+  4. High-density financial table styles (sticky headers, monospace tabular figures, compact padding, clear status chips) are standardized.
+
+**Plans**: 0/2 plans complete
+
+Plans:
+- [ ] 05-01: Persistent App Shell component with collapsible sidebar, topbar HUD, and integrated routing in `Index.tsx`
+- [ ] 05-02: Obsidian Glass theme tokens, high-density table styles, and module-wide visual elevation
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-22 after Phase 3 completion*
+*Last updated: 2026-10-22 after Phase 5 registration*

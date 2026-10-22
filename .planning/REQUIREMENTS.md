@@ -52,6 +52,13 @@
 - [x] **G2B-03**: Consolidated 8-Sheet SectionWiseSummary workbook strictly enforces Zero-Merge (`ws['!merges'] = []`) with complete side-by-side Monthly and Party-wise matrices
 - [x] **G2B-04**: Automated scrutiny Vitest test suite for GSTR-2B parsers, batch metric aggregations, and zero-merge guarantees
 
+### Enterprise UI/UX Design System & Persistent Shell (Phase 5)
+
+- [ ] **UI-01**: Implement Persistent App Shell with collapsible sidebar, active client & FY indicators, and status HUD
+- [ ] **UI-02**: Modernize centralized Obsidian Glass design tokens in `src/index.css` (high contrast, crisp borders, dark palette)
+- [ ] **UI-03**: Standardize high-density financial table components with sticky headers and monospace tabular figures
+- [ ] **UI-04**: Global Quick Command palette (`Ctrl+K`) for instantaneous module navigation without state loss
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -72,9 +79,17 @@
 | CORE-01 | Phase 1 | Complete |
 | CORE-02 | Phase 1 | Complete |
 | CORE-03 | Phase 1 | Complete |
-| ARCH-01 | Phase 2 | Pending |
-| ARCH-02 | Phase 2 | Pending |
-| AUDIT-01 | Phase 3 | Pending |
+| ARCH-01 | Phase 2 | Complete |
+| ARCH-02 | Phase 2 | Complete |
+| AUDIT-01 | Phase 3 | Complete |
+| G2B-01 | Phase 4 | Complete |
+| G2B-02 | Phase 4 | Complete |
+| G2B-03 | Phase 4 | Complete |
+| G2B-04 | Phase 4 | Complete |
+| UI-01 | Phase 5 | Pending |
+| UI-02 | Phase 5 | Pending |
+| UI-03 | Phase 5 | Pending |
+| UI-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 8 total
