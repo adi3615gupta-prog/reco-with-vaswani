@@ -34,12 +34,10 @@ This phase delivers production-grade hardening, zero-data-loss protection, 12-mo
   - Zero-merge integrity of generated workbooks (`generateGstr2bFullYearWorkbook`).
   - Database non-destructive upsert logic.
 
-### 5. Post-BACK Returns Quick Links Navigation (Zero URL Pushing)
-- **D-08 (Strict Prohibition of URL Pushing):** Direct URL manipulation (`page.goto` or `window.location.href = 'https://return.gst.gov.in/returns/auth/dashboard'`) is strictly banned because cross-origin / direct GET between `services.gst.gov.in` and `return.gst.gov.in` causes GSTN SSO gateway to throw "Access Denied".
-- **D-09 (Dual-Tier In-Page Click on Returns Quick Links):** When the official on-screen `BACK` button is clicked on the download/inward page, the portal navigates to `Returns Quick Links` (`https://services.gst.gov.in/services/auth/quicklinks/returns`). Autopilot MUST navigate back to the returns dashboard solely via in-page clicks:
-  - **Primary (Tier 1):** Click the on-screen "Returns Dashboard" / "File Returns" tile/card/link.
-  - **Secondary (Tier 2 Fallback):** If tile is not found, navigate via top navbar: `Services` -> `Returns` -> `Returns Dashboard`.
-  - Once on `return.gst.gov.in/returns/auth/dashboard`, wait for `<select>` period dropdowns and continue the 12-month loop.
+### 5. Official BACK Button Direct Navigation (Zero `<a>` Tags)
+- **D-08 (Target Official `<button>` Exclusively):** On the GSTR-2B download screen, the official navigation element is a `<button>` or `<input type="button">` with exact text `'BACK'`. Anchor `<a>` tags (such as breadcrumb links or 'Back to Returns' hyperlinks) are strictly excluded because they divert the browser to `quicklinks/returns`.
+- **D-09 (Direct Transition to Returns Search Dashboard):** Clicking the official `<button>` transitions the portal Angular scope directly to the Returns Search Dashboard (`return.gst.gov.in/returns/auth/dashboard`) with the `<select>` dropdowns ready for the next period, completely bypassing `quicklinks/returns`.
+- **D-10 (Emergency Quick Links Fallback & Zero URL Push):** If an unexpected portal glitch causes the browser to land on `quicklinks/returns`, autopilot recovers via authentic in-page tile / navbar click with strictly zero URL push to prevent "Access Denied".
 
 ### Antigravity Builder's Discretion
 - Fine-tuning timeout thresholds for portal download links (15s to 20s polling).

@@ -510,26 +510,30 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     } catch(e) {}
                 }
 
-                // 2. If on GSTR-2B download page or inward details page -> Strictly click on-screen BACK button!
+                // 2. If on GSTR-2B download page or inward details page -> Strictly click official on-screen BACK button!
+                // NOTE: The official back button is a <button> or <input type="button"> with exact text 'BACK'.
+                // Anchor <a> tags (like breadcrumbs or 'Back to Returns' links) MUST NOT be clicked, as they route to quicklinks/returns.
                 if (curUrl.includes('/download') || curUrl.includes('/inward/')) {
-                    console.log('[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...');
+                    console.log('[GSTR-2B Autopilot] On download page, strictly clicking official on-screen BACK button to return directly to search dashboard...');
                     let backClicked = false;
 
-                    // Priority 1: Direct DOM evaluation finding button/input/a with exact text 'BACK'
+                    // Priority 1: Official on-screen <button> or <input type="button"> with exact text 'BACK'
                     try {
                         backClicked = await page.evaluate(() => {
-                            const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-                            const backEl = btns.reverse().find(el => {
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
+                            const realBackBtn = btns.find(el => {
+                                // Strictly exclude breadcrumbs, navbars, headers, and quicklink elements
+                                if (el.closest('.breadcrumb, .navbar, nav, header')) return false;
                                 const t = (el.innerText || el.value || el.textContent || '').trim().toUpperCase();
-                                return t === 'BACK' || t.startsWith('BACK');
+                                return t === 'BACK';
                             });
-                            if (backEl) {
-                                backEl.scrollIntoView({ block: 'center' });
-                                backEl.click();
+                            if (realBackBtn) {
+                                realBackBtn.scrollIntoView({ block: 'center' });
+                                realBackBtn.click();
                                 if (window.angular) {
                                     try {
-                                        window.angular.element(backEl).triggerHandler('click');
-                                        window.angular.element(backEl).scope()?.$apply();
+                                        window.angular.element(realBackBtn).triggerHandler('click');
+                                        window.angular.element(realBackBtn).scope()?.$apply();
                                     } catch(e) {}
                                 }
                                 return true;
@@ -537,27 +541,37 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                             return false;
                         });
                         if (backClicked) {
-                            console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via DOM');
+                            console.log('[GSTR-2B Autopilot] ✓ Clicked official on-screen BACK button via DOM');
                         }
                     } catch(e) {}
 
-                    // Priority 2: Playwright locator targeting official on-screen BACK button
+                    // Priority 2: Playwright locator targeting official button (STRICTLY NO <a> tags!)
                     if (!backClicked) {
                         try {
-                            const backBtn = page.locator('button, a, input[type="button"], input[type="submit"]')
+                            const backBtn = page.locator('button, input[type="button"], input[type="submit"]')
                                 .filter({ hasText: /^back$/i })
-                                .last();
+                                .first();
                             if (await backBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
                                 await backBtn.scrollIntoViewIfNeeded().catch(() => {});
                                 await backBtn.click({ timeout: 1500 }).catch(() => {});
                                 backClicked = true;
-                                console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via locator');
+                                console.log('[GSTR-2B Autopilot] ✓ Clicked official on-screen BACK button via locator');
                             }
                         } catch(e) {}
                     }
 
                     if (backClicked) {
-                        // Rapid 100ms polling for navigation triggered by BACK click (up to 3.5s)
+                        // Direct wait for Returns Search Dashboard dropdowns (up to 12s)
+                        try {
+                            await page.waitForSelector('select', { timeout: 12000 });
+                            await dismissPopups();
+                            if (await page.locator('select').count() >= 2) {
+                                console.log('[GSTR-2B Autopilot] ✓ Returned directly to Returns Dashboard search screen!');
+                                return true;
+                            }
+                        } catch(e) {}
+
+                        // Rapid polling check in case navigation is slightly delayed (up to 3.5s)
                         let postClickUrl = page.url();
                         const waitUrlStart = Date.now();
                         while (Date.now() - waitUrlStart < 3500) {
@@ -570,16 +584,28 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
                         console.log(`[GSTR-2B Autopilot] After clicking BACK, landed on: ${postClickUrl}`);
 
-                        // If landed on Returns Quick Links or Services page, click Returns Dashboard tile/navbar (Zero URL Push!)
+                        // If landed directly on Return Dashboard, verify dropdowns
+                        if (postClickUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
+                            try {
+                                await page.waitForSelector('select', { timeout: 8000 });
+                                await dismissPopups();
+                                if (await page.locator('select').count() >= 2) {
+                                    console.log('[GSTR-2B Autopilot] ✓ Returns Dashboard search dropdowns ready!');
+                                    return true;
+                                }
+                            } catch(e) {}
+                        }
+
+                        // Emergency Fallback ONLY: If portal unexpectedly dumped on Quick Links, recover via in-page tile
                         if (postClickUrl.includes('quicklinks/returns') || postClickUrl.includes('services.gst.gov.in') || postClickUrl.includes('/quicklinks')) {
-                            console.log('[GSTR-2B Autopilot] Landed on Returns Quick Links. Instantly clicking Returns Dashboard tile...');
+                            console.log('[GSTR-2B Autopilot] Fallback: Landed on Quick Links. Recovering via in-page Returns Dashboard tile...');
                             if (await clickReturnsDashboardInPage()) {
                                 return true;
                             }
                         }
                     }
 
-                    // WAIT for returns search screen dropdowns to appear (up to 12s)
+                    // Final check for select dropdowns
                     try {
                         await page.waitForSelector('select', { timeout: 12000 });
                         await dismissPopups();
