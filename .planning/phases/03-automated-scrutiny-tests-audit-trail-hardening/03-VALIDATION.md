@@ -1,9 +1,9 @@
 ---
 phase: "03"
 slug: "automated-scrutiny-tests-audit-trail-hardening"
-status: planned
+status: complete
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-10-22"
 ---
 
@@ -38,11 +38,11 @@ created: "2026-10-22"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 03-01-01 | 01 | 1 | DN-01, DN-02, DN-03 | — | Bounded subset-sum solver combinations ($k \in [2, 15]$ with decoys) & tolerance boundary thresholds | unit / scrutiny | `npx vitest run src/test/debitNoteScrutiny.test.ts` | ⬜ | ⬜ pending |
-| 03-01-02 | 01 | 1 | DN-04, DN-05, CORE-01 | — | Multi-prefix stripping, generic voucher guardrails & 50+ batch zero double-counting accounting invariant | unit / invariant | `npx vitest run src/test/debitNoteScrutiny.test.ts && npx tsc --noEmit` | ⬜ | ⬜ pending |
-| 03-02-01 | 02 | 2 | AUDIT-01 | — | SQLite table `reconciliation_audit_log` schema & Express routes in `audit_trail_routes.js` | backend / syntax | `node -e "import('./audit_trail_routes.js').then(() => console.log('Syntax OK'))"` | ⬜ | ⬜ pending |
-| 03-02-02 | 02 | 2 | AUDIT-01 | — | Client offline sync service (`auditTrailService.ts`) & justification modal (`AuditJustificationModal.tsx`) | unit / typecheck | `npx tsc --noEmit` | ⬜ | ⬜ pending |
-| 03-02-03 | 02 | 2 | AUDIT-01, CORE-01 | — | Zero-Merge Excel audit sheet integration (`masterExport.ts`, `partyWiseExport.ts`) and audit trail test suite | integration | `npx vitest run src/test/auditTrail.test.ts && npx tsc --noEmit` | ⬜ | ⬜ pending |
+| 03-01-01 | 01 | 1 | DN-01, DN-02, DN-03 | — | Bounded subset-sum solver combinations ($k \in [2, 15]$ with decoys) & tolerance boundary thresholds | unit / scrutiny | `npx vitest run src/test/debitNoteScrutiny.test.ts` | ✅ | ✅ green |
+| 03-01-02 | 01 | 1 | DN-04, DN-05, CORE-01 | — | Multi-prefix stripping, generic voucher guardrails & 50+ batch zero double-counting accounting invariant | unit / invariant | `npx vitest run src/test/debitNoteScrutiny.test.ts && npx tsc --noEmit` | ✅ | ✅ green |
+| 03-02-01 | 02 | 2 | AUDIT-01 | — | SQLite table `reconciliation_audit_log` schema & Express routes in `audit_trail_routes.js` | backend / syntax | `node -e "import('./audit_trail_routes.js').then(() => console.log('Syntax OK'))"` | ✅ | ✅ green |
+| 03-02-02 | 02 | 2 | AUDIT-01 | — | Client offline sync service (`auditTrailService.ts`) & justification modal (`AuditJustificationModal.tsx`) | unit / typecheck | `npx tsc --noEmit` | ✅ | ✅ green |
+| 03-02-03 | 02 | 2 | AUDIT-01, CORE-01 | — | Zero-Merge Excel audit sheet integration (`masterExport.ts`, `partyWiseExport.ts`) and audit trail test suite | integration | `npx vitest run src/test/auditTrail.test.ts && npx tsc --noEmit` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -50,8 +50,8 @@ created: "2026-10-22"
 
 ## Wave 0 Requirements
 
-- [ ] `src/test/debitNoteScrutiny.test.ts` — Comprehensive scrutiny test suite covering combinatorial subset-sum edge cases, tolerance boundaries, prefix cleaning, generic token permutations, and 50+ batch zero double-counting invariant.
-- [ ] `src/test/auditTrail.test.ts` — Integration test suite verifying SQLite audit validation rules, offline queue persistence, and Zero-Merge Excel audit worksheet generation.
+- [x] `src/test/debitNoteScrutiny.test.ts` — Comprehensive scrutiny test suite covering combinatorial subset-sum edge cases, tolerance boundaries, prefix cleaning, generic token permutations, and 50+ batch zero double-counting invariant.
+- [x] `src/test/auditTrail.test.ts` — Integration test suite verifying SQLite audit validation rules, offline queue persistence, and Zero-Merge Excel audit worksheet generation.
 
 ---
 
