@@ -632,18 +632,61 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
     }
   };
 
-  // Callback from IMS Manager: Apply Accepted 2B ITC to Table 4 of active month
-  const handleApplyImsTo3B = (itc2b: { igst: number; cgst: number; sgst: number; cess: number; total: number }) => {
+  // Callback from IMS Manager & 2B Downloader: Apply Accepted 2B ITC and breakdowns to Table 4 of active month
+  const handleApplyImsTo3B = (
+    itc2b: { igst: number; cgst: number; sgst: number; cess?: number; total: number; taxable?: number },
+    rcmInward?: { igst: number; cgst: number; sgst: number; total: number; taxable?: number },
+    creditNotes?: { igst: number; cgst: number; sgst: number; total: number; taxable?: number },
+    importGoods?: { igst: number; total: number; taxable?: number }
+  ) => {
     setWorkingData(prev => {
       const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
       const cur = cloned.months[selectedMonth];
       cur.inward.itc2b = {
-        taxable: cur.inward.itc2b.taxable || 0,
+        taxable: itc2b.taxable || cur.inward.itc2b.taxable || 0,
         igst: itc2b.igst,
         cgst: itc2b.cgst,
         sgst: itc2b.sgst,
         total: itc2b.total
       };
+
+      if (rcmInward && rcmInward.total > 0) {
+        cur.inward.rcmPaid = {
+          taxable: rcmInward.taxable || 0,
+          igst: rcmInward.igst,
+          cgst: rcmInward.cgst,
+          sgst: rcmInward.sgst,
+          total: rcmInward.total
+        };
+        cur.outward.rcmInward = {
+          taxable: rcmInward.taxable || 0,
+          igst: rcmInward.igst,
+          cgst: rcmInward.cgst,
+          sgst: rcmInward.sgst,
+          total: rcmInward.total
+        };
+      }
+
+      if (creditNotes && creditNotes.total > 0) {
+        cur.inward.creditNotes = {
+          taxable: creditNotes.taxable || 0,
+          igst: creditNotes.igst,
+          cgst: creditNotes.cgst,
+          sgst: creditNotes.sgst,
+          total: creditNotes.total
+        };
+      }
+
+      if (importGoods && importGoods.total > 0) {
+        cur.inward.importGoods = {
+          taxable: importGoods.taxable || 0,
+          igst: importGoods.igst,
+          cgst: 0,
+          sgst: 0,
+          total: importGoods.total
+        };
+      }
+
       return recalculateAnnualWorking(cloned);
     });
     toast.success(`Applied ₹${itc2b.total.toLocaleString('en-IN')} 2B ITC to ${selectedMonth} Table 4!`);
