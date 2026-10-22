@@ -938,7 +938,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         </div>
 
         {/* ─── Step 1: Connection Panel ─── */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-6">
+        <div className="obsidian-card rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 bg-teal-500/10 border border-teal-500/20 rounded-lg flex items-center justify-center">
               <Server className="w-4 h-4 text-teal-400" />
@@ -1010,7 +1010,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         </div>
 
         {/* ─── Step 2: Custom Voucher Mapping ─── */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-6">
+        <div className="obsidian-card rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 bg-purple-500/10 border border-purple-500/20 rounded-lg flex items-center justify-center">
               <Settings2 className="w-4 h-4 text-purple-400" />
@@ -1044,7 +1044,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
         {/* ─── Step 3: Select Voucher Types & Fetch ─── */}
         {connectionStatus === 'connected' && (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-6 silk-reveal">
+          <div className="obsidian-card rounded-2xl p-6 mb-6 silk-reveal">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-8 h-8 bg-cyan-500/10 border border-cyan-500/20 rounded-lg flex items-center justify-center">
                 <Database className="w-4 h-4 text-cyan-400" />
@@ -1306,7 +1306,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-6 silk-reveal"
+            className="obsidian-card rounded-2xl p-6 mb-6 silk-reveal"
           >
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">

@@ -1308,7 +1308,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
       </div>
 
       {/* Main Tab Bar */}
-      <div className="flex flex-wrap gap-1.5 bg-slate-900/70 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md shadow-lg">
+      <div className="flex flex-wrap gap-1.5 obsidian-card p-1.5 backdrop-blur-md shadow-lg">
         {[
           { id: 'working3b', label: '1. GSTR-3B Working Sheet', icon: Calculator },
           { id: 'matrix', label: '2. 12-Month FY Matrix', icon: Table },

@@ -686,7 +686,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   return (
-    <div className="dash-card overflow-hidden silk-reveal" style={{ animationDelay: '300ms' }}>
+    <div className="obsidian-card overflow-hidden" style={{ animationDelay: '300ms' }}>
       <div className="dash-topbar flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className="dash-dots"><span style={{ background: '#3DCC8E' }}></span><span style={{ background: '#F0A030' }}></span></div>
@@ -1191,7 +1191,7 @@ function PartyCard({
           )}
 
           <div className="w-full max-w-full overflow-x-auto">
-            <table className="w-full !bg-transparent border-none text-left border-collapse">
+            <table className="w-full !bg-transparent border-none text-left border-collapse table-dense">
               <thead>
                 <tr className="!bg-transparent border-b border-[var(--np-border)]">
                   {canEdit && <th className="!py-2 !px-1 !text-[8.5px] font-bold text-slate-400 uppercase text-center w-8">Match</th>}

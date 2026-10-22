@@ -573,7 +573,7 @@ export default function Gstr2bMasterDownloader({
     <div className="space-y-6 animate-fade-in">
       {/* ─── 1. MASTER KPI CARDS ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl">
+        <div className="obsidian-card rounded-2xl p-4 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Total Clients</span>
             <Users className="w-4 h-4 text-blue-400" />
@@ -624,7 +624,7 @@ export default function Gstr2bMasterDownloader({
       </div>
 
       {/* ─── 2. CONTROL ACTION TOOLBAR ────────────────────────────────────────── */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <div className="obsidian-card rounded-2xl p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xl">
         <div className="flex flex-wrap items-center gap-2.5">
           {/* 1-Click Multi-Sync Autopilot Button */}
           <button
@@ -763,7 +763,7 @@ export default function Gstr2bMasterDownloader({
       </div>
 
       {/* ─── 4. CLIENT MASTER TABLE ──────────────────────────────────────────── */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+      <div className="obsidian-card rounded-2xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
