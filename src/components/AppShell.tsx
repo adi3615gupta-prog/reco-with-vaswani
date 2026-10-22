@@ -435,7 +435,7 @@ export function AppShell({
         </header>
 
         {/* Dynamic Module Content View */}
-        <main className="flex-1 overflow-y-auto relative p-6">
+        <main className="flex-1 overflow-y-auto relative px-4 py-2 sm:px-6 sm:py-3">
           <div className="max-w-[1700px] mx-auto w-full">
             {children}
           </div>

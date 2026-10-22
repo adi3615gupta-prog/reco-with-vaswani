@@ -1,24 +1,14 @@
-# Plan 06-06 Summary: Returns Preparation & Filing Layout & Header Re-Architecture
+# Plan 06-06 Summary: Returns Preparation & Filing Layout & Header Re-Architecture (Updated)
 
 ## Executive Summary
-Reorganized the top header and control hierarchy of `ReturnsDashboard.tsx` (`04. Returns Preparation & Filing`) to match practitioner workflow ergonomic requirements, right-shifting the module title with refined typography, positioning server storage and client selection on the top-left, featuring the selected client prominently below, placing the FY selector and primary Save button side-by-side, and positioning the main tab bar directly underneath.
-
-## Key Changes
-1. **Top Header Bar:**
-   - Moved "04. Returns Preparation & Filing" to the **top-right** with refined typography (`text-base sm:text-lg font-bold`) and a purple `GSTR-3B v2.0` badge.
-   - Positioned the Server Storage path pill (with copy, open folder, and change path triggers) and LAN active indicator on the **top-left**.
-
-2. **Client Command Deck:**
-   - **Row B:** Placed `Switch Client` button on the top-left with search popover, along with Vault, Launch Login, and Upload .xlsx buttons.
-   - **Row C:** Selected Client Name (`workingData.profile.firmName`) and GSTIN badge displayed prominently below client selection.
-   - **Row D:** Placed Financial Year selector (`2025-26`, `2026-27`) to the left, and mounted the primary **Save Working** button right **beside it** (with emerald styling and saving indicator).
-   - Positioned secondary actions (Export Excel, Export PDF, Portal JSON, Reset Sheet) on the right.
-
-3. **Tabs & Productivity:**
-   - Main 5-tab strip positioned directly below the command card.
-   - Added global `Ctrl+S` / `Cmd+S` keyboard shortcut to save working paper instantly.
-   - Reduced redundant top padding (`pt-10 md:pt-14` -> `pt-3 md:pt-4`) to eliminate wasted vertical scroll space.
+Reorganized and compacted the top header and control hierarchy of `ReturnsDashboard.tsx` (`04. Returns Preparation & Filing`), eliminating over 200px of wasted vertical margin and padding. Sifted all controls upward into an ultra-high-density executive cockpit:
+1. Eliminated AppShell's `p-6` top padding, tightening to `py-2 sm:py-3`.
+2. Removed redundant separate header rows in `ReturnsDashboard.tsx`.
+3. Merged the Back button, Server Storage path, and LAN diagnostics into a single top strip alongside the right-shifted module title (`04. Returns Preparation & Filing`).
+4. Condensed Client Identity, Switcher, and Credentials Vault into a single sleek row.
+5. Placed FY Selector and Save Working (with Ctrl+S indicator) side-by-side with export actions.
+6. Allowed all 5 tabs and working figures to be immediately visible above the fold on standard displays without vertical waste.
 
 ## Verification
 - `npx tsc --noEmit`: 0 errors.
-- All client selection, financial year toggles, server storage handlers, and export routines fully preserved.
+- Production build verified.
