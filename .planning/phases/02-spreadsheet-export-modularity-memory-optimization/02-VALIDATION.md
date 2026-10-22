@@ -1,9 +1,9 @@
 ---
 phase: "02"
 slug: "spreadsheet-export-modularity-memory-optimization"
-status: draft
+status: complete
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-10-22"
 ---
 
@@ -20,7 +20,7 @@ created: "2026-10-22"
 | **Framework** | Vitest 3.x / TypeScript / Vite |
 | **Config file** | `vite.config.ts` |
 | **Quick run command** | `npx vitest run src/test/excelModularity.test.ts` |
-| **Full suite command** | `npx vitest run src/test/debitNoteEngine.test.ts src/test/excelModularity.test.ts && npx tsc --noEmit` |
+| **Full suite command** | `npx vitest run src/test/debitNoteEngine.test.ts src/test/excelModularity.test.ts src/test/excelMemoryBenchmark.test.ts && npx tsc --noEmit` |
 | **Estimated runtime** | ~5 seconds |
 
 ---
@@ -38,11 +38,11 @@ created: "2026-10-22"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 02-01-01 | 01 | 1 | ARCH-01 | — | Clean separation of styles, formatters, and Zero-Merge invariant guard | unit | `npx vitest run src/test/excelModularity.test.ts` | ❌ W0 | ⬜ pending |
-| 02-01-02 | 01 | 1 | ARCH-01 | — | Modularization of parsers and builders under `src/lib/excel/` | unit | `npx tsc --noEmit` | ❌ W0 | ⬜ pending |
-| 02-01-03 | 01 | 1 | ARCH-01 | — | Backward-compatible barrel `src/lib/fileParser.ts` re-exporting all 34 exports with zero breakages | unit / typecheck | `npx tsc --noEmit && npx vitest run` | ✅ | ⬜ pending |
-| 02-02-01 | 02 | 2 | ARCH-02, CORE-02 | — | Dedicated `excelExport.worker.ts` with dense mode and progress events | unit / worker | `npx vitest run src/test/excelModularity.test.ts` | ❌ W0 | ⬜ pending |
-| 02-02-02 | 02 | 2 | ARCH-02, CORE-01 | — | 50,000-row memory benchmark verifying <180MB heap delta and zero merges | benchmark | `npx vitest run src/test/excelMemoryBenchmark.test.ts` | ❌ W0 | ⬜ pending |
+| 02-01-01 | 01 | 1 | ARCH-01 | — | Clean separation of styles, formatters, and Zero-Merge invariant guard | unit | `npx vitest run src/test/excelModularity.test.ts` | ✅ | ✅ green |
+| 02-01-02 | 01 | 1 | ARCH-01 | — | Modularization of parsers and builders under `src/lib/excel/` | unit | `npx tsc --noEmit` | ✅ | ✅ green |
+| 02-01-03 | 01 | 1 | ARCH-01 | — | Backward-compatible barrel `src/lib/fileParser.ts` re-exporting all 34 exports with zero breakages | unit / typecheck | `npx tsc --noEmit && npx vitest run` | ✅ | ✅ green |
+| 02-02-01 | 02 | 2 | ARCH-02, CORE-02 | — | Dedicated `excelExport.worker.ts` with dense mode and progress events | unit / worker | `npx vitest run src/test/excelModularity.test.ts` | ✅ | ✅ green |
+| 02-02-02 | 02 | 2 | ARCH-02, CORE-01 | — | 50,000-row memory benchmark verifying <180MB heap delta and zero merges | benchmark | `npx vitest run src/test/excelMemoryBenchmark.test.ts` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -50,8 +50,8 @@ created: "2026-10-22"
 
 ## Wave 0 Requirements
 
-- [ ] `src/test/excelModularity.test.ts` — Tests asserting module exports, zero-merge guard, and barrel backward compatibility.
-- [ ] `src/test/excelMemoryBenchmark.test.ts` — 50,000-row synthetic benchmark asserting peak memory and execution runtime.
+- [x] `src/test/excelModularity.test.ts` — Tests asserting module exports, zero-merge guard, and barrel backward compatibility.
+- [x] `src/test/excelMemoryBenchmark.test.ts` — 50,000-row synthetic benchmark asserting peak memory and execution runtime.
 
 ---
 

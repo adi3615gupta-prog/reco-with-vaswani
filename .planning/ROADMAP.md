@@ -7,7 +7,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 ## Phases
 
 - [x] **Phase 1: Debit Note Advanced Waterfall & Batch Solver Integration** - Implement the 6-pass waterfall, 1-to-many subset-sum solver, composite guardrail, and 21-column schema. (completed 2026-10-22)
-- [ ] **Phase 2: Spreadsheet Export Modularity & Memory Optimization** - Modularize `fileParser.ts` and optimize 12-month consolidated Excel generation.
+- [x] **Phase 2: Spreadsheet Export Modularity & Memory Optimization** - Modularize `fileParser.ts` and optimize 12-month consolidated Excel generation. (completed 2026-10-22)
 - [ ] **Phase 3: Automated Scrutiny Tests & Audit Trail Hardening** - Add end-to-end unit tests for batch solvers and implement immutable force-match audit logging.
 
 ## Phase Details
@@ -40,11 +40,11 @@ Plans:
   1. `fileParser.ts` is divided into clean modular sub-packages under `src/lib/excel/`.
   2. 12-month 50,000+ row exports stream without exceeding browser memory limits.
 
-**Plans**: 0/2 plans executed
+**Plans**: 2/2 plans executed
 
 Plans:
-- [ ] 02-01: Modularize `fileParser.ts` into isolated sheet builders
-- [ ] 02-02: Stream large dataset workbooks and benchmark memory footprint
+- [x] 02-01: Modularize `fileParser.ts` into isolated sheet builders
+- [x] 02-02: Stream large dataset workbooks and benchmark memory footprint
 
 ### Phase 3: Automated Scrutiny Tests & Audit Trail Hardening
 
