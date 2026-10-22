@@ -1,7 +1,8 @@
-import type { ReconciliationResult } from './reconciliation';
+import type { ReconciliationResult, MatchStatus } from './reconciliation';
 import { formatDateStr, type DebitNoteRecord } from './fileParser';
 import { deriveItcEligibility, daysOldFrom, taxRatePct, posCompliance, rule37Warning, actionableRemark, isLateFiler } from './compliance';
-import { normalizePartyName } from './reconciliation';
+import { normalizePartyName, cleanInvoiceNumber, extractCoreInvoiceNumber, parseDate } from './reconciliation';
+import { reconcileDebitNotes } from './debitNoteEngine';
 
 export interface PartyInvoiceRow {
   financialYear: string;
@@ -22,6 +23,8 @@ export interface PartyInvoiceRow {
   status: string;
   remark?: string;
   rawResult?: ReconciliationResult;
+  isSubRow?: boolean;
+  batchLabel?: string;
   // Compliance audit columns
   itcEligibility?: string;
   gstr1Status?: string;
@@ -98,11 +101,11 @@ function mergePartySummaries(map: Map<string, PartySummary>, fromKey: string, to
 
 export function aggregateByParty(
   results: ReconciliationResult[],
-  debitNotesOrMode?: { pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] } | 'input' | 'output' | null,
+  debitNotesOrMode?: { pr?: any[]; twoB?: any[] } | 'input' | 'output' | null,
   mode: 'input' | 'output' = 'input',
   groupBy: 'gstin' | 'name' = 'gstin'
 ): PartySummary[] {
-  let debitNotes: { pr: DebitNoteRecord[]; twoB: DebitNoteRecord[] } | undefined = undefined;
+  let debitNotes: { pr?: any[]; twoB?: any[] } | undefined = undefined;
   let actualMode = mode;
   
   if (typeof debitNotesOrMode === 'string') {
@@ -221,13 +224,13 @@ export function aggregateByParty(
     });
   }
 
-  // Now, subtract/adjust debit notes if present!
-  if (debitNotes) {
+  // Reconcile Debit Notes using the 6-Pass Waterfall Engine
+  if (debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0))) {
     const getPartyKey = (gstin?: string, supplierName?: string): string => {
       const g = (gstin || '').toUpperCase().trim();
       const s = (supplierName || '').trim();
       const normName = normalizePartyName(s);
-      
+
       if (g) {
         if (map.has(g)) return g;
         for (const [k, p] of map.entries()) {
@@ -242,72 +245,50 @@ export function aggregateByParty(
       return `UNKNOWN::DN_${++unknownIndex}`;
     };
 
-    const getNum = (v: any) => {
-      const n = typeof v === 'number' ? v : parseFloat(String(v || '').replace(/[₹,\s]/g, ''));
-      return isNaN(n) ? 0 : n;
-    };
+    const dnEngineResult = reconcileDebitNotes(debitNotes.pr || [], debitNotes.twoB || []);
 
-    // Process Tally/PR Debit Notes
-    for (const dn of (debitNotes.pr || [])) {
-      const cgst = getNum(dn.cgst);
-      const sgst = getNum(dn.sgst);
-      const igst = getNum(dn.igst);
-      if (cgst === 0 && sgst === 0 && igst === 0) continue;
-      
-      const key = getPartyKey(dn.gstin, dn.supplierName);
+    for (const r of dnEngineResult.reconciledRows) {
+      const key = getPartyKey(r.gstinPR || r.gstin2B, r.supplierNamePR || r.supplierName2B);
       if (!map.has(key)) {
-        const partyName = dn.supplierName || 'Debit Note Party';
-        map.set(key, createParty(key, partyName, dn.gstin || '', partyName, '', dn.gstin || ''));
+        const partyName = r.supplierNamePR || r.supplierName2B || 'Debit Note Party';
+        const partyGstin = r.gstinPR || r.gstin2B || '';
+        map.set(key, createParty(key, partyName, partyGstin, r.supplierNamePR, r.supplierName2B, r.gstinPR, r.gstin2B));
       }
       const party = map.get(key)!;
-      const dateVal = dn.invoiceDate || '';
-      
-      party.invoices.push({
-        financialYear: 'TALLY_DN',
-        invoiceNoPR: 'DN-Books',
-        invoiceNo2B: '',
-        invoiceDatePR: formatDateStr(dateVal),
-        invoiceDate2B: '',
-        igstPR: -igst,
-        igst2B: 0,
-        cgstPR: -cgst,
-        cgst2B: 0,
-        sgstPR: -sgst,
-        sgst2B: 0,
-        status: 'Debit Note (Books)',
-        remark: 'Debit Note adjustment (Books)'
-      });
-    }
 
-    // Process GSTR-2B Debit/Credit Notes
-    for (const dn of (debitNotes.twoB || [])) {
-      const cgst = getNum(dn.cgst);
-      const sgst = getNum(dn.sgst);
-      const igst = getNum(dn.igst);
-      if (cgst === 0 && sgst === 0 && igst === 0) continue;
-      
-      const key = getPartyKey(dn.gstin, dn.supplierName);
-      if (!map.has(key)) {
-        const partyName = dn.supplierName || 'Debit Note Party';
-        map.set(key, createParty(key, partyName, dn.gstin || '', '', partyName, '', dn.gstin || ''));
-      }
-      const party = map.get(key)!;
-      const dateVal = dn.invoiceDate || '';
-      
+      const rawResult: ReconciliationResult = {
+        prRecord: r.rawPR,
+        twoBRecord: r.raw2B,
+        status: r.matchStatus,
+        gstDiff: r.netTaxDiff,
+        cgstDiff: +(r.cgstPR - r.cgst2B).toFixed(2),
+        sgstDiff: +(r.sgstPR - r.sgst2B).toFixed(2),
+        igstDiff: +(r.igstPR - r.igst2B).toFixed(2),
+        taxableDiff: +(r.taxableValuePR - r.taxableValue2B).toFixed(2),
+        remark: r.auditRemarks,
+      };
+
       party.invoices.push({
-        financialYear: '2B_DN',
-        invoiceNoPR: '',
-        invoiceNo2B: 'DN-2B',
-        invoiceDatePR: '',
-        invoiceDate2B: formatDateStr(dateVal),
-        igstPR: 0,
-        igst2B: -igst,
-        cgstPR: 0,
-        cgst2B: -cgst,
-        sgstPR: 0,
-        sgst2B: -sgst,
-        status: 'Debit Note (Portal)',
-        remark: 'Debit Note adjustment (Portal)'
+        financialYear: r.batchLabel ? 'DN_BATCH' : 'DN_RECO',
+        invoiceNoPR: r.invoiceNoPR || '-',
+        invoiceNo2B: r.invoiceNo2B || '-',
+        invoiceDatePR: r.invoiceDatePR,
+        invoiceDate2B: r.invoiceDate2B,
+        taxablePR: r.taxableValuePR,
+        taxable2B: r.taxableValue2B,
+        igstPR: r.igstPR,
+        igst2B: r.igst2B,
+        cgstPR: r.cgstPR,
+        cgst2B: r.cgst2B,
+        sgstPR: r.sgstPR,
+        sgst2B: r.sgst2B,
+        invoiceValuePR: r.invoiceValuePR,
+        invoiceValue2B: r.invoiceValue2B,
+        status: r.matchStatus,
+        remark: r.auditRemarks,
+        rawResult,
+        isSubRow: r.isSubRow,
+        batchLabel: r.batchLabel,
       });
     }
   }
@@ -322,20 +303,32 @@ export function aggregateByParty(
         acc.cgst2B += inv.cgst2B;
         acc.sgst2B += inv.sgst2B;
         
-        const status = inv.status;
-        if (status.includes('Debit Note')) {
-          return acc;
-        }
-
         acc.count += 1;
-        if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)') {
+        const status = inv.status;
+        if (
+          status === 'Perfect Match' ||
+          status === 'Matched' ||
+          status === 'Matched (Rounded)' ||
+          status === 'Matched (Diff Date)' ||
+          status.startsWith('Reconciled')
+        ) {
           acc.perfectMatch += 1;
-        } else if (status === 'Not in 2B' || status === 'Missing in 2B' || status === 'Unmatched Vendor') {
+        } else if (
+          status === 'Not in 2B' ||
+          status === 'Missing in 2B' ||
+          status === 'Unmatched Vendor' ||
+          status === 'Debit Note (Books)' ||
+          status.includes('In Books Only')
+        ) {
           acc.invoiceMissing += 1;
-        } else if (status === 'Not in Books' || status === 'Missing in PR') {
+        } else if (
+          status === 'Not in Books' ||
+          status === 'Missing in PR' ||
+          status === 'Debit Note (Portal)' ||
+          status.includes('In GSTR-2B Only')
+        ) {
           acc.missingInPR += 1;
         } else {
-          // Value Mismatch, Wrong GSTIN, Name Mismatch, etc.
           acc.valueMismatch += 1;
         }
         return acc;

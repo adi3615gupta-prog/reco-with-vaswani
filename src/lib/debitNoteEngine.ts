@@ -445,6 +445,173 @@ function buildGtcBenchmarkResult(): DebitNoteEngineResult {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Subset-Sum Solver for Pass 3 (1-to-Many Consolidated Batches)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function findSubsetSumMatch(
+  targetVal: number,
+  targetTax: number,
+  targetTaxable: number,
+  targetDate: Date | null,
+  candidates: InternalItem[],
+  maxTimeoutMs: number = 500
+): InternalItem[] | null {
+  if (candidates.length < 2) return null;
+
+  const targetValAbs = Math.abs(targetVal);
+  const targetTaxAbs = Math.abs(targetTax);
+  const targetTxAbs = Math.abs(targetTaxable);
+
+  // ── Tier 3A: Check natural date clusters first ──
+  const dateMap = new Map<string, InternalItem[]>();
+  for (const c of candidates) {
+    if (!c.dateStr) continue;
+    let list = dateMap.get(c.dateStr);
+    if (!list) {
+      list = [];
+      dateMap.set(c.dateStr, list);
+    }
+    list.push(c);
+  }
+
+  for (const [, group] of dateMap.entries()) {
+    if (group.length >= 2) {
+      const sumVal = group.reduce((acc, x) => acc + Math.abs(x.val), 0);
+      const sumTx = group.reduce((acc, x) => acc + Math.abs(x.taxable), 0);
+      const sumTax = group.reduce((acc, x) => acc + Math.abs(x.taxTot), 0);
+
+      if (
+        (Math.abs(sumVal - targetValAbs) <= 25.0 || Math.abs(sumTx - targetTxAbs) <= 25.0) &&
+        Math.abs(sumTax - targetTaxAbs) <= 15.0
+      ) {
+        return group;
+      }
+
+      // Check sub-clusters by prefix (e.g. GCN/23 vs GCN/29) on the same date
+      const prefixMap = new Map<string, InternalItem[]>();
+      for (const item of group) {
+        const pfx = item.invNorm.slice(0, 6);
+        let plist = prefixMap.get(pfx);
+        if (!plist) {
+          plist = [];
+          prefixMap.set(pfx, plist);
+        }
+        plist.push(item);
+      }
+      for (const [, pgroup] of prefixMap.entries()) {
+        if (pgroup.length >= 2 && pgroup.length < group.length) {
+          const pSumVal = pgroup.reduce((acc, x) => acc + Math.abs(x.val), 0);
+          const pSumTx = pgroup.reduce((acc, x) => acc + Math.abs(x.taxable), 0);
+          const pSumTax = pgroup.reduce((acc, x) => acc + Math.abs(x.taxTot), 0);
+          if (
+            (Math.abs(pSumVal - targetValAbs) <= 25.0 || Math.abs(pSumTx - targetTxAbs) <= 25.0) &&
+            Math.abs(pSumTax - targetTaxAbs) <= 15.0
+          ) {
+            return pgroup;
+          }
+        }
+      }
+    }
+  }
+
+  // ── Tier 3B: Bounded Subset-Sum Search ──
+  // Sort candidates by date proximity to targetDate (or contiguous index)
+  const pool = [...candidates].sort((a, b) => {
+    if (targetDate && a.dateObj && b.dateObj) {
+      const diffA = Math.abs(a.dateObj.getTime() - targetDate.getTime());
+      const diffB = Math.abs(b.dateObj.getTime() - targetDate.getTime());
+      if (diffA !== diffB) return diffA - diffB;
+    }
+    return Math.abs(a.val) - Math.abs(b.val);
+  });
+
+  const boundedPool = pool.slice(0, 30);
+  const startTime = Date.now();
+
+  // Search combination sizes 2 to 15
+  for (let size = 2; size <= Math.min(15, boundedPool.length); size++) {
+    const res = searchCombinations(
+      boundedPool,
+      size,
+      0,
+      [],
+      0,
+      0,
+      0,
+      targetValAbs,
+      targetTaxAbs,
+      targetTxAbs,
+      startTime,
+      maxTimeoutMs
+    );
+    if (res) return res;
+    if (Date.now() - startTime > maxTimeoutMs) break;
+  }
+
+  return null;
+}
+
+function searchCombinations(
+  pool: InternalItem[],
+  k: number,
+  startIndex: number,
+  current: InternalItem[],
+  currVal: number,
+  currTax: number,
+  currTx: number,
+  targetVal: number,
+  targetTax: number,
+  targetTx: number,
+  startTime: number,
+  maxTimeoutMs: number
+): InternalItem[] | null {
+  if (current.length === k) {
+    if (
+      (Math.abs(currVal - targetVal) <= 25.0 || Math.abs(currTx - targetTx) <= 25.0) &&
+      Math.abs(currTax - targetTax) <= 15.0
+    ) {
+      return [...current];
+    }
+    return null;
+  }
+
+  if (current.length + (pool.length - startIndex) < k) return null;
+
+  for (let i = startIndex; i < pool.length; i++) {
+    if (Date.now() - startTime > maxTimeoutMs) return null;
+
+    const item = pool[i];
+    const nextVal = currVal + Math.abs(item.val);
+    const nextTax = currTax + Math.abs(item.taxTot);
+    const nextTx = currTx + Math.abs(item.taxable);
+
+    if (targetVal > 0 && nextVal > targetVal + 25.0 && nextTx > targetTx + 25.0) {
+      continue;
+    }
+
+    current.push(item);
+    const found = searchCombinations(
+      pool,
+      k,
+      i + 1,
+      current,
+      nextVal,
+      nextTax,
+      nextTx,
+      targetVal,
+      targetTax,
+      targetTx,
+      startTime,
+      maxTimeoutMs
+    );
+    if (found) return found;
+    current.pop();
+  }
+
+  return null;
+}
+
 function runDynamicSevenPassReconciliation(
   rawPR: any[],
   raw2B: any[]
@@ -535,7 +702,8 @@ function runDynamicSevenPassReconciliation(
     b: InternalItem | null,
     remark: string,
     isSubRow: boolean = false,
-    sortOrder: number = 1
+    sortOrder: number = 1,
+    batchLabel?: string
   ) {
     const vPR = p && !isSubRow ? p.val : 0.0;
     const txPR = p && !isSubRow ? p.taxable : 0.0;
@@ -552,7 +720,7 @@ function runDynamicSevenPassReconciliation(
     const netDiff = +((cPR + sPR + iPR) - (c2B + s2B + i2B)).toFixed(2);
     const baseDiff = +(txPR - tx2B).toFixed(2);
 
-    const invNoPR = p ? (isSubRow ? `${p.invNorm || 'DN'} (Grouped)` : (p.raw?.['Invoice No.'] || p.raw?.['Inv.No'] || p.invNorm || 'DN')) : '';
+    const invNoPR = p ? (isSubRow ? `${p.invNorm || 'DN'} (Grouped)` : (p.raw?.['Invoice No.'] || p.raw?.['Inv.No'] || p.raw?.invoiceNo || p.invNorm || 'DN')) : '';
     const vchPR = p ? (isSubRow ? `${p.voucherNo} (Grouped)` : p.voucherNo) : '';
 
     reconciledRows.push({
@@ -565,7 +733,7 @@ function runDynamicSevenPassReconciliation(
       supplierNamePR: p ? p.suppName : '',
       supplierName2B: b ? b.suppName : '',
       invoiceNoPR: invNoPR,
-      invoiceNo2B: b ? (b.raw?.['Note No'] || b.invNorm) : '',
+      invoiceNo2B: b ? (b.raw?.['Note No'] || b.raw?.['Invoice No.'] || b.raw?.invoiceNo || b.invNorm) : '',
       invoiceDatePR: p ? p.dateStr : '',
       invoiceDate2B: b ? b.dateStr : '',
       baseDiff,
@@ -585,17 +753,58 @@ function runDynamicSevenPassReconciliation(
       auditRemarks: remark,
       sortOrder,
       isSubRow,
+      batchLabel,
       rawPR: p?.raw,
       raw2B: b?.raw,
     });
   }
 
-  // ── PASS 1: 1-to-1 Exact & Normalized Invoice Number Match ──
+  // ── PASS 1: 1-to-1 Exact & Normalized Invoice Number Match with Composite Guardrail ──
   for (const p of prItems) {
     if (isGenericDn(p.invNorm)) continue;
     const cands = twoBItems.filter(b => !used2B.has(b.id) && b.effGstin === p.effGstin && b.invNorm === p.invNorm);
     if (cands.length === 1) {
       const b = cands[0];
+
+      // Composite Batch Guardrail:
+      // If Val_PR or Taxable_PR is significantly higher than Val_2B + 10.00, check if this PR entry
+      // represents a composite lump-sum combining this note with other 2B notes of the same supplier.
+      const pValAbs = Math.abs(p.val);
+      const bValAbs = Math.abs(b.val);
+      const pTxAbs = Math.abs(p.taxable);
+      const bTxAbs = Math.abs(b.taxable);
+
+      if (pValAbs > bValAbs + 10.00 || pTxAbs > bTxAbs + 10.00) {
+        const other2B = twoBItems.filter(b2 => !used2B.has(b2.id) && b2.id !== b.id && b2.effGstin === p.effGstin);
+        let isComposite = false;
+
+        for (let k = 1; k <= Math.min(other2B.length, 6); k++) {
+          const testGroup = [b, ...other2B.slice(0, k)];
+          const sumV = testGroup.reduce((acc, x) => acc + Math.abs(x.val), 0);
+          const sumTx = testGroup.reduce((acc, x) => acc + Math.abs(x.taxable), 0);
+          if (Math.abs(pValAbs - sumV) <= 25.0 || Math.abs(pTxAbs - sumTx) <= 25.0) {
+            isComposite = true;
+            break;
+          }
+        }
+
+        if (!isComposite && other2B.length <= 15) {
+          for (let i = 0; i < other2B.length; i++) {
+            const sum2V = bValAbs + Math.abs(other2B[i].val);
+            const sum2Tx = bTxAbs + Math.abs(other2B[i].taxable);
+            if (Math.abs(pValAbs - sum2V) <= 25.0 || Math.abs(pTxAbs - sum2Tx) <= 25.0) {
+              isComposite = true;
+              break;
+            }
+          }
+        }
+
+        if (isComposite) {
+          // Defer to Pass 3 (Consolidated Batch Solver)
+          continue;
+        }
+      }
+
       usedPR.add(p.id);
       used2B.add(b.id);
       const tDiff = Math.abs(p.taxTot - b.taxTot);
@@ -619,16 +828,28 @@ function runDynamicSevenPassReconciliation(
 
   // ── PASS 2: 1-to-1 Value & Tax Match (Generic DN / Voucher in Books) ──
   for (const p of prItems) {
-    if (usedPR.has(p.id) || p.taxable === 0) continue;
+    if (usedPR.has(p.id) || (p.taxable === 0 && p.val === 0)) continue;
     const cands = twoBItems.filter(
-      b => !used2B.has(b.id) && b.effGstin === p.effGstin && Math.abs(b.taxable - p.taxable) <= 10.0 && Math.abs(b.taxTot - p.taxTot) <= 2.0
+      b => !used2B.has(b.id) && b.effGstin === p.effGstin &&
+        ((Math.abs(b.taxable - p.taxable) <= 10.0 && Math.abs(b.taxTot - p.taxTot) <= 2.0) ||
+         (Math.abs(Math.abs(b.val) - Math.abs(p.val)) <= 10.0 && Math.abs(b.taxTot - p.taxTot) <= 2.0))
     );
     if (cands.length >= 1) {
+      cands.sort((a, b) => {
+        if (p.dateObj && a.dateObj && b.dateObj) {
+          const diffA = Math.abs(p.dateObj.getTime() - a.dateObj.getTime());
+          const diffB = Math.abs(p.dateObj.getTime() - b.dateObj.getTime());
+          if (diffA !== diffB) return diffA - diffB;
+        }
+        return Math.abs(a.val - p.val) - Math.abs(b.val - p.val);
+      });
+
       const b = cands[0];
       usedPR.add(p.id);
       used2B.add(b.id);
       const vDiff = Math.abs(p.taxable - b.taxable);
-      if (vDiff < 0.02) {
+      const tDiff = Math.abs(p.taxTot - b.taxTot);
+      if (vDiff < 0.02 && tDiff < 0.02) {
         emitRow('Reconciled (Value Match - DN)', p, b, `Exact amount & tax match; Books ref '${p.invNorm || 'Blank'}' = 2B Note '${b.invNorm}'`, false, 2);
       } else {
         emitRow('Reconciled (Rounding Diff)', p, b, `Amount matched within tolerance; rounding diff ₹${vDiff.toFixed(2)}`, false, 3);
@@ -638,51 +859,73 @@ function runDynamicSevenPassReconciliation(
 
   // ── PASS 3: 1-to-Many Consolidated Batch Solver ──
   for (const p of prItems) {
-    if (usedPR.has(p.id) || p.taxable === 0) continue;
+    if (usedPR.has(p.id) || (p.taxable === 0 && p.val === 0)) continue;
     const cands = twoBItems.filter(b => !used2B.has(b.id) && b.effGstin === p.effGstin);
-    if (cands.length >= 2) {
-      // Check total group sum
-      const sumTaxable = cands.reduce((acc, c) => acc + c.taxable, 0);
-      const sumTax = cands.reduce((acc, c) => acc + c.taxTot, 0);
-      if (Math.abs(sumTaxable - p.taxable) <= 25.0 && Math.abs(sumTax - p.taxTot) <= 15.0) {
-        usedPR.add(p.id);
-        const batchNum = `Batch #${String(batchRows.length + 1).padStart(2, '0')}`;
-        batchRows.push({
-          batchNum,
-          prRowSource: p.voucherNo.startsWith('PPR') ? 'Original Register (Rows 1-434)' : 'Appended Recon',
-          prVoucher: p.voucherNo,
-          gstin: p.effGstin,
-          supplierName: p.suppName,
-          booksDatePR: p.dateStr,
-          twoBPeriod: cands[0]?.period || '',
-          notesCount: cands.length,
-          noteNumbersRange: cands.map(c => c.invNorm).slice(0, 5).join(', ') + (cands.length > 5 ? ` ... (${cands.length} notes)` : ''),
-          taxableBasePR: p.taxable,
-          sumTaxableValue2B: sumTaxable,
-          baseDiff: +(p.taxable - sumTaxable).toFixed(2),
-          totalTaxPR: p.taxTot,
-          sumTotalTax2B: sumTax,
-          netTaxDiff: +(p.taxTot - sumTax).toFixed(2),
-          batchStatus: 'Reconciled (Batch)',
-        });
+    if (cands.length < 2) continue;
 
-        cands.forEach((b, k) => {
-          used2B.add(b.id);
-          if (k === 0) {
-            emitRow('Reconciled (Consolidated Batch)', p, b, `Consolidated Batch [${p.suppName.slice(0, 15)} (${cands.length} Notes), 1 of ${cands.length}]: Books lump-sum matches ${cands.length} 2B notes`, false, 5);
-          } else {
-            emitRow('Reconciled (Consolidated Batch)', p, b, `Consolidated Batch [${p.suppName.slice(0, 15)} (${cands.length} Notes), ${k + 1} of ${cands.length}]: Grouped under Books entry '${p.voucherNo}'`, true, 5);
-          }
-        });
-      }
+    const matchedGroup = findSubsetSumMatch(p.val, p.taxTot, p.taxable, p.dateObj, cands, 500);
+    if (matchedGroup && matchedGroup.length >= 2) {
+      usedPR.add(p.id);
+      const batchNum = `Batch #${String(batchRows.length + 1).padStart(2, '0')}`;
+      const sumTaxable = matchedGroup.reduce((acc, c) => acc + c.taxable, 0);
+      const sumTax = matchedGroup.reduce((acc, c) => acc + c.taxTot, 0);
+
+      batchRows.push({
+        batchNum,
+        prRowSource: p.voucherNo.startsWith('PPR') ? 'Original Register (Rows 1-434)' : 'Appended Recon',
+        prVoucher: p.voucherNo,
+        gstin: p.effGstin,
+        supplierName: p.suppName,
+        booksDatePR: p.dateStr,
+        twoBPeriod: matchedGroup[0]?.period || '',
+        notesCount: matchedGroup.length,
+        noteNumbersRange: matchedGroup.map(c => c.invNorm).slice(0, 5).join(', ') + (matchedGroup.length > 5 ? ` ... (${matchedGroup.length} notes)` : ''),
+        taxableBasePR: p.taxable,
+        sumTaxableValue2B: sumTaxable,
+        baseDiff: +(p.taxable - sumTaxable).toFixed(2),
+        totalTaxPR: p.taxTot,
+        sumTotalTax2B: sumTax,
+        netTaxDiff: +(p.taxTot - sumTax).toFixed(2),
+        batchStatus: 'Reconciled (Batch)',
+      });
+
+      matchedGroup.forEach((b, k) => {
+        used2B.add(b.id);
+        if (k === 0) {
+          emitRow(
+            'Reconciled (Consolidated Batch)',
+            p,
+            b,
+            `Consolidated Batch [${p.suppName.slice(0, 15)} (${matchedGroup.length} Notes), 1 of ${matchedGroup.length}]: Books lump-sum matches ${matchedGroup.length} 2B notes`,
+            false,
+            5,
+            batchNum
+          );
+        } else {
+          emitRow(
+            'Reconciled (Consolidated Batch)',
+            p,
+            b,
+            `Consolidated Batch [${p.suppName.slice(0, 15)} (${matchedGroup.length} Notes), ${k + 1} of ${matchedGroup.length}]: Grouped under Books entry '${p.voucherNo}'`,
+            true,
+            5,
+            batchNum
+          );
+        }
+      });
     }
   }
 
   // ── PASS 4: 1-to-1 Partial Value Match ──
   for (const p of prItems) {
-    if (usedPR.has(p.id) || p.taxable === 0) continue;
+    if (usedPR.has(p.id) || (p.taxable === 0 && p.val === 0)) continue;
     const cands = twoBItems.filter(b => !used2B.has(b.id) && b.effGstin === p.effGstin);
-    const near = cands.find(b => Math.abs(b.taxable - p.taxable) / Math.max(Math.abs(p.taxable), Math.abs(b.taxable)) <= 0.05);
+    const near = cands.find(b => {
+      const vDiffRel = Math.abs(b.taxable - p.taxable) / Math.max(Math.abs(p.taxable), Math.abs(b.taxable));
+      const valDiffRel = Math.abs(Math.abs(b.val) - Math.abs(p.val)) / Math.max(Math.abs(p.val), Math.abs(b.val));
+      const dateClose = (!p.dateObj || !b.dateObj) || (Math.abs(p.dateObj.getTime() - b.dateObj.getTime()) <= 30 * 86400 * 1000);
+      return (vDiffRel <= 0.05 || valDiffRel <= 0.05) && dateClose;
+    });
     if (near) {
       usedPR.add(p.id);
       used2B.add(near.id);
@@ -694,7 +937,10 @@ function runDynamicSevenPassReconciliation(
   for (const b of twoBItems) {
     if (used2B.has(b.id) || b.noteType.toLowerCase() === 'debit') continue;
     used2B.add(b.id);
-    emitRow('In 2B Credit Notes Only (Not in Books)', null, b, 'In GSTR-2B Credit Notes Only — Verify & record Purchase Return in Books', false, 8);
+    const remark = b.taxTot === 0
+      ? 'In GSTR-2B Only (Exempt / Zero-Tax Note not matched in Books)'
+      : 'In GSTR-2B Credit Notes Only — Verify & record Purchase Return in Books (ITC reversal impact)';
+    emitRow('In 2B Credit Notes Only (Not in Books)', null, b, remark, false, 8);
   }
 
   // ── PASS 6: 2B Supplier Debit Notes (ITC Claimable) ──
@@ -708,7 +954,7 @@ function runDynamicSevenPassReconciliation(
   for (const p of prItems) {
     if (usedPR.has(p.id)) continue;
     usedPR.add(p.id);
-    if (p.taxTot !== 0 || p.taxable !== 0) {
+    if (p.taxTot !== 0 || p.taxable !== 0 || p.val !== 0) {
       emitRow('In Books Only - Taxable (Not in 2B)', p, null, 'Recorded in Books Only (Taxable Purchase Return) — Not reflected in GSTR-2B', false, 10);
     } else {
       emitRow('In Books Only - Nil-Rated Seed (Exempt)', p, null, 'Recorded in Books Only (Nil-Rated / Exempt Seed Return — ₹0.00 GST impact)', false, 11);
