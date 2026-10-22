@@ -43,9 +43,9 @@ export function StatusBadge({ status }: { status: MatchStatus }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG['Mismatch'];
   const displayLabel = status === 'Unmatched Vendor' ? 'Party Not in 2B' : status;
   return (
-    <span className={cn('status-pill', cfg.bg, cfg.text)}>
-      <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
-      {displayLabel}
+    <span className={cn('badge-chip border border-current/20 shadow-xs font-mono', cfg.bg, cfg.text)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', cfg.dot)} />
+      <span className="truncate">{displayLabel}</span>
     </span>
   );
 }

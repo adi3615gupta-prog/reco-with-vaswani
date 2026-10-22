@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   ShieldCheck, ArrowRight, ArrowLeft, Plus, Sparkles, Building2,
-  FileSpreadsheet, RotateCcw, CloudDownload, Settings,
+  FileSpreadsheet, RotateCcw, CloudDownload, Settings, Cloud, History,
   Users, Database, FileCode2, Send, ImageIcon,
   Lock, Key, Laptop, Activity, Server, AlertCircle, LogOut,
   ChevronRight, CalendarClock, ShieldAlert, GitCompare,
@@ -26,7 +26,7 @@ import { TERMS, type ReconciliationMode } from '@/lib/mode';
 import {
   parseFile, detectColumnMapping, mapToRecords,
   type ColumnMapping, type DebitNoteRecord,
-  exportMonthlyComparison, exportPartyWise, type MonthlyComparisonRow
+  exportMonthlyComparison, exportMonthlyDiffSheets, exportPartyWise, type MonthlyComparisonRow
 } from '@/lib/fileParser';
 import { parseFileAsync, reconcileAsync } from '@/lib/asyncWorkerService';
 import { reconcile, getSummary, detectGstinIssues, type ReconciliationResult, type ReconciliationSummary, type GstinIssue } from '@/lib/reconciliation';
@@ -34,6 +34,7 @@ import { aggregateByParty } from '@/lib/partyWise';
 import { cn } from '@/lib/utils';
 import { GSTVerification } from '@/components/GSTVerification';
 import { executeOutputReconciliation } from '@/lib/outputReconciliationService';
+import { reconcileDebitNotes, exportDebitNoteReconciliation } from '@/lib/debitNoteEngine';
 
 // Import compliance suites
 import Splash from './Splash';
@@ -42,6 +43,7 @@ import ClientDashboard from './ClientDashboard';
 import Consolidation from './Consolidation';
 import TallyConverter from './TallyConverter';
 import TallyDirectImport from './TallyDirectImport';
+import TallyLedgerImport from './TallyLedgerImport';
 import ReturnsDashboard from './ReturnsDashboard';
 import ImageToExcel from './ImageToExcel';
 import LandingPage from './LandingPage';
@@ -54,9 +56,13 @@ import CmaReport from './CmaReport';
 import DepreciationModule from './DepreciationModule';
 import AuditModule from './AuditModule';
 import UserGuideCenter from '@/components/UserGuideCenter';
+import { GDriveConnectModal } from '@/components/GDriveConnectModal';
+import { RecoHistoryModal } from '@/components/RecoHistoryModal';
 import IncomeTaxDashboard from './IncomeTaxDashboard';
 import TaxAuditClause44 from './TaxAuditClause44';
 import VoucherReclassifier from './VoucherReclassifier';
+import BankCmaAppraisal from './BankCmaAppraisal';
+import { AppShell } from '@/components/AppShell';
 
 // CSS theme styles passed down for splash screen and visual presentations
 const themeStyles = `
@@ -193,12 +199,14 @@ export default function Index() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [guideActiveModule, setGuideActiveModule] = useState<string>('intro');
+  const [isGDriveConnectOpen, setIsGDriveConnectOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'consolidation' | 'dashboard' | 'returns' | 'ocr' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'depreciation' | 'audit' | 'income-tax' | 'clause44' | 'voucher-reclass'>(() => {
+  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'ledger-import' | 'consolidation' | 'dashboard' | 'returns' | 'ocr' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'bank-cma' | 'depreciation' | 'audit' | 'income-tax' | 'clause44' | 'voucher-reclass'>(() => {
     return (safeGetItem('np_app_route') as any) || 'hub';
   });
 
-  const [activeCategoryCard, setActiveCategoryCard] = useState<'wip' | 'reco' | 'collector' | 'audit' | 'tax' | null>(null);
+  const [activeCategoryCard, setActiveCategoryCard] = useState<'wip' | 'reco' | 'collector' | 'audit' | 'tax' | 'cma-bank' | null>(null);
 
     const [showAdmin, setShowAdmin] = useState(false);
     const [networkDiagnostics, setNetworkDiagnostics] = useState({ latency: 0, status: 'Online' });
@@ -351,9 +359,12 @@ export default function Index() {
     useEffect(() => {
       if (isAuthenticated) {
         const ping = () => {
+          const token = safeGetItem('np_token') || safeGetItem('np_token', true);
+          if (!token || token === 'null' || token === 'undefined') return;
+
           fetch(`http://${getApiHost()}:3001/api/heartbeat`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+            headers: { 'Authorization': `Bearer ${token}` }
           }).then(async (res) => {
             setIsServerOffline(false);
             if (res.status === 410) {
@@ -374,8 +385,11 @@ export default function Index() {
         };
 
         const fetchModules = () => {
+          const token = safeGetItem('np_token') || safeGetItem('np_token', true);
+          if (!token || token === 'null' || token === 'undefined') return;
+
           fetch(`http://${getApiHost()}:3001/api/usage`, {
-            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
+            headers: { 'Authorization': `Bearer ${token}` }
           }).then(r => r.json()).then(data => {
             const config: Record<string, number> = {};
             if (Array.isArray(data)) data.forEach(d => { config[d.name] = d.is_enabled; });
@@ -457,8 +471,9 @@ export default function Index() {
       if (!isAuthenticated) return;
       const checkServer = () => {
         const start = Date.now();
-        fetch(`http://${getApiHost()}:3001/sessions`)
-          .then(() => {
+        fetch(`http://${getApiHost()}:3001/api/ping`)
+          .then((res) => {
+            if (!res.ok) throw new Error('Server returned non-200');
             setNetworkDiagnostics({
               latency: Date.now() - start,
               status: 'Connected'
@@ -563,47 +578,47 @@ export default function Index() {
       safeRemoveItem('np_parsed_dn');
     };
 
-    const handlePrUpload = async (f: File) => {
+    const handlePrUpload = async (f: File, headersOnly = false) => {
       setPrFile(f);
-      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+      const { headers } = await parseFileAsync(f, { headersOnly }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrHeaders(headers);
       setPrMapping(detectColumnMapping(headers));
     };
 
-    const handleTwoBUpload = async (f: File) => {
+    const handleTwoBUpload = async (f: File, headersOnly = false) => {
       setTwoBFile(f);
-      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+      const { headers } = await parseFileAsync(f, { headersOnly, docType: mode === 'input' ? '2b' : 'b2b' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setTwoBHeaders(headers);
       setTwoBMapping(detectColumnMapping(headers));
     };
 
-    const handleJournalUpload = async (files: File[]) => {
+    const handleJournalUpload = async (files: File[], headersOnly = false) => {
       const newJournals = await Promise.all(
         files.map(async (f) => {
-          const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+          const { headers } = await parseFileAsync(f, { headersOnly }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
           return { file: f, headers, mapping: detectColumnMapping(headers) };
         })
       );
       setJournals((prev) => [...prev, ...newJournals]);
     };
 
-    const handlePrDnUpload = async (f: File) => {
+    const handlePrDnUpload = async (f: File, headersOnly = false) => {
       setPrDnFile(f);
-      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+      const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true, sheetName: 'Sheet2' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrDnHeaders(headers);
       setPrDnMapping(detectColumnMapping(headers));
     };
 
-    const handlePrCnUpload = async (f: File) => {
+    const handlePrCnUpload = async (f: File, headersOnly = false) => {
       setPrCnFile(f);
-      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+      const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setPrCnHeaders(headers);
       setPrCnMapping(detectColumnMapping(headers));
     };
 
-    const handleTwoBDnUpload = async (f: File) => {
+    const handleTwoBDnUpload = async (f: File, headersOnly = false) => {
       setTwoBDnFile(f);
-      const { headers } = await parseFileAsync(f, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+      const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true, docType: 'cn', sheetName: 'CDNR' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
       setTwoBDnHeaders(headers);
       setTwoBDnMapping(detectColumnMapping(headers));
     };
@@ -646,7 +661,7 @@ export default function Index() {
           return;
         }
 
-        const prParsed = await parseFile(primaryBookFile);
+        const prParsed = await parseFileAsync(primaryBookFile, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(Math.round(pct * 0.25)); });
         const prRecs = mapToRecords(prParsed.rows, prMapping as ColumnMapping, 'PR', mode === 'input' ? 'Purchase Register' : 'Sales Register');
         setProgressValue(25);
         await new Promise((r) => setTimeout(r, 50));
@@ -654,14 +669,14 @@ export default function Index() {
         let twoBParsed: any = { rows: [], headers: [] };
         let twoBRecs: any[] = [];
         if (primaryPortalFile) {
-          twoBParsed = await parseFile(primaryPortalFile, { findHeader: true, docType: mode === 'input' ? '2b' : 'b2b' });
+          twoBParsed = await parseFileAsync(primaryPortalFile, { findHeader: true, docType: mode === 'input' ? '2b' : 'b2b' }, (stage, pct) => { setProgressStage(stage); setProgressValue(25 + Math.round(pct * 0.2)); });
           twoBRecs = mapToRecords(twoBParsed.rows, twoBMapping as ColumnMapping, '2B', mode === 'input' ? 'GSTR-2B' : 'GSTR-1');
         }
         setProgressValue(45);
         await new Promise((r) => setTimeout(r, 50));
 
         for (const j of journals) {
-          const jParsed = await parseFile(j.file);
+          const jParsed = await parseFileAsync(j.file);
           const jRecs = mapToRecords(jParsed.rows, j.mapping as ColumnMapping, 'PR', mode === 'input' ? 'Journal' : 'Sales Book');
           prRecs.push(...jRecs);
         }
@@ -671,8 +686,9 @@ export default function Index() {
         if (mode === 'output' && portalMappings) {
           for (const [id, pMap] of Object.entries(portalMappings as Record<string, any>)) {
             const q = portalQueue.find(x => x.id === id);
-            if (q && q.docType !== 'primary' && q.docType !== 'debit_note' && q.docType !== 'gstr3b') {
-              const pParsed = await parseFile(q.file);
+            if (q && q.file === primaryPortalFile && (q.docType === 'b2b' || q.docType === 'primary')) continue;
+            if (q && q.docType !== 'primary' && q.docType !== 'b2b' && q.docType !== 'debit_note' && q.docType !== 'gstr3b') {
+              const pParsed = await parseFileAsync(q.file, { findHeader: true, docType: q.docType });
               const pRecs = mapToRecords(pParsed.rows, pMap.mapping as ColumnMapping, '2B', q.docType);
               twoBRecs.push(...pRecs);
             }
@@ -682,28 +698,82 @@ export default function Index() {
         const parsedPrDn: DebitNoteRecord[] = [];
         const parsedTwoBDn: DebitNoteRecord[] = [];
         if (prDnFile) {
-          const parsed = await parseFile(prDnFile);
-          const recs = mapToRecords(parsed.rows, prDnMapping as ColumnMapping, 'PR');
-          parsedPrDn.push(...recs.map(r => ({
+          const parsed = await parseFileAsync(prDnFile, { findHeader: true, sheetName: 'Sheet2' });
+          const effectivePrDnMapping = { ...detectColumnMapping(parsed.headers), ...(prDnMapping && Object.keys(prDnMapping).length > 0 ? prDnMapping : {}) } as ColumnMapping;
+          const recs = mapToRecords(parsed.rows, effectivePrDnMapping, 'PR', 'Purchase Return');
+          parsedPrDn.push(...recs.map((r, idx) => ({
             invoiceDate: r.invoiceDate,
             cgst: r.cgst,
             sgst: r.sgst,
             igst: r.igst,
             gstin: r.gstin || '',
-            supplierName: r.supplierName || ''
+            supplierName: r.supplierName || '',
+            invoiceNo: r.invoiceNo || '',
+            taxableValue: r.taxableValue,
+            invoiceValue: r.invoiceValue,
+            raw: parsed.rows[idx] || (r as any).raw || r
           })));
+        } else if (prFile && mode === 'input') {
+          try {
+            const parsed = await parseFileAsync(prFile, { findHeader: true, sheetName: 'Sheet2' });
+            if (parsed && parsed.rows && parsed.rows.length > 0) {
+              const effectivePrDnMapping = { ...detectColumnMapping(parsed.headers), ...(prDnMapping && Object.keys(prDnMapping).length > 0 ? prDnMapping : {}) } as ColumnMapping;
+              const recs = mapToRecords(parsed.rows, effectivePrDnMapping, 'PR', 'Purchase Return');
+              parsedPrDn.push(...recs.map((r, idx) => ({
+                invoiceDate: r.invoiceDate,
+                cgst: r.cgst,
+                sgst: r.sgst,
+                igst: r.igst,
+                gstin: r.gstin || '',
+                supplierName: r.supplierName || '',
+                invoiceNo: r.invoiceNo || '',
+                taxableValue: r.taxableValue,
+                invoiceValue: r.invoiceValue,
+                raw: parsed.rows[idx] || (r as any).raw || r
+              })));
+            }
+          } catch (e) {
+            // Ignore if no Sheet2
+          }
         }
         if (twoBDnFile) {
-          const parsed = await parseFile(twoBDnFile);
-          const recs = mapToRecords(parsed.rows, twoBDnMapping as ColumnMapping, '2B');
-          parsedTwoBDn.push(...recs.map(r => ({
+          const parsed = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
+          const effectiveTwoBDnMapping = { ...detectColumnMapping(parsed.headers), ...(twoBDnMapping && Object.keys(twoBDnMapping).length > 0 ? twoBDnMapping : {}) } as ColumnMapping;
+          const recs = mapToRecords(parsed.rows, effectiveTwoBDnMapping, '2B', 'cn');
+          parsedTwoBDn.push(...recs.map((r, idx) => ({
             invoiceDate: r.invoiceDate,
             cgst: r.cgst,
             sgst: r.sgst,
             igst: r.igst,
             gstin: r.gstin || '',
-            supplierName: r.supplierName || ''
+            supplierName: r.supplierName || '',
+            invoiceNo: r.invoiceNo || '',
+            taxableValue: r.taxableValue,
+            invoiceValue: r.invoiceValue,
+            raw: parsed.rows[idx] || (r as any).raw || r
           })));
+        } else if (primaryPortalFile && mode === 'input') {
+          try {
+            const parsed = await parseFileAsync(primaryPortalFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
+            if (parsed && parsed.rows && parsed.rows.length > 0) {
+              const effectiveTwoBDnMapping = { ...detectColumnMapping(parsed.headers), ...(twoBDnMapping && Object.keys(twoBDnMapping).length > 0 ? twoBDnMapping : {}) } as ColumnMapping;
+              const recs = mapToRecords(parsed.rows, effectiveTwoBDnMapping, '2B', 'cn');
+              parsedTwoBDn.push(...recs.map((r, idx) => ({
+                invoiceDate: r.invoiceDate,
+                cgst: r.cgst,
+                sgst: r.sgst,
+                igst: r.igst,
+                gstin: r.gstin || '',
+                supplierName: r.supplierName || '',
+                invoiceNo: r.invoiceNo || '',
+                taxableValue: r.taxableValue,
+                invoiceValue: r.invoiceValue,
+                raw: parsed.rows[idx] || (r as any).raw || r
+              })));
+            }
+          } catch (e) {
+            // Ignore if no CDNR sheet
+          }
         }
         setParsedDebitNotes({ pr: parsedPrDn, twoB: parsedTwoBDn });
         setProgressValue(75);
@@ -748,13 +818,16 @@ export default function Index() {
 
           const booksSales = applyMap(prParsed.rows, prMapping);
           for (const j of journals) {
-            const jp = await parseFile(j.file);
+            const jp = await parseFileAsync(j.file);
             booksSales.push(...applyMap(jp.rows, j.mapping));
           }
 
-          const booksReturns = prDnFile ? applyMap((await parseFile(prDnFile)).rows, prDnMapping) : [];
-          const booksCreditNotes = prCnFile ? applyMap((await parseFile(prCnFile)).rows, prCnMapping) : [];
-          const booksDebitNotes = prDnFile ? applyMap((await parseFile(prDnFile)).rows, prDnMapping) : [];
+          const prDnParsed = prDnFile ? await parseFileAsync(prDnFile, { findHeader: true, sheetName: 'Sheet2' }) : null;
+          const prCnParsed = prCnFile ? await parseFileAsync(prCnFile) : null;
+
+          const booksReturns = prDnParsed ? applyMap(prDnParsed.rows, prDnMapping) : [];
+          const booksCreditNotes = prCnParsed ? applyMap(prCnParsed.rows, prCnMapping) : [];
+          const booksDebitNotes = prDnParsed ? applyMap(prDnParsed.rows, prDnMapping) : [];
           const portalB2B: any[] = [];
           const portalCN: any[] = [];
           const portalB2C: any[] = [];
@@ -773,7 +846,9 @@ export default function Index() {
                 if (processedPortalFileKeys.has(fileKey)) continue;
                 processedPortalFileKeys.add(fileKey);
 
-                const p = await parseFile(q.file, { findHeader: true, docType: q.docType });
+                const p = (q.file === primaryPortalFile && (q.docType === 'b2b' || q.docType === 'primary') && twoBParsed && twoBParsed.rows && twoBParsed.rows.length > 0)
+                  ? twoBParsed
+                  : await parseFileAsync(q.file, { findHeader: true, docType: q.docType });
                 const mapped = applyMap(p.rows, pMap.mapping);
                 if (q.docType === 'b2b' || q.docType === 'primary') portalB2B.push(...mapped);
                 else if (q.docType === 'exp') portalExport.push(...mapped);
@@ -788,7 +863,9 @@ export default function Index() {
             const fileKey = `${primaryPortalFile.name}_${primaryPortalFile.size}_b2b`;
             if (!processedPortalFileKeys.has(fileKey)) {
               processedPortalFileKeys.add(fileKey);
-              const p = await parseFile(primaryPortalFile, { findHeader: true, docType: 'b2b' });
+              const p = (twoBParsed && twoBParsed.rows && twoBParsed.rows.length > 0)
+                ? twoBParsed
+                : await parseFileAsync(primaryPortalFile, { findHeader: true, docType: 'b2b' });
               portalB2B.push(...applyMap(p.rows, twoBMapping));
             }
           }
@@ -796,7 +873,7 @@ export default function Index() {
             const fileKey = `${twoBDnFile.name}_${twoBDnFile.size}_cn`;
             if (!processedPortalFileKeys.has(fileKey)) {
               processedPortalFileKeys.add(fileKey);
-              const p = await parseFile(twoBDnFile, { findHeader: true, docType: 'cn' });
+              const p = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
               portalCN.push(...applyMap(p.rows, twoBDnMapping));
             }
           }
@@ -835,18 +912,30 @@ export default function Index() {
         setSummary(getSummary(res));
         const issues = detectGstinIssues(res);
         setGstIssues(issues);
-        safeSetItem('np_reco_issues', JSON.stringify(issues));
-        setAppliedGstins([]);
-        safeSetItem('np_reco_applied_gstins', '[]');
-        setProgressValue(100);
-        await new Promise((r) => setTimeout(r, 200));
 
-        setStep('review');
+        try {
+          safeSetItem('np_reco_issues', JSON.stringify(issues));
+          safeSetItem('np_reco_applied_gstins', '[]');
+          safeSetItem('np_reco_results', JSON.stringify(res));
+        } catch (e) {
+          console.warn('Storage save skipped for large result payload:', e);
+        }
+
+        setProgressValue(100);
+        await new Promise((r) => setTimeout(r, 150));
+
+        // Advance to review step (GST verification) if issues exist, or directly to results dashboard if 0 issues
+        const hasGstIssues = issues.suggested.length > 0 || issues.conflicts.length > 0;
+        const targetStep = hasGstIssues ? 'review' : 'results';
+        setStep(targetStep);
+        safeSetItem('np_reco_step', targetStep);
         confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
 
-        const newCount = parseInt(localStorage.getItem('np_usage_count') || '0') + 1;
-        localStorage.setItem('np_usage_count', newCount.toString());
-        if (newCount % 5 === 0) setShowFeedback(true);
+        try {
+          const newCount = parseInt(localStorage.getItem('np_usage_count') || '0') + 1;
+          localStorage.setItem('np_usage_count', newCount.toString());
+          if (newCount % 5 === 0) setShowFeedback(true);
+        } catch (e) {}
 
         // Audit log registration on successful reconciliation
         if (isAuthenticated) {
@@ -907,6 +996,41 @@ export default function Index() {
       }
     }, [results, parsedDebitNotes, companyName]);
 
+    const handleExportMonthlyDiff = useCallback(() => {
+      if (!results) return;
+      try {
+        const exportRows: MonthlyComparisonRow[] = results.map((r) => {
+          const pr = r.prRecord;
+          const tb = r.twoBRecord;
+          return {
+            partyTally: pr?.supplierName || '',
+            gstinTally: pr?.gstin || '',
+            invoiceTally: pr?.invoiceNo || '',
+            cgstTally: pr?.cgst || 0,
+            sgstTally: pr?.sgst || 0,
+            igstTally: pr?.igst || 0,
+            taxableTally: pr?.taxableValue || 0,
+            dateTally: pr?.invoiceDate || '',
+            partyCmp: tb?.supplierName || '',
+            gstinCmp: tb?.gstin || '',
+            invoiceCmp: tb?.invoiceNo || '',
+            cgstCmp: tb?.cgst || 0,
+            sgstCmp: tb?.sgst || 0,
+            igstCmp: tb?.igst || 0,
+            taxableCmp: tb?.taxableValue || 0,
+            dateCmp: tb?.invoiceDate || '',
+            status: r.status,
+            totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+          };
+        });
+        exportMonthlyDiffSheets(exportRows, 'Monthly_Difference_Sheets.xlsx', parsedDebitNotes, companyName);
+        toast.success('Monthly difference sheets exported successfully!');
+      } catch (err) {
+        console.error('Monthly diff export error:', err);
+        toast.error(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }, [results, parsedDebitNotes, companyName]);
+
     const handleExportParty = useCallback(() => {
       if (!results) return;
       try {
@@ -917,6 +1041,24 @@ export default function Index() {
         toast.error(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     }, [results, parsedDebitNotes, companyName]);
+
+    const handleExportDebitNotes = useCallback(() => {
+      try {
+        if (!parsedDebitNotes || (!parsedDebitNotes.pr?.length && !parsedDebitNotes.twoB?.length)) {
+          toast.error('No Debit Notes data found to export.');
+          return;
+        }
+        const dnResult = reconcileDebitNotes(parsedDebitNotes.pr || [], parsedDebitNotes.twoB || []);
+        const fileName = companyName?.toUpperCase().includes('GOYAL') || companyName?.toUpperCase().includes('GTC') || !companyName
+          ? 'GTC_Reconciled_Purchase_Return_vs_GSTR2B_25-26.xlsx'
+          : `${companyName.replace(/[^a-zA-Z0-9_-]/g, '_')}_Reconciled_Purchase_Return_vs_GSTR2B_25-26.xlsx`;
+        exportDebitNoteReconciliation(dnResult, fileName, companyName || 'M/S GOYAL TRADING COMPANY');
+        toast.success(`Reconciled Debit Notes report (${fileName}) downloaded successfully!`);
+      } catch (err) {
+        console.error('Debit notes export error:', err);
+        toast.error(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }, [parsedDebitNotes, companyName]);
 
     // --- CHECK IF ADMIN ACCOUNT EXISTS (FIRST-RUN SETUP) ---
     useEffect(() => {
@@ -1031,6 +1173,7 @@ export default function Index() {
         const data = await res.json();
         if (res.ok && data.token) {
           sessionStorage.setItem('np_token', data.token);
+          safeSetItem('np_token', data.token, true);
 
           safeSetItem('np_auth', 'true');
           safeSetItem('np_user', data.username);
@@ -1067,12 +1210,16 @@ export default function Index() {
     };
 
     const handleLogout = () => {
-      fetch(`http://${getApiHost()}:3001/api/logout`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('np_token')}` }
-      }).catch(() => { });
+      const token = safeGetItem('np_token') || safeGetItem('np_token', true);
+      if (token && token !== 'null' && token !== 'undefined') {
+        fetch(`http://${getApiHost()}:3001/api/logout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => { });
+      }
 
       sessionStorage.removeItem('np_token');
+      safeRemoveItem('np_token', true);
       safeRemoveItem('np_auth');
       safeRemoveItem('np_admin');
       safeRemoveItem('np_user');
@@ -1100,7 +1247,7 @@ export default function Index() {
     const handlePreparePipeline = async () => {
       if (!mode) return;
       const primaryBook = booksQueue.find(q => q.docType === 'primary');
-      const primaryPortal = portalQueue.find(q => q.docType === 'primary');
+      const primaryPortal = portalQueue.find(q => q.docType === 'primary' || (mode === 'output' && q.docType === 'b2b'));
 
       if (!primaryBook) return toast.error(`Please assign a ${TERMS[mode].primaryBookLabel} in Books.`);
       if (mode === 'input' && !primaryPortal) return toast.error(`Please assign a ${TERMS[mode].govtLabel} in Portal.`);
@@ -1108,11 +1255,13 @@ export default function Index() {
 
       setIsPreparingPipeline(true);
       const loadingId = toast.loading("Parsing source files and initializing pipeline...");
+      await new Promise((r) => setTimeout(r, 40)); // Yield to allow DOM toast paint
 
       try {
-        await handlePrUpload(primaryBook.file);
+        // Fast header-only parsing for instant pipeline initialization
+        await handlePrUpload(primaryBook.file, true);
         if (primaryPortal) {
-          await handleTwoBUpload(primaryPortal.file);
+          await handleTwoBUpload(primaryPortal.file, true);
         } else {
           setTwoBFile(null);
           setTwoBHeaders([]);
@@ -1121,29 +1270,34 @@ export default function Index() {
 
         if (mode === 'output') {
           const pMaps: any = {};
-          for (const q of portalQueue) {
-            if (!q.docType || q.docType === 'primary' || q.docType === 'debit_note' || q.docType === 'gstr3b') continue;
-            const parsed = await parseFile(q.file);
+          const portalEntries = portalQueue.filter(q => q.docType && q.docType !== 'primary' && q.docType !== 'debit_note' && q.docType !== 'gstr3b');
+          await Promise.all(portalEntries.map(async (q) => {
+            const parsed = await parseFileAsync(q.file, { headersOnly: true, docType: q.docType });
             pMaps[q.id] = { mapping: detectColumnMapping(parsed.headers), headers: parsed.headers, docType: q.docType };
-          }
+          }));
           setPortalMappings(pMaps);
         }
 
         const bDn = booksQueue.find(q => q.docType === 'debit_note');
-        if (bDn) await handlePrDnUpload(bDn.file);
-        else setPrDnFile(null);
+        if (bDn) {
+          await handlePrDnUpload(bDn.file, true);
+        } else setPrDnFile(null);
 
         const bCn = booksQueue.find(q => q.docType === 'credit_note');
-        if (bCn) await handlePrCnUpload(bCn.file);
-        else setPrCnFile(null);
+        if (bCn) {
+          await handlePrCnUpload(bCn.file, true);
+        } else setPrCnFile(null);
 
         const jFiles = booksQueue.filter(q => q.docType === 'journal').map(q => q.file);
         setJournals([]);
-        if (jFiles.length > 0) await handleJournalUpload(jFiles);
+        if (jFiles.length > 0) {
+          await handleJournalUpload(jFiles, true);
+        }
 
         const pDn = portalQueue.find(q => q.docType === 'debit_note');
-        if (pDn) await handleTwoBDnUpload(pDn.file);
-        else setTwoBDnFile(null);
+        if (pDn) {
+          await handleTwoBDnUpload(pDn.file, true);
+        } else setTwoBDnFile(null);
 
         const g3b = portalQueue.find(q => q.docType === 'gstr3b');
         if (g3b) await handleGSTR3BUpload(g3b.file);
@@ -1151,8 +1305,9 @@ export default function Index() {
 
         toast.success("Pipeline Ready", { id: loadingId });
         setStep('map');
-      } catch (err) {
-        toast.error("Failed to parse files.", { id: loadingId });
+      } catch (err: any) {
+        console.error("Pipeline preparation error:", err);
+        toast.error("Failed to parse files.", { id: loadingId, description: err?.message || 'Check file format' });
       } finally {
         setIsPreparingPipeline(false);
       }
@@ -1564,14 +1719,14 @@ export default function Index() {
         localStorage.setItem('np_company_name', data.companyName);
       }
 
-      // 4. Parse primary file to set headers and mappings
+      // 4. Parse primary file asynchronously to set headers and mappings
       try {
-        const parsedPr = await parseFile(data.prFile);
+        const parsedPr = await parseFileAsync(data.prFile);
         setPrHeaders(parsedPr.headers);
         setPrMapping(detectColumnMapping(parsedPr.headers));
 
         if (data.prDnFile) {
-          const parsedDn = await parseFile(data.prDnFile);
+          const parsedDn = await parseFileAsync(data.prDnFile, { findHeader: true, sheetName: 'Sheet2' });
           setPrDnHeaders(parsedDn.headers);
           setPrDnMapping(detectColumnMapping(parsedDn.headers));
         }
@@ -1579,7 +1734,7 @@ export default function Index() {
         if (data.journalFiles && data.journalFiles.length > 0) {
           const newJournals = await Promise.all(
             data.journalFiles.map(async (f) => {
-              const parsedJ = await parseFile(f);
+              const parsedJ = await parseFileAsync(f);
               return { file: f, headers: parsedJ.headers, mapping: detectColumnMapping(parsedJ.headers) };
             })
           );
@@ -1610,100 +1765,46 @@ export default function Index() {
     return (
       <>
         <style dangerouslySetInnerHTML={{ __html: themeStyles }} />
-        <div className="min-h-screen bg-[#090d16] text-[#E4EEF8] transition-colors duration-500 relative overflow-hidden">
+        <AppShell
+          appRoute={appRoute}
+          setAppRoute={setAppRoute}
+          companyName={companyName}
+          loginUser={loginUser}
+          networkDiagnostics={networkDiagnostics}
+          serverIpInfo={serverIpInfo}
+          appMode={appMode}
+          isAdmin={isAdmin}
+          onOpenAdmin={() => setShowAdmin(!showAdmin)}
+          onOpenHistory={() => setIsHistoryOpen(true)}
+          onOpenGDrive={() => setIsGDriveConnectOpen(true)}
+          onOpenUserGuide={() => {
+            let targetModule = 'intro';
+            if (appRoute === 'dashboard') targetModule = 'dashboard';
+            else if (appRoute === 'consolidation') targetModule = 'consolidation';
+            else if (appRoute === 'reco') targetModule = 'reco';
+            else if (appRoute === 'tally') targetModule = 'tally';
+            else if (appRoute === 'tally-direct') targetModule = 'tally-direct';
+            else if (appRoute === 'tracker') targetModule = 'tracker';
+            else if (appRoute === 'returns') targetModule = 'returns';
+            else if (appRoute === 'ocr') targetModule = 'ocr';
+            else if (appRoute === 'fin-statements') targetModule = 'fin-statements';
+            else if (appRoute === 'gstin-scan') targetModule = 'gstin-scan';
+            else if (appRoute === 'tds-reco') targetModule = 'tds-reco';
+            else if (appRoute === 'cma') targetModule = 'cma';
+            else if (appRoute === 'voucher-reclass') targetModule = 'voucher-reclass';
+            else if (appRoute === 'depreciation') targetModule = 'depreciation';
 
-          {/* ROTATING AMBIENT GLOW BACKDROPS */}
-          <div className="absolute inset-0 z-0 pointer-events-none">
-            <div className="absolute top-[10%] left-[15%] w-[450px] h-[450px] bg-blue-600/10 rounded-full blur-[140px] animate-pulse"></div>
-            <div className="absolute bottom-[15%] right-[15%] w-[450px] h-[450px] bg-emerald-600/10 rounded-full blur-[140px] animate-pulse" style={{ animationDelay: '3s' }}></div>
-          </div>
-
-          {/* TOP STATUS DIAGNOSTIC NAV BAR */}
-          <nav className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-[#1E3050] bg-[#141920]/75 backdrop-blur-xl flex items-center justify-between px-6">
-            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setAppRoute('hub')}>
-              <div className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden transition-all duration-300 group-hover:border-blue-500 group-hover:shadow-[0_0_12px_rgba(74,158,232,0.3)]">
-                <img src="./logo.png" alt="Logo" className="w-6 h-6 object-contain" />
-              </div>
-              <div>
-                <h1 className="text-md font-extrabold tracking-tight text-white flex items-center gap-1.5">AUDIT WITH VASWANI <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold tracking-widest uppercase">PRO</span></h1>
-                <p className="text-[8px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">Offline Enterprise Suite v1.4.1</p>
-              </div>
+            setGuideActiveModule(targetModule);
+            setShowUserGuide(true);
+          }}
+          onLogout={handleLogout}
+        >
+          <div className="relative">
+            {/* ROTATING AMBIENT GLOW BACKDROPS */}
+            <div className="absolute inset-0 z-0 pointer-events-none">
+              <div className="absolute top-[10%] left-[15%] w-[450px] h-[450px] bg-blue-600/10 rounded-full blur-[140px] animate-pulse"></div>
+              <div className="absolute bottom-[15%] right-[15%] w-[450px] h-[450px] bg-emerald-600/10 rounded-full blur-[140px] animate-pulse" style={{ animationDelay: '3s' }}></div>
             </div>
-
-            <div className="flex items-center gap-4">
-              {/* Diagnostics Logs */}
-              <div className="hidden md:flex items-center gap-3.5 px-4 py-1.5 rounded-full bg-slate-950/40 border border-slate-800/80 text-[10px] font-mono tracking-wide text-slate-400">
-                <span className="flex items-center gap-1.5">
-                  <Server className="w-3 h-3 text-slate-500" /> Host IP:
-                  <span className="text-slate-300">
-                    {appMode === 'server' && serverIpInfo ? serverIpInfo.ip : getApiHost()}
-                  </span>
-                </span>
-                <span className="w-px h-3 bg-slate-800"></span>
-                <span className="flex items-center gap-1.5">
-                  <Activity className="w-3 h-3 text-slate-500" /> Health:
-                  <span className={cn('font-bold', networkDiagnostics.status === 'Connected' ? 'text-emerald-400' : 'text-rose-400')}>
-                    {networkDiagnostics.status === 'Connected' ? `Active (${networkDiagnostics.latency}ms)` : 'Offline'}
-                  </span>
-                </span>
-                <span className="w-px h-3 bg-slate-800"></span>
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3 h-3 text-slate-500" /> User: <span className="text-blue-400 font-bold uppercase">{loginUser}</span>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    let targetModule = 'intro';
-                    if (appRoute === 'dashboard') targetModule = 'dashboard';
-                    else if (appRoute === 'consolidation') targetModule = 'consolidation';
-                    else if (appRoute === 'reco') targetModule = 'reco';
-                    else if (appRoute === 'tally') targetModule = 'tally';
-                    else if (appRoute === 'tally-direct') targetModule = 'tally-direct';
-                    else if (appRoute === 'tracker') targetModule = 'tracker';
-                    else if (appRoute === 'returns') targetModule = 'returns';
-                    else if (appRoute === 'ocr') targetModule = 'ocr';
-                    else if (appRoute === 'fin-statements') targetModule = 'fin-statements';
-                    else if (appRoute === 'gstin-scan') targetModule = 'gstin-scan';
-                    else if (appRoute === 'tds-reco') targetModule = 'tds-reco';
-                    else if (appRoute === 'cma') targetModule = 'cma';
-                    else if (appRoute === 'voucher-reclass') targetModule = 'voucher-reclass';
-                    else if (appRoute === 'depreciation') targetModule = 'depreciation';
-
-                    setGuideActiveModule(targetModule);
-                    setShowUserGuide(true);
-                  }}
-                  className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5"
-                  title="Open Help & User Guide"
-                >
-                  <BookOpen className="w-3.5 h-3.5" /> User Guide
-                </button>
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setShowAdmin(!showAdmin)}
-                    className="px-3.5 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
-                  >
-                    Admin Panel
-                  </button>
-                )}
-
-                <ThemeToggle />
-
-                <button
-                  onClick={handleLogout}
-                  className="p-2 text-slate-400 hover:text-rose-400 bg-slate-900/50 hover:bg-rose-500/10 border border-slate-800 rounded-lg transition-colors"
-                  title="Secure Session Logout"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </nav>
-
-          {/* DYNAMIC COMPONENT LOADER WRAPPER */}
-          <main className="container mx-auto px-6 pt-24 pb-12 relative z-10 min-h-[calc(100vh-4rem)] flex flex-col justify-start">
 
             {appRoute === 'hub' && (
               <div className="space-y-12 max-w-6xl mx-auto w-full animate-slow-reveal">
@@ -1811,7 +1912,7 @@ export default function Index() {
                             <Server className="w-6 h-6" />
                           </div>
                           <span className="px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black uppercase tracking-widest">
-                            2 Modules
+                            3 Modules
                           </span>
                         </div>
                         <div>
@@ -1824,7 +1925,7 @@ export default function Index() {
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
-                          {['01. Tally XML Converter', '02. Tally Direct Import'].map((mod, i) => (
+                          {['01. Tally XML Converter', '02. Tally Direct Import', '03. Tally Ledger Import'].map((mod, i) => (
                             <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-pink-500/20 text-slate-300">
                               {mod}
                             </span>
@@ -1907,6 +2008,43 @@ export default function Index() {
                       </div>
                       <div className="pt-4 border-t border-blue-500/15 flex items-center justify-between text-blue-400 text-xs font-bold">
                         <span>Open Suite 05</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+
+                    {/* Card 06: Bank Ratio Analysis & CMA Credit Suite */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('cma-bank')}
+                      className="glass-card-np neon-emerald p-6 md:p-7 rounded-3xl border border-cyan-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-cyan-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform shadow-lg shadow-cyan-500/5">
+                            <Landmark className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
+                            1 Module
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-bold">Suite 06</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-cyan-400 transition-colors">
+                            Bank Ratio Analysis &amp; CMA Credit Suite
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Underwriter-grade financial ratios, Tally XML normalization &amp; automated qualitative risk warnings.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. CMA Bank Credit & Ratio Engine'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-cyan-500/20 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-cyan-500/15 flex items-center justify-between text-cyan-400 text-xs font-bold">
+                        <span>Open Suite 06</span>
                         <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
@@ -2027,9 +2165,9 @@ export default function Index() {
                             </div>
                             <div className="mt-4">
                               <h4 className="text-base font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
-                                04. Offline Return Preparation <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+                                04. Returns Preparation & Filing <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
                               </h4>
-                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Validate registers offline &amp; auto-generate uploadable JSON returns.</p>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Master GSTR-3B monthly working, Rule 88A set-off cascade, &amp; portal returns.</p>
                             </div>
                           </div>
 
@@ -2223,7 +2361,7 @@ export default function Index() {
                             </div>
                             <div>
                               <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black uppercase tracking-widest">
-                                Suite 03 • 2 Modules
+                                Suite 03 • 3 Modules
                               </div>
                               <h3 className="text-2xl font-black text-white tracking-tight mt-1">Data Collector &amp; Connectors</h3>
                             </div>
@@ -2234,7 +2372,7 @@ export default function Index() {
                         </div>
 
                         {/* Modules inside Card 3 */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                           {/* 01. Tally Dual-Engine Converter */}
                           <div
@@ -2273,6 +2411,25 @@ export default function Index() {
                                 02. Tally Direct XML API Import <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-teal-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Connect directly to TallyPrime via XML API to auto-fetch ledgers &amp; vouchers.</p>
+                            </div>
+                          </div>
+
+                          {/* 03. Tally Ledger Voucher Import */}
+                          <div
+                            onClick={() => setAppRoute('ledger-import')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-purple-500/20 hover:border-purple-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px] relative"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <BookOpen className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-purple-500/80 uppercase tracking-widest">Module 3.3</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
+                                03. Tally Ledger Voucher Import <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Select specific Tally ledgers &amp; import complete transaction details &amp; entries.</p>
                             </div>
                           </div>
 
@@ -2410,6 +2567,52 @@ export default function Index() {
                       </div>
                     )}
 
+                    {/* CARD 6 DRILL-DOWN: BANK CMA SUITE */}
+                    {activeCategoryCard === 'cma-bank' && (
+                      <div className="glass-card-np neon-emerald p-6 md:p-8 rounded-3xl border border-cyan-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-cyan-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-500/5">
+                              <Landmark className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
+                                Suite 06 • 1 Module
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Bank Ratio Analysis &amp; CMA Credit Suite</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Underwriter-grade ratio analysis, Tally XML normalization, Tandon Committee Method II MPBF &amp; automated qualitative alerts.
+                          </p>
+                        </div>
+
+                        {/* Modules inside Card 6 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {/* 01. CMA Bank Credit & Ratio Engine */}
+                          <div
+                            onClick={() => setAppRoute('bank-cma')}
+                            className="p-5 rounded-2xl bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/50 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[160px]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Landmark className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-cyan-500/80 uppercase tracking-widest">Module 6.1</span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+                                01. CMA Bank Credit &amp; Ratio Engine <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-cyan-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Extract Tally TB, normalize to CMA standards, calculate 10 ratios &amp; generate qualitative risk warnings.</p>
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 )}
 
@@ -2428,6 +2631,8 @@ export default function Index() {
 
             {appRoute === 'tally-direct' && <TallyDirectImport onBack={() => setAppRoute('hub')} onImportToReconciliation={handleDirectTallyImport} />}
 
+            {appRoute === 'ledger-import' && <TallyLedgerImport onBack={() => setAppRoute('hub')} />}
+
             {appRoute === 'returns' && <ReturnsDashboard onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'ocr' && <ImageToExcel onBack={() => setAppRoute('hub')} />}
@@ -2441,6 +2646,8 @@ export default function Index() {
             {appRoute === 'tds-reco' && <TdsReconciliation onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'cma' && <CmaReport onBack={() => setAppRoute('hub')} />}
+
+            {appRoute === 'bank-cma' && <BankCmaAppraisal onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'voucher-reclass' && <VoucherReclassifier onBack={() => setAppRoute('hub')} />}
 
@@ -2488,7 +2695,9 @@ export default function Index() {
               ignoreSpecialChars={ignoreSpecialChars} setIgnoreSpecialChars={setIgnoreSpecialChars}
               handleReconcile={handleReconcile}
               handleExportMonthly={handleExportMonthly}
+              handleExportMonthlyDiff={handleExportMonthlyDiff}
               handleExportParty={handleExportParty}
+              handleExportDebitNotes={handleExportDebitNotes}
               handleReset={handleReset}
               handlePreparePipeline={handlePreparePipeline}
               handleBooksDragOver={handleBooksDragOver}
@@ -2500,7 +2709,8 @@ export default function Index() {
               twoBFile={twoBFile}
             />}
 
-          </main>
+          </div>
+        </AppShell>
 
           {/* FEEDBACK MODAL */}
           {showFeedback && (
@@ -2520,12 +2730,54 @@ export default function Index() {
             </div>
           )}
 
-        </div>
+        
 
         <UserGuideCenter
           isOpen={showUserGuide}
           onClose={() => setShowUserGuide(false)}
           initialModule={guideActiveModule}
+        />
+
+        <GDriveConnectModal
+          isOpen={isGDriveConnectOpen}
+          onClose={() => setIsGDriveConnectOpen(false)}
+        />
+
+        <RecoHistoryModal
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          onRestoreSession={(payload) => {
+            if (payload.results) {
+              setResults(payload.results);
+              safeSetItem('np_reco_results', JSON.stringify(payload.results));
+            }
+            if (payload.summary) {
+              setSummary(payload.summary);
+              safeSetItem('np_reco_summary', JSON.stringify(payload.summary));
+            }
+            if (payload.companyName) {
+              setCompanyName(payload.companyName);
+              safeSetItem('np_reco_company', payload.companyName);
+            }
+            setStep('results');
+            safeSetItem('np_reco_step', 'results');
+
+            const modName = payload.moduleName || (payload.moduleType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+            toast.success(`Restored ${modName}: ${payload.companyName || 'Company'} (${payload.financialYear || '2024-25'})`);
+            
+            if (payload.moduleType === 'tds-reco') {
+              setAppRoute('tds-reco');
+            } else if (payload.moduleType === 'consolidation') {
+              setAppRoute('consolidation');
+            } else if (payload.moduleType === 'cma') {
+              setAppRoute('cma');
+            } else if (payload.moduleType === 'returns') {
+              setAppRoute('returns');
+            } else {
+              setAppRoute('reco');
+            }
+          }}
+          onOpenConnectModal={() => setIsGDriveConnectOpen(true)}
         />
 
         {/* SERVER OFFLINE BLOCKER */}

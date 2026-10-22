@@ -217,14 +217,14 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Horizontal Audit Filters Bar */}
-      <div className="dash-card w-full silk-reveal overflow-hidden">
-        <div className="dash-topbar bg-[var(--np-bg3)] flex justify-between items-center px-4 py-2.5">
+      <div className="obsidian-card w-full overflow-hidden">
+        <div className="flex justify-between items-center px-4 py-2.5 border-b border-[#1E293B] bg-slate-900/60">
           <div className="flex items-center gap-2">
-            <LayoutGrid className="w-3.5 h-3.5 text-[var(--np-sky)]" />
-            <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Audit Filters</span>
+            <LayoutGrid className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest font-mono">Audit Filter Cockpit</span>
           </div>
-          <button onClick={handleExportCategory} className="btn-np-outline gap-1.5 !py-1 !px-3 text-[9px] uppercase tracking-widest font-bold">
-            <Download className="w-3 h-3" /> Export List
+          <button onClick={handleExportCategory} className="px-3 py-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-lg flex items-center gap-1.5 text-[9px] uppercase tracking-widest font-bold transition-all">
+            <Download className="w-3 h-3" /> Export Filtered
           </button>
         </div>
 
@@ -237,17 +237,17 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
                 key={cat.key}
                 onClick={() => setActive(cat.key)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 border group shrink-0',
+                  'flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all duration-200 border group shrink-0 text-xs font-semibold',
                   isActive
-                    ? 'bg-[var(--np-sky)]/15 border-[var(--np-sky)] text-[var(--np-sky)] shadow-[0_0_12px_rgba(74,158,232,0.2)]'
-                    : 'bg-white/[0.02] border-white/10 text-[var(--np-text3)] hover:bg-white/[0.06] hover:text-[var(--np-text2)]'
+                    ? 'bg-blue-600/20 border-blue-500 text-blue-300 shadow-[0_0_12px_rgba(59,130,246,0.25)]'
+                    : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 )}
               >
                 <Icon className={cn('w-3.5 h-3.5 transition-transform group-hover:scale-110', !isActive && cat.color)} />
-                <span className="text-[11px] font-bold uppercase tracking-wider">{cat.label}</span>
+                <span className="text-[11px] uppercase tracking-wider">{cat.label}</span>
                 <span className={cn(
-                  'text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded transition-all ml-0.5',
-                  isActive ? 'bg-[var(--np-sky)] text-white' : 'bg-white/10 text-[var(--np-text2)]'
+                  'text-[10px] font-mono font-bold tabular-nums px-1.5 py-0.5 rounded-full transition-all ml-0.5',
+                  isActive ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
                 )}>
                   {cat.count}
                 </span>

@@ -10,7 +10,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 2: Spreadsheet Export Modularity & Memory Optimization** - Modularize `fileParser.ts` and optimize 12-month consolidated Excel generation. (completed 2026-10-22)
 - [x] **Phase 3: Automated Scrutiny Tests & Audit Trail Hardening** - Add end-to-end unit tests for batch solvers and implement immutable force-match audit logging. (completed 2026-10-22)
 - [x] **Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening** - Harden 1-login 12-month autonomous loop, zero data loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny tests. (completed 2026-10-22)
-- [ ] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules.
+- [x] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules. (completed 2026-10-22)
 
 ## Phase Details
 
@@ -91,11 +91,11 @@ Plans:
   3. Live System Status HUD in the shell displays active database status, Tally connection state, and current client/FY context.
   4. High-density financial table styles (sticky headers, monospace tabular figures, compact padding, clear status chips) are standardized.
 
-**Plans**: 0/2 plans complete
+**Plans**: 2/2 plans complete
 
 Plans:
-- [ ] 05-01: Persistent App Shell component with collapsible sidebar, topbar HUD, and integrated routing in `Index.tsx`
-- [ ] 05-02: Obsidian Glass theme tokens, high-density table styles, and module-wide visual elevation
+- [x] 05-01: Persistent App Shell component with collapsible sidebar, topbar HUD, and integrated routing in `Index.tsx`
+- [x] 05-02: Obsidian Glass theme tokens, high-density table styles, and module-wide visual elevation
 
 ---
 *Roadmap defined: 2026-10-22*

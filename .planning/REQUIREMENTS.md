@@ -54,10 +54,10 @@
 
 ### Enterprise UI/UX Design System & Persistent Shell (Phase 5)
 
-- [ ] **UI-01**: Implement Persistent App Shell with collapsible sidebar, active client & FY indicators, and status HUD
-- [ ] **UI-02**: Modernize centralized Obsidian Glass design tokens in `src/index.css` (high contrast, crisp borders, dark palette)
-- [ ] **UI-03**: Standardize high-density financial table components with sticky headers and monospace tabular figures
-- [ ] **UI-04**: Global Quick Command palette (`Ctrl+K`) for instantaneous module navigation without state loss
+- [x] **UI-01**: Implement Persistent App Shell with collapsible sidebar, active client & FY indicators, and status HUD
+- [x] **UI-02**: Modernize centralized Obsidian Glass design tokens in `src/index.css` (high contrast, crisp borders, dark palette)
+- [x] **UI-03**: Standardize high-density financial table components with sticky headers and monospace tabular figures
+- [x] **UI-04**: Global Quick Command palette (`Ctrl+K`) for instantaneous module navigation without state loss
 
 ## Out of Scope
 
@@ -86,10 +86,10 @@
 | G2B-02 | Phase 4 | Complete |
 | G2B-03 | Phase 4 | Complete |
 | G2B-04 | Phase 4 | Complete |
-| UI-01 | Phase 5 | Pending |
-| UI-02 | Phase 5 | Pending |
-| UI-03 | Phase 5 | Pending |
-| UI-04 | Phase 5 | Pending |
+| UI-01 | Phase 5 | Complete |
+| UI-02 | Phase 5 | Complete |
+| UI-03 | Phase 5 | Complete |
+| UI-04 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 8 total
