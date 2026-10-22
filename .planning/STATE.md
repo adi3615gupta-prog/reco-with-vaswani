@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening
-status: in_progress
-stopped_at: Discussing Phase 4
-last_updated: "2026-10-22T12:57:00.000Z"
+status: complete
+stopped_at: Phase 4 complete (all 4 phases verified)
+last_updated: "2026-10-22T14:35:00.000Z"
 last_activity: 2026-10-22
-last_activity_desc: Starting Phase 4 discussion on GSTR-2B Autopilot hardening and audit
+last_activity_desc: Phase 04 executed and verified (13/13 GSTR-2B scrutiny tests passing, 0 type errors, all requirements met)
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -22,14 +22,50 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-10-22)
 
 **Core value:** Audit-grade, high-precision reconciliation and statutory tax computation that eliminates double-counting, strictly guarantees zero merged cells in analytical workbooks, and runs completely locally and securely.
-**Current focus:** Phase 4 — GSTR-2B Downloader (Autopilot) Deep Audit & Hardening
+**Current focus:** Phase 4 Complete — All 4 Phases Executed and Verified
 
 ## Current Position
 
 Phase: 4 — GSTR-2B Downloader (Autopilot) Deep Audit & Hardening
-Plan: Ready to Execute (04-01 and 04-02 verified)
-Status: In Progress
-Last activity: 2026-10-22 — Phase 04 Planning complete (Verdict: PASSED, 2 plans created)
+Plan: Complete (04-01 and 04-02 verified)
+Status: Completed
+Last activity: 2026-10-22 — Phase 04 verified (Verdict: PASSED, 13/13 GSTR-2B tests passing)
+
+Progress: [██████████] 100%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 9
+- Average duration: -
+- Total execution time: -
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 01 | 3 | Complete | - |
+| 02 | 2 | Complete | - |
+| 03 | 2 | Complete | - |
+| 04 | 2 | Complete | - |
+
+*Updated after each plan completion*
+
+## Accumulated Context
+
+### Decisions
+
+Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- [Phase 04]: Non-blocking 12-month autonomous loop in `gstr2b/autopilot.js` with per-month `try/catch` isolation, amber warning banner (`#f59e0b`), and partial month sync reporting ("11/12 Synced").
+- [Phase 04]: Dropdown selection stability handles Angular digest cycle delays with retry checks and triggers `new Event('change')`.
+- [Phase 04]: Golden Rule strictly enforced in `gstr2b/db.js`: `bulkSaveGstr2bInvoices` guards empty arrays, never deleting or truncating existing client records on failed/timed-out downloads.
+- [Phase 04]: Confirmed Nil returns explicitly recorded as `NIL_SYNCED` with `total_invoices = 0` via `markGstr2bMonthNilSynced`, distinct from unconfirmed or timed-out downloads which remain `PENDING`.
+- [Phase 04]: `POST /api/gstr2b/cancel` endpoint and `req.on('close')` abort listener implemented to ensure clean termination of Playwright Chromium instances on Windows.
+- [Phase 04]: Strict Zero-Merge Architecture (`ws['!merges'] = []`) enforced across all 8 sheets in `fullYearExcel.js` and `src/lib/gstr2bFullYearExport.ts`, with defense-in-depth helper `removeAllMergesFromWorkbook(wb)`.
+- [Phase 04]: Side-by-side Monthly summary matrix (Cols AA–AW) and Party-wise summary matrix (Cols AZ–BV) maintain strict mathematical identity: $\text{Net} = \text{B2B} - \text{CDNR}$.
+- [Phase 04]: Comprehensive Vitest scrutiny test suite (`src/test/gstr2bScrutiny.test.ts`) achieves 100% pass rate (11/11 tests) validating parsers, Table 4 statutory ITC recalculation, zero-merge guarantees, and non-destructive database storage.
 
 Progress: [██████████] 100%
 
