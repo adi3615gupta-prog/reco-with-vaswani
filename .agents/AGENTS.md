@@ -141,6 +141,7 @@
   - **1-LOGIN 12-MONTH AUTOPILOT WITH NON-BLOCKING RESILIENCE:** Taxpayer ko 12 alag alag CAPTCHA fill nahi karne padte; ek hi baar login hone ke baad portal session me April se March tak ka period select karke download karta hai. Agar kisi single month me portal delay ya glitch aaye, autopilot us month ko `FAILED` log karta hai, purana data preserve rakhta hai, aur remaining months continue karta hai (e.g. `11/12 Synced`).
   - **GOLDEN RULE DATA PRESERVATION ("New data download nahi toh purana data remove nahi hoga"):** Download failure ya timeout par existing 2B invoices aur batches kabhi delete ya truncate nahi hote.
   - **NIL RETURN EXPLICIT DISTINCTION:** Portal confirmed 0 records par hi batch ko `NIL_SYNCED` (total_invoices = 0) mark karta hai via `markGstr2bMonthNilSynced`; unconfirmed timeouts `PENDING` rehte hain.
+  - **STRICT ON-SCREEN BACK BUTTON NAVIGATION:** Download screen se return search dashboard par wapas aane ke liye autopilot sirf aur sirf on-screen official `BACK` button target karta hai; breadcrumbs ya browser back navigation use nahi karta taaki portal session state intact rahe.
   - **CLEAN PROCESS CANCELLATION:** Modal close ya cancellation par `POST /api/gstr2b/cancel` Playwright Chromium instances ko Windows par cleanly kill karta hai.
 
 ### B. File Map & Exact Line Reference
