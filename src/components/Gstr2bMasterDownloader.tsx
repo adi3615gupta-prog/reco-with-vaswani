@@ -94,6 +94,32 @@ interface Gstr2bMasterDownloaderProps {
   currentGstin?: string;
 }
 
+const normalizeReturnPeriod = (periodStr?: string, idt?: string): string => {
+  if (periodStr) {
+    const clean = periodStr.replace(',', '').trim();
+    if (/^\d{6}$/.test(clean)) {
+      const mm = parseInt(clean.slice(0, 2), 10) - 1;
+      const yyyy = clean.slice(2);
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      if (mm >= 0 && mm < 12) {
+        return `${monthNames[mm]} ${yyyy}`;
+      }
+    }
+    return clean;
+  }
+  if (idt) {
+    const parts = idt.split('-');
+    if (parts.length === 3) {
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      if (monthIdx >= 0 && monthIdx < 12) {
+        return `${monthNames[monthIdx]} ${parts[2]}`;
+      }
+    }
+  }
+  return '';
+};
+
 export default function Gstr2bMasterDownloader({
   selectedMonth,
   financialYear,
