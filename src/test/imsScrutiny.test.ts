@@ -185,4 +185,40 @@ describe('IMS (Invoice Management System) Scrutiny & Statutory Tests', () => {
       }
     });
   });
+
+  describe('4. Nil Inward Supplies & "No Records in IMS" Error Detection', () => {
+    it('detects portal error string: "The JSON file cannot be generated as no records are available in IMS to download"', () => {
+      const errorText = '×Error! The JSON file cannot be generated as no records are available in IMS to download.';
+      const upper = errorText.toUpperCase();
+      const isNoRecords = upper.includes('NO RECORDS ARE AVAILABLE IN IMS TO DOWNLOAD') ||
+                          upper.includes('CANNOT BE GENERATED AS NO RECORDS ARE AVAILABLE') ||
+                          (upper.includes('ERROR') && upper.includes('NO RECORDS ARE AVAILABLE'));
+      expect(isNoRecords).toBe(true);
+    });
+
+    it('detects alternative phrasing of no records error on GST Portal', () => {
+      const texts = [
+        'Error! The JSON file cannot be generated as no records are available in IMS to download.',
+        '×Error! Cannot be generated as no records are available',
+        'Warning: No records are available in IMS to download.'
+      ];
+      for (const t of texts) {
+        const upper = t.toUpperCase();
+        const matches = upper.includes('NO RECORDS ARE AVAILABLE IN IMS TO DOWNLOAD') ||
+                        upper.includes('CANNOT BE GENERATED AS NO RECORDS ARE AVAILABLE') ||
+                        (upper.includes('ERROR') && upper.includes('NO RECORDS ARE AVAILABLE'));
+        expect(matches).toBe(true);
+      }
+    });
+
+    it('correctly handles calculate3BTable4FromIms with zero/empty invoice records', () => {
+      const result = calculate3BTable4FromIms([]);
+      expect(result.itc2b.taxable).toBe(0);
+      expect(result.itc2b.igst).toBe(0);
+      expect(result.itc2b.total).toBe(0);
+      expect(result.metrics.totalInvoices).toBe(0);
+      expect(result.metrics.acceptedCount).toBe(0);
+      expect(result.metrics.eligibleItcTotal).toBe(0);
+    });
+  });
 });

@@ -1604,7 +1604,7 @@ export default function setupImsRoutes(app, db) {
                     if (fileName.toLowerCase().endsWith('.zip')) {
                         console.log(`[IMS Automation] Detected ZIP download: ${fileName}. Extracting & parsing...`);
                         const zipInvoices = await parseImsZipHelper(filePath, gstin, returnPeriod);
-                        if (zipInvoices.length > 0) {
+                        if (Array.isArray(zipInvoices)) {
                             capturedJson = zipInvoices;
                             console.log(`[IMS Automation] Successfully extracted ${zipInvoices.length} invoices from ZIP archive!`);
                         }
@@ -1614,7 +1614,7 @@ export default function setupImsRoutes(app, db) {
                     } else if (fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls')) {
                         console.log(`[IMS Automation] Parsing downloaded Excel file: ${fileName}`);
                         const excelInvoices = parseImsExcelHelper(filePath, gstin, returnPeriod);
-                        if (excelInvoices.length > 0) {
+                        if (Array.isArray(excelInvoices)) {
                             capturedJson = excelInvoices;
                         }
                     }
@@ -1744,7 +1744,7 @@ export default function setupImsRoutes(app, db) {
             const gstinUpper = (gstin || '').trim().toUpperCase();
 
             // Helper to check disk for recent download (scratch folder or user Downloads folder for ZIP, JSON, or Excel)
-            const checkDiskForDownload = async () => {
+            const checkDiskForDownload = async (allowEmpty = false) => {
                 const checkFolder = async (folderPath) => {
                     if (!fs.existsSync(folderPath)) return null;
                     let files = [];
@@ -1782,14 +1782,14 @@ export default function setupImsRoutes(app, db) {
                         try {
                             if (lower.endsWith('.zip')) {
                                 const invs = await parseImsZipHelper(item.path, gstinUpper, returnPeriod);
-                                if (invs && invs.length > 0) return invs;
+                                if (invs && (invs.length > 0 || allowEmpty)) return invs;
                             } else if (lower.endsWith('.json')) {
                                 const raw = JSON.parse(fs.readFileSync(item.path, 'utf8'));
                                 const invs = parseImsJsonHelper(raw, gstinUpper, returnPeriod);
-                                if (invs && invs.length > 0) return invs;
+                                if (invs && (invs.length > 0 || allowEmpty)) return invs;
                             } else if (lower.endsWith('.xlsx')) {
                                 const invs = parseImsExcelHelper(item.path, gstinUpper, returnPeriod);
-                                if (invs && invs.length > 0) return invs;
+                                if (invs && (invs.length > 0 || allowEmpty)) return invs;
                             }
                         } catch (e) {}
                     }
@@ -1809,6 +1809,8 @@ export default function setupImsRoutes(app, db) {
             let lastNavStep = '';
             let isGenerationRequested = false;
             let generationRequestedTimestamp = null;
+            let hasNoRecordsInIms = false;
+            let noRecordsNotice = '';
 
             while (!capturedJson && (Date.now() - startTime < 180000)) {
                 if (page.isClosed()) {
@@ -1958,8 +1960,8 @@ export default function setupImsRoutes(app, db) {
                                 for (let w = 0; w < 10; w++) {
                                     await page.waitForTimeout(1000);
                                     if (capturedJson) break;
-                                    const diskInvs = await checkDiskForDownload();
-                                    if (diskInvs && diskInvs.length > 0) {
+                                    const diskInvs = await checkDiskForDownload(true);
+                                    if (diskInvs && Array.isArray(diskInvs)) {
                                         capturedJson = diskInvs;
                                         break;
                                     }
@@ -1992,6 +1994,125 @@ export default function setupImsRoutes(app, db) {
                             await updateStatusBanner('⏳ Phase 2: Waiting for generated download link in table...', '#10b981');
                             await page.waitForTimeout(3000);
                             continue;
+                        }
+
+                        // ─── ERROR & NO RECORDS DETECTION HELPER ───
+                        const checkForNoRecordsError = async () => {
+                            return await page.evaluate(() => {
+                                const bodyText = (document.body.innerText || '').toUpperCase();
+                                return bodyText.includes('NO RECORDS ARE AVAILABLE IN IMS TO DOWNLOAD') ||
+                                       bodyText.includes('CANNOT BE GENERATED AS NO RECORDS ARE AVAILABLE') ||
+                                       (bodyText.includes('ERROR') && bodyText.includes('NO RECORDS ARE AVAILABLE'));
+                            }).catch(() => false);
+                        };
+
+                        // ─── DOWNLOAD EXISTING FILE FROM TABLE HELPER ───
+                        const attemptDownloadExistingFile = async () => {
+                            console.log('[IMS Automation] Checking table under "Download Data for IMS- Inward Supplies" for existing file...');
+                            let clickedDl = false;
+
+                            const dlLocators = [
+                                'table tr td a:has-text("Click here to download file")',
+                                'table tr td a:has-text("Click here to download")',
+                                'table tr td a:has-text("Click here")',
+                                'table tr td a:has-text("Download file")',
+                                'table tr td a:has-text("Download JSON")',
+                                'table tbody tr td a',
+                                'table tr td a',
+                                'a:has-text("Click here to download file")',
+                                'a:has-text("Click here to download")'
+                            ];
+
+                            for (const sel of dlLocators) {
+                                try {
+                                    const dlEl = page.locator(sel).first();
+                                    if (await dlEl.isVisible({ timeout: 1200 })) {
+                                        const text = (await dlEl.innerText().catch(() => '')).trim();
+                                        const isNavTab = await dlEl.evaluate(el => Boolean(el.closest('.nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5'))).catch(() => false);
+                                        if (!isNavTab && text.toLowerCase() !== 'download' && text.toLowerCase() !== 'upload' && !text.toLowerCase().includes('download data for ims')) {
+                                            console.log(`[IMS Automation] Found existing file download link (${sel}: "${text}"). Clicking...`);
+                                            await dlEl.scrollIntoViewIfNeeded().catch(() => {});
+                                            await dlEl.click({ force: true });
+                                            clickedDl = true;
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {}
+                            }
+
+                            if (!clickedDl) {
+                                clickedDl = await page.evaluate(() => {
+                                    const tableLinks = Array.from(document.querySelectorAll('table tbody tr td a, table tr td a'));
+                                    const tblDl = tableLinks.find(el => {
+                                        if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
+                                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                        return t.includes('download') || t.includes('click here');
+                                    });
+                                    if (tblDl) {
+                                        tblDl.click();
+                                        return true;
+                                    }
+
+                                    const allLinks = Array.from(document.querySelectorAll('a'));
+                                    const clickHere = allLinks.find(el => {
+                                        if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
+                                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                        return t.includes('click here to download file') || t.includes('click here to download');
+                                    });
+                                    if (clickHere) {
+                                        clickHere.click();
+                                        return true;
+                                    }
+                                    return false;
+                                }).catch(() => false);
+                            }
+
+                            if (clickedDl) {
+                                console.log('[IMS Automation] Triggered download for existing file in table. Waiting up to 12s for arrival...');
+                                await updateStatusBanner('Step 4/4: Downloading existing IMS file from table...', '#10b981');
+                                for (let w = 0; w < 12; w++) {
+                                    await page.waitForTimeout(1000);
+                                    if (capturedJson) break;
+                                    const diskInvs = await checkDiskForDownload(true);
+                                    if (diskInvs && Array.isArray(diskInvs)) {
+                                        capturedJson = diskInvs;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                console.log('[IMS Automation] No existing file download link found in table.');
+                            }
+
+                            return Boolean(capturedJson);
+                        };
+
+                        const handleNoRecordsScenario = async () => {
+                            console.log('[IMS Automation] Detected GST Portal Notice: "The JSON file cannot be generated as no records are available in IMS to download."');
+                            await updateStatusBanner('Notice: No records in IMS to generate. Checking table for existing file...', '#f59e0b');
+
+                            // 1. Download existing file from table under "Download Data for IMS- Inward Supplies"
+                            await attemptDownloadExistingFile();
+
+                            if (capturedJson && Array.isArray(capturedJson) && capturedJson.length > 0) {
+                                console.log(`[IMS Automation] Successfully downloaded existing file with ${capturedJson.length} invoices.`);
+                                noRecordsNotice = `The JSON file cannot be generated as no records are available in IMS to download. Downloaded existing file (${capturedJson.length} invoices).`;
+                            } else {
+                                console.log('[IMS Automation] No existing file in table or 0 records. Batch will be marked SYNCED with 0 records.');
+                                noRecordsNotice = 'The JSON file cannot be generated as no records are available in IMS to download.';
+                            }
+
+                            // Strictly prevent false 20-minute wait
+                            hasNoRecordsInIms = true;
+                            isGenerationRequested = false;
+
+                            await updateStatusBanner('⚠️ The JSON file cannot be generated as no records are available in IMS to download.', '#f59e0b');
+                            await page.waitForTimeout(3000);
+                        };
+
+                        // Check if error is already present before clicking
+                        if (await checkForNoRecordsError()) {
+                            await handleNoRecordsScenario();
+                            break;
                         }
 
                         // ─── CASE B: PHASE 1 (FRESH DOWNLOAD GENERATION REQUEST) ───
@@ -2085,6 +2206,12 @@ export default function setupImsRoutes(app, db) {
                         await page.waitForTimeout(1000);
                         await dismissConfirmationModal();
 
+                        // Check if portal returned "no records available in IMS" error after 1st click
+                        if (await checkForNoRecordsError()) {
+                            await handleNoRecordsScenario();
+                            break;
+                        }
+
                         // 2nd Click (ek bar aur click karna hai taki fresh new request initiate ho)
                         console.log('[IMS Automation] [Phase 1] Re-clicking "GENERATE JSON FILE TO DOWNLOAD" (2nd click) to register fresh request...');
                         await updateStatusBanner('Phase 1: Registering new request on GST portal...', '#8b5cf6');
@@ -2093,6 +2220,12 @@ export default function setupImsRoutes(app, db) {
 
                         // Auto-dismiss confirmation modal if GST portal shows one ("Request Accepted", etc.)
                         await dismissConfirmationModal();
+
+                        // Check if portal returned "no records available in IMS" error after 2nd click
+                        if (await checkForNoRecordsError()) {
+                            await handleNoRecordsScenario();
+                            break;
+                        }
 
                         // File generation queued by GST portal
                         console.log('[IMS Automation] File generation queued by GST Portal (~20m wait). Closing browser and saving state...');
@@ -2270,10 +2403,10 @@ export default function setupImsRoutes(app, db) {
                     ? capturedJson
                     : parseImsJsonHelper(capturedJson, gstin, returnPeriod);
 
-                if (invoices && invoices.length > 0) {
-                    const batchId = randomUUID();
-                    const now = Date.now();
+                const batchId = randomUUID();
+                const now = Date.now();
 
+                if (invoices && invoices.length > 0) {
                     await new Promise((resolve, reject) => {
                         db.serialize(() => {
                             db.run('BEGIN TRANSACTION');
@@ -2324,22 +2457,37 @@ export default function setupImsRoutes(app, db) {
 
                     await recalculateBatchMetrics(gstin, returnPeriod);
                 } else {
-                    console.log(`[IMS Automation] No valid invoices extracted for ${gstin}`);
+                    console.log(`[IMS Automation] Downloaded file has 0 invoices for ${gstin}. Marking batch SYNCED with 0 records.`);
+                    await new Promise((resolve) => {
+                        db.run(`
+                            INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
+                            VALUES (?, ?, ?, 'SYNCED', 'DOWNLOADED', 0, 0, 0, 0, 0, ?, ?)
+                            ON CONFLICT(client_gstin, return_period) DO UPDATE SET 
+                                status = 'SYNCED',
+                                generation_status = 'DOWNLOADED',
+                                total_invoices = 0,
+                                no_action_count = 0,
+                                accepted_count = 0,
+                                rejected_count = 0,
+                                pending_count = 0,
+                                updated_at = ?
+                        `, [batchId, gstin, returnPeriod, now, now, now], () => resolve(true));
+                    });
                 }
 
-                // Show success in banner
-                await page.evaluate(({ count }) => {
+                // Show success or notice in banner
+                await page.evaluate(({ count, notice }) => {
                     const banner = document.getElementById('antigravity-ims-banner');
                     if (banner) {
-                        banner.style.background = '#059669';
+                        banner.style.background = notice ? '#d97706' : '#059669';
                         banner.innerHTML = `
                             <div style="display:flex;align-items:center;gap:10px;">
-                                <span style="font-weight:bold;font-size:14px;">🎉 SUCCESS!</span>
-                                <span>Captured and synced <strong>${count} inward invoices</strong> into Antigravity! Closing browser...</span>
+                                <span style="font-weight:bold;font-size:14px;">${notice ? '⚠️ NOTICE' : '🎉 SUCCESS!'}</span>
+                                <span>${notice || `Captured and synced <strong>${count} inward invoices</strong> into Antigravity!`} Closing browser...</span>
                             </div>
                         `;
                     }
-                }, { count: invoices.length });
+                }, { count: (invoices || []).length, notice: noRecordsNotice });
 
                 await page.waitForTimeout(3000);
                 await browser.close().catch(() => {});
@@ -2347,10 +2495,45 @@ export default function setupImsRoutes(app, db) {
                 return res.json({
                     success: true,
                     phaseResult: 'DOWNLOADED',
-                    message: `Successfully captured & synced ${invoices.length} IMS inward invoices from GST Portal!`,
+                    message: noRecordsNotice || `Successfully captured & synced ${(invoices || []).length} IMS inward invoices from GST Portal!`,
+                    noRecordsWarning: Boolean(noRecordsNotice),
+                    warning: noRecordsNotice,
                     gstin,
                     period: returnPeriod,
-                    invoiceCount: invoices.length
+                    invoiceCount: (invoices || []).length
+                });
+            } else if (hasNoRecordsInIms) {
+                await browser.close().catch(() => {});
+                activeBrowserInstance = null;
+
+                const batchId = randomUUID();
+                const now = Date.now();
+
+                await new Promise((resolve) => {
+                    db.run(`
+                        INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
+                        VALUES (?, ?, ?, 'SYNCED', 'NO_RECORDS', 0, 0, 0, 0, 0, ?, ?)
+                        ON CONFLICT(client_gstin, return_period) DO UPDATE SET 
+                            status = 'SYNCED',
+                            generation_status = 'NO_RECORDS',
+                            total_invoices = 0,
+                            no_action_count = 0,
+                            accepted_count = 0,
+                            rejected_count = 0,
+                            pending_count = 0,
+                            updated_at = ?
+                    `, [batchId, gstin, returnPeriod, now, now, now], () => resolve(true));
+                });
+
+                return res.json({
+                    success: true,
+                    phaseResult: 'NO_RECORDS',
+                    gstin,
+                    period: returnPeriod,
+                    invoiceCount: 0,
+                    noRecordsWarning: true,
+                    warning: 'The JSON file cannot be generated as no records are available in IMS to download.',
+                    message: 'The JSON file cannot be generated as no records are available in IMS to download.'
                 });
             } else if (isGenerationRequested) {
                 await browser.close().catch(() => {});

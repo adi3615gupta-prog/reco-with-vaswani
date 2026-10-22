@@ -1318,6 +1318,8 @@ export default function ImsMasterManager({
             generation_requested_at: reqTime
           } : c));
           setBatchPhase('WAITING_20_MIN');
+        } else if (data.phaseResult === 'NO_RECORDS' || data.noRecordsWarning || data.warning) {
+          toast.warning(data.message || 'The JSON file cannot be generated as no records are available in IMS to download.', { id: toastId, duration: 8000 });
         } else {
           toast.success(data.message || `Successfully synced ${data.invoiceCount} invoices for ${portalGstin}!`, { id: toastId });
         }
@@ -1387,6 +1389,8 @@ export default function ImsMasterManager({
             generation_requested_at: reqTime
           } : c));
           setBatchPhase('WAITING_20_MIN');
+        } else if (data.phaseResult === 'NO_RECORDS' || data.noRecordsWarning || data.warning) {
+          toast.warning(data.message || 'The JSON file cannot be generated as no records are available in IMS to download.', { id: toastId, duration: 8000 });
         } else {
           toast.success(data.message || `Successfully synced ${data.invoiceCount} invoices for ${client?.trade_name || gstin}!`, { id: toastId });
         }
@@ -1583,7 +1587,11 @@ export default function ImsMasterManager({
               status: 'SUCCESS',
               invoiceCount: data.invoiceCount || 0
             } : q));
-            toast.success(`✓ Synced ${item.trade_name} (${data.invoiceCount || 0} invoices)!`, { id: toastId });
+            if (data.phaseResult === 'NO_RECORDS' || data.noRecordsWarning || data.warning) {
+              toast.warning(`Notice for ${item.trade_name}: ${data.message || 'The JSON file cannot be generated as no records are available in IMS to download.'}`, { id: toastId, duration: 8000 });
+            } else {
+              toast.success(`✓ Synced ${item.trade_name} (${data.invoiceCount || 0} invoices)!`, { id: toastId });
+            }
           }
           fetchSummary();
         } else {
@@ -1702,13 +1710,17 @@ export default function ImsMasterManager({
         });
 
         const data = await res.json();
-        if (res.ok && data.success && (data.phaseResult === 'DOWNLOADED' || data.invoiceCount > 0)) {
+        if (res.ok && data.success && (data.phaseResult === 'DOWNLOADED' || data.phaseResult === 'NO_RECORDS' || data.invoiceCount >= 0)) {
           setBatchQueue(prev => prev.map((q, i) => i === idx ? {
             ...q,
             status: 'SUCCESS',
             invoiceCount: data.invoiceCount || 0
           } : q));
-          toast.success(`✓ Downloaded ${item.trade_name} (${data.invoiceCount || 0} invoices)!`, { id: toastId });
+          if (data.phaseResult === 'NO_RECORDS' || data.noRecordsWarning || data.warning) {
+            toast.warning(`Notice for ${item.trade_name}: ${data.message || 'The JSON file cannot be generated as no records are available in IMS to download.'}`, { id: toastId, duration: 8000 });
+          } else {
+            toast.success(`✓ Downloaded ${item.trade_name} (${data.invoiceCount || 0} invoices)!`, { id: toastId });
+          }
           fetchSummary();
         } else if (res.ok && data.success && data.phaseResult === 'REQUESTED') {
           toast.warning(`GST portal still processing for ${item.trade_name}. You can retry shortly.`, { id: toastId });
