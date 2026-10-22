@@ -423,6 +423,24 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     } catch(e) {}
                 }
 
+                // 2B. If on quicklinks/returns URL -> Push directly to official Returns Dashboard URL!
+                if (curUrl.includes('quicklinks/returns')) {
+                    console.log('[GSTR-2B Autopilot] Landed on quicklinks/returns URL. Redirecting directly to https://return.gst.gov.in/returns/auth/dashboard ...');
+                    try {
+                        await page.goto('https://return.gst.gov.in/returns/auth/dashboard', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(async () => {
+                            await page.evaluate(() => {
+                                window.location.href = 'https://return.gst.gov.in/returns/auth/dashboard';
+                            });
+                        });
+                        await page.waitForTimeout(1000);
+                        await dismissPopups();
+                        if (await page.locator('select').count() >= 2) {
+                            return true;
+                        }
+                    } catch(e) {}
+                    continue;
+                }
+
                 // 3. If on GSTR-2B download page or inward details page -> Strictly click on-screen BACK button!
                 if (curUrl.includes('/download') || curUrl.includes('/inward/')) {
                     console.log('[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...');
@@ -465,6 +483,25 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                                 await backBtn.click({ timeout: 2000 }).catch(() => {});
                                 backClicked = true;
                                 console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via locator');
+                            }
+                        } catch(e) {}
+                    }
+
+                    // Check if clicking BACK took us to quicklinks/returns
+                    await page.waitForTimeout(600);
+                    const postClickUrl = page.url();
+                    if (postClickUrl.includes('quicklinks/returns')) {
+                        console.log('[GSTR-2B Autopilot] Clicked BACK and landed on quicklinks/returns. Pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...');
+                        try {
+                            await page.goto('https://return.gst.gov.in/returns/auth/dashboard', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(async () => {
+                                await page.evaluate(() => {
+                                    window.location.href = 'https://return.gst.gov.in/returns/auth/dashboard';
+                                });
+                            });
+                            await page.waitForTimeout(1000);
+                            await dismissPopups();
+                            if (await page.locator('select').count() >= 2) {
+                                return true;
                             }
                         } catch(e) {}
                     }

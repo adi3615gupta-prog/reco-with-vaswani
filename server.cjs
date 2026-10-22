@@ -70079,6 +70079,23 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           } catch (e) {
           }
         }
+        if (curUrl.includes("quicklinks/returns")) {
+          console.log("[GSTR-2B Autopilot] Landed on quicklinks/returns URL. Redirecting directly to https://return.gst.gov.in/returns/auth/dashboard ...");
+          try {
+            await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(async () => {
+              await page.evaluate(() => {
+                window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
+              });
+            });
+            await page.waitForTimeout(1e3);
+            await dismissPopups();
+            if (await page.locator("select").count() >= 2) {
+              return true;
+            }
+          } catch (e) {
+          }
+          continue;
+        }
         if (curUrl.includes("/download") || curUrl.includes("/inward/")) {
           console.log("[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...");
           let backClicked = false;
@@ -70118,6 +70135,24 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
                 });
                 backClicked = true;
                 console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via locator");
+              }
+            } catch (e) {
+            }
+          }
+          await page.waitForTimeout(600);
+          const postClickUrl = page.url();
+          if (postClickUrl.includes("quicklinks/returns")) {
+            console.log("[GSTR-2B Autopilot] Clicked BACK and landed on quicklinks/returns. Pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...");
+            try {
+              await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(async () => {
+                await page.evaluate(() => {
+                  window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
+                });
+              });
+              await page.waitForTimeout(1e3);
+              await dismissPopups();
+              if (await page.locator("select").count() >= 2) {
+                return true;
               }
             } catch (e) {
             }
