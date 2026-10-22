@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Download, Search, Info, ChevronDown, ChevronUp, Plus, Eye, RotateCcw } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
+import { AuditJustificationModal } from '@/components/AuditJustificationModal';
+import type { AuditActionType } from '@/lib/auditTrailService';
+import { ShieldCheck } from 'lucide-react';
 import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
 import { exportToXlsx } from '@/lib/fileParser';
 import { daysOldFrom, isLateFiler, deriveItcEligibility, taxRatePct, posCompliance, rule37Warning, actionableRemark } from '@/lib/compliance';
@@ -15,6 +18,7 @@ interface ResultsTableProps {
   companyName: string;
   mode?: 'input' | 'output';
   initialCollapsed?: boolean;
+  onResultsChange?: (newResults: ReconciliationResult[]) => void;
 }
 
 const ALL_STATUSES: MatchStatus[] = [
@@ -48,15 +52,35 @@ function getRowAccent(status: MatchStatus): string {
     case 'Name Matched (No GSTIN)':
     case 'Name Mismatch':
       return 'bg-yellow-500/10';
+    case 'Debit Note (Books)':
+    case 'Debit Note (Portal)':
+      return 'bg-amber-500/10';
     default:
       return '';
   }
 }
 
-export function ResultsTable({ results, companyName, mode = 'input', initialCollapsed = true }: ResultsTableProps) {
+export function ResultsTable({ results, companyName, mode = 'input', initialCollapsed = true, onResultsChange }: ResultsTableProps) {
   const [search, setSearch] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
   const [visibleCount, setVisibleCount] = useState<number>(150);
+
+  const [auditModalState, setAuditModalState] = useState<{
+    isOpen: boolean;
+    actionType: AuditActionType;
+    targetStatus: string;
+    originalStatus?: string;
+    prRecord?: any;
+    twoBRecord?: any;
+    clientGstin?: string;
+    taxableDiff?: number;
+    gstDiff?: number;
+    targetResult?: ReconciliationResult;
+  }>({
+    isOpen: false,
+    actionType: 'FORCE_MATCH',
+    targetStatus: 'Perfect Match',
+  });
 
   const filtered = useMemo(() => {
     let data = results;
@@ -163,7 +187,33 @@ export function ResultsTable({ results, companyName, mode = 'input', initialColl
                     
                     return (
                       <tr key={i} className={cn('group', getRowAccent(r.status))}>
-                        <td><StatusBadge status={r.status} /></td>
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={r.status} />
+                            {onResultsChange && isMismatch && (
+                              <button
+                                onClick={() => {
+                                  setAuditModalState({
+                                    isOpen: true,
+                                    actionType: 'FORCE_MATCH',
+                                    targetStatus: 'Perfect Match',
+                                    originalStatus: r.status,
+                                    prRecord: pr,
+                                    twoBRecord: tb,
+                                    clientGstin: pr?.gstin || tb?.gstin,
+                                    taxableDiff: r.taxableDiff,
+                                    gstDiff: r.gstDiff,
+                                    targetResult: r,
+                                  });
+                                }}
+                                title="Statutory Force Match with Justification"
+                                className="p-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-colors"
+                              >
+                                <ShieldCheck className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className="font-mono text-[11px] tracking-tight">{pr?.gstin || tb?.gstin || '—'}</td>
                         <td className="max-w-[180px] truncate font-bold text-[12px] text-[var(--np-text)]">{pr?.supplierName || tb?.supplierName}</td>
                         <td className="font-mono text-[11px]">{pr?.invoiceNo || '—'}</td>
@@ -252,6 +302,40 @@ export function ResultsTable({ results, companyName, mode = 'input', initialColl
           </div>
         </>
       )}
+
+      <AuditJustificationModal
+        isOpen={auditModalState.isOpen}
+        onClose={() => setAuditModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={(justification) => {
+          if (!onResultsChange || !auditModalState.targetResult) return;
+          const target = auditModalState.targetResult;
+          const updatedResults = results.map((item) => {
+            if (item === target) {
+              return {
+                ...item,
+                status: 'Perfect Match' as MatchStatus,
+                gstDiff: 0,
+                cgstDiff: 0,
+                sgstDiff: 0,
+                igstDiff: 0,
+                taxableDiff: 0,
+                remark: `Force Matched: ${justification}`,
+              };
+            }
+            return item;
+          });
+          onResultsChange(updatedResults);
+        }}
+        actionType={auditModalState.actionType}
+        targetStatus={auditModalState.targetStatus}
+        originalStatus={auditModalState.originalStatus}
+        prRecord={auditModalState.prRecord}
+        twoBRecord={auditModalState.twoBRecord}
+        companyName={companyName}
+        clientGstin={auditModalState.clientGstin}
+        taxableDiff={auditModalState.taxableDiff}
+        gstDiff={auditModalState.gstDiff}
+      />
     </div>
     </TooltipProvider>
   );

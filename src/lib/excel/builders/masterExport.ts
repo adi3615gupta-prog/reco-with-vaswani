@@ -85,6 +85,79 @@ export function appendRawDataInputSheets(
   }
 }
 
+
+export function appendAuditTrailSheet(
+  wb: XLSX.WorkBook,
+  auditLogs: any[],
+  companyName: string = 'Company',
+  tabs?: any[]
+): void {
+  if (!auditLogs || auditLogs.length === 0) return;
+
+  const cols = [
+    'Timestamp (ISO)',
+    'Practitioner Username',
+    'Action Type',
+    'Client Company',
+    'Counterparty GSTIN',
+    'Invoice No (Books)',
+    'Invoice No (2B)',
+    'Original Status',
+    'Overridden Status',
+    'Taxable Diff (₹)',
+    'GST Diff (₹)',
+    'Statutory Justification',
+  ];
+
+  const dataRows: (string | number | { t: string; v: number; z: string })[][] = auditLogs.map((log) => [
+    log.iso_timestamp || (log.timestamp ? new Date(log.timestamp).toISOString() : '—'),
+    log.practitioner_username || 'Local Practitioner',
+    log.action_type || 'FORCE_MATCH',
+    log.company_name || companyName || '—',
+    log.client_gstin || '—',
+    log.invoice_no_pr || '—',
+    log.invoice_no_2b || '—',
+    log.original_status || '—',
+    log.new_status || 'Perfect Match',
+    { t: 'n', v: Number(log.taxable_diff || 0), z: ACC_FMT },
+    { t: 'n', v: Number(log.gst_diff || 0), z: ACC_FMT },
+    log.justification || '—',
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws, [cols, ...dataRows], { origin: 'A3' });
+
+  addCorporateHeader(ws, cols.length, companyName, 'STATUTORY RECONCILIATION OVERRIDE AUDIT TRAIL', tabs);
+
+  const headerStyle = {
+    font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '1E293B' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: '475569' } },
+      bottom: { style: 'thin', color: { rgb: '475569' } },
+      left: { style: 'thin', color: { rgb: '475569' } },
+      right: { style: 'thin', color: { rgb: '475569' } },
+    },
+  };
+
+  const colWidths = autoFitCols(
+    cols,
+    dataRows.map((r) => r.map((c: any) => (typeof c === 'object' && c !== null ? c.v : c)))
+  );
+  ws['!cols'] = colWidths;
+
+  for (let c = 0; c < cols.length; c++) {
+    const cellRef = XLSX.utils.encode_cell({ r: 2, c });
+    if (ws[cellRef]) ws[cellRef].s = headerStyle;
+  }
+
+  // Strict Zero-Merge Guarantee
+  ws['!merges'] = [];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Audit Trail');
+}
+
 export function buildMasterWorkbook(
   results: Record<string, unknown>[],
   companyName?: string,
@@ -93,7 +166,8 @@ export function buildMasterWorkbook(
   gstr3bData?: any[],
   debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
   rawBooksData?: any[],
-  raw2bData?: any[]
+  raw2bData?: any[],
+  auditLogs?: any[]
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   const sheetNames: string[] = [];
@@ -311,6 +385,11 @@ export function buildMasterWorkbook(
     }
   }
 
+  if (auditLogs && auditLogs.length > 0) {
+    appendAuditTrailSheet(wb, auditLogs, companyName, tabs);
+    sheetNames.push('Audit Trail');
+  }
+
   appendGstinReports(wb, sheetNames, companyName, appliedGstins, conflicts, tabs);
 
   appendMethodologySheet(wb, companyName, tabs);
@@ -336,6 +415,7 @@ export function buildMasterWorkbook(
     'Party Summary',
     'Party Details',
     'Debit Notes Reconciled',
+    'Audit Trail',
     'Books Purchase & JV Data',
     'Portal GSTR-2B Data',
     'GST Pipeline',
@@ -365,272 +445,29 @@ export function exportToXlsx(
   gstr3bData?: any[],
   debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
   rawBooksData?: any[],
-  raw2bData?: any[]
+  raw2bData?: any[],
+  auditLogs?: any[]
 ) {
-  const wb = buildMasterWorkbook(results, companyName, appliedGstins, conflicts, gstr3bData, debitNotes, rawBooksData, raw2bData);
-  const sheetNames: string[] = [];
-
-  const tabs = [
-    { name: '🏠 Home', target: 'Dashboard' },
-    { name: '📊 Summary', target: 'Executive Summary' },
-    { name: '📋 All Records', target: 'All Records' },
-    { name: '🏢 Party', target: 'Party Summary' },
-    { name: '📖 Guide', target: '📖 Methodology & Legend' }
-  ];
-
-  for (const r of results) {
-    if (!r['Financial Year']) {
-      const fyPR = extractFY(r['Invoice Date (PR)'] as string);
-      const fy2B = extractFY(r['Invoice Date (2B)'] as string);
-      r['Financial Year'] = fyPR || fy2B || 'UNKNOWN';
-    }
-  }
-
-  const counts: Record<string, number> = {};
-  let totalGSTDiff = 0;
-  for (const r of results) {
-    const st = String(r['Status'] || 'Unknown');
-    counts[st] = (counts[st] || 0) + 1;
-    if (st !== 'Prior FY (Excluded)') {
-      totalGSTDiff += numVal(r['GST Diff']);
-    }
-  }
-  const breakdown = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([st, c]) => ({ label: st, value: c }));
-
-  const stats = [
-    { label: 'Total Records Analysed', value: results.length },
-    { label: 'Net GST Difference', value: `${totalGSTDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
-  ];
-
-  appendExecutiveSummary(wb, companyName, 'Reconciliation Summary', stats, breakdown, tabs);
-
-  appendRawDataInputSheets(wb, results, rawBooksData, raw2bData);
-
-  // 1. "All Records" summary sheet
-  const { cols: allCols, data: allData } = buildSheetRows(results);
-
-  const allBannerRow = allCols.map(c => {
-    const lower = c.toLowerCase();
-    if (lower.includes('(pr)') || lower.includes('tally') || lower.includes('books') || lower.includes('purchase')) {
-      return 'PURCHASE REGISTER (PR) BOOKS';
-    } else if (lower.includes('(2b)') || lower.includes('govt') || lower.includes('portal') || lower.includes('gstr2b') || lower.includes('comparison')) {
-      return 'GOVERNMENT GSTR-2B PORTAL';
-    } else if (lower.includes('diff') || lower.includes('mismatch') || lower.includes('variance')) {
-      return 'AUDIT VARIANCE ANALYSIS';
-    } else if (lower.includes('auditor action') || lower.includes('remark')) {
-      return 'AUDITOR INPUT';
-    } else if (lower.includes('status')) {
-      return 'STATUS';
-    }
-    return '';
-  });
-
-  const getL = (idx: number) => XLSX.utils.encode_col(idx);
-  const allDateCols = allCols.reduce((acc, key, i) => (key.includes('Date') ? [...acc, i] : acc), [] as number[]);
-  const allNumberCols = allCols.reduce((acc, key, i) => ((key.includes('GST') && !key.includes('GSTIN')) || key.includes('Diff') || key.includes('Tax') || key.includes('Value') ? [...acc, i] : acc), [] as number[]);
-
-  const allTotalRow = allCols.map((c, i) => (i === 0 ? 'GRAND TOTAL' : (allNumberCols.includes(i) ? { t: 'n', f: `SUM(${getL(i)}6:${getL(i)}${results.length + 5})`, z: ACC_FMT } : '')));
-  allData.unshift(allTotalRow);
-
-  const allWs = XLSX.utils.aoa_to_sheet([]);
-  XLSX.utils.sheet_add_aoa(allWs, [allBannerRow, allCols, ...allData], { origin: 'A3' });
-
-  addCorporateHeader(allWs, allCols.length, companyName, 'All Records', tabs);
-  applySheetStyles(allWs, DEFAULT_STYLE, results.length + 1, {
-    startRow: 3,
-    dateCols: allDateCols,
-    numberCols: allNumberCols,
-    colWidths: autoFitCols(allCols, allData.slice(1) as (string | number)[][]),
-    hasTopTotal: true
-  });
-
-  allWs['!views'] = [{ state: 'frozen', xSplit: 2, ySplit: 5 }];
-
-  const gstDiffColIdx = allCols.indexOf('GST Diff');
-  const igstPrIdx = allCols.indexOf('IGST (PR)');
-  const igst2bIdx = allCols.indexOf('IGST (2B)');
-  const cgstPrIdx = allCols.indexOf('CGST (PR)');
-  const cgst2bIdx = allCols.indexOf('CGST (2B)');
-  const sgstPrIdx = allCols.indexOf('SGST (PR)');
-  const sgst2bIdx = allCols.indexOf('SGST (2B)');
-
-  if (gstDiffColIdx >= 0) {
-    const range = XLSX.utils.decode_range(allWs['!ref'] || 'A1');
-    for (let R = 5; R <= range.e.r; R++) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: gstDiffColIdx });
-      const rowNum = R + 1;
-      if (igstPrIdx >= 0 && igst2bIdx >= 0 && cgstPrIdx >= 0 && cgst2bIdx >= 0 && sgstPrIdx >= 0 && sgst2bIdx >= 0) {
-        allWs[addr] = { t: 'n', f: `ABS(${getL(igstPrIdx)}${rowNum}-${getL(igst2bIdx)}${rowNum})+ABS(${getL(cgstPrIdx)}${rowNum}-${getL(cgst2bIdx)}${rowNum})+ABS(${getL(sgstPrIdx)}${rowNum}-${getL(sgst2bIdx)}${rowNum})`, z: ACC_FMT };
-      }
-    }
-  }
-
-  const actionColIdxAll = allCols.indexOf('Auditor Remark') >= 0 ? allCols.indexOf('Auditor Remark') : allCols.indexOf('Auditor Action');
-  if (actionColIdxAll >= 0) {
-    const letter = XLSX.utils.encode_col(actionColIdxAll);
-    allWs['!dataValidation'] = [{
-      sqref: `${letter}6:${letter}${results.length + 5}`,
-      type: 'list',
-      allowBlank: true,
-      showDropDown: true,
-      formula1: '"Pending,Resolved,Vendor Contacted,Hold Payment"'
-    }];
-  }
-
-  XLSX.utils.book_append_sheet(wb, allWs, 'All Records');
-
-  // 2. One sheet per status category
-  const grouped: Record<string, Record<string, unknown>[]> = {};
-  for (const r of results) {
-    const status = String(r['Status'] || 'Other');
-    if (!grouped[status]) grouped[status] = [];
-    grouped[status].push(r);
-  }
-
-  for (const status of Object.keys(grouped)) {
-    if (status === 'Unmatched Vendor') continue;
-
-    const sheetName = status.length > 31 ? status.slice(0, 31) : status;
-    sheetNames.push(sheetName);
-    let rows = grouped[status];
-    const { cols, data } = buildSheetRows(rows, status);
-
-    const gstDiffCol = cols.indexOf('GST Diff');
-    const ip = cols.indexOf('IGST (PR)'), ib = cols.indexOf('IGST (2B)');
-    const cp = cols.indexOf('CGST (PR)'), cb = cols.indexOf('CGST (2B)');
-    const sp = cols.indexOf('SGST (PR)'), sb = cols.indexOf('SGST (2B)');
-
-    for (let i = 0; i < data.length; i++) {
-      const rowNum = i + 6;
-      if (gstDiffCol >= 0) {
-        if (ip >= 0 && ib >= 0 && cp >= 0 && cb >= 0 && sp >= 0 && sb >= 0) {
-          data[i][gstDiffCol] = { t: 'n', f: `ABS(${getL(ip)}${rowNum}-${getL(ib)}${rowNum})+ABS(${getL(cp)}${rowNum}-${getL(cb)}${rowNum})+ABS(${getL(sp)}${rowNum}-${getL(sb)}${rowNum})`, z: ACC_FMT };
-        } else if (ib >= 0 && cb >= 0 && sb >= 0) {
-          data[i][gstDiffCol] = { t: 'n', f: `ABS(${getL(ib)}${rowNum})+ABS(${getL(cb)}${rowNum})+ABS(${getL(sb)}${rowNum})`, z: ACC_FMT };
-        } else if (ip >= 0 && cp >= 0 && sp >= 0) {
-          data[i][gstDiffCol] = { t: 'n', f: `ABS(${getL(ip)}${rowNum})+ABS(${getL(cp)}${rowNum})+ABS(${getL(sp)}${rowNum})`, z: ACC_FMT };
-        } else {
-          data[i][gstDiffCol] = numVal(rows[i]['GST Diff']);
-        }
-      }
-    }
-
-    const dateCols = cols.reduce((acc, key, i) => (key.includes('Date') ? [...acc, i] : acc), [] as number[]);
-    const numberCols = cols.reduce((acc, key, i) => ((key.includes('GST') && !key.includes('GSTIN')) || key.includes('Diff') || key.includes('Tax') || key.includes('Value') ? [...acc, i] : acc), [] as number[]);
-
-    const totalRow = cols.map((c, i) => (i === 0 ? 'GRAND TOTAL' : (numberCols.includes(i) ? { t: 'n', f: `SUM(${getL(i)}6:${getL(i)}${rows.length + 5})`, z: ACC_FMT } : '')));
-    data.unshift(totalRow);
-
-    const ws = XLSX.utils.aoa_to_sheet([]);
-
-    const bannerRow = cols.map(c => {
-      const lower = c.toLowerCase();
-      if (lower.includes('(pr)') || lower.includes('tally') || lower.includes('books') || lower.includes('purchase')) {
-        return 'PURCHASE REGISTER (PR) BOOKS';
-      } else if (lower.includes('(2b)') || lower.includes('govt') || lower.includes('portal') || lower.includes('gstr2b') || lower.includes('comparison')) {
-        return 'GOVERNMENT GSTR-2B PORTAL';
-      } else if (lower.includes('diff') || lower.includes('mismatch') || lower.includes('variance')) {
-        return 'AUDIT VARIANCE ANALYSIS';
-      } else if (lower.includes('auditor') || lower.includes('accountant') || lower.includes('remark') || lower.includes('action')) {
-        return 'AUDITOR & ACCOUNTANT INPUTS';
-      } else if (lower.includes('status')) {
-        return 'STATUS';
-      }
-      return '';
-    });
-
-    XLSX.utils.sheet_add_aoa(ws, [bannerRow, cols, ...data], { origin: 'A3' });
-    addCorporateHeader(ws, cols.length, companyName, `${status} Records`, tabs);
-    const style = STATUS_STYLES[status] || DEFAULT_STYLE;
-    applySheetStyles(ws, style, rows.length + 1, {
-      startRow: 3,
-      dateCols,
-      numberCols,
-      colWidths: autoFitCols(cols, data.slice(1) as (string | number)[][]),
-      hasTopTotal: true
-    });
-
-    ws['!views'] = [{ state: 'frozen', xSplit: 2, ySplit: 5 }];
-    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 3, c: 0 }, e: { r: rows.length + 3, c: cols.length - 1 } }) };
-
-    const actionColIdx = cols.indexOf('Auditor Remark') >= 0 ? cols.indexOf('Auditor Remark') : cols.indexOf('Auditor Action');
-    if (actionColIdx >= 0) {
-      const letter = XLSX.utils.encode_col(actionColIdx);
-      ws['!dataValidation'] = [{
-        sqref: `${letter}6:${letter}${rows.length + 5}`,
-        type: 'list',
-        allowBlank: true,
-        showDropDown: true,
-        formula1: '"Pending,Resolved,Vendor Contacted,Hold Payment"'
-      }];
-    }
-
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  }
-
-  // 3. Party-wise sheets
-  appendPartyWiseSheets(wb, results, companyName, tabs, debitNotes);
-  sheetNames.push('Party Summary', 'Party Details');
-
-  if (debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0))) {
-    const dnResult = reconcileDebitNotes(debitNotes.pr || [], debitNotes.twoB || []);
-    if (dnResult.reconciledRows && dnResult.reconciledRows.length > 0) {
-      const wsDn21 = buildDebitNotes21ColSheet(dnResult.reconciledRows, companyName);
-      XLSX.utils.book_append_sheet(wb, wsDn21, 'Debit Notes Reconciled');
-      sheetNames.push('Debit Notes Reconciled');
-    }
-  }
-
-  appendGstinReports(wb, sheetNames, companyName, appliedGstins, conflicts, tabs);
-
-  appendMethodologySheet(wb, companyName, tabs);
-  sheetNames.push('📖 Methodology & Legend');
-
-  appendNavigationSheet(wb, sheetNames, companyName, stats, breakdown);
-
-  const preferredOrder = [
-    'Dashboard',
-    'Executive Summary',
-    '📖 Methodology & Legend',
-    'All Records',
-    'Perfect Match',
-    'Matched (Diff Date)',
-    'Value Mismatch',
-    'Not in 2B',
-    'Missing in 2B',
-    'Not in Books',
-    'Missing in PR',
-    'Name Mismatch',
-    'Wrong GSTIN',
-    'Prior FY (Excluded)',
-    'Party Summary',
-    'Party Details',
-    'Debit Notes Reconciled',
-    'Books Purchase & JV Data',
-    'Portal GSTR-2B Data',
-    'GST Pipeline',
-    'Applied GSTINs',
-    'GSTIN Conflicts'
-  ];
-
-  wb.SheetNames.sort((a, b) => {
-    let idxA = preferredOrder.indexOf(a);
-    let idxB = preferredOrder.indexOf(b);
-    if (idxA === -1) idxA = 999;
-    if (idxB === -1) idxB = 999;
-    if (idxA !== idxB) return idxA - idxB;
-    return a.localeCompare(b);
-  });
+  const wb = buildMasterWorkbook(
+    results,
+    companyName,
+    appliedGstins,
+    conflicts,
+    gstr3bData,
+    debitNotes,
+    rawBooksData,
+    raw2bData,
+    auditLogs
+  );
 
   wb.Props = {
     Title: filename.replace('.xlsx', ''),
     Subject: 'GST Reconciliation Master Report',
     Author: 'Vaswani Return Enterprise Suite',
     Company: companyName || 'Client Organization',
-    CreatedDate: new Date()
+    CreatedDate: new Date(),
   };
+
   try {
     removeAllMergesFromWorkbook(wb);
     XLSX.writeFile(wb, filename);

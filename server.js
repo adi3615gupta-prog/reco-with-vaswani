@@ -12,8 +12,30 @@ import crypto from 'crypto';
 import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first'); // FIX: Prevent Node 18 fetch timeouts on broken IPv6 networks
 
+// Catch and suppress transient Playwright IPC channel unbound race conditions without crashing the server
+process.on('uncaughtException', (err) => {
+    if (err && err.message && (err.message.includes('was not bound in the connection') || err.message.includes('Target page, context or browser has been closed'))) {
+        console.warn('[Playwright IPC Guard] Suppressed transient unbound channel exception:', err.message);
+        return;
+    }
+    console.error('[Server Uncaught Exception]:', err);
+});
+process.on('unhandledRejection', (reason) => {
+    const msg = (reason && reason.message) || String(reason || '');
+    if (msg.includes('was not bound in the connection') || msg.includes('Target page, context or browser has been closed')) {
+        return;
+    }
+    console.error('[Server Unhandled Rejection]:', reason);
+});
+
 import setupTdsRoutes from './tds_routes.js';
 import setupTaxRoutes from './tax_routes.js';
+import setupGDriveRoutes from './gdrive_routes.js';
+import setupImsRoutes from './ims_routes.js';
+import setupGstr2bRoutes from './gstr2b_routes.js';
+import setupGstr1Routes from './gstr1_routes.js';
+import setupReturnsStorageRoutes from './returns_storage_routes.js';
+import setupAuditTrailRoutes from './audit_trail_routes.js';
 
 import helmet from 'helmet';
 import { initializeApp } from "firebase/app";
@@ -29,7 +51,7 @@ const firebaseConfig = {
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const firestore = getFirestore(firebaseApp);
-setLogLevel("error");
+setLogLevel("silent");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,6 +108,10 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Health & Ping Endpoints (fast, unauthenticated for latency diagnostics)
+app.get('/api/ping', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
+
 // userDataPath defined above
 const BANNED_PATH = path.join(userDataPath, 'banned_users.json');
 const AUDIT_PATH = path.join(userDataPath, 'audit_logs.json');
@@ -140,6 +166,8 @@ db.serialize(() => {
     // Safe migration for existing DBs
     db.run(`ALTER TABLE network_users ADD COLUMN last_active_at INTEGER`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE network_users ADD COLUMN status TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN portal_username TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN portal_password TEXT`, (err) => { /* ignore if exists */ });
 });
 
 // 3. Initialize TDS Routes
@@ -147,6 +175,24 @@ setupTdsRoutes(app, db);
 
 // 4. Initialize Tax Routes
 setupTaxRoutes(app, db);
+
+// 5. Initialize Google Drive Cloud Backup Routes
+setupGDriveRoutes(app);
+
+// 6. Initialize GST IMS Routes
+setupImsRoutes(app, db);
+
+// 7. Initialize GSTR-2B Auto Downloader Routes
+setupGstr2bRoutes(app, db);
+
+// 8. Initialize GSTR-1 Auto Downloader Routes
+setupGstr1Routes(app, db);
+
+// 9. Initialize Returns Server Shared Storage Routes (Multi-PC LAN Access)
+setupReturnsStorageRoutes(app, db, userDataPath);
+
+// 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
+setupAuditTrailRoutes(app, db, userDataPath);
 
 const saveUserToLocalDb = (user) => {
     db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id)
@@ -170,9 +216,9 @@ const getOfficeId = () => new Promise(res => {
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.sendStatus(401);
+    if (!token || token === 'null' || token === 'undefined') return res.sendStatus(401);
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
+        if (err) return res.sendStatus(401);
         req.user = user;
         next();
     });
@@ -689,28 +735,32 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-app.post('/api/logout', authenticateToken, async (req, res) => {
+app.post('/api/logout', async (req, res) => {
     try {
-        const officeId = await getOfficeId();
-        if (req.user.username !== 'admin') {
-            const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
-            const userDoc = snap.docs.find(d => d.data().username === req.user.username);
-            if (userDoc) {
-                await updateDoc(userDoc.ref, { status: 'offline', last_active_at: null });
-            }
-            db.run("UPDATE network_users SET device_id = NULL WHERE username = ?", [req.user.username.toLowerCase().trim()]);
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (token && token !== 'null' && token !== 'undefined') {
+            jwt.verify(token, JWT_SECRET, async (err, user) => {
+                if (!err && user && user.username) {
+                    try {
+                        const officeId = await getOfficeId();
+                        if (user.username !== 'admin') {
+                            try {
+                                const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
+                                const userDoc = snap.docs.find(d => d.data().username === user.username);
+                                if (userDoc) {
+                                    await updateDoc(userDoc.ref, { status: 'offline', last_active_at: null });
+                                }
+                            } catch (e) {}
+                            db.run("UPDATE network_users SET device_id = NULL WHERE username = ?", [user.username.toLowerCase().trim()]);
+                        }
+                    } catch (e) {}
+                }
+            });
         }
-        await addDoc(collection(firestore, 'audit_logs'), {
-            username: req.user.username,
-            ip: req.ip || '127.0.0.1',
-            system: os.hostname(),
-            time: new Date().toLocaleString(),
-            action: 'Logged Out',
-            office_id: officeId
-        });
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "Logout failed" });
+        res.json({ success: true });
     }
 });
 
@@ -749,20 +799,35 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 app.post('/api/heartbeat', authenticateToken, async (req, res) => {
     if (req.user.username === 'admin') return res.json({ success: true });
     try {
-        const officeId = await getOfficeId();
-        const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
         const userKey = String(req.user.username).toLowerCase().trim();
-        const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === userKey);
-        
-        if (!userDoc) {
-            return res.status(403).json({ error: "User deleted" });
-        }
-        if (userDoc.data().is_active === 0) {
-            return res.status(403).json({ error: "User restricted" });
-        }
-        await updateDoc(userDoc.ref, { last_active_at: Date.now() });
-        db.run("UPDATE network_users SET last_active_at = ? WHERE username = ?", [Date.now(), userKey]);
-        res.json({ success: true });
+
+        // 1. Check local SQLite database first (authoritative and instant on-premise)
+        db.get("SELECT * FROM network_users WHERE LOWER(username) = ?", [userKey], async (err, localUser) => {
+            if (localUser && localUser.is_active === 0) {
+                return res.status(403).json({ error: "User restricted" });
+            }
+
+            // 2. Best-effort cloud sync without blocking or killing offline session on transient network errors
+            try {
+                const officeId = await getOfficeId();
+                if (officeId) {
+                    const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
+                    const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === userKey);
+                    if (userDoc) {
+                        if (userDoc.data().is_active === 0) {
+                            db.run("UPDATE network_users SET is_active = 0 WHERE username = ?", [userKey]);
+                            return res.status(403).json({ error: "User restricted" });
+                        }
+                        await updateDoc(userDoc.ref, { last_active_at: Date.now() });
+                    }
+                }
+            } catch (cloudErr) {
+                // Cloud latency/offline shouldn't block local workstation heartbeat
+            }
+
+            db.run("UPDATE network_users SET last_active_at = ? WHERE username = ?", [Date.now(), userKey]);
+            return res.json({ success: true });
+        });
     } catch (e) { res.status(500).json({ error: "Heartbeat failed" }); }
 });
 
@@ -1120,6 +1185,9 @@ app.post('/api/cma/generate', authenticateToken, async (req, res) => {
 
 // Catch-all to serve the React app for any other routes (client-side routing)
 app.get(/(.*)/, (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ success: false, error: `API route not found: ${req.path}` });
+    }
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

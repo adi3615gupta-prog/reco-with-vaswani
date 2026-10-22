@@ -14,6 +14,8 @@ import { reconcileDebitNotes } from '@/lib/debitNoteEngine';
 import { BatchBadge } from '@/components/StatusBadge';
 import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
 import { toast } from 'sonner';
+import { AuditJustificationModal } from '@/components/AuditJustificationModal';
+import type { AuditActionType, AuditOverrideRecord } from '@/lib/auditTrailService';
 
 interface Props {
   results: ReconciliationResult[];
@@ -62,6 +64,22 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
   const [showMergeConfirm, setShowMergeConfirm] = useState(false);
   const [primaryMergeKey, setPrimaryMergeKey] = useState<string>('');
   const [visiblePartiesCount, setVisiblePartiesCount] = useState<number>(50);
+  const [auditModalState, setAuditModalState] = useState<{
+    isOpen: boolean;
+    actionType: AuditActionType;
+    targetStatus: string;
+    originalStatus?: string;
+    prRecord?: any;
+    twoBRecord?: any;
+    clientGstin?: string;
+    taxableDiff?: number;
+    gstDiff?: number;
+    onConfirmOverride?: (justification: string, auditRecord: AuditOverrideRecord) => void;
+  }>({
+    isOpen: false,
+    actionType: 'FORCE_MATCH',
+    targetStatus: 'Perfect Match',
+  });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -211,25 +229,38 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     const raw = invRow.rawResult;
     if (!raw) return;
 
-    const newResults = [...results];
-    const idx = newResults.findIndex((r) => r === raw);
-    const forceMatchedItem = {
-      ...raw,
-      status: 'Perfect Match' as MatchStatus,
-      gstDiff: 0,
-      cgstDiff: 0,
-      sgstDiff: 0,
-      igstDiff: 0,
-      taxableDiff: 0,
-      remark: 'Force Matched by User',
-    };
-    if (idx !== -1) {
-      newResults[idx] = forceMatchedItem;
-    } else {
-      newResults.push(forceMatchedItem);
-    }
-    onResultsChange(newResults);
-    toast.success(`Overrode mismatch for invoice #${invRow.invoiceNoPR || invRow.invoiceNo2B} as Perfect Match`);
+    setAuditModalState({
+      isOpen: true,
+      actionType: 'FORCE_MATCH',
+      targetStatus: 'Perfect Match',
+      originalStatus: invRow.status,
+      prRecord: raw.prRecord || { invoiceNo: invRow.invoiceNoPR, taxableValue: invRow.taxablePR },
+      twoBRecord: raw.twoBRecord || { invoiceNo: invRow.invoiceNo2B, taxableValue: invRow.taxable2B },
+      clientGstin: raw.prRecord?.gstin || raw.twoBRecord?.gstin,
+      taxableDiff: invRow.taxableDiff,
+      gstDiff: invRow.totalDiff,
+      onConfirmOverride: (justification) => {
+        const newResults = [...results];
+        const idx = newResults.findIndex((r) => r === raw);
+        const forceMatchedItem = {
+          ...raw,
+          status: 'Perfect Match' as MatchStatus,
+          gstDiff: 0,
+          cgstDiff: 0,
+          sgstDiff: 0,
+          igstDiff: 0,
+          taxableDiff: 0,
+          remark: `Force Matched: ${justification}`,
+        };
+        if (idx !== -1) {
+          newResults[idx] = forceMatchedItem;
+        } else {
+          newResults.push(forceMatchedItem);
+        }
+        onResultsChange(newResults);
+        toast.success(`Overrode mismatch for invoice #${invRow.invoiceNoPR || invRow.invoiceNo2B} as Perfect Match`);
+      },
+    });
   };
 
   const handleUnlinkMatch = (invRow: PartyInvoiceRow) => {
@@ -237,25 +268,38 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     const raw = invRow.rawResult;
     if (!raw || !raw.prRecord || !raw.twoBRecord) return;
 
-    const newResults = results.filter((r) => r !== raw);
-    const prRes: ReconciliationResult = {
+    setAuditModalState({
+      isOpen: true,
+      actionType: 'UNLINK',
+      targetStatus: 'Not in 2B / Not in Books',
+      originalStatus: invRow.status,
       prRecord: raw.prRecord,
-      status: 'Not in 2B',
-      gstDiff: (raw.prRecord.igst || 0) + (raw.prRecord.cgst || 0) + (raw.prRecord.sgst || 0),
-      taxableDiff: raw.prRecord.taxableValue || 0,
-      remark: 'Unlinked by User',
-    };
-    const twoBRes: ReconciliationResult = {
       twoBRecord: raw.twoBRecord,
-      status: 'Not in Books',
-      gstDiff: -((raw.twoBRecord.igst || 0) + (raw.twoBRecord.cgst || 0) + (raw.twoBRecord.sgst || 0)),
-      taxableDiff: -(raw.twoBRecord.taxableValue || 0),
-      remark: 'Unlinked by User',
-    };
+      clientGstin: raw.prRecord?.gstin || raw.twoBRecord?.gstin,
+      taxableDiff: raw.taxableDiff,
+      gstDiff: raw.gstDiff,
+      onConfirmOverride: (justification) => {
+        const newResults = results.filter((r) => r !== raw);
+        const prRes: ReconciliationResult = {
+          prRecord: raw.prRecord,
+          status: 'Not in 2B',
+          gstDiff: (raw.prRecord.igst || 0) + (raw.prRecord.cgst || 0) + (raw.prRecord.sgst || 0),
+          taxableDiff: raw.prRecord.taxableValue || 0,
+          remark: `Unlinked: ${justification}`,
+        };
+        const twoBRes: ReconciliationResult = {
+          twoBRecord: raw.twoBRecord,
+          status: 'Not in Books',
+          gstDiff: -((raw.twoBRecord.igst || 0) + (raw.twoBRecord.cgst || 0) + (raw.twoBRecord.sgst || 0)),
+          taxableDiff: -(raw.twoBRecord.taxableValue || 0),
+          remark: `Unlinked: ${justification}`,
+        };
 
-    newResults.push(prRes, twoBRes);
-    onResultsChange(newResults);
-    toast.info(`Unlinked invoice #${raw.prRecord.invoiceNo} from 2B invoice #${raw.twoBRecord.invoiceNo}`);
+        newResults.push(prRes, twoBRes);
+        onResultsChange(newResults);
+        toast.info(`Unlinked invoice #${raw.prRecord.invoiceNo} from 2B invoice #${raw.twoBRecord.invoiceNo}`);
+      },
+    });
   };
 
   const handleAutoMatchParty = (party: PartySummary) => {

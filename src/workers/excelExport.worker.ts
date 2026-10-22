@@ -44,7 +44,8 @@ self.onmessage = async (e: MessageEvent<ExportWorkerRequest>) => {
           payload.gstr3bData,
           payload.debitNotes,
           payload.rawBooksData,
-          payload.raw2bData
+          payload.raw2bData,
+          payload.auditLogs
         );
         break;
       }
@@ -126,7 +127,8 @@ self.onmessage = async (e: MessageEvent<ExportWorkerRequest>) => {
           payload.companyName,
           payload.statusFilter,
           payload.appliedGstins,
-          payload.conflicts
+          payload.conflicts,
+          payload.auditLogs
         );
         break;
       }

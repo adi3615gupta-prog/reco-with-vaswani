@@ -9,6 +9,7 @@ import { normalizePartyName } from '@/lib/reconciliation';
 import { appendExecutiveSummary, appendMethodologySheet } from './executiveSummary';
 import { appendGstinReports } from './allInvoicesSheet';
 import { appendNavigationSheet } from './navigationSheet';
+import { appendAuditTrailSheet } from './masterExport';
 
 export const PARTY_STATUS_FILL: Record<string, string> = {
   'All Matched': 'E6F5ED',
@@ -1687,7 +1688,8 @@ export function buildPartyWiseWorkbook(
   companyName?: string,
   statusFilter?: string[],
   appliedGstins?: any[],
-  conflicts?: any[]
+  conflicts?: any[],
+  auditLogs?: any[]
 ): XLSX.WorkBook {
   const filteredParties = statusFilter && statusFilter.length > 0
     ? parties
@@ -2065,6 +2067,11 @@ export function buildPartyWiseWorkbook(
   appendMethodologySheet(wb, companyName, tabs);
   partySheetNames.push('📖 Methodology & Legend');
 
+  if (auditLogs && auditLogs.length > 0) {
+    appendAuditTrailSheet(wb, auditLogs, companyName, tabs);
+    partySheetNames.push('Audit Trail');
+  }
+
   appendNavigationSheet(wb, partySheetNames, companyName, stats, breakdown);
 
   removeAllMergesFromWorkbook(wb);
@@ -2077,9 +2084,10 @@ export function exportPartyWise(
   companyName?: string,
   statusFilter?: string[],
   appliedGstins?: any[],
-  conflicts?: any[]
+  conflicts?: any[],
+  auditLogs?: any[]
 ) {
-  const wb = buildPartyWiseWorkbook(parties, companyName, statusFilter, appliedGstins, conflicts);
+  const wb = buildPartyWiseWorkbook(parties, companyName, statusFilter, appliedGstins, conflicts, auditLogs);
   wb.Props = {
     Title: filename.replace('.xlsx', ''),
     Subject: 'Party-wise Reconciliation Report',
