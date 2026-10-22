@@ -130,6 +130,7 @@ export default function Gstr2bMasterDownloader({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailSectionFilter, setDetailSectionFilter] = useState<string>('ALL');
   const [detailPartyFilter, setDetailPartyFilter] = useState<string>('ALL');
+  const [detailMonthFilter, setDetailMonthFilter] = useState<string>('ALL');
   const [detailSearch, setDetailSearch] = useState('');
 
   // Dropzone & Single Portal Modal
@@ -436,6 +437,7 @@ export default function Gstr2bMasterDownloader({
     setLoadingDetail(true);
     setDetailSectionFilter('ALL');
     setDetailPartyFilter('ALL');
+    setDetailMonthFilter('ALL');
     setDetailSearch('');
     try {
       const endpoint = viewMode === 'FULL_YEAR'
@@ -457,6 +459,35 @@ export default function Gstr2bMasterDownloader({
       setLoadingDetail(false);
     }
   };
+
+  // Unique filing months in the current client detail invoices
+  const detailMonths = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    detailInvoices.forEach(inv => {
+      const period = normalizeReturnPeriod(inv.return_period, inv.idt);
+      if (!period) return;
+      const key = period.toUpperCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(key, { key, label: period, count: 1 });
+      }
+    });
+
+    const monthOrder: Record<string, number> = {
+      APR: 1, MAY: 2, JUN: 3, JUL: 4, AUG: 5, SEP: 6, OCT: 7, NOV: 8, DEC: 9, JAN: 10, FEB: 11, MAR: 12
+    };
+
+    return Array.from(map.values()).sort((a, b) => {
+      const aMonth = a.label.slice(0, 3).toUpperCase();
+      const bMonth = b.label.slice(0, 3).toUpperCase();
+      const aYear = parseInt(a.label.match(/\d{4}/)?.[0] || '0', 10);
+      const bYear = parseInt(b.label.match(/\d{4}/)?.[0] || '0', 10);
+      if (aYear !== bYear) return aYear - bYear;
+      return (monthOrder[aMonth] || 99) - (monthOrder[bMonth] || 99);
+    });
+  }, [detailInvoices]);
 
   // Unique parties in the current client detail invoices
   const detailParties = useMemo(() => {
@@ -486,6 +517,10 @@ export default function Gstr2bMasterDownloader({
           if (!inv.section.toUpperCase().includes(detailSectionFilter)) return false;
         }
       }
+      if (detailMonthFilter !== 'ALL') {
+        const p = normalizeReturnPeriod(inv.return_period, inv.idt).toUpperCase();
+        if (p !== detailMonthFilter.toUpperCase()) return false;
+      }
       if (detailPartyFilter !== 'ALL') {
         if ((inv.ctin || '').trim().toUpperCase() !== detailPartyFilter) return false;
       }
@@ -499,7 +534,7 @@ export default function Gstr2bMasterDownloader({
       }
       return true;
     });
-  }, [detailInvoices, detailSectionFilter, detailPartyFilter, detailSearch]);
+  }, [detailInvoices, detailSectionFilter, detailPartyFilter, detailMonthFilter, detailSearch]);
 
   // Live dynamic totals based on current filtered invoices
   const modalSummaryStats = useMemo(() => {
@@ -1131,20 +1166,38 @@ export default function Gstr2bMasterDownloader({
                 ))}
               </div>
 
-              {/* Party-wise Dropdown Filter & Search Bar */}
+              {/* Month-wise + Party-wise Dropdowns & Search Bar */}
               <div className="flex flex-wrap items-center gap-2">
+                {/* Month-wise Filter Dropdown */}
+                <div className="relative">
+                  <select
+                    value={detailMonthFilter}
+                    onChange={e => setDetailMonthFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold rounded-xl pl-3 pr-8 py-1.5 outline-none focus:border-cyan-500 transition-all max-w-[170px] truncate cursor-pointer appearance-none shadow-inner"
+                    title="Filter line items by filing month / return period"
+                  >
+                    <option value="ALL">All Months ({detailMonths.length})</option>
+                    {detailMonths.map(m => (
+                      <option key={m.key} value={m.key}>
+                        {m.label} ({m.count})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
                 {/* Party-wise Filter Dropdown */}
                 <div className="relative">
                   <select
                     value={detailPartyFilter}
                     onChange={e => setDetailPartyFilter(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold rounded-xl pl-3 pr-8 py-1.5 outline-none focus:border-cyan-500 transition-all max-w-[220px] sm:max-w-[260px] truncate cursor-pointer appearance-none shadow-inner"
+                    className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold rounded-xl pl-3 pr-8 py-1.5 outline-none focus:border-cyan-500 transition-all max-w-[210px] sm:max-w-[240px] truncate cursor-pointer appearance-none shadow-inner"
                     title="Filter line items by supplier party"
                   >
                     <option value="ALL">All Parties ({detailParties.length})</option>
                     {detailParties.map(p => (
                       <option key={p.gstin} value={p.gstin}>
-                        {p.name.length > 25 ? p.name.slice(0, 25) + '...' : p.name} ({p.count})
+                        {p.name.length > 22 ? p.name.slice(0, 22) + '...' : p.name} ({p.count})
                       </option>
                     ))}
                   </select>
@@ -1152,7 +1205,7 @@ export default function Gstr2bMasterDownloader({
                 </div>
 
                 {/* Text Filter */}
-                <div className="relative w-52 sm:w-60">
+                <div className="relative w-48 sm:w-56">
                   <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
                   <input
                     type="text"
@@ -1207,7 +1260,12 @@ export default function Gstr2bMasterDownloader({
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-slate-300">{inv.inum}</td>
-                          <td className="py-2.5 px-2 text-slate-400 font-mono whitespace-nowrap">{inv.idt}</td>
+                          <td className="py-2.5 px-2 text-slate-400 font-mono whitespace-nowrap">
+                            <div>{inv.idt}</div>
+                            {inv.return_period && (
+                              <div className="text-[10px] text-slate-500 font-sans">{normalizeReturnPeriod(inv.return_period, inv.idt)}</div>
+                            )}
+                          </td>
                           <td className="py-2.5 px-3 text-right font-mono text-slate-300">{formatCur(inv.txval)}</td>
                           <td className="py-2.5 px-2 text-right font-mono text-slate-300">{formatCur(inv.igst)}</td>
                           <td className="py-2.5 px-2 text-right font-mono text-slate-300">{formatCur(inv.cgst)}</td>
