@@ -354,21 +354,20 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             } catch (e) {}
         };
 
-        // Auto-dismiss common GST portal popups
+        // Auto-dismiss common GST portal popups (Instant DOM evaluation < 2ms, zero timeout lag)
         const dismissPopups = async () => {
             try {
-                const remindLater = page.locator('button:has-text("Remind Me Later"), a:has-text("Remind Me Later"), button:has-text("Remind me later")').first();
-                if (await remindLater.isVisible({ timeout: 1500 })) {
-                    await remindLater.click().catch(() => {});
-                    console.log('[GSTR-2B Autopilot] Dismissed "Remind Me Later" popup');
-                }
-            } catch (e) {}
-            try {
-                const closeBtn = page.locator('.modal-header .close, button:has-text("Close"), button[aria-label="Close"]').first();
-                if (await closeBtn.isVisible({ timeout: 1500 })) {
-                    await closeBtn.click().catch(() => {});
-                    console.log('[GSTR-2B Autopilot] Dismissed modal popup');
-                }
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, a'));
+                    const remind = btns.find(b => {
+                        const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                        return t === 'remind me later' || t.includes('remind me later');
+                    });
+                    if (remind) remind.click();
+
+                    const closeBtn = document.querySelector('.modal-header .close, button.close, button[aria-label="Close"], .modal-dialog button[data-dismiss="modal"]');
+                    if (closeBtn) closeBtn.click();
+                });
             } catch (e) {}
         };
 
@@ -389,26 +388,46 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         console.log(`[GSTR-2B Autopilot] Target Filing Period: Month=${targetMonth}, FY=${targetFy}`);
 
         await updateBanner(`Navigating to Returns Dashboard for ${targetMonth} ${targetFy}...`);
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(100);
         await dismissPopups();
 
         // Helper to navigate from Returns Quick Links / Services to Return Dashboard via authentic in-page click
         // STRICT ZERO URL PUSH: Direct page.goto or window.location.href to return.gst.gov.in triggers "Access Denied" by GSTN WAF.
         const clickReturnsDashboardInPage = async () => {
-            console.log('[GSTR-2B Autopilot] ⚡ Navigating to Returns Dashboard via authentic in-page click (Zero URL Push)...');
+            console.log('[GSTR-2B Autopilot] ⚡ Fast in-page click to Returns Dashboard...');
 
-            // Tier 1: On-screen Tile / Card / Button / Link click (Returns Dashboard / File Returns)
+            // Step 1: Ultra-fast DOM evaluation (< 10ms) using substring matching and href detection
             let clicked = false;
             try {
                 clicked = await page.evaluate(() => {
-                    const elements = Array.from(document.querySelectorAll('a, button, div.card, div.panel, div.box, div.tile, div[class*="card"], div[class*="box"], h3, h4, h5, p, span, [ng-click]'));
-                    const target = elements.find(el => {
+                    // 1. Direct Anchor targeting Returns Dashboard via href
+                    const directAnchor = document.querySelector('a[href*="returns/auth/dashboard"], a[href*="returns.gst.gov.in/returns"], a[href*="/returns/auth/"]');
+                    if (directAnchor) {
+                        directAnchor.scrollIntoView({ block: 'center' });
+                        directAnchor.click();
+                        if (window.angular) {
+                            try {
+                                window.angular.element(directAnchor).triggerHandler('click');
+                                window.angular.element(directAnchor).scope()?.$apply();
+                            } catch(e) {}
+                        }
+                        return true;
+                    }
+
+                    // 2. Find any tile/card/heading/button containing RETURNS DASHBOARD, RETURN DASHBOARD, or FILE RETURNS
+                    // Uses includes() instead of strict equality because tiles contain subtitles/descriptions
+                    const candidates = Array.from(document.querySelectorAll('a, button, div.card, div.panel, div.box, div.tile, div[class*="card"], div[class*="box"], div[class*="tile"], h2, h3, h4, h5, h6, strong, b, [ng-click]'));
+                    const match = candidates.find(el => {
                         const t = (el.innerText || el.textContent || '').trim().toUpperCase();
                         const h = (el.getAttribute('href') || '').toLowerCase();
-                        return t === 'RETURNS DASHBOARD' || t === 'RETURN DASHBOARD' || t === 'FILE RETURNS' || h.includes('returns/auth/dashboard');
+                        return h.includes('returns/auth/dashboard') || 
+                               t.includes('RETURNS DASHBOARD') || 
+                               t.includes('RETURN DASHBOARD') || 
+                               t.includes('FILE RETURNS');
                     });
-                    if (target) {
-                        const clickable = target.closest('a, button, div.card, div.panel, [ng-click]') || target;
+
+                    if (match) {
+                        const clickable = match.closest('a, button, div.card, div.panel, div.box, div.tile, [ng-click]') || match;
                         clickable.scrollIntoView({ block: 'center' });
                         clickable.click();
                         if (window.angular) {
@@ -419,74 +438,55 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                         }
                         return true;
                     }
+
+                    // 3. Top Navbar search in DOM (Services -> Returns -> Returns Dashboard)
+                    const navLinks = Array.from(document.querySelectorAll('.navbar a, nav a, a'));
+                    const rNav = navLinks.find(el => {
+                        const t = (el.innerText || el.textContent || '').trim().toUpperCase();
+                        const h = (el.getAttribute('href') || '').toLowerCase();
+                        return h.includes('returns/auth/dashboard') || t.includes('RETURNS DASHBOARD') || t.includes('RETURN DASHBOARD');
+                    });
+                    if (rNav) {
+                        rNav.scrollIntoView({ block: 'center' });
+                        rNav.click();
+                        return true;
+                    }
+
                     return false;
                 });
-                if (clicked) {
-                    console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen Returns Dashboard tile via DOM');
-                }
             } catch(e) {}
 
-            // Tier 1b: Playwright locator targeting Returns Dashboard / File Returns tile or button
-            if (!clicked) {
+            if (clicked) {
+                console.log('[GSTR-2B Autopilot] ✓ Clicked Returns Dashboard element in DOM');
+            } else {
+                // Playwright fast fallback (< 400ms timeout)
                 try {
-                    const tileLoc = page.locator('a, button, div.card, div.panel')
-                        .filter({ hasText: /^(Returns Dashboard|Return Dashboard|File Returns)$/i })
+                    const fallbackLoc = page.locator('a, button, .card, .panel, .box')
+                        .filter({ hasText: /returns dashboard|return dashboard|file returns/i })
                         .first();
-                    if (await tileLoc.isVisible({ timeout: 1500 }).catch(() => false)) {
-                        await tileLoc.scrollIntoViewIfNeeded().catch(() => {});
-                        await tileLoc.click({ timeout: 2000 }).catch(() => {});
+                    if (await fallbackLoc.isVisible({ timeout: 400 }).catch(() => false)) {
+                        await fallbackLoc.click({ timeout: 1000 }).catch(() => {});
                         clicked = true;
-                        console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen Returns Dashboard tile via locator');
+                        console.log('[GSTR-2B Autopilot] ✓ Clicked Returns Dashboard via Playwright fallback');
                     }
                 } catch(e) {}
             }
 
-            // Tier 2: Top Navbar Fallback (Services -> Returns -> Returns Dashboard)
-            if (!clicked) {
-                console.log('[GSTR-2B Autopilot] Tile not found, attempting Top Navbar (Services -> Returns -> Returns Dashboard)...');
+            // Step 2: High-speed detection of select dropdowns on Returns Dashboard (rapid 150ms polling)
+            const waitSearchStart = Date.now();
+            while (Date.now() - waitSearchStart < 12000) {
+                if (page.isClosed()) return false;
                 try {
-                    clicked = await page.evaluate(() => {
-                        const allLinks = Array.from(document.querySelectorAll('a'));
-                        // Direct match on Returns Dashboard in dropdown or menu
-                        const rLink = allLinks.find(el => {
-                            const t = (el.innerText || el.textContent || '').trim().toUpperCase();
-                            const h = (el.getAttribute('href') || '').toLowerCase();
-                            return t === 'RETURNS DASHBOARD' || t === 'RETURN DASHBOARD' || h.includes('returns/auth/dashboard');
-                        });
-                        if (rLink) {
-                            rLink.scrollIntoView({ block: 'center' });
-                            rLink.click();
+                    if (page.url().includes('return.gst.gov.in/returns/auth/dashboard')) {
+                        const count = await page.locator('select').count();
+                        if (count >= 2) {
+                            console.log('[GSTR-2B Autopilot] ✓ Landed on Returns Dashboard with select dropdowns ready!');
                             return true;
                         }
-                        // Or trigger Services dropdown first
-                        const sMenu = allLinks.find(el => (el.innerText || el.textContent || '').trim().toUpperCase() === 'SERVICES');
-                        if (sMenu) {
-                            sMenu.click();
-                        }
-                        return false;
-                    });
+                    }
                 } catch(e) {}
-
-                if (!clicked) {
-                    try {
-                        const rLinkLoc = page.locator('a:has-text("Returns Dashboard"), a:has-text("Return Dashboard")').first();
-                        if (await rLinkLoc.isVisible({ timeout: 2000 }).catch(() => false)) {
-                            await rLinkLoc.click().catch(() => {});
-                            clicked = true;
-                        }
-                    } catch(e) {}
-                }
+                await page.waitForTimeout(150);
             }
-
-            // Wait for landing on https://return.gst.gov.in/returns/auth/dashboard with dropdowns
-            try {
-                await page.waitForSelector('select', { timeout: 12000 });
-                await dismissPopups();
-                if (await page.locator('select').count() >= 2) {
-                    console.log('[GSTR-2B Autopilot] ✓ Landed on Returns Dashboard with select dropdowns ready!');
-                    return true;
-                }
-            } catch(e) {}
 
             return false;
         };
@@ -547,9 +547,9 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                             const backBtn = page.locator('button, a, input[type="button"], input[type="submit"]')
                                 .filter({ hasText: /^back$/i })
                                 .last();
-                            if (await backBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+                            if (await backBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
                                 await backBtn.scrollIntoViewIfNeeded().catch(() => {});
-                                await backBtn.click({ timeout: 2000 }).catch(() => {});
+                                await backBtn.click({ timeout: 1500 }).catch(() => {});
                                 backClicked = true;
                                 console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via locator');
                             }
@@ -557,11 +557,11 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     }
 
                     if (backClicked) {
-                        // Wait briefly for navigation triggered by BACK click (up to 3.5s)
+                        // Rapid 100ms polling for navigation triggered by BACK click (up to 3.5s)
                         let postClickUrl = page.url();
                         const waitUrlStart = Date.now();
                         while (Date.now() - waitUrlStart < 3500) {
-                            await page.waitForTimeout(300);
+                            await page.waitForTimeout(100);
                             postClickUrl = page.url();
                             if (!postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
                                 break;
@@ -571,8 +571,8 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                         console.log(`[GSTR-2B Autopilot] After clicking BACK, landed on: ${postClickUrl}`);
 
                         // If landed on Returns Quick Links or Services page, click Returns Dashboard tile/navbar (Zero URL Push!)
-                        if (postClickUrl.includes('quicklinks/returns') || postClickUrl.includes('services.gst.gov.in')) {
-                            console.log('[GSTR-2B Autopilot] Landed on Returns Quick Links. Clicking on-screen Returns Dashboard tile...');
+                        if (postClickUrl.includes('quicklinks/returns') || postClickUrl.includes('services.gst.gov.in') || postClickUrl.includes('/quicklinks')) {
+                            console.log('[GSTR-2B Autopilot] Landed on Returns Quick Links. Instantly clicking Returns Dashboard tile...');
                             if (await clickReturnsDashboardInPage()) {
                                 return true;
                             }
@@ -592,7 +592,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
                 // 3. If on Returns Quick Links screen at any point -> Click Returns Dashboard tile/navbar (Zero URL Push!)
                 if (curUrl.includes('quicklinks/returns') || curUrl.includes('/quicklinks')) {
-                    console.log('[GSTR-2B Autopilot] Detected Returns Quick Links screen. Clicking Returns Dashboard tile in-page...');
+                    console.log('[GSTR-2B Autopilot] Detected Returns Quick Links screen. Instantly clicking Returns Dashboard tile in-page...');
                     if (await clickReturnsDashboardInPage()) {
                         return true;
                     }
@@ -602,7 +602,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 // 4. Check for RETURN DASHBOARD / File Returns buttons (on Dashboard home page)
                 try {
                     const retDashBtn = page.locator('button:has-text("RETURN DASHBOARD"), a:has-text("RETURN DASHBOARD"), button:has-text("File Returns"), a:has-text("File Returns")').first();
-                    if (await retDashBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                    if (await retDashBtn.isVisible({ timeout: 500 }).catch(() => false)) {
                         console.log('[GSTR-2B Autopilot] Clicking RETURN DASHBOARD button on dashboard...');
                         await retDashBtn.click().catch(() => {});
                         try {
@@ -617,7 +617,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 // 5. Check for breadcrumb "Return Dashboard"
                 try {
                     const breadcrumb = page.locator('a:has-text("Return Dashboard"), a:has-text("Returns Dashboard"), .breadcrumb a:has-text("Return")').first();
-                    if (await breadcrumb.isVisible({ timeout: 600 }).catch(() => false)) {
+                    if (await breadcrumb.isVisible({ timeout: 400 }).catch(() => false)) {
                         console.log('[GSTR-2B Autopilot] Clicking Return Dashboard breadcrumb...');
                         await breadcrumb.click().catch(() => {});
                         try {
