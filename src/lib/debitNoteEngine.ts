@@ -106,7 +106,7 @@ export interface DebitNoteEngineResult {
   isGtcBenchmark?: boolean;
 }
 
-interface InternalItem {
+export interface InternalItem {
   id: number;
   raw: any;
   val: number;
@@ -163,7 +163,7 @@ export function normalizeInvoiceNo(inv: any): string {
   if (inv === null || inv === undefined) return '';
   let s = String(inv).trim().toUpperCase().replace(/\s+/g, '');
   // Strip regional/fiscal year prefixes common in purchase registers and portal credit notes
-  s = s.replace(/^(MH-2526\/|MH-CN-2526-|MH\/25-26\/|MH2526\/|MH\/2526\/|MH\/25\/26\/|MH\/25\-26\/)/, '');
+  s = s.replace(/^(MH-2526\/|MH-CN-2526-|MH-CN-2526\/|MH\/25-26\/|MH-25-26\/|MH2526\/|MH\/2526\/|MH\/25\/26\/)/, '');
   // Normalize dashes to slashes
   s = s.replace(/-/g, '/');
   // Re-check in case hyphen-to-slash created a matchable prefix
@@ -482,8 +482,8 @@ export function findSubsetSumMatch(
       const sumTax = group.reduce((acc, x) => acc + Math.abs(x.taxTot), 0);
 
       if (
-        (Math.abs(sumVal - targetValAbs) <= 25.0 || Math.abs(sumTx - targetTxAbs) <= 25.0) &&
-        Math.abs(sumTax - targetTaxAbs) <= 15.0
+        (Math.abs(sumVal - targetValAbs) <= 25.0001 || Math.abs(sumTx - targetTxAbs) <= 25.0001) &&
+        Math.abs(sumTax - targetTaxAbs) <= 15.0001
       ) {
         return group;
       }
@@ -505,8 +505,8 @@ export function findSubsetSumMatch(
           const pSumTx = pgroup.reduce((acc, x) => acc + Math.abs(x.taxable), 0);
           const pSumTax = pgroup.reduce((acc, x) => acc + Math.abs(x.taxTot), 0);
           if (
-            (Math.abs(pSumVal - targetValAbs) <= 25.0 || Math.abs(pSumTx - targetTxAbs) <= 25.0) &&
-            Math.abs(pSumTax - targetTaxAbs) <= 15.0
+            (Math.abs(pSumVal - targetValAbs) <= 25.0001 || Math.abs(pSumTx - targetTxAbs) <= 25.0001) &&
+            Math.abs(pSumTax - targetTaxAbs) <= 15.0001
           ) {
             return pgroup;
           }
@@ -568,8 +568,8 @@ function searchCombinations(
 ): InternalItem[] | null {
   if (current.length === k) {
     if (
-      (Math.abs(currVal - targetVal) <= 25.0 || Math.abs(currTx - targetTx) <= 25.0) &&
-      Math.abs(currTax - targetTax) <= 15.0
+      (Math.abs(currVal - targetVal) <= 25.0001 || Math.abs(currTx - targetTx) <= 25.0001) &&
+      Math.abs(currTax - targetTax) <= 15.0001
     ) {
       return [...current];
     }
@@ -586,7 +586,7 @@ function searchCombinations(
     const nextTax = currTax + Math.abs(item.taxTot);
     const nextTx = currTx + Math.abs(item.taxable);
 
-    if (targetVal > 0 && nextVal > targetVal + 25.0 && nextTx > targetTx + 25.0) {
+    if (targetVal > 0 && nextVal > targetVal + 25.0001 && nextTx > targetTx + 25.0001) {
       continue;
     }
 
