@@ -423,36 +423,50 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     } catch(e) {}
                 }
 
-                // 3. If on GSTR-2B download page or inward details page -> Click on-screen BACK once and wait!
+                // 3. If on GSTR-2B download page or inward details page -> Strictly click on-screen BACK button!
                 if (curUrl.includes('/download') || curUrl.includes('/inward/')) {
-                    console.log('[GSTR-2B Autopilot] On download page, navigating back to search screen...');
+                    console.log('[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...');
                     let backClicked = false;
+
+                    // Priority 1: Direct DOM evaluation finding button/input/a with exact text 'BACK'
                     try {
-                        const backBtn = page.locator('button, a, input[type="button"]')
-                            .filter({ hasText: /\bback\b/i })
-                            .last();
-                        if (await backBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
-                            await backBtn.scrollIntoViewIfNeeded().catch(() => {});
-                            await backBtn.click({ timeout: 2000 }).catch(() => {});
-                            backClicked = true;
-                            console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button');
+                        backClicked = await page.evaluate(() => {
+                            const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                            const backEl = btns.reverse().find(el => {
+                                const t = (el.innerText || el.value || el.textContent || '').trim().toUpperCase();
+                                return t === 'BACK' || t.startsWith('BACK');
+                            });
+                            if (backEl) {
+                                backEl.scrollIntoView({ block: 'center' });
+                                backEl.click();
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(backEl).triggerHandler('click');
+                                        window.angular.element(backEl).scope()?.$apply();
+                                    } catch(e) {}
+                                }
+                                return true;
+                            }
+                            return false;
+                        });
+                        if (backClicked) {
+                            console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via DOM');
                         }
                     } catch(e) {}
 
+                    // Priority 2: Playwright locator targeting official on-screen BACK button
                     if (!backClicked) {
                         try {
-                            const rBreadcrumb = page.locator('.breadcrumb a, a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').first();
-                            if (await rBreadcrumb.isVisible({ timeout: 800 }).catch(() => false)) {
-                                await rBreadcrumb.click().catch(() => {});
+                            const backBtn = page.locator('button, a, input[type="button"], input[type="submit"]')
+                                .filter({ hasText: /^back$/i })
+                                .last();
+                            if (await backBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+                                await backBtn.scrollIntoViewIfNeeded().catch(() => {});
+                                await backBtn.click({ timeout: 2000 }).catch(() => {});
                                 backClicked = true;
-                                console.log('[GSTR-2B Autopilot] ✓ Clicked Return Dashboard breadcrumb');
+                                console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via locator');
                             }
                         } catch(e) {}
-                    }
-
-                    if (!backClicked) {
-                        console.log('[GSTR-2B Autopilot] Using browser back navigation...');
-                        await page.goBack().catch(() => {});
                     }
 
                     // WAIT for returns search screen dropdowns to appear (up to 12s, no frantic repeated clicks)

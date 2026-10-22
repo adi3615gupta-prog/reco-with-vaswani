@@ -70080,36 +70080,47 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           }
         }
         if (curUrl.includes("/download") || curUrl.includes("/inward/")) {
-          console.log("[GSTR-2B Autopilot] On download page, navigating back to search screen...");
+          console.log("[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...");
           let backClicked = false;
           try {
-            const backBtn = page.locator('button, a, input[type="button"]').filter({ hasText: /\bback\b/i }).last();
-            if (await backBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
-              await backBtn.scrollIntoViewIfNeeded().catch(() => {
+            backClicked = await page.evaluate(() => {
+              const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+              const backEl = btns.reverse().find((el) => {
+                const t = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
+                return t === "BACK" || t.startsWith("BACK");
               });
-              await backBtn.click({ timeout: 2e3 }).catch(() => {
-              });
-              backClicked = true;
-              console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button");
+              if (backEl) {
+                backEl.scrollIntoView({ block: "center" });
+                backEl.click();
+                if (window.angular) {
+                  try {
+                    window.angular.element(backEl).triggerHandler("click");
+                    window.angular.element(backEl).scope()?.$apply();
+                  } catch (e) {
+                  }
+                }
+                return true;
+              }
+              return false;
+            });
+            if (backClicked) {
+              console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via DOM");
             }
           } catch (e) {
           }
           if (!backClicked) {
             try {
-              const rBreadcrumb = page.locator('.breadcrumb a, a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').first();
-              if (await rBreadcrumb.isVisible({ timeout: 800 }).catch(() => false)) {
-                await rBreadcrumb.click().catch(() => {
+              const backBtn = page.locator('button, a, input[type="button"], input[type="submit"]').filter({ hasText: /^back$/i }).last();
+              if (await backBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+                await backBtn.scrollIntoViewIfNeeded().catch(() => {
+                });
+                await backBtn.click({ timeout: 2e3 }).catch(() => {
                 });
                 backClicked = true;
-                console.log("[GSTR-2B Autopilot] \u2713 Clicked Return Dashboard breadcrumb");
+                console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via locator");
               }
             } catch (e) {
             }
-          }
-          if (!backClicked) {
-            console.log("[GSTR-2B Autopilot] Using browser back navigation...");
-            await page.goBack().catch(() => {
-            });
           }
           try {
             await page.waitForSelector("select", { timeout: 12e3 });
