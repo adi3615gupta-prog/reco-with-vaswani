@@ -67978,143 +67978,152 @@ function recalculate2bBatchMetrics(db2, clientGstin, returnPeriod) {
       const ineligTotal = Math.round((row?.ineligible_total || 0) * 100) / 100;
       const batchId = (0, import_crypto4.randomUUID)();
       const now = Date.now();
-      const upsertQuery = `
-                INSERT INTO gstr2b_batches (
-                    id, client_gstin, return_period, status,
-                    total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count,
-                    eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess,
-                    eligible_itc_total, rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
-                    cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total, impg_igst, isd_total,
-                    ineligible_itc_total, downloaded_at, created_at, updated_at
-                ) VALUES (?, ?, ?, 'SYNCED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(client_gstin, return_period) DO UPDATE SET
-                    status = 'SYNCED',
-                    total_invoices = excluded.total_invoices,
-                    b2b_count = excluded.b2b_count,
-                    b2ba_count = excluded.b2ba_count,
-                    cdnr_count = excluded.cdnr_count,
-                    cdnra_count = excluded.cdnra_count,
-                    isd_count = excluded.isd_count,
-                    impg_count = excluded.impg_count,
-                    eligible_itc_igst = excluded.eligible_itc_igst,
-                    eligible_itc_cgst = excluded.eligible_itc_cgst,
-                    eligible_itc_sgst = excluded.eligible_itc_sgst,
-                    eligible_itc_cess = excluded.eligible_itc_cess,
-                    eligible_itc_total = excluded.eligible_itc_total,
-                    rcm_igst = excluded.rcm_igst,
-                    rcm_cgst = excluded.rcm_cgst,
-                    rcm_sgst = excluded.rcm_sgst,
-                    rcm_total = excluded.rcm_total,
-                    cdnr_igst = excluded.cdnr_igst,
-                    cdnr_cgst = excluded.cdnr_cgst,
-                    cdnr_sgst = excluded.cdnr_sgst,
-                    cdnr_total = excluded.cdnr_total,
-                    impg_igst = excluded.impg_igst,
-                    isd_total = excluded.isd_total,
-                    ineligible_itc_total = excluded.ineligible_itc_total,
-                    downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
-                    updated_at = excluded.updated_at
-            `;
-      db2.run(upsertQuery, [
-        batchId,
-        clientGstin,
-        returnPeriod,
-        totalInvs,
-        row?.b2b_count || 0,
-        row?.b2ba_count || 0,
-        row?.cdnr_count || 0,
-        row?.cdnra_count || 0,
-        row?.isd_count || 0,
-        row?.impg_count || 0,
-        eligIgst,
-        eligCgst,
-        eligSgst,
-        eligCess,
-        eligTotal,
-        rcmIgst,
-        rcmCgst,
-        rcmSgst,
-        rcmTotal,
-        cdnrIgst,
-        cdnrCgst,
-        cdnrSgst,
-        cdnrTotal,
-        impgIgst,
-        isdTotal,
-        ineligTotal,
-        now,
-        now,
-        now
-      ], (uErr) => {
-        if (uErr) return reject(uErr);
-        resolve({
-          totalInvoices: totalInvs,
-          total_invoices: totalInvs,
-          b2bCount: row?.b2b_count || 0,
-          b2b_count: row?.b2b_count || 0,
-          b2ba_count: row?.b2ba_count || 0,
-          cdnrCount: row?.cdnr_count || 0,
-          cdnr_count: row?.cdnr_count || 0,
-          cdnra_count: row?.cdnra_count || 0,
-          isd_count: row?.isd_count || 0,
-          impg_count: row?.impg_count || 0,
-          eligible_txval: eligTxval,
-          eligible_igst: eligIgst,
-          eligible_cgst: eligCgst,
-          eligible_sgst: eligSgst,
-          eligible_cess: eligCess,
-          eligible_total: eligTotal,
-          eligible_itc_txval: eligTxval,
-          eligible_itc_igst: eligIgst,
-          eligible_itc_cgst: eligCgst,
-          eligible_itc_sgst: eligSgst,
-          eligible_itc_cess: eligCess,
-          eligible_itc_total: eligTotal,
-          rcm_txval: rcmTxval,
-          rcm_igst: rcmIgst,
-          rcm_cgst: rcmCgst,
-          rcm_sgst: rcmSgst,
-          rcm_total: rcmTotal,
-          cdnr_txval: cdnrTxval,
-          cdnr_igst: cdnrIgst,
-          cdnr_cgst: cdnrCgst,
-          cdnr_sgst: cdnrSgst,
-          cdnr_total: cdnrTotal,
-          impg_igst: impgIgst,
-          isd_total: isdTotal,
-          ineligible_txval: ineligTxval,
-          ineligible_total: ineligTotal,
-          ineligible_itc_total: ineligTotal,
-          eligibleItc: {
-            taxable: eligTxval,
-            igst: eligIgst,
-            cgst: eligCgst,
-            sgst: eligSgst,
-            cess: eligCess,
-            total: eligTotal
-          },
-          rcmInward: {
-            taxable: rcmTxval,
-            igst: rcmIgst,
-            cgst: rcmCgst,
-            sgst: rcmSgst,
-            total: rcmTotal
-          },
-          creditNotes: {
-            taxable: cdnrTxval,
-            igst: cdnrIgst,
-            cgst: cdnrCgst,
-            sgst: cdnrSgst,
-            total: cdnrTotal
-          },
-          ineligibleItc: {
-            taxable: ineligTxval,
-            igst: 0,
-            cgst: 0,
-            sgst: 0,
-            total: ineligTotal
-          },
-          ineligibleTotal: ineligTotal
+      db2.get(`SELECT status FROM gstr2b_batches WHERE client_gstin = ? AND return_period = ?`, [clientGstin, returnPeriod], (bErr, existingBatch) => {
+        if (bErr) return reject(bErr);
+        let targetStatus = "SYNCED";
+        if (totalInvs === 0) {
+          targetStatus = existingBatch && existingBatch.status === "NIL_SYNCED" ? "NIL_SYNCED" : "PENDING";
+        }
+        const upsertQuery = `
+                    INSERT INTO gstr2b_batches (
+                        id, client_gstin, return_period, status,
+                        total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count,
+                        eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess,
+                        eligible_itc_total, rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
+                        cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total, impg_igst, isd_total,
+                        ineligible_itc_total, downloaded_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(client_gstin, return_period) DO UPDATE SET
+                        status = excluded.status,
+                        total_invoices = excluded.total_invoices,
+                        b2b_count = excluded.b2b_count,
+                        b2ba_count = excluded.b2ba_count,
+                        cdnr_count = excluded.cdnr_count,
+                        cdnra_count = excluded.cdnra_count,
+                        isd_count = excluded.isd_count,
+                        impg_count = excluded.impg_count,
+                        eligible_itc_igst = excluded.eligible_itc_igst,
+                        eligible_itc_cgst = excluded.eligible_itc_cgst,
+                        eligible_itc_sgst = excluded.eligible_itc_sgst,
+                        eligible_itc_cess = excluded.eligible_itc_cess,
+                        eligible_itc_total = excluded.eligible_itc_total,
+                        rcm_igst = excluded.rcm_igst,
+                        rcm_cgst = excluded.rcm_cgst,
+                        rcm_sgst = excluded.rcm_sgst,
+                        rcm_total = excluded.rcm_total,
+                        cdnr_igst = excluded.cdnr_igst,
+                        cdnr_cgst = excluded.cdnr_cgst,
+                        cdnr_sgst = excluded.cdnr_sgst,
+                        cdnr_total = excluded.cdnr_total,
+                        impg_igst = excluded.impg_igst,
+                        isd_total = excluded.isd_total,
+                        ineligible_itc_total = excluded.ineligible_itc_total,
+                        downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
+                        updated_at = excluded.updated_at
+                `;
+        db2.run(upsertQuery, [
+          batchId,
+          clientGstin,
+          returnPeriod,
+          targetStatus,
+          totalInvs,
+          row?.b2b_count || 0,
+          row?.b2ba_count || 0,
+          row?.cdnr_count || 0,
+          row?.cdnra_count || 0,
+          row?.isd_count || 0,
+          row?.impg_count || 0,
+          eligIgst,
+          eligCgst,
+          eligSgst,
+          eligCess,
+          eligTotal,
+          rcmIgst,
+          rcmCgst,
+          rcmSgst,
+          rcmTotal,
+          cdnrIgst,
+          cdnrCgst,
+          cdnrSgst,
+          cdnrTotal,
+          impgIgst,
+          isdTotal,
+          ineligTotal,
+          now,
+          now,
+          now
+        ], (uErr) => {
+          if (uErr) return reject(uErr);
+          resolve({
+            status: targetStatus,
+            totalInvoices: totalInvs,
+            total_invoices: totalInvs,
+            b2bCount: row?.b2b_count || 0,
+            b2b_count: row?.b2b_count || 0,
+            b2ba_count: row?.b2ba_count || 0,
+            cdnrCount: row?.cdnr_count || 0,
+            cdnr_count: row?.cdnr_count || 0,
+            cdnra_count: row?.cdnra_count || 0,
+            isd_count: row?.isd_count || 0,
+            impg_count: row?.impg_count || 0,
+            eligible_txval: eligTxval,
+            eligible_igst: eligIgst,
+            eligible_cgst: eligCgst,
+            eligible_sgst: eligSgst,
+            eligible_cess: eligCess,
+            eligible_total: eligTotal,
+            eligible_itc_txval: eligTxval,
+            eligible_itc_igst: eligIgst,
+            eligible_itc_cgst: eligCgst,
+            eligible_itc_sgst: eligSgst,
+            eligible_itc_cess: eligCess,
+            eligible_itc_total: eligTotal,
+            rcm_txval: rcmTxval,
+            rcm_igst: rcmIgst,
+            rcm_cgst: rcmCgst,
+            rcm_sgst: rcmSgst,
+            rcm_total: rcmTotal,
+            cdnr_txval: cdnrTxval,
+            cdnr_igst: cdnrIgst,
+            cdnr_cgst: cdnrCgst,
+            cdnr_sgst: cdnrSgst,
+            cdnr_total: cdnrTotal,
+            impg_igst: impgIgst,
+            isd_total: isdTotal,
+            ineligible_txval: ineligTxval,
+            ineligible_total: ineligTotal,
+            ineligible_itc_total: ineligTotal,
+            eligibleItc: {
+              taxable: eligTxval,
+              igst: eligIgst,
+              cgst: eligCgst,
+              sgst: eligSgst,
+              cess: eligCess,
+              total: eligTotal
+            },
+            rcmInward: {
+              taxable: rcmTxval,
+              igst: rcmIgst,
+              cgst: rcmCgst,
+              sgst: rcmSgst,
+              total: rcmTotal
+            },
+            creditNotes: {
+              taxable: cdnrTxval,
+              igst: cdnrIgst,
+              cgst: cdnrCgst,
+              sgst: cdnrSgst,
+              total: cdnrTotal
+            },
+            ineligibleItc: {
+              taxable: ineligTxval,
+              igst: 0,
+              cgst: 0,
+              sgst: 0,
+              total: ineligTotal
+            },
+            ineligibleTotal: ineligTotal
+          });
         });
       });
     });
@@ -68214,6 +68223,57 @@ function bulkSaveGstr2bInvoices(db2, clientGstin, returnPeriod, invoices, excelP
           resolve({ count: invoices.length });
         }
       });
+    });
+  });
+}
+function markGstr2bMonthNilSynced(db2, clientGstin, returnPeriod, excelPath = null, jsonPath = null) {
+  return new Promise((resolve, reject) => {
+    if (!clientGstin || !returnPeriod) return resolve({ success: false });
+    const now = Date.now();
+    const batchId = (0, import_crypto4.randomUUID)();
+    const query2 = `
+            INSERT INTO gstr2b_batches (
+                id, client_gstin, return_period, status,
+                total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count,
+                eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess, eligible_itc_total,
+                rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
+                cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total,
+                impg_igst, isd_total, ineligible_itc_total,
+                excel_path, json_path, downloaded_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'NIL_SYNCED', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?)
+            ON CONFLICT(client_gstin, return_period) DO UPDATE SET
+                status = 'NIL_SYNCED',
+                total_invoices = 0,
+                b2b_count = 0,
+                b2ba_count = 0,
+                cdnr_count = 0,
+                cdnra_count = 0,
+                isd_count = 0,
+                impg_count = 0,
+                eligible_itc_igst = 0,
+                eligible_itc_cgst = 0,
+                eligible_itc_sgst = 0,
+                eligible_itc_cess = 0,
+                eligible_itc_total = 0,
+                rcm_igst = 0,
+                rcm_cgst = 0,
+                rcm_sgst = 0,
+                rcm_total = 0,
+                cdnr_igst = 0,
+                cdnr_cgst = 0,
+                cdnr_sgst = 0,
+                cdnr_total = 0,
+                impg_igst = 0,
+                isd_total = 0,
+                ineligible_itc_total = 0,
+                excel_path = COALESCE(excluded.excel_path, gstr2b_batches.excel_path),
+                json_path = COALESCE(excluded.json_path, gstr2b_batches.json_path),
+                downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
+                updated_at = excluded.updated_at
+        `;
+    db2.run(query2, [batchId, clientGstin.toUpperCase(), returnPeriod, excelPath, jsonPath, now, now, now], (err) => {
+      if (err) return reject(err);
+      resolve({ success: true, status: "NIL_SYNCED", totalInvoices: 0 });
     });
   });
 }
@@ -69789,7 +69849,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
             capturedExcelPath = savePath;
             const res2 = parseGstr2bExcelHelper(savePath, gstinUpper, activeSyncPeriod);
-            if (res2 && res2.invoices.length > 0) {
+            if (res2 && Array.isArray(res2.invoices)) {
               parsedInvoices = res2.invoices;
               console.log(`[Autopilot GSTR-2B] Extracted ${res2.invoices.length} invoices from downloaded Excel!`);
             }
@@ -69798,7 +69858,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             try {
               const raw = JSON.parse(import_fs6.default.readFileSync(savePath, "utf8"));
               const res2 = parseGstr2bJsonHelper(raw, gstinUpper, activeSyncPeriod);
-              if (res2 && res2.invoices.length > 0) {
+              if (res2 && Array.isArray(res2.invoices)) {
                 parsedInvoices = res2.invoices;
                 console.log(`[Autopilot GSTR-2B] Extracted ${res2.invoices.length} invoices from downloaded JSON!`);
               }
@@ -69806,7 +69866,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             }
           } else if (lower.endsWith(".zip")) {
             const res2 = await parseGstr2bZipHelper(savePath, gstinUpper, activeSyncPeriod);
-            if (res2 && res2.invoices.length > 0) {
+            if (res2 && Array.isArray(res2.invoices)) {
               parsedInvoices = res2.invoices;
               console.log(`[Autopilot GSTR-2B] Extracted ${res2.invoices.length} invoices from downloaded ZIP!`);
             }
@@ -70234,19 +70294,33 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       }
       await page.waitForTimeout(400);
       await updateBanner(`${effectiveLabel}: Selecting Month / Period (${effectiveMonth})...`);
-      let mLoc = page.locator("select").filter({
-        has: page.locator("option").filter({ hasText: /January|February|March|April|May|June|July|August|September|October|November|December/i })
-      }).first();
-      if (await mLoc.count() === 0) {
-        mLoc = page.locator("select").last();
+      let mLoc = null;
+      let mOptions = [];
+      for (let mAttempt = 1; mAttempt <= 2; mAttempt++) {
+        mLoc = page.locator("select").filter({
+          has: page.locator("option").filter({ hasText: /January|February|March|April|May|June|July|August|September|October|November|December/i })
+        }).first();
+        if (await mLoc.count() === 0) {
+          mLoc = page.locator("select").last();
+        }
+        const isDisabled = await mLoc.evaluate((el) => el.disabled || el.classList.contains("ng-disabled")).catch(() => false);
+        if (isDisabled && mAttempt < 2) {
+          console.log(`[GSTR-2B Autopilot] Month dropdown disabled (attempt ${mAttempt}/2), waiting for Angular digest...`);
+          await page.waitForTimeout(600);
+          continue;
+        }
+        mOptions = await mLoc.evaluate((el) => {
+          return Array.from(el.options).map((o, idx) => ({
+            index: idx,
+            text: (o.text || "").trim(),
+            value: (o.value || "").trim()
+          }));
+        }).catch(() => []);
+        const validOpts = mOptions.filter((o) => !o.text.toLowerCase().includes("select") && !o.text.startsWith("--"));
+        if (validOpts.length > 0 || mAttempt === 2) break;
+        console.log(`[GSTR-2B Autopilot] Month options not populated yet (attempt ${mAttempt}/2), waiting...`);
+        await page.waitForTimeout(600);
       }
-      const mOptions = await mLoc.evaluate((el) => {
-        return Array.from(el.options).map((o, idx) => ({
-          index: idx,
-          text: (o.text || "").trim(),
-          value: (o.value || "").trim()
-        }));
-      });
       console.log("[GSTR-2B Autopilot] Portal Month Options:", JSON.stringify(mOptions));
       const targetMonthLower = String(effectiveMonth).toLowerCase().trim();
       const targetMonthShort = targetMonthLower.slice(0, 3);
@@ -70334,6 +70408,26 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       capturedJsonPath = null;
       const actionStartTime = Date.now();
       let clicked2bDownload = false;
+      let isPortalConfirmedNil = false;
+      try {
+        isPortalConfirmedNil = await page.evaluate(() => {
+          const allCards = Array.from(document.querySelectorAll("div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel"));
+          for (const card of allCards) {
+            const txt = (card.innerText || "").toUpperCase();
+            if ((txt.includes("GSTR-2B") || txt.includes("GSTR 2B") || txt.includes("AUTO - DRAFTED")) && !txt.includes("GSTR-1") && !txt.includes("OUTWARD SUPPLIES")) {
+              if (txt.includes("NO RECORDS AVAILABLE") || txt.includes("0 INVOICES") || txt.includes("TOTAL INVOICES: 0") || txt.includes("TOTAL INVOICES : 0") || txt.includes("COUNT : 0") || txt.includes("COUNT: 0") || txt.includes("NO INVOICES AVAILABLE") || txt.includes("NIL FILED") || txt.includes("NIL RETURN")) {
+                return true;
+              }
+            }
+          }
+          const bodyText = (document.body.innerText || "").toUpperCase();
+          if (bodyText.includes("NO RECORDS FOUND FOR GSTR-2B") || bodyText.includes("GSTR-2B HAS NO RECORDS") || bodyText.includes("NO DATA AVAILABLE FOR GSTR-2B")) {
+            return true;
+          }
+          return false;
+        });
+      } catch (e) {
+      }
       try {
         const g2bClickResult = await page.evaluate(() => {
           const dlButtons = Array.from(document.querySelectorAll('button, a, input[type="button"]')).filter((b) => {
@@ -70453,7 +70547,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
               curExcelPath = fPath;
               const r = parseGstr2bExcelHelper(fPath, gstinUpper, currentPeriodStr);
-              if (r) {
+              if (r && Array.isArray(r.invoices)) {
                 curParsedInvoices = r.invoices;
                 break;
               }
@@ -70462,7 +70556,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
               try {
                 const raw = JSON.parse(import_fs6.default.readFileSync(fPath, "utf8"));
                 const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
-                if (r) {
+                if (r && Array.isArray(r.invoices)) {
                   curParsedInvoices = r.invoices;
                   break;
                 }
@@ -70470,7 +70564,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
               }
             } else if (lower.endsWith(".zip")) {
               const r = await parseGstr2bZipHelper(fPath, gstinUpper, currentPeriodStr);
-              if (r) {
+              if (r && Array.isArray(r.invoices)) {
                 curParsedInvoices = r.invoices;
                 break;
               }
@@ -70496,7 +70590,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             if (latest.name.toLowerCase().endsWith(".xlsx") || latest.name.toLowerCase().endsWith(".xls")) {
               curExcelPath = latest.path;
               const r = parseGstr2bExcelHelper(latest.path, gstinUpper, currentPeriodStr);
-              if (r) {
+              if (r && Array.isArray(r.invoices)) {
                 curParsedInvoices = r.invoices;
                 break;
               }
@@ -70505,7 +70599,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
               try {
                 const raw = JSON.parse(import_fs6.default.readFileSync(latest.path, "utf8"));
                 const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
-                if (r) {
+                if (r && Array.isArray(r.invoices)) {
                   curParsedInvoices = r.invoices;
                   break;
                 }
@@ -70513,7 +70607,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
               }
             } else if (latest.name.toLowerCase().endsWith(".zip")) {
               const r = await parseGstr2bZipHelper(latest.path, gstinUpper, currentPeriodStr);
-              if (r) {
+              if (r && Array.isArray(r.invoices)) {
                 curParsedInvoices = r.invoices;
                 break;
               }
@@ -70526,9 +70620,15 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       if (curParsedInvoices && curParsedInvoices.length > 0) {
         console.log(`[GSTR-2B Autopilot] Persisting ${curParsedInvoices.length} invoices for ${currentPeriodStr}...`);
         const saveRes = await bulkSaveGstr2bInvoices(db2, gstinUpper, currentPeriodStr, curParsedInvoices, curExcelPath, curJsonPath);
-        return { count: curParsedInvoices.length, excelPath: curExcelPath, jsonPath: curJsonPath, metrics: saveRes.metrics };
+        return { count: curParsedInvoices.length, status: "SYNCED", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: saveRes.metrics };
       }
-      return { count: 0, excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null };
+      if (isPortalConfirmedNil || curParsedInvoices && curParsedInvoices.length === 0 && (curExcelPath || curJsonPath)) {
+        console.log(`[GSTR-2B Autopilot] Confirmed Nil Return for ${currentPeriodStr} (0 invoices). Recording NIL_SYNCED.`);
+        await markGstr2bMonthNilSynced(db2, gstinUpper, currentPeriodStr, curExcelPath, curJsonPath);
+        return { count: 0, status: "NIL_SYNCED", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null };
+      }
+      console.log(`[GSTR-2B Autopilot] Download timed out or unconfirmed for ${currentPeriodStr}. Preserving existing database records.`);
+      return { count: 0, status: "PENDING", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null };
     };
     if (isFullYear) {
       const startYr = parseInt(targetFy.match(/\d{4}/)?.[0] || "2025", 10);
@@ -70555,16 +70655,40 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
         console.log(`
 --- [GSTR-2B Full Year] Syncing Month ${i + 1}/12: ${mInfo.period} ---`);
         await updateBanner(`[Full Year 2B] Month ${i + 1}/12: Searching ${mInfo.period}...`, "#3b82f6");
-        await selectPeriodAndSearch(mInfo.month, targetFy, `Month ${i + 1}/12`);
-        await page.waitForTimeout(300);
-        await updateBanner(`[Full Year 2B] Month ${i + 1}/12: Downloading 2B for ${mInfo.period}...`, "#10b981");
-        const mRes = await downloadAndProcess2b(mInfo.period);
-        syncedResults.push({ period: mInfo.period, count: mRes.count });
-        total12mCount += mRes.count;
-        if (i < fyMonths.length - 1) {
-          await updateBanner(`[Full Year 2B] Preparing for Month ${i + 2}/12: ${fyMonths[i + 1].period}...`, "#3b82f6");
-          await ensureReturnsSearchScreen();
+        try {
+          await selectPeriodAndSearch(mInfo.month, targetFy, `Month ${i + 1}/12`);
           await page.waitForTimeout(400);
+          await updateBanner(`[Full Year 2B] Month ${i + 1}/12: Downloading 2B for ${mInfo.period}...`, "#10b981");
+          const mRes = await downloadAndProcess2b(mInfo.period);
+          syncedResults.push({
+            period: mInfo.period,
+            month: mInfo.month,
+            status: mRes.status || (mRes.count > 0 ? "SYNCED" : "PENDING"),
+            count: mRes.count,
+            excelPath: mRes.excelPath,
+            jsonPath: mRes.jsonPath
+          });
+          total12mCount += mRes.count;
+        } catch (monthErr) {
+          console.error(`[GSTR-2B Full Year] \u26A0\uFE0F Month ${i + 1}/12 (${mInfo.period}) failed:`, monthErr.message);
+          syncedResults.push({
+            period: mInfo.period,
+            month: mInfo.month,
+            status: "FAILED",
+            count: 0,
+            error: monthErr.message
+          });
+          await updateBanner(`\u26A0\uFE0F Month ${i + 1}/12 (${mInfo.month}) failed. Retaining old data & continuing...`, "#f59e0b");
+          await page.waitForTimeout(1e3);
+        }
+        if (i < fyMonths.length - 1) {
+          try {
+            await updateBanner(`[Full Year 2B] Preparing for Month ${i + 2}/12: ${fyMonths[i + 1].period}...`, "#3b82f6");
+            await ensureReturnsSearchScreen();
+            await page.waitForTimeout(400);
+          } catch (navErr) {
+            console.error("[GSTR-2B Full Year] Search screen reset error:", navErr.message);
+          }
         }
       }
       const allInvs = await new Promise((resolveInvs) => {
@@ -70575,27 +70699,37 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           (err, rows) => resolveInvs(rows || [])
         );
       });
-      const wb = generateGstr2bFullYearWorkbook({
-        clientInfo: { trade_name: clientTradeName, gstin: gstinUpper },
-        financialYear: targetFy,
-        invoices: allInvs
-      });
-      const cleanFy = targetFy.replace(/[^0-9]/g, "");
-      const consExcelPath = import_path6.default.join(downloadDir, `GSTR2B_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`);
-      XLSX4.writeFile(wb, consExcelPath);
-      console.log(`[Full Year 2B] Generated consolidated workbook at: ${consExcelPath}`);
-      await updateBanner(`\u2713 SUCCESS: All 12 months synced (${allInvs.length} invoices)! Consolidated Excel generated! Closing in 2s...`, "#10b981");
+      let consExcelPath = null;
+      try {
+        const wb = generateGstr2bFullYearWorkbook({
+          clientInfo: { trade_name: clientTradeName, gstin: gstinUpper },
+          financialYear: targetFy,
+          invoices: allInvs
+        });
+        const cleanFy = targetFy.replace(/[^0-9]/g, "");
+        consExcelPath = import_path6.default.join(downloadDir, `GSTR2B_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`);
+        XLSX4.writeFile(wb, consExcelPath);
+        console.log(`[Full Year 2B] Generated consolidated workbook at: ${consExcelPath}`);
+      } catch (xlErr) {
+        console.error("[Full Year 2B] Error generating consolidated Excel:", xlErr.message);
+      }
+      const syncedCount = syncedResults.filter((r) => r.status === "SYNCED" || r.status === "NIL_SYNCED").length;
+      const hasFailures = syncedResults.some((r) => r.status === "FAILED");
+      const completionBanner = hasFailures ? `\u26A0\uFE0F Full Year Sync: ${syncedCount}/12 months synced (${allInvs.length} invoices). Some months had errors. Closing in 2s...` : `\u2713 SUCCESS: All 12 months synced (${allInvs.length} invoices)! Consolidated Excel generated! Closing in 2s...`;
+      const bannerColor = hasFailures ? "#f59e0b" : "#10b981";
+      await updateBanner(completionBanner, bannerColor);
       await page.waitForTimeout(2e3);
       await browser.close().catch(() => {
       });
       if (browserState) browserState.current = null;
       return res.json({
         success: true,
-        message: `All 12 months synced for ${gstinUpper}! Total ${allInvs.length} invoices.`,
+        message: `${syncedCount}/12 months synced for ${gstinUpper}! Total ${allInvs.length} invoices.`,
         isFullYear: true,
         gstin: gstinUpper,
         financialYear: targetFy,
         totalInvoices: allInvs.length,
+        syncedCount,
         consolidatedExcelPath: consExcelPath,
         months: syncedResults
       });
@@ -70605,7 +70739,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       await page.waitForTimeout(300);
       await updateBanner(`Downloading GSTR-2B for ${returnPeriod}...`, "#10b981");
       const dlRes = await downloadAndProcess2b(returnPeriod);
-      if (dlRes.count > 0) {
+      if (dlRes.status === "SYNCED" && dlRes.count > 0) {
         await updateBanner(`\u2713 SUCCESS: ${dlRes.count} GSTR-2B Invoices synced! Closing in 2s...`, "#10b981");
         await page.waitForTimeout(2e3);
         await browser.close().catch(() => {
@@ -70616,13 +70750,30 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           message: `Successfully downloaded and parsed ${dlRes.count} GSTR-2B invoices for ${gstinUpper}!`,
           gstin: gstinUpper,
           period: returnPeriod,
+          status: "SYNCED",
           invoiceCount: dlRes.count,
           excelPath: dlRes.excelPath,
           jsonPath: dlRes.jsonPath,
           metrics: dlRes.metrics
         });
+      } else if (dlRes.status === "NIL_SYNCED") {
+        await updateBanner(`\u2713 SUCCESS: Confirmed Nil Return (0 Invoices) for ${returnPeriod}! Closing in 2s...`, "#10b981");
+        await page.waitForTimeout(2e3);
+        await browser.close().catch(() => {
+        });
+        if (browserState) browserState.current = null;
+        return res.json({
+          success: true,
+          message: `Confirmed Nil Return (0 invoices) recorded for ${gstinUpper} (${returnPeriod}).`,
+          gstin: gstinUpper,
+          period: returnPeriod,
+          status: "NIL_SYNCED",
+          invoiceCount: 0,
+          excelPath: dlRes.excelPath,
+          jsonPath: dlRes.jsonPath
+        });
       } else {
-        await updateBanner("Download request submitted to GST Portal! You can scan downloads when ready.", "#f59e0b");
+        await updateBanner("Download request submitted or timed out. Old records retained.", "#f59e0b");
         await page.waitForTimeout(2e3);
         await browser.close().catch(() => {
         });
@@ -70632,6 +70783,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           message: 'Download request dispatched to GST Portal. Once portal finishes compiling, click "Scan Downloads" or run download again.',
           gstin: gstinUpper,
           period: returnPeriod,
+          status: "PENDING",
           invoiceCount: 0
         });
       }
@@ -70907,6 +71059,7 @@ function setupGstr2bRoutes(app2, db2) {
             portalUsername: r.portal_username,
             financialYear: fy,
             syncedMonths: [],
+            nilMonths: [],
             pendingMonths: [...months12],
             stats: {
               totalInvoices: 0,
@@ -70916,11 +71069,14 @@ function setupGstr2bRoutes(app2, db2) {
             }
           });
         }
-        if (r.return_period && (r.batch_status === "SYNCED" || r.batch_status === "PUSHED_TO_3B")) {
+        if (r.return_period && (r.batch_status === "SYNCED" || r.batch_status === "PUSHED_TO_3B" || r.batch_status === "NIL_SYNCED")) {
           const c = clientMap.get(r.gstin);
           if (!c.syncedMonths.includes(r.return_period)) {
             c.syncedMonths.push(r.return_period);
             c.pendingMonths = c.pendingMonths.filter((m) => m !== r.return_period);
+          }
+          if (r.batch_status === "NIL_SYNCED" && !c.nilMonths.includes(r.return_period)) {
+            c.nilMonths.push(r.return_period);
           }
           c.stats.totalInvoices += r.total_invoices || 0;
           c.stats.b2bCount += r.b2b_count || 0;
@@ -71098,6 +71254,18 @@ function setupGstr2bRoutes(app2, db2) {
     if (!gstin || !returnPeriod && !isFullYear) {
       return res.status(400).json({ success: false, error: "gstin and returnPeriod required" });
     }
+    let isAborted = false;
+    req.on("close", async () => {
+      if (!res.writableEnded && !isAborted) {
+        isAborted = true;
+        console.log("[GSTR-2B Autopilot] Client aborted request. Cleaning up browser session...");
+        if (browserState && browserState.current) {
+          await browserState.current.close().catch(() => {
+          });
+          browserState.current = null;
+        }
+      }
+    });
     await runGstr2bAutopilot({
       db: db2,
       gstin,
@@ -71108,6 +71276,20 @@ function setupGstr2bRoutes(app2, db2) {
       res,
       browserState
     });
+  });
+  app2.post("/api/gstr2b/cancel", async (req, res) => {
+    try {
+      if (browserState && browserState.current) {
+        console.log("[GSTR-2B Autopilot] Force closing browser on user cancel request");
+        await browserState.current.close().catch(() => {
+        });
+        browserState.current = null;
+      }
+      res.json({ success: true, message: "Browser session terminated" });
+    } catch (e) {
+      console.error("[GSTR-2B Autopilot] Error canceling browser session:", e.message);
+      res.status(500).json({ success: false, error: e.message });
+    }
   });
   app2.post("/api/gstr2b/scan-downloads", async (req, res) => {
     const { returnPeriod } = req.body;
@@ -71311,6 +71493,7 @@ function setupGstr2bRoutes(app2, db2) {
     }
   });
 }
+var gstr2b_routes_default = setupGstr2bRoutes;
 
 // gstr1_routes.js
 var import_fs10 = __toESM(require("fs"), 1);
@@ -75728,7 +75911,7 @@ setupTdsRoutes(app, db);
 setupTaxRoutes(app, db);
 setupGDriveRoutes(app);
 setupImsRoutes(app, db);
-setupGstr2bRoutes(app, db);
+gstr2b_routes_default(app, db);
 setupGstr1Routes(app, db);
 setupReturnsStorageRoutes(app, db, userDataPath);
 setupAuditTrailRoutes(app, db, userDataPath);

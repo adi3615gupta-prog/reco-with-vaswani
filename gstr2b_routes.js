@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
-import { initGstr2bDatabase, bulkSaveGstr2bInvoices } from './gstr2b/db.js';
+import { initGstr2bDatabase, bulkSaveGstr2bInvoices, markGstr2bMonthNilSynced } from './gstr2b/db.js';
 import { parseGstr2bExcelHelper, parseGstr2bJsonHelper, parseGstr2bZipHelper } from './gstr2b/parsers.js';
 import { runGstr2bAutopilot, openPortalLoginHelper } from './gstr2b/autopilot.js';
 import { generateGstr2bFullYearWorkbook } from './gstr2b/fullYearExcel.js';
@@ -17,7 +17,7 @@ const XLSX = xlsxModule.default || xlsxModule;
  * - `./gstr2b/parsers.js`: Dedicated parsers for GSTR-2B & GSTR-1 (Excel, JSON, ZIP)
  * - `./gstr2b/autopilot.js`: Playwright automation engine (Login, Period Select, GSTR-1 & GSTR-2B download)
  */
-export default function setupGstr2bRoutes(app, db) {
+export function setupGstr2bRoutes(app, db) {
     const browserState = { current: null };
 
     // Initialize Database Tables & Indexes
@@ -182,6 +182,7 @@ export default function setupGstr2bRoutes(app, db) {
                         portalUsername: r.portal_username,
                         financialYear: fy,
                         syncedMonths: [],
+                        nilMonths: [],
                         pendingMonths: [...months12],
                         stats: {
                             totalInvoices: 0,
@@ -192,11 +193,14 @@ export default function setupGstr2bRoutes(app, db) {
                     });
                 }
 
-                if (r.return_period && (r.batch_status === 'SYNCED' || r.batch_status === 'PUSHED_TO_3B')) {
+                if (r.return_period && (r.batch_status === 'SYNCED' || r.batch_status === 'PUSHED_TO_3B' || r.batch_status === 'NIL_SYNCED')) {
                     const c = clientMap.get(r.gstin);
                     if (!c.syncedMonths.includes(r.return_period)) {
                         c.syncedMonths.push(r.return_period);
                         c.pendingMonths = c.pendingMonths.filter(m => m !== r.return_period);
+                    }
+                    if (r.batch_status === 'NIL_SYNCED' && !c.nilMonths.includes(r.return_period)) {
+                        c.nilMonths.push(r.return_period);
                     }
                     c.stats.totalInvoices += (r.total_invoices || 0);
                     c.stats.b2bCount += (r.b2b_count || 0);
@@ -377,6 +381,18 @@ export default function setupGstr2bRoutes(app, db) {
             return res.status(400).json({ success: false, error: 'gstin and returnPeriod required' });
         }
 
+        let isAborted = false;
+        req.on('close', async () => {
+            if (!res.writableEnded && !isAborted) {
+                isAborted = true;
+                console.log('[GSTR-2B Autopilot] Client aborted request. Cleaning up browser session...');
+                if (browserState && browserState.current) {
+                    await browserState.current.close().catch(() => {});
+                    browserState.current = null;
+                }
+            }
+        });
+
         await runGstr2bAutopilot({
             db,
             gstin,
@@ -387,6 +403,21 @@ export default function setupGstr2bRoutes(app, db) {
             res,
             browserState
         });
+    });
+
+    // ─── 3B. CANCEL / ABORT ACTIVE AUTOPILOT BROWSER SESSION ─────────────────
+    app.post('/api/gstr2b/cancel', async (req, res) => {
+        try {
+            if (browserState && browserState.current) {
+                console.log('[GSTR-2B Autopilot] Force closing browser on user cancel request');
+                await browserState.current.close().catch(() => {});
+                browserState.current = null;
+            }
+            res.json({ success: true, message: 'Browser session terminated' });
+        } catch (e) {
+            console.error('[GSTR-2B Autopilot] Error canceling browser session:', e.message);
+            res.status(500).json({ success: false, error: e.message });
+        }
     });
 
     // ─── 4. SCAN DOWNLOADS FOLDER (1-Click Auto Scanner) ───────────────────────
@@ -614,3 +645,6 @@ export default function setupGstr2bRoutes(app, db) {
         }
     });
 }
+
+export { setupGstr2bRoutes as registerGstr2bRoutes };
+export default setupGstr2bRoutes;
