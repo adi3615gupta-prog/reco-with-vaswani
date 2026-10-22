@@ -2015,10 +2015,9 @@ export default function setupImsRoutes(app, db) {
                             break;
                         }
 
-                        console.log('[IMS Automation] [Phase 1] Clicking "GENERATE JSON FILE TO DOWNLOAD"...');
+                        console.log('[IMS Automation] [Phase 1] Clicking "GENERATE JSON FILE TO DOWNLOAD" (1st click)...');
                         await updateStatusBanner('Phase 1: Clicking "GENERATE JSON FILE TO DOWNLOAD"...', '#8b5cf6');
 
-                        let clickedGen = false;
                         const genLocators = [
                             'button:has-text("GENERATE JSON FILE TO DOWNLOAD")',
                             'button:has-text("GENERATE JSON FILE")',
@@ -2030,50 +2029,70 @@ export default function setupImsRoutes(app, db) {
                             'text="GENERATE JSON"'
                         ];
 
-                        for (const gSel of genLocators) {
-                            try {
-                                const genEl = page.locator(gSel).first();
-                                if (await genEl.isVisible({ timeout: 1500 })) {
-                                    await genEl.scrollIntoViewIfNeeded().catch(() => {});
-                                    await genEl.click({ force: true });
-                                    clickedGen = true;
-                                    console.log(`[IMS Automation] Clicked "GENERATE JSON FILE TO DOWNLOAD" button via locator "${gSel}"!`);
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
+                        const clickGenerateBtn = async (attemptNum = 1) => {
+                            let clicked = false;
+                            for (const gSel of genLocators) {
+                                try {
+                                    const genEl = page.locator(gSel).first();
+                                    if (await genEl.isVisible({ timeout: 1200 })) {
+                                        await genEl.scrollIntoViewIfNeeded().catch(() => {});
+                                        await genEl.click({ force: true });
+                                        clicked = true;
+                                        console.log(`[IMS Automation] Clicked "GENERATE JSON FILE TO DOWNLOAD" button (Attempt ${attemptNum}) via locator "${gSel}"!`);
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
 
-                        if (!clickedGen) {
-                            clickedGen = await page.evaluate(() => {
-                                const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a, div, span, [role="button"]'));
-                                const gen = btns.find(b => {
-                                    const t = (b.innerText || b.textContent || b.value || '').trim().toUpperCase();
-                                    return t.includes('GENERATE JSON FILE TO DOWNLOAD') || t.includes('GENERATE JSON');
-                                });
-                                if (gen) {
-                                    gen.scrollIntoView();
-                                    gen.focus();
-                                    gen.click();
-                                    gen.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            if (!clicked) {
+                                clicked = await page.evaluate(() => {
+                                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a, div, span, [role="button"]'));
+                                    const gen = btns.find(b => {
+                                        const t = (b.innerText || b.textContent || b.value || '').trim().toUpperCase();
+                                        return t.includes('GENERATE JSON FILE TO DOWNLOAD') || t.includes('GENERATE JSON');
+                                    });
+                                    if (gen) {
+                                        gen.scrollIntoView();
+                                        gen.focus();
+                                        gen.click();
+                                        gen.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                        return true;
+                                    }
+                                    return false;
+                                }).catch(() => false);
+
+                                if (clicked) {
+                                    console.log(`[IMS Automation] Clicked "GENERATE JSON FILE TO DOWNLOAD" (Attempt ${attemptNum}) via DOM evaluate fallback!`);
+                                }
+                            }
+                            return clicked;
+                        };
+
+                        const dismissConfirmationModal = async () => {
+                            try {
+                                const confirmBtn = page.locator('.modal button:has-text("OK"), .modal button:has-text("Ok"), .modal button:has-text("Yes"), button:has-text("OK"), button:has-text("Close"), button:has-text("Proceed")').first();
+                                if (await confirmBtn.isVisible({ timeout: 1200 })) {
+                                    await confirmBtn.click();
+                                    console.log('[IMS Automation] Dismissed confirmation / modal popup');
                                     return true;
                                 }
-                                return false;
-                            }).catch(() => false);
+                            } catch (e) {}
+                            return false;
+                        };
 
-                            if (clickedGen) {
-                                console.log('[IMS Automation] Clicked "GENERATE JSON FILE TO DOWNLOAD" via DOM evaluate fallback!');
-                            }
-                        }
+                        // 1st Click on GENERATE JSON FILE TO DOWNLOAD
+                        await clickGenerateBtn(1);
+                        await page.waitForTimeout(1000);
+                        await dismissConfirmationModal();
+
+                        // 2nd Click (ek bar aur click karna hai taki fresh new request initiate ho)
+                        console.log('[IMS Automation] [Phase 1] Re-clicking "GENERATE JSON FILE TO DOWNLOAD" (2nd click) to register fresh request...');
+                        await updateStatusBanner('Phase 1: Registering new request on GST portal...', '#8b5cf6');
+                        await clickGenerateBtn(2);
+                        await page.waitForTimeout(1500);
 
                         // Auto-dismiss confirmation modal if GST portal shows one ("Request Accepted", etc.)
-                        await page.waitForTimeout(2000);
-                        try {
-                            const confirmBtn = page.locator('.modal button:has-text("OK"), .modal button:has-text("Ok"), button:has-text("OK"), button:has-text("Close")').first();
-                            if (await confirmBtn.isVisible({ timeout: 1500 })) {
-                                await confirmBtn.click();
-                                console.log('[IMS Automation] Dismissed generation confirmation popup');
-                            }
-                        } catch (e) {}
+                        await dismissConfirmationModal();
 
                         // File generation queued by GST portal
                         console.log('[IMS Automation] File generation queued by GST Portal (~20m wait). Closing browser and saving state...');
