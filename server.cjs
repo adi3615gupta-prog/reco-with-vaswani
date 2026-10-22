@@ -70106,31 +70106,15 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       while (Date.now() - startWait < timeoutMs) {
         if (page.isClosed()) return false;
         await dismissPopups();
-        try {
-          const selectCount = await page.locator("select").count();
-          if (selectCount >= 2) {
-            return true;
-          }
-        } catch (e) {
-        }
         const curUrl = page.url();
-        if (curUrl.includes("accessdenied") || curUrl.includes("/error/")) {
-          console.log("[GSTR-2B Autopilot] Recovering from accessdenied page via Dashboard navbar...");
+        if (curUrl.includes("return.gst.gov.in/returns/auth/dashboard")) {
           try {
-            const dashLink = page.locator('a:has-text("Dashboard"), .navbar a:has-text("Dashboard"), li a:has-text("Dashboard")').first();
-            if (await dashLink.isVisible({ timeout: 1500 }).catch(() => false)) {
-              await dashLink.click().catch(() => {
-              });
-              await page.waitForTimeout(800);
-              await dismissPopups();
-              continue;
+            const selectCount = await page.locator("select").count();
+            if (selectCount >= 2) {
+              return true;
             }
           } catch (e) {
           }
-        }
-        if (curUrl.includes("quicklinks/returns")) {
-          if (await fastPushToReturnDashboard()) return true;
-          continue;
         }
         if (curUrl.includes("/download") || curUrl.includes("/inward/")) {
           console.log("[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...");
@@ -70177,7 +70161,8 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           }
           await page.waitForTimeout(200);
           const postClickUrl = page.url();
-          if (postClickUrl.includes("quicklinks/returns")) {
+          if (!postClickUrl.includes("return.gst.gov.in/returns/auth/dashboard") && !postClickUrl.includes("/download") && !postClickUrl.includes("/inward/")) {
+            console.log(`[GSTR-2B Autopilot] Post-BACK URL is not Return Dashboard (${postClickUrl}). Fast pushing to dashboard...`);
             if (await fastPushToReturnDashboard()) return true;
           }
           try {
@@ -70188,6 +70173,11 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             }
           } catch (e) {
           }
+          continue;
+        }
+        if (!curUrl.includes("return.gst.gov.in/returns/auth/dashboard")) {
+          console.log(`[GSTR-2B Autopilot] Detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
+          if (await fastPushToReturnDashboard()) return true;
           continue;
         }
         try {

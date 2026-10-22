@@ -451,37 +451,19 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 if (page.isClosed()) return false;
                 await dismissPopups();
 
-                // 1. If select dropdowns are already visible, we are ready!
-                try {
-                    const selectCount = await page.locator('select').count();
-                    if (selectCount >= 2) {
-                        return true;
-                    }
-                } catch(e) {}
-
                 const curUrl = page.url();
 
-                // 2. If on Access Denied or Error page, click "Dashboard" tab in navbar to recover
-                if (curUrl.includes('accessdenied') || curUrl.includes('/error/')) {
-                    console.log('[GSTR-2B Autopilot] Recovering from accessdenied page via Dashboard navbar...');
+                // 1. If already on Returns Dashboard and select dropdowns are visible, we are ready!
+                if (curUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
                     try {
-                        const dashLink = page.locator('a:has-text("Dashboard"), .navbar a:has-text("Dashboard"), li a:has-text("Dashboard")').first();
-                        if (await dashLink.isVisible({ timeout: 1500 }).catch(() => false)) {
-                            await dashLink.click().catch(() => {});
-                            await page.waitForTimeout(800);
-                            await dismissPopups();
-                            continue;
+                        const selectCount = await page.locator('select').count();
+                        if (selectCount >= 2) {
+                            return true;
                         }
                     } catch(e) {}
                 }
 
-                // 2B. If on quicklinks/returns URL -> Fast push directly to official Returns Dashboard!
-                if (curUrl.includes('quicklinks/returns')) {
-                    if (await fastPushToReturnDashboard()) return true;
-                    continue;
-                }
-
-                // 3. If on GSTR-2B download page or inward details page -> Strictly click on-screen BACK button!
+                // 2. If on GSTR-2B download page or inward details page -> Strictly click on-screen BACK button!
                 if (curUrl.includes('/download') || curUrl.includes('/inward/')) {
                     console.log('[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...');
                     let backClicked = false;
@@ -527,10 +509,11 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                         } catch(e) {}
                     }
 
-                    // Check if clicking BACK took us to quicklinks/returns
+                    // If after clicking BACK, the page is on ANY URL other than return dashboard, fast push immediately!
                     await page.waitForTimeout(200);
                     const postClickUrl = page.url();
-                    if (postClickUrl.includes('quicklinks/returns')) {
+                    if (!postClickUrl.includes('return.gst.gov.in/returns/auth/dashboard') && !postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
+                        console.log(`[GSTR-2B Autopilot] Post-BACK URL is not Return Dashboard (${postClickUrl}). Fast pushing to dashboard...`);
                         if (await fastPushToReturnDashboard()) return true;
                     }
 
@@ -542,6 +525,14 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                             return true;
                         }
                     } catch(e) {}
+                    continue;
+                }
+
+                // 3. ANY URL OTHER THAN https://return.gst.gov.in/returns/auth/dashboard -> FAST PUSH DIRECTLY!
+                // Covers quicklinks/returns, accessdenied, /error/, home page, services menu, etc.
+                if (!curUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
+                    console.log(`[GSTR-2B Autopilot] Detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
+                    if (await fastPushToReturnDashboard()) return true;
                     continue;
                 }
 
