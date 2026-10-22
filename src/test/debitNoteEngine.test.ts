@@ -10,6 +10,12 @@ import {
   reconcileDebitNotes,
   findSubsetSumMatch,
 } from '../lib/debitNoteEngine';
+import {
+  DEBIT_NOTE_21_COL_HEADERS,
+  buildDebitNotes21ColSheet,
+  exportDebitNotes21Col,
+  removeAllMergesFromWorkbook,
+} from '../lib/fileParser';
 
 describe('debitNoteEngine - Normalization & Parsing Utilities', () => {
   describe('parseAccountingFloat', () => {
@@ -448,6 +454,99 @@ describe('debitNoteEngine - Normalization & Parsing Utilities', () => {
       expect(Math.abs(actualReconciled2bCgst - expectedRaw2bCgst)).toBeLessThan(0.01);
       expect(Math.abs(actualReconciled2bSgst - expectedRaw2bSgst)).toBeLessThan(0.01);
       expect(Math.abs(actualReconciled2bVal - expectedRaw2bVal)).toBeLessThan(0.01);
+    });
+  });
+
+  describe('21-Column Zero-Merge Excel Export Suite', () => {
+    it('buildDebitNotes21ColSheet generates exact 21-column layout', () => {
+      expect(DEBIT_NOTE_21_COL_HEADERS).toHaveLength(21);
+      expect(DEBIT_NOTE_21_COL_HEADERS[0]).toBe('Match Status');
+      expect(DEBIT_NOTE_21_COL_HEADERS[20]).toBe('Audit Remarks / Action');
+
+      const dummyRow = {
+        matchStatus: 'Reconciled (Exact Match)' as any,
+        prSource: 'Original Register',
+        voucherNoPR: 'VCH-01',
+        noteTypeAndPeriod2B: '2B Credit Note (Oct 2025)',
+        gstinPR: '27AAAAA1111A1Z1',
+        gstin2B: '27AAAAA1111A1Z1',
+        supplierNamePR: 'ACME SUPPLIER',
+        supplierName2B: 'ACME SUPPLIER',
+        invoiceNoPR: 'INV-101',
+        invoiceNo2B: 'INV-101',
+        invoiceDatePR: '01/10/2025',
+        invoiceDate2B: '01/10/2025',
+        baseDiff: 0,
+        taxableValuePR: 10000,
+        nilRatedSeedValuePR: 0,
+        totalBaseValuePR: 10000,
+        taxableValue2B: 10000,
+        cgstPR: 900,
+        cgst2B: 900,
+        sgstPR: 900,
+        sgst2B: 900,
+        igstPR: 0,
+        igst2B: 0,
+        invoiceValuePR: 11800,
+        invoiceValue2B: 11800,
+        netTaxDiff: 0,
+        auditRemarks: 'Exact Match',
+        sortOrder: 1,
+      };
+
+      const ws = buildDebitNotes21ColSheet([dummyRow], 'TEST COMPANY');
+      expect(ws).toBeDefined();
+
+      // Ensure zero merges in the worksheet
+      expect(!ws['!merges'] || ws['!merges'].length === 0).toBe(true);
+
+      // Verify header row contains 21 columns
+      expect(ws['A4']?.v).toBe('Match Status');
+      expect(ws['U4']?.v).toBe('Audit Remarks / Action');
+    });
+
+    it('exportDebitNotes21Col produces workbook adhering strictly to Zero-Merge rule across all sheets', () => {
+      const dummyRow = {
+        matchStatus: 'Reconciled (Consolidated Batch)' as any,
+        prSource: 'Original Register',
+        voucherNoPR: 'VCH-02',
+        noteTypeAndPeriod2B: '2B Credit Note',
+        gstinPR: '27BBBBB2222B1Z2',
+        gstin2B: '27BBBBB2222B1Z2',
+        supplierNamePR: 'TEST VENDOR',
+        supplierName2B: 'TEST VENDOR',
+        invoiceNoPR: 'DN-BATCH',
+        invoiceNo2B: '2B-NOTE-1',
+        invoiceDatePR: '10/10/2025',
+        invoiceDate2B: '10/10/2025',
+        baseDiff: 0,
+        taxableValuePR: 20000,
+        nilRatedSeedValuePR: 0,
+        totalBaseValuePR: 20000,
+        taxableValue2B: 20000,
+        cgstPR: 1800,
+        cgst2B: 1800,
+        sgstPR: 1800,
+        sgst2B: 1800,
+        igstPR: 0,
+        igst2B: 0,
+        invoiceValuePR: 23600,
+        invoiceValue2B: 23600,
+        netTaxDiff: 0,
+        auditRemarks: 'Consolidated Batch',
+        sortOrder: 1,
+        isSubRow: false,
+        batchLabel: 'Batch #01',
+      };
+
+      const wb = exportDebitNotes21Col([dummyRow], 'test_output.xlsx', 'TEST COMPANY');
+      expect(wb.SheetNames).toContain('Debit Notes Reconciled');
+
+      // Verify strict zero merges across every sheet in workbook
+      for (const name of wb.SheetNames) {
+        const sheet = wb.Sheets[name];
+        expect(!sheet['!merges'] || sheet['!merges'].length === 0).toBe(true);
+      }
     });
   });
 });

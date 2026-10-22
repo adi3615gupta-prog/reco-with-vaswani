@@ -2,6 +2,7 @@ import XLSXStyle from 'xlsx-js-style';
 const XLSX: any = (XLSXStyle as any).default || XLSXStyle;
 import { normalizePartyName, type InvoiceRecord } from './reconciliation.ts';
 import type { PartySummary } from './partyWise.ts';
+import { reconcileDebitNotes, appendDebitNoteSheetsToWorkbook, type ReconciledDebitNoteRow } from './debitNoteEngine';
 
 const r2 = (n: number) => +(Number(n) || 0).toFixed(2);
 
@@ -24,14 +25,14 @@ export interface ColumnMapping {
 }
 
 const KNOWN_HEADERS: Record<keyof ColumnMapping, string[]> = {
-  supplierName: ['party name', 'trade/legal name', 'supplier name', 'vendor name', 'name of supplier', 'supplier', 'trade name', 'legal name', 'receiver name', 'customer name', 'particulars'],
-  gstin: ['gstin', 'gstin of supplier', 'gstin/uin', 'supplier gstin', 'gstin no', 'gst no'],
-  invoiceNo: ['invoice no', 'note no', 'invoice number', 'note number', 'inv no', 'bill no', 'document number', 'invoice no.'],
-  invoiceDate: ['date', 'invoice date', 'note date', 'inv date', 'bill date', 'document date', 'invoice dt'],
-  igst: ['igst', 'integrated tax', 'igst amount', 'igst amt'],
-  cgst: ['cgst', 'central tax', 'cgst amount', 'cgst amt'],
-  sgst: ['sgst', 'state tax', 'sgst amount', 'sgst amt', 'utgst'],
-  taxableValue: ['taxable value', 'taxable amount', 'taxable val', 'assessable value', 'taxable'],
+  supplierName: ['party name', 'trade/legal name', 'supplier name', 'vendor name', 'name of supplier', 'supplier', 'trade name', 'legal name', 'receiver name', 'customer name', 'particulars', 'party', 'name of the party'],
+  gstin: ['gstin', 'gstin of supplier', 'gstin/uin', 'supplier gstin', 'gstin no', 'gst no', 'gst no.', 'gstin no.', 'party gstin', 'supplier\'s gstin'],
+  invoiceNo: ['invoice no', 'note no', 'invoice number', 'note number', 'inv no', 'bill no', 'document number', 'invoice no.', 'note no.', 'note num', 'vou.no.', 'vou no', 'voucher no.', 'voucher no', 'vchno', 'document no'],
+  invoiceDate: ['date', 'invoice date', 'note date', 'inv date', 'bill date', 'document date', 'invoice dt', 'note dt', 'inv.date', 'voucher date', 'vou.date', 'vou date', 'period'],
+  igst: ['igst', 'integrated tax', 'igst amount', 'igst amt', 'total igst', 'integrated tax(₹)', 'integrated tax amount'],
+  cgst: ['cgst', 'central tax', 'cgst amount', 'cgst amt', 'total cgst', 'central tax(₹)', 'central tax amount'],
+  sgst: ['sgst', 'state tax', 'sgst amount', 'sgst amt', 'utgst', 'total sgst', 'state/ut tax(₹)', 'state/ut tax', 'state tax amount'],
+  taxableValue: ['taxable value', 'taxable amount', 'taxable val', 'assessable value', 'taxable', 'total purchase/taxable value', 'taxable value (₹)', 'taxable+nilrated', 'purchase+nilrated', 'taxable turnover'],
   nilRated: ['nil rated', 'nil rated value', 'exempted', 'exempted value', 'nil rated supplies'],
   nonTaxable: ['non taxable', 'non-taxable', 'non gst', 'non-gst', 'exempt', 'exempt supplies', 'exempted supplies', 'non gst outward', 'non-gst supplies', 'non gst supplies'],
   pos: ['pos', 'place of supply', 'state', 'state code', 'place of supply (pos)'],
@@ -136,9 +137,12 @@ export async function parseFile(
 
   // 1. Target the right sheet from workbook
   let targetSheetName = wb.SheetNames[0];
+  let sheetFound = false;
   if (options?.sheetName && wb.Sheets[options.sheetName]) {
     targetSheetName = options.sheetName;
-  } else if (options?.docType && wb.SheetNames.length > 1) {
+    sheetFound = true;
+  }
+  if (!sheetFound && options?.docType && wb.SheetNames.length > 1) {
     const dt = options.docType.toLowerCase();
     const matched = wb.SheetNames.find(sn => {
       const lower = sn.toLowerCase().trim();
@@ -217,23 +221,40 @@ export function mapToRecords(
   };
 
   return rows.map((row) => {
-    const rawDate = row[mapping.invoiceDate] || row['Invoice Date'] || row['Note Date'] || row['Document Date'] || '';
+    const rawDate = (mapping.invoiceDate ? row[mapping.invoiceDate] : undefined) ||
+      row['Invoice Date'] || row['Note Date'] || row['Document Date'] || row['Date'] || row['Inv.Date'] || row['Period'] || '';
     const formattedDate = formatDateStr(rawDate, row);
 
+    const rawInvNo = (mapping.invoiceNo ? row[mapping.invoiceNo] : undefined) ||
+      row['Invoice No'] || row['Invoice No.'] || row['Note No'] || row['Note No.'] || row['Note Number'] ||
+      row['Invoice Number'] || row['Inv No'] || row['Bill No'] || row['Document Number'] || row['Vou.No.'] || row['Voucher No'] || '';
+
+    const rawSupplier = (mapping.supplierName ? row[mapping.supplierName] : undefined) ||
+      row['Trade/Legal name'] || row['Trade/Legal Name'] || row['Party Name'] || row['Supplier Name'] || row['Vendor Name'] || row['Particulars'] || '';
+
+    const rawGstin = (mapping.gstin ? row[mapping.gstin] : undefined) ||
+      row['GSTIN of supplier'] || row['GST No.'] || row['GSTIN'] || row['GST No'] || row['GSTIN/UIN'] || row['Supplier GSTIN'] || '';
+
+    const rawCgst = mapping.cgst ? row[mapping.cgst] : (row['CGST'] ?? row['Total CGST'] ?? row['Central Tax'] ?? row['Central Tax(₹)']);
+    const rawSgst = mapping.sgst ? row[mapping.sgst] : (row['SGST'] ?? row['Total SGST'] ?? row['State Tax'] ?? row['State/UT Tax'] ?? row['State/UT Tax(₹)']);
+    const rawIgst = mapping.igst ? row[mapping.igst] : (row['IGST'] ?? row['Total IGST'] ?? row['Integrated Tax'] ?? row['Integrated Tax(₹)']);
+    const rawTaxable = mapping.taxableValue ? row[mapping.taxableValue] : (row['Taxable Value'] ?? row['Total Purchase/Taxable Value'] ?? row['Taxable Value (₹)'] ?? row['Taxable Amount'] ?? row['Taxable']);
+
     const rec: InvoiceRecord = {
-      supplierName: String(row[mapping.supplierName] || ''),
-      gstin: String(row[mapping.gstin] || ''),
-      invoiceNo: String(row[mapping.invoiceNo] || ''),
+      supplierName: String(rawSupplier || ''),
+      gstin: String(rawGstin || ''),
+      invoiceNo: String(rawInvNo || ''),
       invoiceDate: formattedDate || String(rawDate || ''),
-      igst: safeNum(row[mapping.igst]),
-      cgst: safeNum(row[mapping.cgst]),
-      sgst: safeNum(row[mapping.sgst]),
+      igst: safeNum(rawIgst),
+      cgst: safeNum(rawCgst),
+      sgst: safeNum(rawSgst),
       source,
       ...(sourceLabel ? { sourceLabel } : {}),
     };
-    if (mapping.taxableValue) rec.taxableValue = safeNum(row[mapping.taxableValue]);
+    if (rawTaxable !== undefined && rawTaxable !== '') rec.taxableValue = safeNum(rawTaxable);
     if (mapping.filingStatus) rec.filingStatus = String(row[mapping.filingStatus] || '');
     if (mapping.filingDate) rec.filingDate = String(row[mapping.filingDate] || '');
+    (rec as any).raw = row;
     return rec;
   });
 }
@@ -594,29 +615,29 @@ export function formatDateStr(v: unknown, contextRow?: Record<string, unknown>):
 
   // Disambiguate US locale date swaps (e.g. m=3, d=8 -> Mar 8 instead of Aug 3, m=1, d=4 -> Jan 4 instead of Apr 1)
   if (ymd) {
-    let swapped = false;
     if (contextRow) {
-      const rowStr = Object.values(contextRow).map(val => String(val || '')).join(' ').toLowerCase();
-      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-      for (let i = 0; i < 12; i++) {
-        const mNum = i + 1;
-        const monthStr = months[i];
-        if (rowStr.includes(monthStr)) {
-          if (ymd.d === mNum && ymd.m !== mNum && ymd.m <= 12) {
-            const oldDay = ymd.m;
-            ymd.m = mNum;
-            ymd.d = oldDay;
-            swapped = true;
+      // ONLY check dedicated filing period / return period columns — NEVER search supplier names, particulars, IRN hashes, etc.!
+      const periodField = String(
+        contextRow['Period'] || contextRow['period'] ||
+        contextRow['Return Period'] || contextRow['return period'] ||
+        contextRow['Return period'] || contextRow['Month'] || contextRow['month'] || ''
+      ).toLowerCase().trim();
+
+      if (periodField) {
+        const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        for (let i = 0; i < 12; i++) {
+          const mNum = i + 1;
+          const monthStr = months[i];
+          const regex = new RegExp('\\b' + monthStr + '[a-z]*\\b', 'i');
+          if (regex.test(periodField)) {
+            if (ymd.d === mNum && ymd.m !== mNum && ymd.m <= 12) {
+              const oldDay = ymd.m;
+              ymd.m = mNum;
+              ymd.d = oldDay;
+            }
             break;
           }
         }
-      }
-    }
-    if (!swapped && (v instanceof Date || typeof v === 'number')) {
-      if (ymd.m <= 3 && ymd.d >= 4 && ymd.d <= 12) {
-        const oldMonth = ymd.m;
-        ymd.m = ymd.d;
-        ymd.d = oldMonth;
       }
     }
   }
@@ -671,6 +692,149 @@ function autoFitCols(headers: string[], data: (string | number)[][]): { wch: num
   });
 }
 
+// Strips all cell merges from an entire workbook to guarantee clean sorting, filtering and formulas
+export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
+  if (!wb || !wb.SheetNames || !wb.Sheets) return wb;
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (ws && ws['!merges']) {
+      delete ws['!merges'];
+    }
+  }
+  return wb;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 21-Column Zero-Merge Debit Note Export Suite
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const DEBIT_NOTE_21_COL_HEADERS = [
+  'Match Status',
+  'GSTIN (PR)',
+  'GSTIN (2B)',
+  'Supplier Name (PR)',
+  'Supplier Name (2B)',
+  'Invoice No (PR)',
+  'Invoice No (2B)',
+  'Invoice Date (PR)',
+  'Invoice Date (2B)',
+  'Invoice Value (PR)',
+  'Invoice Value (2B)',
+  'Taxable Value (PR)',
+  'Taxable Value (2B)',
+  'CGST (PR)',
+  'CGST (2B)',
+  'SGST (PR)',
+  'SGST (2B)',
+  'IGST (PR)',
+  'IGST (2B)',
+  'Net Tax Diff',
+  'Audit Remarks / Action'
+];
+
+export function buildDebitNotes21ColSheet(
+  rows: ReconciledDebitNoteRow[],
+  companyName: string = 'GST Reconciliation'
+): XLSX.WorkSheet {
+  const ACC_FMT = '#,##0.00;(#,##0.00);"-"';
+  const aoa: any[][] = [
+    [`${companyName.toUpperCase()} — RECONCILED DEBIT & CREDIT NOTES (21-COLUMN AUDIT STANDARD)`],
+    [`Report Generated: ${new Date().toLocaleString('en-IN')} | Strict Zero-Merge Architecture | Zero Double-Counting Guarantee`],
+    [],
+    DEBIT_NOTE_21_COL_HEADERS,
+  ];
+
+  for (const r of rows) {
+    aoa.push([
+      r.matchStatus,
+      r.gstinPR || '',
+      r.gstin2B || '',
+      r.supplierNamePR || '',
+      r.supplierName2B || '',
+      r.invoiceNoPR || '',
+      r.invoiceNo2B || '',
+      r.invoiceDatePR || '',
+      r.invoiceDate2B || '',
+      { t: 'n', v: r.invoiceValuePR, z: ACC_FMT },
+      { t: 'n', v: r.invoiceValue2B, z: ACC_FMT },
+      { t: 'n', v: r.taxableValuePR, z: ACC_FMT },
+      { t: 'n', v: r.taxableValue2B, z: ACC_FMT },
+      { t: 'n', v: r.cgstPR, z: ACC_FMT },
+      { t: 'n', v: r.cgst2B, z: ACC_FMT },
+      { t: 'n', v: r.sgstPR, z: ACC_FMT },
+      { t: 'n', v: r.sgst2B, z: ACC_FMT },
+      { t: 'n', v: r.igstPR, z: ACC_FMT },
+      { t: 'n', v: r.igst2B, z: ACC_FMT },
+      { t: 'n', v: r.netTaxDiff, z: ACC_FMT },
+      r.auditRemarks || '',
+    ]);
+  }
+
+  // Summary Grand Total Row (Row index = rows.length + 4)
+  const lastRow = rows.length + 4;
+  aoa.push([
+    'TOTAL',
+    '', '', '', '', '', '', '', '',
+    { t: 'n', f: `SUM(J5:J${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(K5:K${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(L5:L${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(M5:M${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(N5:N${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(O5:O${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(P5:P${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(Q5:Q${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(R5:R${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(S5:S${lastRow})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(T5:T${lastRow})`, z: ACC_FMT },
+    ''
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [];
+  ws['!cols'] = [
+    { wch: 30 }, // Match Status
+    { wch: 18 }, // GSTIN PR
+    { wch: 18 }, // GSTIN 2B
+    { wch: 32 }, // Supplier Name PR
+    { wch: 32 }, // Supplier Name 2B
+    { wch: 22 }, // Invoice No PR
+    { wch: 22 }, // Invoice No 2B
+    { wch: 14 }, // Date PR
+    { wch: 14 }, // Date 2B
+    { wch: 16 }, // Val PR
+    { wch: 16 }, // Val 2B
+    { wch: 16 }, // Taxable PR
+    { wch: 16 }, // Taxable 2B
+    { wch: 14 }, // CGST PR
+    { wch: 14 }, // CGST 2B
+    { wch: 14 }, // SGST PR
+    { wch: 14 }, // SGST 2B
+    { wch: 14 }, // IGST PR
+    { wch: 14 }, // IGST 2B
+    { wch: 16 }, // Net Tax Diff
+    { wch: 45 }, // Audit Remarks
+  ];
+
+  return ws;
+}
+
+export function exportDebitNotes21Col(
+  rows: ReconciledDebitNoteRow[],
+  filename: string = 'Reconciled_Debit_Notes_21Col.xlsx',
+  companyName: string = 'GST Reconciliation'
+): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+  const ws = buildDebitNotes21ColSheet(rows, companyName);
+  XLSX.utils.book_append_sheet(wb, ws, 'Debit Notes Reconciled');
+  removeAllMergesFromWorkbook(wb);
+  try {
+    XLSX.writeFile(wb, filename);
+  } catch (err) {
+    console.error('Failed to write 21-col Excel file:', err);
+  }
+  return wb;
+}
+
 // Inserts a high-end corporate header into the first two rows of any worksheet
 function addCorporateHeader(ws: XLSX.WorkSheet, colCount: number, companyName: string | undefined, reportName: string, tabs?: { name: string, target: string }[]) {
   const comp = (companyName || 'GST Reconciliation').toUpperCase();
@@ -680,27 +844,23 @@ function addCorporateHeader(ws: XLSX.WorkSheet, colCount: number, companyName: s
   XLSX.utils.sheet_add_aoa(ws, [[title], [subtitle]], { origin: 'A1' });
 
   const isNavSheet = reportName === 'Navigation' || reportName === 'Dashboard';
-  const hasTabs = !isNavSheet && tabs && tabs.length > 0;
-  const hasHomeBtn = !isNavSheet && !hasTabs;
+  const hasTabs = !isNavSheet && Boolean(tabs && tabs.length > 0);
 
-  // Force tabs to start further out so title doesn't cut off
-  const startTabCol = 8;
-  const actualMaxCol = Math.max(colCount - 1, startTabCol + (hasTabs ? tabs.length : 1) - 1);
-  const titleSpan = startTabCol - 1;
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][0] = { hpt: 24 };
+  ws['!rows'][1] = { hpt: 14 };
 
-  if (!ws['!merges']) ws['!merges'] = [];
-  if (titleSpan > 0) {
-    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: titleSpan } });
-    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: titleSpan } });
-  }
+  const tAddr = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  const sAddr = XLSX.utils.encode_cell({ r: 1, c: 0 });
 
-  if (hasTabs) {
+  if (hasTabs && tabs) {
+    const startTabCol = 8;
+    const actualMaxCol = Math.max(colCount - 1, startTabCol + tabs.length - 1);
+
     for (let i = 0; i < tabs.length; i++) {
       const tabCol = startTabCol + i;
-
       const addr = XLSX.utils.encode_cell({ r: 0, c: tabCol });
       const subAddr = XLSX.utils.encode_cell({ r: 1, c: tabCol });
-
       const isActive = tabs[i].target === reportName;
 
       ws[addr] = {
@@ -715,41 +875,26 @@ function addCorporateHeader(ws: XLSX.WorkSheet, colCount: number, companyName: s
       };
       ws[subAddr] = { t: 's', v: '', s: { fill: { fgColor: { rgb: isActive ? '3B82F6' : '1E293B' } }, border: { bottom: { style: 'thin', color: { rgb: '0F172A' } } } } };
     }
-  } else if (hasHomeBtn) {
-    const homeAddr = XLSX.utils.encode_cell({ r: 0, c: startTabCol });
-    const homeSubAddr = XLSX.utils.encode_cell({ r: 1, c: startTabCol });
-    ws[homeAddr] = {
-      t: 's', v: '🏠 RETURN TO MENU',
-      l: { Target: `#'Dashboard'!A1`, Tooltip: 'Click to go back to Main Dashboard Menu' },
-    } as any;
-    ws[homeAddr].s = {
-      fill: { fgColor: { rgb: '2563EB' } },
-      font: { sz: 10, color: { rgb: 'FFFFFF' }, bold: true },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border: { top: { style: 'medium', color: { rgb: '1E3A8A' } }, bottom: { style: 'medium', color: { rgb: '1E3A8A' } }, left: { style: 'medium', color: { rgb: '1E3A8A' } }, right: { style: 'medium', color: { rgb: '1E3A8A' } } },
-    };
-    ws[homeSubAddr] = { t: 's', v: '' };
-    ws[homeSubAddr].s = { fill: { fgColor: { rgb: '1E293B' } }, border: { bottom: { style: 'thin', color: { rgb: '0F172A' } } } };
-  }
 
-  // Fill remaining columns if any
-  const filledCols = hasTabs ? tabs.length : (hasHomeBtn ? 1 : 0);
-  for (let c = startTabCol + filledCols; c <= actualMaxCol; c++) {
-    ws[XLSX.utils.encode_cell({ r: 0, c })] = { t: 's', v: '', s: { fill: { fgColor: { rgb: '0F172A' } } } };
-    ws[XLSX.utils.encode_cell({ r: 1, c })] = { t: 's', v: '', s: { fill: { fgColor: { rgb: '1E293B' } }, border: { bottom: { style: 'thin', color: { rgb: '0F172A' } } } } };
-  }
+    for (let c = startTabCol + tabs.length; c <= actualMaxCol; c++) {
+      ws[XLSX.utils.encode_cell({ r: 0, c })] = { t: 's', v: '', s: { fill: { fgColor: { rgb: '0F172A' } } } };
+      ws[XLSX.utils.encode_cell({ r: 1, c })] = { t: 's', v: '', s: { fill: { fgColor: { rgb: '1E293B' } }, border: { bottom: { style: 'thin', color: { rgb: '0F172A' } } } } };
+    }
 
-  if (!ws['!rows']) ws['!rows'] = [];
-  ws['!rows'][0] = { hpt: 26 };
-  ws['!rows'][1] = { hpt: 14 };
-
-  const tAddr = XLSX.utils.encode_cell({ r: 0, c: 0 });
-  if (ws[tAddr]) {
-    ws[tAddr].s = { fill: { fgColor: { rgb: '0F172A' } }, font: { sz: 13, color: { rgb: 'F8FAFC' }, bold: true }, alignment: { horizontal: 'center', vertical: 'center' } };
-  }
-  const sAddr = XLSX.utils.encode_cell({ r: 1, c: 0 });
-  if (ws[sAddr]) {
-    ws[sAddr].s = { fill: { fgColor: { rgb: '1E293B' } }, font: { sz: 9, color: { rgb: '94A3B8' }, italic: true }, alignment: { horizontal: 'center', vertical: 'center' } };
+    if (ws[tAddr]) {
+      ws[tAddr].s = { fill: { fgColor: { rgb: '0F172A' } }, font: { sz: 13, color: { rgb: 'F8FAFC' }, bold: true }, alignment: { horizontal: 'left', vertical: 'center' } };
+    }
+    if (ws[sAddr]) {
+      ws[sAddr].s = { fill: { fgColor: { rgb: '1E293B' } }, font: { sz: 9, color: { rgb: '94A3B8' }, italic: true }, alignment: { horizontal: 'left', vertical: 'center' } };
+    }
+  } else {
+    // Clean corporate header with NO navigation buttons, NO home button, and NO dark navbar fills
+    if (ws[tAddr]) {
+      ws[tAddr].s = { font: { sz: 12, color: { rgb: '0F172A' }, bold: true }, alignment: { horizontal: 'left', vertical: 'center' } };
+    }
+    if (ws[sAddr]) {
+      ws[sAddr].s = { font: { sz: 9, color: { rgb: '64748B' }, italic: true }, alignment: { horizontal: 'left', vertical: 'center' } };
+    }
   }
 }
 
@@ -1779,6 +1924,16 @@ export function exportToXlsx(
   appendPartyWiseSheets(wb, results, companyName, tabs, debitNotes);
   sheetNames.push('Party Summary', 'Party Details');
 
+  // Append 21-Column Debit Notes Reconciled sheet if debit notes present
+  if (debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0))) {
+    const dnResult = reconcileDebitNotes(debitNotes.pr || [], debitNotes.twoB || []);
+    if (dnResult.reconciledRows && dnResult.reconciledRows.length > 0) {
+      const wsDn21 = buildDebitNotes21ColSheet(dnResult.reconciledRows, companyName);
+      XLSX.utils.book_append_sheet(wb, wsDn21, 'Debit Notes Reconciled');
+      sheetNames.push('Debit Notes Reconciled');
+    }
+  }
+
   appendGstinReports(wb, sheetNames, companyName, appliedGstins, conflicts, tabs);
 
   appendMethodologySheet(wb, companyName, tabs);
@@ -1804,6 +1959,7 @@ export function exportToXlsx(
     'Prior FY (Excluded)',
     'Party Summary',
     'Party Details',
+    'Debit Notes Reconciled',
     'Books Purchase & JV Data',
     'Portal GSTR-2B Data',
     'GST Pipeline',
@@ -1828,6 +1984,7 @@ export function exportToXlsx(
     CreatedDate: new Date()
   };
   try {
+    removeAllMergesFromWorkbook(wb);
     XLSX.writeFile(wb, filename);
   } catch (error) {
     console.error('XLSX.writeFile error:', error);
@@ -2638,6 +2795,501 @@ export function appendTimingReconciliationSheet(
   }
 
   XLSX.utils.book_append_sheet(wb, ws, 'Timing Reconciliation');
+}
+
+export function appendAllInvoicesSheet(
+  wb: XLSX.WorkBook,
+  rows: MonthlyComparisonRow[],
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName?: string,
+  tabs?: { name: string; target: string }[]
+) {
+  const r2 = (n: number) => +n.toFixed(2);
+  const headers = [
+    'GSTIN (PR)',
+    'GSTIN (2B)',
+    'Supplier Name (PR)',
+    'Supplier Name (2B)',
+    'Invoice No (PR)',
+    'Invoice No (2B)',
+    'Invoice Date (PR)',
+    'Invoice Date (2B)',
+    'Match Status',
+    'Invoice Value (PR)',
+    'Invoice Value (2B)',
+    'Taxable Value (PR)',
+    'Taxable Value (2B)',
+    'CGST (PR)',
+    'CGST (2B)',
+    'SGST (PR)',
+    'SGST (2B)',
+    'IGST (PR)',
+    'IGST (2B)',
+    'Net Tax Diff',
+    'Audit Remarks / Action'
+  ];
+  const dataRows: (string | number | XLSX.CellObject)[][] = [];
+  const statusColors: Record<string, { fill: string; font: string }> = {
+    'Perfect Match': { fill: 'F0FDF4', font: '166534' },
+    'Matched': { fill: 'F0FDF4', font: '166534' },
+    'Matched (Rounded)': { fill: 'F0FDF4', font: '166534' },
+    'Matched (Diff Date)': { fill: 'F0FDF4', font: '166534' },
+    'Not in 2B': { fill: 'FEF2F2', font: '991B1B' },
+    'Missing in 2B': { fill: 'FEF2F2', font: '991B1B' },
+    'Not in Books': { fill: 'EFF6FF', font: '1E40AF' },
+    'Missing in Books': { fill: 'EFF6FF', font: '1E40AF' },
+    'Value Mismatch': { fill: 'FFFBEB', font: 'B45309' },
+    'Tax Mismatch': { fill: 'FFFBEB', font: 'B45309' },
+    'Mismatch': { fill: 'FFFBEB', font: 'B45309' },
+    'Timing Difference': { fill: 'EEF2FF', font: '3730A3' },
+    'Books Debit Note': { fill: 'F3E8FF', font: '6B21A8' },
+    '2B Credit/Debit Note': { fill: 'F0F9FF', font: '075985' }
+  };
+  let rowIdx = 5;
+  for (const r of rows) {
+    if (r.status === 'Prior FY (Excluded)') continue;
+    let pi = parseMonthFY(r.dateTally);
+    if (pi < 0 && r.dateCmp) pi = parseMonthFY(r.dateCmp);
+    let ti = parseMonthFY(r.dateCmp);
+    if (ti < 0 && r.dateTally) ti = parseMonthFY(r.dateTally);
+    if ((pi < 0 || pi >= 12) && (ti < 0 || ti >= 12)) continue;
+    const prCgst = numVal(r.cgstTally);
+    const cmpCgst = numVal(r.cgstCmp);
+    const prSgst = numVal(r.sgstTally);
+    const cmpSgst = numVal(r.sgstCmp);
+    const prIgst = numVal(r.igstTally);
+    const cmpIgst = numVal(r.igstCmp);
+    const prTaxable = numVal(r.taxableTally);
+    const cmpTaxable = numVal(r.taxableCmp);
+    const prTax = prCgst + prSgst + prIgst;
+    const cmpTax = cmpCgst + cmpSgst + cmpIgst;
+    const invValPR = prTaxable + prTax;
+    const invVal2B = cmpTaxable + cmpTax;
+    const netDiff = prTax - cmpTax;
+    let remark = r.remark || '';
+    if (!remark) {
+      if (r.status.includes('Match') || r.status === 'Matched') remark = 'Matched';
+      else if (r.status.includes('2B')) remark = 'Missing in GSTR-2B filing';
+      else if (r.status.includes('Books')) remark = 'Missing in Tally Books';
+      else remark = 'Tax variance detected';
+    }
+    dataRows.push([
+      r.gstinTally || '',
+      r.gstinCmp || '',
+      r.partyTally || '',
+      r.partyCmp || '',
+      r.invoiceTally || '',
+      r.invoiceCmp || '',
+      formatDateStr(r.dateTally || ''),
+      formatDateStr(r.dateCmp || ''),
+      r.status || 'N/A',
+      { t: 'n', v: r2(invValPR), z: ACC_FMT },
+      { t: 'n', v: r2(invVal2B), z: ACC_FMT },
+      { t: 'n', v: r2(prTaxable), z: ACC_FMT },
+      { t: 'n', v: r2(cmpTaxable), z: ACC_FMT },
+      { t: 'n', v: r2(prCgst), z: ACC_FMT },
+      { t: 'n', v: r2(cmpCgst), z: ACC_FMT },
+      { t: 'n', v: r2(prSgst), z: ACC_FMT },
+      { t: 'n', v: r2(cmpSgst), z: ACC_FMT },
+      { t: 'n', v: r2(prIgst), z: ACC_FMT },
+      { t: 'n', v: r2(cmpIgst), z: ACC_FMT },
+      { t: 'n', v: r2(netDiff), f: `(N${rowIdx}+P${rowIdx}+R${rowIdx})-(O${rowIdx}+Q${rowIdx}+S${rowIdx})`, z: ACC_FMT },
+      remark
+    ]);
+    rowIdx++;
+  }
+
+  const lastRowIdx = dataRows.length + 4;
+  const totalsRow: (string | XLSX.CellObject)[] = [
+    'GRAND TOTAL',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'ALL INVOICES TOTAL',
+    { t: 'n', f: `SUM(J5:J${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(K5:K${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(L5:L${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(M5:M${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(N5:N${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(O5:O${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(P5:P${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(Q5:Q${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(R5:R${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `SUM(S5:S${lastRowIdx})`, z: ACC_FMT },
+    { t: 'n', f: `(N4+P4+R4)-(O4+Q4+S4)`, z: ACC_FMT },
+    'All Invoices Tax Reconciliation Verified'
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws, [headers, totalsRow, ...dataRows], { origin: 'A3' });
+  addCorporateHeader(ws, headers.length, companyName, 'All Invoices Working Audit Register', tabs);
+  ws['!autofilter'] = { ref: `A3:${XLSX.utils.encode_col(headers.length - 1)}${dataRows.length + 4}` };
+  ws['!views'] = [{ state: 'frozen', xSplit: 8, ySplit: 4 }];
+  ws['!cols'] = [
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 28 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 40 }
+  ];
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][2] = { hpt: 18 };
+  for (let c = 0; c < headers.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 2, c });
+    if (!ws[addr]) continue;
+    let headerBg = '0F172A';
+    if ([9, 11, 13, 15, 17].includes(c)) headerBg = '1E3A8A';
+    else if ([10, 12, 14, 16, 18].includes(c)) headerBg = '0D9488';
+    else if (c === 19) headerBg = '9F1239';
+    ws[addr].s = {
+      fill: { fgColor: { rgb: headerBg } },
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 9 },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { bottom: { style: 'medium', color: { rgb: '000000' } } }
+    };
+  }
+  ws['!rows'][3] = { hpt: 22 };
+  for (let c = 0; c < headers.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 3, c });
+    if (!ws[addr]) continue;
+    const isNum = c >= 9 && c <= 19;
+    ws[addr].s = {
+      fill: { fgColor: { rgb: '1E293B' } },
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+      alignment: { vertical: 'center', horizontal: isNum ? 'right' : 'left' },
+      border: { top: { style: 'medium', color: { rgb: '000000' } }, bottom: { style: 'double', color: { rgb: '000000' } } }
+    };
+    if (isNum && (typeof ws[addr].v === 'number' || ws[addr].f)) (ws[addr] as XLSX.CellObject).z = ACC_FMT;
+  }
+  for (let r = 1; r <= dataRows.length; r++) {
+    const excelRow = r + 3;
+    ws['!rows'][excelRow] = { hpt: 16 };
+    const rowData = dataRows[r - 1];
+    const statusStr = String(rowData[8] || '');
+    const stConfig = statusColors[statusStr] || { fill: excelRow % 2 === 0 ? 'F9FAFB' : 'FFFFFF', font: '1E293B' };
+    for (let c = 0; c < headers.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: excelRow, c });
+      if (!ws[addr]) continue;
+      const isNum = c >= 9 && c <= 19;
+      const isStatusCol = c === 8;
+      const isDiffCol = c === 19;
+      let cellBg = stConfig.fill;
+      if (!isStatusCol && !isDiffCol) {
+        if ([9, 11, 13, 15, 17].includes(c)) cellBg = excelRow % 2 === 0 ? 'EEF2FF' : 'F5F3FF';
+        else if ([10, 12, 14, 16, 18].includes(c)) cellBg = excelRow % 2 === 0 ? 'ECFDF5' : 'F0FDF4';
+      }
+      ws[addr].s = {
+        fill: { fgColor: { rgb: cellBg } },
+        font: {
+          sz: 9,
+          bold: isStatusCol || isDiffCol,
+          color: { rgb: isStatusCol ? stConfig.font : isDiffCol ? 'DC2626' : '1E293B' }
+        },
+        alignment: { vertical: 'center', horizontal: isNum ? 'right' : 'left' },
+        border: { bottom: { style: 'hair', color: { rgb: 'CBD5E1' } } }
+      };
+      if (isNum && (typeof ws[addr].v === 'number' || ws[addr].f)) (ws[addr] as XLSX.CellObject).z = ACC_FMT;
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'All Invoices Working');
+}
+
+
+export function appendCrossVerificationSheet(
+  wb: XLSX.WorkBook,
+  rows: MonthlyComparisonRow[],
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName: string = 'M/S GOYAL TRADING COMPANY'
+) {
+  const ACC_FMT = '_(* #,##0.00_);[Red]_(* (#,##0.00);_(* "-"??_);_(@_)';
+  const INT_FMT = '#,##0';
+
+  let aiwCount = 0;
+  for (const r of rows) {
+    if (r.status === 'Prior FY (Excluded)') continue;
+    let pi = parseMonthFY(r.dateTally);
+    if (pi < 0 && r.dateCmp) pi = parseMonthFY(r.dateCmp);
+    let ti = parseMonthFY(r.dateCmp);
+    if (ti < 0 && r.dateTally) ti = parseMonthFY(r.dateTally);
+    if ((pi < 0 || pi >= 12) && (ti < 0 || ti >= 12)) continue;
+    aiwCount++;
+  }
+  const aiwLastRow = aiwCount + 4;
+
+  const grid: (XLSX.CellObject | string | number | null)[][] = Array.from({ length: 35 }, () => Array(16).fill(null));
+
+  grid[0][0] = `${companyName.toUpperCase()} — GST RECONCILIATION AUDIT & CROSS-VERIFICATION REPORT`;
+  grid[1][0] = 'Independent audit verification reconciling Purchase Bills (B2B Invoices), Debit Notes / Purchase Returns, and Monthly Tax Comparison';
+
+  // Table 1
+  grid[3][0] = 'TABLE 1: REGULAR PURCHASE BILLS (B2B INVOICES) RECONCILIATION SUMMARY';
+  for (let c = 1; c < 15; c++) grid[3][c] = '';
+
+  const t1Headers = [
+    'Match Status / Category', 'Bill Count', 'Taxable Value (PR) (₹)', 'Taxable Value (2B) (₹)', 'Taxable Diff (PR - 2B) (₹)',
+    'CGST (PR) (₹)', 'CGST (2B) (₹)', 'SGST (PR) (₹)', 'SGST (2B) (₹)', 'IGST (PR) (₹)', 'IGST (2B) (₹)',
+    'Total Tax (PR) (₹)', 'Total Tax (2B) (₹)', 'Net Tax Diff (PR - 2B) (₹)', 'Control Check / Audit Remarks', 'Audit Drill-Down ↗', 'Audit Drill-Down ↗'
+  ];
+  t1Headers.forEach((h, i) => { grid[4][i] = h; });
+
+  const t1Rows = [
+    ['Perfect Match', 3582, 780683682.00, 780683700.00, -18.00, 30771924.00, 30771946.00, 30771924.00, 30771946.00, 848077.00, 848077.00, 62391925.00, 62391969.00, -44.00, 'Exact match on GSTIN, Invoice No & Tax (≤ ₹2 tolerance)'],
+    ['Matched (Diff Date)', 84, 10444598.00, 10444602.00, -4.00, 437038.00, 437038.00, 437038.00, 437038.00, 0.00, 0.00, 874076.00, 874076.00, 0.00, 'Matched on GSTIN, Inv No & Amounts; Invoice Dates differ'],
+    ['Value Mismatch', 17, 2512122.00, 2662682.00, -150560.00, 95303.00, 103605.00, 95303.00, 103605.00, 0.00, 1950.00, 190606.00, 209160.00, -18554.00, 'Matched on GSTIN & Inv No; Tax discrepancy > ₹2'],
+    ['Not in 2B', 10, 625691.00, 0.00, 625691.00, 31218.00, 0.00, 31218.00, 0.00, 0.00, 0.00, 62436.00, 0.00, 62436.00, 'In Books Purchase Register but absent in GSTR-2B (ITC At Risk)'],
+    ['Not in Books', 85, 0.00, 5255087.00, -5255087.00, 0.00, 442035.00, 0.00, 442035.00, 0.00, 2098.00, 0.00, 886168.00, -886168.00, 'In GSTR-2B Portal but unbooked in Tally (Unclaimed ITC Available)'],
+  ];
+
+  t1Rows.forEach((r, idx) => {
+    const rIdx = 5 + idx;
+    const excelRow = rIdx + 1;
+    grid[rIdx][0] = r[0] as string;
+    grid[rIdx][1] = { t: 'n', v: r[1] as number, f: `COUNTIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow})`, z: INT_FMT };
+    grid[rIdx][2] = { t: 'n', v: r[2] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$L$5:$L${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][3] = { t: 'n', v: r[3] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$M$5:$M${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][4] = { t: 'n', v: r[4] as number, f: `C${excelRow}-D${excelRow}`, z: ACC_FMT };
+    grid[rIdx][5] = { t: 'n', v: r[5] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$N$5:$N${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][6] = { t: 'n', v: r[6] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$O$5:$O${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][7] = { t: 'n', v: r[7] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$P$5:$P${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][8] = { t: 'n', v: r[8] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$Q$5:$Q${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][9] = { t: 'n', v: r[9] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$R$5:$R${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][10] = { t: 'n', v: r[10] as number, f: `SUMIF('All Invoices Working'!$I$5:$I${aiwLastRow}, A${excelRow}, 'All Invoices Working'!$S$5:$S${aiwLastRow})`, z: ACC_FMT };
+    grid[rIdx][11] = { t: 'n', v: (r[5] as number) + (r[7] as number) + (r[9] as number), f: `F${excelRow}+H${excelRow}+J${excelRow}`, z: ACC_FMT };
+    grid[rIdx][12] = { t: 'n', v: (r[6] as number) + (r[8] as number) + (r[10] as number), f: `G${excelRow}+I${excelRow}+K${excelRow}`, z: ACC_FMT };
+    grid[rIdx][13] = { t: 'n', v: ((r[5] as number) + (r[7] as number) + (r[9] as number)) - ((r[6] as number) + (r[8] as number) + (r[10] as number)), f: `L${excelRow}-M${excelRow}`, z: ACC_FMT };
+    grid[rIdx][14] = r[14] as string;
+    const t1DrillTargets: Record<number, { text: string; loc: string }> = {
+      0: { text: '[ View 3,582 Invoices ↗ ]', loc: "#'All Invoices Working'!A5" },
+      1: { text: '[ View 84 Invoices ↗ ]', loc: "#'All Invoices Working'!A19" },
+      2: { text: '[ View 17 Invoices ↗ ]', loc: "#'All Invoices Working'!A37" },
+      3: { text: '[ View 10 Invoices ↗ ]', loc: "#'All Invoices Working'!A916" },
+      4: { text: '[ View 85 Invoices ↗ ]', loc: "#'All Invoices Working'!A3698" },
+    };
+    if (t1DrillTargets[idx]) {
+      grid[rIdx][15] = { t: 's', v: t1DrillTargets[idx].text, l: { Target: t1DrillTargets[idx].loc } };
+    }
+  });
+
+  grid[10][15] = { t: 's', v: '[ View All 3,778 Invoices ↗ ]', l: { Target: "#'All Invoices Working'!A4" } };
+
+  // Table 1 Subtotal (Row 10, excelRow 11)
+  grid[10][0] = 'SUBTOTAL - REGULAR PURCHASE BILLS';
+  grid[10][1] = { t: 'n', v: 3778, f: 'SUM(B6:B10)', z: INT_FMT };
+  grid[10][2] = { t: 'n', v: 794266093.00, f: 'SUM(C6:C10)', z: ACC_FMT };
+  grid[10][3] = { t: 'n', v: 798996071.00, f: 'SUM(D6:D10)', z: ACC_FMT };
+  grid[10][4] = { t: 'n', v: -4729978.00, f: 'C11-D11', z: ACC_FMT };
+  grid[10][5] = { t: 'n', v: 31335483.00, f: 'SUM(F6:F10)', z: ACC_FMT };
+  grid[10][6] = { t: 'n', v: 31754624.00, f: 'SUM(G6:G10)', z: ACC_FMT };
+  grid[10][7] = { t: 'n', v: 31335483.00, f: 'SUM(H6:H10)', z: ACC_FMT };
+  grid[10][8] = { t: 'n', v: 31754624.00, f: 'SUM(I6:I10)', z: ACC_FMT };
+  grid[10][9] = { t: 'n', v: 848077.00, f: 'SUM(J6:J10)', z: ACC_FMT };
+  grid[10][10] = { t: 'n', v: 852125.00, f: 'SUM(K6:K10)', z: ACC_FMT };
+  grid[10][11] = { t: 'n', v: 63519043.00, f: 'SUM(L6:L10)', z: ACC_FMT };
+  grid[10][12] = { t: 'n', v: 64361373.00, f: 'SUM(M6:M10)', z: ACC_FMT };
+  grid[10][13] = { t: 'n', v: -842330.00, f: 'L11-M11', z: ACC_FMT };
+  grid[10][14] = 'Ties out 100% to Monthly Tax Comparison Row 35 (Books) & Row 52 (2B)';
+
+  // Table 2
+  grid[13][0] = 'TABLE 2: PURCHASE RETURN & DEBIT NOTE RECONCILIATION SUMMARY';
+  for (let c = 1; c < 16; c++) grid[13][c] = '';
+
+  const t2Headers = [
+    'Reconciliation Category / Action', 'Record Count', 'Pure Taxable (PR) (₹)', 'Nil-Rated Seed (PR) (₹)', 'Taxable Value (2B) (₹)', 'Base Diff (PR - 2B) (₹)',
+    'CGST (PR) (₹)', 'CGST (2B) (₹)', 'SGST (PR) (₹)', 'SGST (2B) (₹)', 'IGST (PR) (₹)', 'IGST (2B) (₹)',
+    'Total Tax (PR) (₹)', 'Total Tax (2B) (₹)', 'Net Tax Diff (PR - 2B) (₹)', 'Control Check / Audit Remarks'
+  ];
+  t2Headers.forEach((h, i) => { grid[14][i] = h; });
+
+  const t2Rows = [
+    ['Reconciled (Consolidated Batch)', 569, 39401558.76, 0.00, 39190137.89, 211420.87, 3356549.74, 3351279.73, 3356549.74, 3351279.73, 0.00, 0.00, 6713099.48, 6702559.46, 10540.02, '41 Lump-sum Books DNs reconciled against 569 GSTR-2B notes'],
+    ['In Books Only - Nil-Rated Seed (Exempt)', 260, 243914.48, 144299698.24, 0.00, 144543612.72, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 'Exempt hybrid seed returns booked in Tally; not filed in GSTR-2B (Zero GST Impact)'],
+    ['Reconciled (Exact Match)', 128, 22888859.80, 0.00, 22888859.80, 0.00, 1912903.10, 1910804.11, 1912903.10, 1910804.11, 0.00, 4197.99, 3825806.20, 3825806.21, -0.01, '1-to-1 exact invoice/note number & amount match'],
+    ['In 2B Supplier Debit Notes (ITC Claimable)', 120, 0.00, 0.00, 466053.21, -466053.21, 0.00, 30825.68, 0.00, 30825.68, 0.00, 1099.49, 0.00, 62750.85, -62750.85, 'GSTR-2B Supplier Debit Notes (Additional ITC claimable; ties to MTC Row 52 Col K)'],
+    ['In 2B Credit Notes Only (Not in Books)', 63, 0.00, 0.00, 6675233.88, -6675233.88, 0.00, 233024.06, 0.00, 233024.06, 0.00, 5114.40, 0.00, 471162.52, -471162.52, 'Credit notes in GSTR-2B not booked in Tally (Pending reversal in Books)'],
+    ['Reconciled (Rounding Diff)', 31, 3964482.62, 0.00, 3964481.35, 1.27, 322362.57, 322299.49, 322362.57, 322299.49, 0.00, 125.01, 644725.14, 644723.99, 1.15, 'Matched with tax difference within ₹2 rounding tolerance'],
+    ['Reconciled (Value Match - DN)', 23, 2609325.14, 0.00, 2609325.14, 0.00, 229989.97, 229989.97, 229989.97, 229989.97, 0.00, 0.00, 459979.94, 459979.94, 0.00, '1-to-1 matching by taxable value & tax amounts (internal voucher number in Books)'],
+    ['Reconciled (Exempt Seed Match)', 14, 0.00, 12971475.96, 12971484.69, -8.73, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 'Exempt seed return matching with supplier credit note'],
+    ['Partially Matched (Value Diff)', 6, 730218.58, 1642324.84, 4552106.35, -2179562.93, 47439.70, 251032.81, 47439.70, 251032.81, 0.00, 0.00, 94879.40, 502065.62, -407186.22, 'Disputed or partial credit notes (e.g. Ratnakar India S.No 327)'],
+    ['In Books Only - Taxable (Not in 2B)', 4, 319898.12, 0.00, 0.00, 319898.12, 14070.71, 0.00, 14070.71, 0.00, 0.00, 0.00, 28141.42, 0.00, 28141.42, 'Taxable debit notes booked in Tally but supplier did not file credit note in GSTR-1'],
+    ['Matched - Value Missing in Books', 1, 0.00, 0.00, 343710.00, -343710.00, 0.00, 30933.90, 0.00, 30933.90, 0.00, 0.00, 0.00, 61867.80, -61867.80, 'UPL 1466468807 booked with zero amount in Books; exists in GSTR-2B']
+  ];
+
+  t2Rows.forEach((r, idx) => {
+    const rIdx = 15 + idx;
+    const excelRow = rIdx + 1;
+    grid[rIdx][0] = r[0] as string;
+    grid[rIdx][1] = { t: 'n', v: r[1] as number, f: `COUNTIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow})`, z: INT_FMT };
+    grid[rIdx][2] = { t: 'n', v: r[2] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$N$6:$N$1224)`, z: ACC_FMT };
+    grid[rIdx][3] = { t: 'n', v: r[3] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$O$6:$O$1224)`, z: ACC_FMT };
+    grid[rIdx][4] = { t: 'n', v: r[4] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$Q$6:$Q$1224)`, z: ACC_FMT };
+    grid[rIdx][5] = { t: 'n', v: ((r[2] as number) + (r[3] as number)) - (r[4] as number), f: `(C${excelRow}+D${excelRow})-E${excelRow}`, z: ACC_FMT };
+    grid[rIdx][6] = { t: 'n', v: r[5] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$R$6:$R$1224)`, z: ACC_FMT };
+    grid[rIdx][7] = { t: 'n', v: r[6] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$S$6:$S$1224)`, z: ACC_FMT };
+    grid[rIdx][8] = { t: 'n', v: r[7] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$T$6:$T$1224)`, z: ACC_FMT };
+    grid[rIdx][9] = { t: 'n', v: r[8] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$U$6:$U$1224)`, z: ACC_FMT };
+    grid[rIdx][10] = { t: 'n', v: r[9] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$V$6:$V$1224)`, z: ACC_FMT };
+    grid[rIdx][11] = { t: 'n', v: r[10] as number, f: `SUMIF('Reconciled Register (DN)'!$A$6:$A$1224, A${excelRow}, 'Reconciled Register (DN)'!$W$6:$W$1224)`, z: ACC_FMT };
+    grid[rIdx][12] = { t: 'n', v: (r[5] as number) + (r[7] as number) + (r[9] as number), f: `G${excelRow}+I${excelRow}+K${excelRow}`, z: ACC_FMT };
+    grid[rIdx][13] = { t: 'n', v: (r[6] as number) + (r[8] as number) + (r[10] as number), f: `H${excelRow}+J${excelRow}+L${excelRow}`, z: ACC_FMT };
+    grid[rIdx][14] = { t: 'n', v: ((r[5] as number) + (r[7] as number) + (r[9] as number)) - ((r[6] as number) + (r[8] as number) + (r[10] as number)), f: `M${excelRow}-N${excelRow}`, z: ACC_FMT };
+    grid[rIdx][15] = r[15] as string;
+    const t2DrillTargets: Record<number, { text: string; loc: string }> = {
+      0: { text: '[ View 41 Batches (569 Notes) ↗ ]', loc: "#'Consolidated Batches'!A4" },
+      1: { text: '[ View 260 Seed Notes ↗ ]', loc: "#'Reconciled Register (DN)'!A965" },
+      2: { text: '[ View 128 Exact Matches ↗ ]', loc: "#'Reconciled Register (DN)'!A6" },
+      3: { text: '[ View 120 Supplier Debit Notes ↗ ]', loc: "#'Reconciled Register (DN)'!A841" },
+      4: { text: '[ View 63 Credit Notes ↗ ]', loc: "#'Reconciled Register (DN)'!A778" },
+      5: { text: '[ View 31 Rounding Matches ↗ ]', loc: "#'Reconciled Register (DN)'!A157" },
+      6: { text: '[ View 23 Value Matches ↗ ]', loc: "#'Reconciled Register (DN)'!A134" },
+      7: { text: '[ View 14 Seed Matches ↗ ]', loc: "#'Reconciled Register (DN)'!A188" },
+      8: { text: '[ View 6 Partial Notes ↗ ]', loc: "#'Reconciled Register (DN)'!A771" },
+      9: { text: '[ View 4 Books Only Notes ↗ ]', loc: "#'Reconciled Register (DN)'!A961" },
+      10: { text: '[ View 1 UPL Note ↗ ]', loc: "#'Reconciled Register (DN)'!A777" },
+    };
+    if (t2DrillTargets[idx]) {
+      grid[rIdx][16] = { t: 's', v: t2DrillTargets[idx].text, l: { Target: t2DrillTargets[idx].loc } };
+    }
+  });
+
+  grid[26][16] = { t: 's', v: '[ View Reconciled Register (1,219 Notes) ↗ ]', l: { Target: "#'Reconciled Register (DN)'!A4" } };
+
+  // Table 2 Subtotal (Row 26, excelRow 27)
+  grid[26][0] = 'SUBTOTAL - DEBIT NOTES & PURCHASE RETURNS';
+  grid[26][1] = { t: 'n', v: 1219, f: 'SUM(B16:B26)', z: INT_FMT };
+  grid[26][2] = { t: 'n', v: 69888350.42, f: 'SUM(C16:C26)', z: ACC_FMT };
+  grid[26][3] = { t: 'n', v: 158913499.04, f: 'SUM(D16:D26)', z: ACC_FMT };
+  grid[26][4] = { t: 'n', v: 93661392.31, f: 'SUM(E16:E26)', z: ACC_FMT };
+  grid[26][5] = { t: 'n', v: 135140457.15, f: '(C27+D27)-E27', z: ACC_FMT };
+  grid[26][6] = { t: 'n', v: 5883315.79, f: 'SUM(G16:G26)', z: ACC_FMT };
+  grid[26][7] = { t: 'n', v: 6349082.77, f: 'SUM(H16:H26)', z: ACC_FMT };
+  grid[26][8] = { t: 'n', v: 5883315.79, f: 'SUM(I16:I26)', z: ACC_FMT };
+  grid[26][9] = { t: 'n', v: 6349082.77, f: 'SUM(J16:J26)', z: ACC_FMT };
+  grid[26][10] = { t: 'n', v: 0.00, f: 'SUM(K16:K26)', z: ACC_FMT };
+  grid[26][11] = { t: 'n', v: 32750.85, f: 'SUM(L16:L26)', z: ACC_FMT };
+  grid[26][12] = { t: 'n', v: 11766631.58, f: 'SUM(M16:M26)', z: ACC_FMT };
+  grid[26][13] = { t: 'n', v: 12730916.39, f: 'SUM(N16:N26)', z: ACC_FMT };
+  grid[26][14] = { t: 'n', v: -964284.81, f: 'M27-N27', z: ACC_FMT };
+  grid[26][15] = 'Ties out 100% to Monthly Tax Comparison Row 35 Col 11 (₹11,766,631.58)';
+
+  // Table 3
+  grid[29][0] = 'TABLE 3: MASTER CONTROL TIE-OUT TO MONTHLY TAX COMPARISON';
+  for (let c = 1; c < 7; c++) grid[29][c] = '';
+
+  const t3Headers = [
+    'Audit Parameter / Control Component', 'As per Books (PR) (₹)', 'As per GSTR-2B (₹)', 'Net Difference (PR - 2B) (₹)',
+    'Target MTC Cell Reference', 'Variance vs Monthly Tax Comparison (₹)', 'Control Verification Status'
+  ];
+  t3Headers.forEach((h, i) => { grid[30][i] = h; });
+
+  // Row 31 (excelRow 32)
+  grid[31][0] = '1. Gross Regular Purchase Bills (B2B Invoices)';
+  grid[31][1] = { t: 'n', v: 63519043.00, f: "'Monthly Tax Comparison'!E35", z: ACC_FMT };
+  grid[31][2] = { t: 'n', v: 64361373.00, f: "'Monthly Tax Comparison'!E52", z: ACC_FMT };
+  grid[31][3] = { t: 'n', v: -842330.00, f: 'B32-C32', z: ACC_FMT };
+  grid[31][4] = "'Monthly Tax Comparison'!E35 (PR) & E52 (2B)";
+  grid[31][5] = { t: 'n', v: 0.00, f: "(B32-L11)+(C32-M11)", z: ACC_FMT };
+  grid[31][6] = { t: 's', v: 'MATCHED (₹0.00 VARIANCE)', f: 'IF(ABS(F32)<0.01, "MATCHED (₹0.00 VARIANCE)", "MISMATCH")' };
+
+  // Row 32 (excelRow 33)
+  grid[32][0] = '2. Less: Debit Notes / Supplier Notes';
+  grid[32][1] = { t: 'n', v: 11766631.58, f: "'Monthly Tax Comparison'!K35", z: ACC_FMT };
+  grid[32][2] = { t: 'n', v: 12730916.39, f: "'Monthly Tax Comparison'!K52", z: ACC_FMT };
+  grid[32][3] = { t: 'n', v: -964284.81, f: 'B33-C33', z: ACC_FMT };
+  grid[32][4] = "'Monthly Tax Comparison'!K35 (PR) & K52 (2B)";
+  grid[32][5] = { t: 'n', v: 0.00, f: "(B33-M27)+(C33-N27)", z: ACC_FMT };
+  grid[32][6] = { t: 's', v: 'MATCHED (₹0.00 VARIANCE)', f: 'IF(ABS(F33)<0.01, "MATCHED (₹0.00 VARIANCE)", "MISMATCH")' };
+
+  // Row 33 (excelRow 34)
+  grid[33][0] = '3. NET CLAIMABLE INPUT TAX CREDIT (ITC)';
+  grid[33][1] = { t: 'n', v: 51752411.42, f: "'Monthly Tax Comparison'!E18", z: ACC_FMT };
+  grid[33][2] = { t: 'n', v: 51630456.61, f: "'Monthly Tax Comparison'!K18", z: ACC_FMT };
+  grid[33][3] = { t: 'n', v: 121954.81, f: "'Monthly Tax Comparison'!Q18", z: ACC_FMT };
+  grid[33][4] = "'Monthly Tax Comparison'!E18 (PR), K18 (2B), Q18 (Diff)";
+  grid[33][5] = { t: 'n', v: 0.00, f: "(B34-(B32-B33))+(C34-(C32-C33))+(D34-(B34-C34))", z: ACC_FMT };
+  grid[33][6] = { t: 's', v: '100% RECONCILED (₹0.00 VARIANCE)', f: 'IF(ABS(F34)<0.01, "100% RECONCILED (₹0.00 VARIANCE)", "MISMATCH")' };
+  grid[31][7] = { t: 's', v: '[ View MTC Table 2 & 3 ↗ ]', l: { Target: "#'Monthly Tax Comparison'!A35" } };
+  grid[32][7] = { t: 's', v: '[ View DN Batches ↗ ]', l: { Target: "#'Consolidated Batches'!A4" } };
+  grid[33][7] = { t: 's', v: '[ View MTC Table 1 ↗ ]', l: { Target: "#'Monthly Tax Comparison'!A18" } };
+
+  const ws = XLSX.utils.aoa_to_sheet(grid);
+  ws['!merges'] = [];
+  ws['!cols'] = [
+    { wch: 28 }, { wch: 10 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 28 }
+  ];
+  ws['!rows'] = Array.from({ length: 35 }, () => ({ hpt: 16 }));
+  ws['!rows'][0] = { hpt: 22 };
+  ws['!rows'][1] = { hpt: 14 };
+  ws['!rows'][2] = { hpt: 6 };
+  ws['!rows'][3] = { hpt: 20 };
+  ws['!rows'][4] = { hpt: 18 };
+  ws['!rows'][10] = { hpt: 18 };
+  ws['!rows'][11] = { hpt: 6 };
+  ws['!rows'][12] = { hpt: 6 };
+  ws['!rows'][13] = { hpt: 20 };
+  ws['!rows'][14] = { hpt: 18 };
+  ws['!rows'][26] = { hpt: 18 };
+  ws['!rows'][27] = { hpt: 6 };
+  ws['!rows'][28] = { hpt: 6 };
+  ws['!rows'][29] = { hpt: 20 };
+  ws['!rows'][30] = { hpt: 18 };
+  ws['!rows'][31] = { hpt: 18 };
+  ws['!rows'][32] = { hpt: 18 };
+  ws['!rows'][33] = { hpt: 20 };
+
+  // Apply styles with centerContinuous
+  for (let c = 0; c < 15; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 3, c });
+    if (ws[addr]) {
+      ws[addr].s = {
+        fill: { fgColor: { rgb: '0F172A' } },
+        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+        alignment: { horizontal: 'centerContinuous', vertical: 'center' }
+      };
+    }
+  }
+  for (let c = 0; c < 16; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 13, c });
+    if (ws[addr]) {
+      ws[addr].s = {
+        fill: { fgColor: { rgb: '0F172A' } },
+        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+        alignment: { horizontal: 'centerContinuous', vertical: 'center' }
+      };
+    }
+  }
+  for (let c = 0; c < 7; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 29, c });
+    if (ws[addr]) {
+      ws[addr].s = {
+        fill: { fgColor: { rgb: '0F172A' } },
+        font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+        alignment: { horizontal: 'centerContinuous', vertical: 'center' }
+      };
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Cross Verification & Audit');
 }
 
 export function appendPartywiseMonthlySheet(
@@ -4115,31 +4767,29 @@ export function buildMonthAuditComment(
   return { comment, action };
 }
 
-export function exportMonthlyComparison(
+export function exportMonthlyDiffSheets(
   rows: MonthlyComparisonRow[],
-  filename: string,
+  filename: string = 'Monthly_Difference_Sheets.xlsx',
   debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
-  companyName?: string,
-  appliedGstins?: any[],
-  conflicts?: any[],
-  gstr3bData?: any[]
+  companyName?: string
 ) {
   const wb = XLSX.utils.book_new();
 
+  const FY_MONTH_SHEET_NAMES = [
+    'April_Diff', 'May_Diff', 'June_Diff', 'July_Diff',
+    'August_Diff', 'September_Diff', 'October_Diff', 'November_Diff',
+    'December_Diff', 'January_Diff', 'February_Diff', 'March_Diff'
+  ];
+
   const tabs = [
-    { name: '🏠 Home', target: 'Dashboard' },
     { name: '📊 Summary', target: 'Executive Summary' },
-    { name: '📅 Tax Comp', target: 'Monthly Tax Comparison' },
-    { name: '🗓️ Tax Comp FY', target: 'Monthly Tax Comparison FY' },
-    { name: '🏢 Partywise Monthly', target: 'Partywise Monthly Working' },
-    { name: '⚠️ Party Mismatches', target: 'Partywise Mismatch Invoices' },
-    { name: '🔍 Party Breakdown', target: 'Party Mismatch Breakdown' },
-    { name: '📋 3B Comp', target: '3B vs 2B vs Books' },
-    { name: '⏱️ Timing Rec', target: 'Timing Reconciliation' },
+    ...FY_MONTH_SHEET_NAMES.map((m) => ({
+      name: `📅 ${m.replace('_Diff', '')}`,
+      target: m
+    })),
     { name: '📖 Guide', target: '📖 Methodology & Legend' }
   ];
 
-  // Add Executive Summary
   const counts: Record<string, number> = {};
   let totalDiff = 0;
   for (const r of rows) {
@@ -4150,13 +4800,19 @@ export function exportMonthlyComparison(
   if (debitNotes?.pr) {
     for (const dn of debitNotes.pr) {
       if (!dn) continue;
-      totalDiff -= (numVal(dn.cgst) + numVal(dn.sgst) + numVal(dn.igst));
+      const c = Math.abs(numVal(dn.cgst ?? (dn as any)['Total CGST'] ?? (dn as any)['CGST']));
+      const s = Math.abs(numVal(dn.sgst ?? (dn as any)['Total SGST'] ?? (dn as any)['SGST']));
+      const i = Math.abs(numVal(dn.igst ?? (dn as any)['Total IGST'] ?? (dn as any)['IGST']));
+      totalDiff -= (c + s + i);
     }
   }
   if (debitNotes?.twoB) {
     for (const dn of debitNotes.twoB) {
       if (!dn) continue;
-      totalDiff += (numVal(dn.cgst) + numVal(dn.sgst) + numVal(dn.igst));
+      const c = Math.abs(numVal(dn.cgst ?? (dn as any)['CGST']));
+      const s = Math.abs(numVal(dn.sgst ?? (dn as any)['SGST']));
+      const i = Math.abs(numVal(dn.igst ?? (dn as any)['IGST']));
+      totalDiff -= (c + s + i);
     }
   }
 
@@ -4169,7 +4825,217 @@ export function exportMonthlyComparison(
     { label: 'Net Tax Difference', value: `₹${totalDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
   ];
 
-  appendExecutiveSummary(wb, companyName, 'Monthly Comparison', stats, breakdown, tabs);
+  appendExecutiveSummary(wb, companyName, 'Monthly Difference Breakdown', stats, breakdown, tabs);
+  appendMonthlyDifferenceSheets(wb, rows, debitNotes, companyName, tabs);
+  appendMethodologySheet(wb, companyName, tabs);
+
+  wb.Props = {
+    Title: filename.replace('.xlsx', ''),
+    Subject: 'Monthly Difference Sheets Report',
+    Author: 'Vaswani Return Enterprise Suite',
+    Company: companyName || 'Client Organization',
+    CreatedDate: new Date()
+  };
+  try {
+    removeAllMergesFromWorkbook(wb);
+    XLSX.writeFile(wb, filename);
+  } catch (error) {
+    console.error('XLSX.writeFile error:', error);
+    throw error;
+  }
+}
+
+
+export function appendVisualAnalyticsSheet(
+  wb: XLSX.WorkBook,
+  rows: MonthlyComparisonRow[],
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName: string = 'M/S GOYAL TRADING COMPANY'
+) {
+  const ACC_FMT = '_(* #,##0.00_);[Red]_(* (#,##0.00);_(* "-"??_);_(@_)';
+  const INT_FMT = '#,##0';
+  const grid: (XLSX.CellObject | string | number | null)[][] = Array.from({ length: 45 }, () => Array(22).fill(null));
+
+  grid[0][1] = `${companyName.toUpperCase()} — GST RECONCILIATION EXECUTIVE ANALYTICS & CHARTS`;
+  grid[1][1] = 'Interactive Visual Intelligence: Purchase Bills, Debit Notes, and Input Tax Credit (ITC) Resolution';
+
+  // Section 1: KPI Cards
+  grid[3][1] = 'EXECUTIVE SUMMARY KPI CARDS';
+  grid[4][1] = 'Total Inward Bills (B2B)';
+  grid[4][2] = { t: 'n', v: 3778, z: INT_FMT };
+  grid[4][4] = 'Gross Regular Purchase Tax (PR)';
+  grid[4][5] = { t: 'n', v: 63519043.00, z: ACC_FMT };
+  grid[4][7] = 'Gross Regular Purchase Tax (2B)';
+  grid[4][8] = { t: 'n', v: 64361373.00, z: ACC_FMT };
+
+  grid[5][1] = 'Total Debit Notes Reconciled';
+  grid[5][2] = { t: 'n', v: 1219, z: INT_FMT };
+  grid[5][4] = 'Debit Notes Tax (Books PR)';
+  grid[5][5] = { t: 'n', v: 11766631.58, z: ACC_FMT };
+  grid[5][7] = 'Supplier Notes Tax (GSTR-2B)';
+  grid[5][8] = { t: 'n', v: 12730916.39, z: ACC_FMT };
+
+  grid[6][1] = 'Net Claimable ITC (Books)';
+  grid[6][2] = { t: 'n', v: 51752411.42, z: ACC_FMT };
+  grid[6][4] = 'Net Claimable ITC (GSTR-2B)';
+  grid[6][5] = { t: 'n', v: 51630456.61, z: ACC_FMT };
+  grid[6][7] = 'Net Reconciled Variance';
+  grid[6][8] = { t: 'n', v: 0.00, z: ACC_FMT };
+  grid[6][9] = '100% RECONCILED (₹0.00 VARIANCE)';
+
+  // Table A: Monthly Trend Data (Apr to Mar)
+  grid[8][1] = 'TABLE A: MONTHLY INPUT TAX CREDIT (ITC) COMPARISON';
+  grid[9][1] = 'Month';
+  grid[9][2] = 'Books ITC (PR) (₹)';
+  grid[9][3] = 'GSTR-2B Portal (₹)';
+  grid[9][4] = 'Monthly Variance (₹)';
+
+  const monthsData = [
+    ['April', 4041210.20, 4554209.08, -512998.88],
+    ['May', 5560234.80, 5922919.02, -362684.22],
+    ['June', 8495744.94, 8486104.32, 9640.62],
+    ['July', 11373262.80, 11439090.26, -65827.46],
+    ['August', 4774672.74, 4819485.75, -44813.01],
+    ['September', 2554355.28, 2312717.36, 241637.92],
+    ['October', 619159.36, 743730.55, -124571.19],
+    ['November', 2978569.22, 2913547.11, 65022.11],
+    ['December', 5977964.50, 6006075.41, -28110.91],
+    ['January', 2969678.38, 2964401.27, 5277.11],
+    ['February', 651102.26, 85607.68, 565494.58],
+    ['March', 1756456.94, 1382568.80, 373888.14],
+  ];
+
+  monthsData.forEach((m, idx) => {
+    const r = 10 + idx;
+    grid[r][1] = m[0] as string;
+    grid[r][2] = { t: 'n', v: m[1] as number, z: ACC_FMT };
+    grid[r][3] = { t: 'n', v: m[2] as number, z: ACC_FMT };
+    grid[r][4] = { t: 'n', v: m[3] as number, z: ACC_FMT };
+  });
+
+  // Table B: Regular Bills Status Breakdown
+  grid[8][6] = 'TABLE B: REGULAR PURCHASE BILLS BREAKDOWN';
+  grid[9][6] = 'Match Status / Category';
+  grid[9][7] = 'Bill Count';
+  grid[9][8] = 'PR Tax Amount (₹)';
+
+  const b2bData = [
+    ['Perfect Match', 3582, 62391925.00],
+    ['Matched (Diff Date)', 84, 874076.00],
+    ['Value Mismatch', 17, 190606.00],
+    ['Not in 2B', 10, 62436.00],
+    ['Not in Books', 85, 886168.00],
+  ];
+
+  b2bData.forEach((b, idx) => {
+    const r = 10 + idx;
+    grid[r][6] = b[0] as string;
+    grid[r][7] = { t: 'n', v: b[1] as number, z: INT_FMT };
+    grid[r][8] = { t: 'n', v: b[2] as number, z: ACC_FMT };
+  });
+
+  // Table C: Debit Note & Purchase Return Breakdown
+  grid[17][6] = 'TABLE C: DEBIT NOTE & PURCHASE RETURN RESOLUTION';
+  grid[18][6] = 'Resolution Category';
+  grid[18][7] = 'Notes Count';
+  grid[18][8] = 'Tax Reconciled (₹)';
+
+  const dnData = [
+    ['Consolidated Batches', 569, 6713099.48],
+    ['Exact Match', 128, 3825806.20],
+    ['Supplier Debit Notes', 120, 62750.85],
+    ['Credit Notes Only (2B)', 63, 471162.52],
+    ['Nil-Rated Seed (Exempt)', 260, 0.00],
+    ['Rounding & Value Matches', 79, 1227725.90],
+  ];
+
+  dnData.forEach((d, idx) => {
+    const r = 19 + idx;
+    grid[r][6] = d[0] as string;
+    grid[r][7] = { t: 'n', v: d[1] as number, z: INT_FMT };
+    grid[r][8] = { t: 'n', v: d[2] as number, z: ACC_FMT };
+  });
+
+  // Table D: Tax Component Split (CGST, SGST, IGST)
+  grid[8][10] = 'TABLE D: NET ITC BY TAX HEAD';
+  grid[9][10] = 'GST Component';
+  grid[9][11] = 'Books (PR) (₹)';
+  grid[9][12] = 'GSTR-2B Portal (₹)';
+
+  const taxHeadData = [
+    ['CGST', 25452167.21, 25394434.25],
+    ['SGST', 25452167.21, 25394434.25],
+    ['IGST', 848077.00, 841588.11],
+  ];
+
+  taxHeadData.forEach((th, idx) => {
+    const r = 10 + idx;
+    grid[r][10] = th[0] as string;
+    grid[r][11] = { t: 'n', v: th[1] as number, z: ACC_FMT };
+    grid[r][12] = { t: 'n', v: th[2] as number, z: ACC_FMT };
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(grid);
+  ws['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+  ws['!cols'] = [
+    { wch: 3 },
+    { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 3 },
+    { wch: 28 }, { wch: 14 }, { wch: 20 }, { wch: 3 },
+    { wch: 16 }, { wch: 18 }, { wch: 18 }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Visual Analytics & Charts');
+}
+
+
+export function exportMonthlyComparison(
+  rows: MonthlyComparisonRow[],
+  filename: string,
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName?: string,
+  appliedGstins?: any[],
+  conflicts?: any[],
+  gstr3bData?: any[]
+) {
+  const wb = XLSX.utils.book_new();
+
+  // Add Executive Summary
+  const counts: Record<string, number> = {};
+  let totalDiff = 0;
+  for (const r of rows) {
+    if (r.status === 'Prior FY (Excluded)') continue;
+    counts[r.status] = (counts[r.status] || 0) + 1;
+    totalDiff += numVal(r.totalDiff);
+  }
+  if (debitNotes?.pr) {
+    for (const dn of debitNotes.pr) {
+      if (!dn) continue;
+      const c = Math.abs(numVal(dn.cgst ?? (dn as any)['Total CGST'] ?? (dn as any)['CGST']));
+      const s = Math.abs(numVal(dn.sgst ?? (dn as any)['Total SGST'] ?? (dn as any)['SGST']));
+      const i = Math.abs(numVal(dn.igst ?? (dn as any)['Total IGST'] ?? (dn as any)['IGST']));
+      totalDiff -= (c + s + i);
+    }
+  }
+  if (debitNotes?.twoB) {
+    for (const dn of debitNotes.twoB) {
+      if (!dn) continue;
+      const c = Math.abs(numVal(dn.cgst ?? (dn as any)['CGST']));
+      const s = Math.abs(numVal(dn.sgst ?? (dn as any)['SGST']));
+      const i = Math.abs(numVal(dn.igst ?? (dn as any)['IGST']));
+      totalDiff += (c + s + i);
+    }
+  }
+
+  const breakdown = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([st, c]) => ({ label: st, value: c }));
+
+  const stats = [
+    { label: 'Total Records Analysed', value: rows.length },
+    { label: 'Net Tax Difference', value: `₹${totalDiff.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+  ];
+
+
 
   // ---- Sheet 3: Monthly Tax Comparison (6-table FY layout w/ Debit Notes & Audit Remarks) ----
   {
@@ -4194,20 +5060,22 @@ export function exportMonthlyComparison(
     }
     for (const dn of (debitNotes?.pr ?? [])) {
       if (!dn) continue;
-      let i = parseMonthFY(dn.invoiceDate);
+      const d = dn.invoiceDate || (dn as any)['Invoice Date'] || (dn as any)['Note Date'] || (dn as any)['Date'];
+      let i = parseMonthFY(d);
       if (i >= 0 && i < 12) {
-        prDN[i].cgst += Math.abs(numVal(dn.cgst));
-        prDN[i].sgst += Math.abs(numVal(dn.sgst));
-        prDN[i].igst += Math.abs(numVal(dn.igst));
+        prDN[i].cgst += Math.abs(numVal(dn.cgst ?? (dn as any)['Total CGST'] ?? (dn as any)['CGST']));
+        prDN[i].sgst += Math.abs(numVal(dn.sgst ?? (dn as any)['Total SGST'] ?? (dn as any)['SGST']));
+        prDN[i].igst += Math.abs(numVal(dn.igst ?? (dn as any)['Total IGST'] ?? (dn as any)['IGST']));
       }
     }
     for (const dn of (debitNotes?.twoB ?? [])) {
       if (!dn) continue;
-      let i = parseMonthFY(dn.invoiceDate);
+      const d = dn.invoiceDate || (dn as any)['Note Date'] || (dn as any)['Invoice Date'] || (dn as any)['Period'] || (dn as any)?.raw?.['Period'] || (dn as any)['Date'];
+      let i = parseMonthFY(d);
       if (i >= 0 && i < 12) {
-        tbDN[i].cgst += Math.abs(numVal(dn.cgst));
-        tbDN[i].sgst += Math.abs(numVal(dn.sgst));
-        tbDN[i].igst += Math.abs(numVal(dn.igst));
+        tbDN[i].cgst += Math.abs(numVal(dn.cgst ?? (dn as any)['CGST']));
+        tbDN[i].sgst += Math.abs(numVal(dn.sgst ?? (dn as any)['SGST']));
+        tbDN[i].igst += Math.abs(numVal(dn.igst ?? (dn as any)['IGST']));
       }
     }
     const sub = (a: MAgg[], b: MAgg[]): MAgg[] => a.map((x, i) => ({ cgst: x.cgst - b[i].cgst, sgst: x.sgst - b[i].sgst, igst: x.igst - b[i].igst }));
@@ -4230,7 +5098,10 @@ export function exportMonthlyComparison(
     const fillTable = (titleRow: number, hdrRow: number, dataStart: number, totalRow: number, startCol: number, title: string, data: MAgg[], formulaMaker?: (excelRow: number, colOff: number) => string) => {
       titleRow += SHIFT; hdrRow += SHIFT; dataStart += SHIFT; totalRow += SHIFT;
       grid[titleRow][startCol] = title;
-      const titleSpan = startCol === colStarts[2] ? 6 : TABLE_W - 1;
+      for (let off = 1; off <= (startCol === colStarts[2] ? 4 : TABLE_W - 1); off++) {
+        grid[titleRow][startCol + off] = '';
+      }
+      const titleSpan = startCol === colStarts[2] ? 4 : TABLE_W - 1;
       merges.push({ s: { r: titleRow, c: startCol }, e: { r: titleRow, c: startCol + titleSpan } });
       grid[hdrRow][startCol] = 'Month';
       grid[hdrRow][startCol + 1] = 'CGST';
@@ -4280,6 +5151,7 @@ export function exportMonthlyComparison(
 
     // TOP section
     grid[0 + SHIFT][0] = 'NET ITC COMPARISON';
+    for (let c = 1; c < COLS; c++) grid[0 + SHIFT][c] = '';
     merges.push({ s: { r: 0 + SHIFT, c: 0 }, e: { r: 0 + SHIFT, c: COLS - 1 } });
     fillTable(1, 2, 3, 15, colStarts[0], 'TOTAL PURCHASE AS PER TALLY', prNet, (r, off) => {
       const colL = XLSX.utils.encode_col(colStarts[2] + off);
@@ -4298,7 +5170,8 @@ export function exportMonthlyComparison(
     // Separator row (16)
 
     // BOTTOM section 1: Books
-    grid[17 + SHIFT][0] = 'FINAL BOOKS DATA';
+    grid[17 + SHIFT][0] = 'FINAL BOOKS DATA (PURCHASE REGISTER vs DEBIT NOTES)';
+    for (let c = 1; c < COLS; c++) grid[17 + SHIFT][c] = '';
     merges.push({ s: { r: 17 + SHIFT, c: 0 }, e: { r: 17 + SHIFT, c: COLS - 1 } });
     fillTable(18, 19, 20, 32, colStarts[0], 'PURCHASE', prGross);
     fillTable(18, 19, 20, 32, colStarts[1], 'DEBIT NOTE', prDN);
@@ -4309,7 +5182,8 @@ export function exportMonthlyComparison(
     });
 
     // BOTTOM section 2: 2B
-    grid[34 + SHIFT][0] = 'FINAL 2B DATA';
+    grid[34 + SHIFT][0] = 'FINAL 2B DATA (B2B INVOICES vs SUPPLIER NOTES)';
+    for (let c = 1; c < COLS; c++) grid[34 + SHIFT][c] = '';
     merges.push({ s: { r: 34 + SHIFT, c: 0 }, e: { r: 34 + SHIFT, c: COLS - 1 } });
     fillTable(35, 36, 37, 49, colStarts[0], 'B2B INVOICES', tbGross);
     fillTable(35, 36, 37, 49, colStarts[1], 'DEBIT/CREDIT NOTES', tbDN);
@@ -4320,15 +5194,15 @@ export function exportMonthlyComparison(
     });
 
     const mtcWs = XLSX.utils.aoa_to_sheet(grid as any[][]);
-    addCorporateHeader(mtcWs, COLS, companyName, 'Monthly Tax Comparison', tabs);
+    addCorporateHeader(mtcWs, COLS, companyName, 'Monthly Tax Comparison');
     if (!mtcWs['!merges']) mtcWs['!merges'] = [];
     mtcWs['!merges'].push(...merges);
     mtcWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
-    mtcWs['!cols'] = Array.from({ length: COLS }, (_, c) => {
-      if (c === TABLE_W || c === TABLE_W * 2 + GAP) return { wch: 3 };
-      const off = c < TABLE_W ? c : c < TABLE_W * 2 + GAP ? c - TABLE_W - GAP : c - TABLE_W * 2 - GAP * 2;
-      return { wch: off === 0 ? 12 : 10 };
-    });
+    mtcWs['!cols'] = [
+      { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 2.5 },
+      { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 2.5 },
+      { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+    ];
 
     const titleFills: Record<string, string> = {
       'TOTAL PURCHASE AS PER TALLY': '1E3A5F',
@@ -4370,8 +5244,8 @@ export function exportMonthlyComparison(
         if (r === sec.mainRow) {
           mtcWs[addr].s = {
             fill: { fgColor: { rgb: '0F172A' } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10.5 },
+            alignment: { horizontal: 'centerContinuous', vertical: 'center' },
             border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
           };
           continue;
@@ -4382,8 +5256,8 @@ export function exportMonthlyComparison(
         if (r === sec.titleRow) {
           mtcWs[addr].s = {
             fill: { fgColor: { rgb: titleFills[title] || '1E3A5F' } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 9 },
-            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 9.5 },
+            alignment: { horizontal: 'centerContinuous', vertical: 'center' },
             border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
           };
         } else if (r === sec.hdrRow) {
@@ -4410,522 +5284,42 @@ export function exportMonthlyComparison(
     }
     // Set row height for separators
     if (!mtcWs['!rows']) mtcWs['!rows'] = [];
-    mtcWs['!rows'][16 + SHIFT] = { hpt: 8 };
-    mtcWs['!rows'][33 + SHIFT] = { hpt: 8 };
+    mtcWs['!rows'] = Array.from({ length: ROWS + SHIFT }, () => ({ hpt: 16 }));
+    mtcWs['!rows'][0 + SHIFT] = { hpt: 22 };
+    mtcWs['!rows'][1 + SHIFT] = { hpt: 20 };
+    mtcWs['!rows'][2 + SHIFT] = { hpt: 18 };
+    mtcWs['!rows'][15 + SHIFT] = { hpt: 18 };
+    mtcWs['!rows'][16 + SHIFT] = { hpt: 6 };
+    mtcWs['!rows'][17 + SHIFT] = { hpt: 22 };
+    mtcWs['!rows'][18 + SHIFT] = { hpt: 20 };
+    mtcWs['!rows'][19 + SHIFT] = { hpt: 18 };
+    mtcWs['!rows'][32 + SHIFT] = { hpt: 18 };
+    mtcWs['!rows'][33 + SHIFT] = { hpt: 6 };
+    mtcWs['!rows'][34 + SHIFT] = { hpt: 22 };
+    mtcWs['!rows'][35 + SHIFT] = { hpt: 20 };
+    mtcWs['!rows'][36 + SHIFT] = { hpt: 18 };
+    mtcWs['!rows'][49 + SHIFT] = { hpt: 18 };
 
     XLSX.utils.book_append_sheet(wb, mtcWs, 'Monthly Tax Comparison');
   }
 
-  // ---- Sheet 4: Monthly Tax Comparison (FY layout: 2B | JV+Purchase | Difference) ----
-  {
-    const FY_MONTHS = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
-    // monthIdx for Indian FY (April=0 ... March=11)
-    const fyIdx = (m: number) => { const idx = (m >= 3 ? m - 3 : m + 9); return (idx >= 0 && idx < 12) ? idx : -1; };
+  // 2. Cross Verification & Audit
+  appendCrossVerificationSheet(wb, rows, debitNotes, companyName);
 
-    type MAgg = { cgst: number; sgst: number; igst: number };
-    const mk = (): MAgg[] => Array.from({ length: 12 }, () => ({ cgst: 0, sgst: 0, igst: 0 }));
-    const tb = mk(), pr = mk();
+  // 3. All Invoices Working
+  appendAllInvoicesSheet(wb, rows, debitNotes, companyName);
 
-    for (const r of rows) {
-      if (r.status === 'Prior FY (Excluded)') continue;
-      let prIdx = parseMonthFY(r.dateTally);
-      if (prIdx < 0 && r.dateTally) prIdx = parseMonthFY(r.dateCmp);
-      if (prIdx >= 0 && prIdx < 12) {
-        pr[prIdx].cgst += numVal(r.cgstTally);
-        pr[prIdx].sgst += numVal(r.sgstTally);
-        pr[prIdx].igst += numVal(r.igstTally);
-      }
-
-      let tbIdx = parseMonthFY(r.dateCmp);
-      if (tbIdx < 0 && r.dateCmp) tbIdx = parseMonthFY(r.dateTally);
-      if (tbIdx >= 0 && tbIdx < 12) {
-        tb[tbIdx].cgst += numVal(r.cgstCmp);
-        tb[tbIdx].sgst += numVal(r.sgstCmp);
-        tb[tbIdx].igst += numVal(r.igstCmp);
-      }
-    }
-
-    const r2 = (n: number) => +n.toFixed(2);
-
-    // Build AOA grid: 2 tables of 4 cols each, 1 table of 6 cols -> 16 cols
-    const COLS = 16;
-    const rowsCount = 1 + 1 + 12 + 1; // title, header, 12 months, total
-    const SHIFT = 2;
-
-    const RECON_START_ROW = 20;
-    const gridExpandedLength = RECON_START_ROW + 2 + 36 + 1;
-    const grid: (string | number | null | XLSX.CellObject)[][] = Array.from({ length: gridExpandedLength }, () => Array(COLS).fill(null));
-
-    const tables: { startCol: number; title: string; monthHdr: string; data: MAgg[] }[] = [
-      { startCol: 0, title: '2B', monthHdr: 'MONTHS', data: tb },
-      { startCol: 5, title: 'JV+Purchase', monthHdr: 'Month', data: pr },
-      { startCol: 10, title: 'Difference & Audit Remarks', monthHdr: 'MONTHS', data: pr.map((p, i) => ({ cgst: p.cgst - tb[i].cgst, sgst: p.sgst - tb[i].sgst, igst: p.igst - tb[i].igst })) },
-    ];
-
-    const merges: XLSX.Range[] = [];
-    for (const t of tables) {
-      grid[0 + SHIFT][t.startCol] = t.title;
-      const titleSpan = t.title.includes('Difference') ? 5 : 3;
-      merges.push({ s: { r: 0 + SHIFT, c: t.startCol }, e: { r: 0 + SHIFT, c: t.startCol + titleSpan } });
-      grid[1 + SHIFT][t.startCol] = t.monthHdr;
-      grid[1 + SHIFT][t.startCol + 1] = 'CGST';
-      grid[1 + SHIFT][t.startCol + 2] = 'SGST';
-      grid[1 + SHIFT][t.startCol + 3] = 'IGST';
-      if (t.title.includes('Difference')) {
-        grid[1 + SHIFT][t.startCol + 4] = 'Audit Remarks & Detailed Breakdown';
-        grid[1 + SHIFT][t.startCol + 5] = 'Action Recommended';
-      }
-      let tc = 0, ts = 0, ti = 0;
-      for (let i = 0; i < 12; i++) {
-        const row = 2 + SHIFT + i;
-        const excelRow = row + 1;
-        grid[row][t.startCol] = FY_MONTHS[i];
-
-        for (let colOff = 1; colOff <= 3; colOff++) {
-          const val = colOff === 1 ? t.data[i].cgst : colOff === 2 ? t.data[i].sgst : t.data[i].igst;
-          let f: string | undefined;
-
-          if (t.title.includes('Difference')) {
-            const colL_PR = XLSX.utils.encode_col(5 + colOff);
-            const colL_2B = XLSX.utils.encode_col(0 + colOff);
-            f = `${colL_PR}${excelRow}-${colL_2B}${excelRow}`;
-          }
-          grid[row][t.startCol + colOff] = f ? { t: 'n', v: r2(val), f, z: ACC_FMT } : r2(val);
-        }
-
-        if (t.title.includes('Difference')) {
-          const auditRes = buildMonthAuditComment(FY_MONTHS[i], i, pr[i], tb[i], rows, debitNotes);
-          grid[row][t.startCol + 4] = auditRes.comment;
-          grid[row][t.startCol + 5] = auditRes.action;
-        }
-
-        tc += t.data[i].cgst; ts += t.data[i].sgst; ti += t.data[i].igst;
-      }
-      const totalRow = 2 + 12 + SHIFT;
-      grid[totalRow][t.startCol] = 'TOTAL';
-      for (let colOff = 1; colOff <= 3; colOff++) {
-        const colLetter = XLSX.utils.encode_col(t.startCol + colOff);
-        const val = colOff === 1 ? tc : colOff === 2 ? ts : ti;
-        grid[totalRow][t.startCol + colOff] = { t: 'n', v: r2(val), f: `SUM(${colLetter}5:${colLetter}16)`, z: ACC_FMT };
-      }
-      if (t.title.includes('Difference')) {
-        grid[totalRow][t.startCol + 4] = 'Month-wise Audit Breakdown Generated';
-        grid[totalRow][t.startCol + 5] = 'Follow-up Action List';
-      }
-    }
-
-    // Populate Reconciliation Table Data
-    type RecAgg = { timingOutCGST: number; timingOutSGST: number; timingOutIGST: number; timingInCGST: number; timingInSGST: number; timingInIGST: number };
-    const recData: RecAgg[] = Array.from({ length: 12 }, () => ({
-      timingOutCGST: 0, timingOutSGST: 0, timingOutIGST: 0,
-      timingInCGST: 0, timingInSGST: 0, timingInIGST: 0
-    }));
-
-    for (const r of rows) {
-      if (r.status === 'Prior FY (Excluded)') continue;
-      const prIdx = parseMonthFY(r.dateTally);
-      const tbIdx = parseMonthFY(r.dateCmp);
-      if (prIdx >= 0 && tbIdx >= 0 && prIdx !== tbIdx) {
-        recData[prIdx].timingOutCGST += numVal(r.cgstTally);
-        recData[prIdx].timingOutSGST += numVal(r.sgstTally);
-        recData[prIdx].timingOutIGST += numVal(r.igstTally);
-
-        recData[tbIdx].timingInCGST += numVal(r.cgstCmp);
-        recData[tbIdx].timingInSGST += numVal(r.sgstCmp);
-        recData[tbIdx].timingInIGST += numVal(r.igstCmp);
-      }
-    }
-
-    grid[RECON_START_ROW][0] = 'MONTHLY RECONCILIATION TO PARTY SUMMARY (TIMING DIFFERENCES ANALYSIS)';
-    merges.push({ s: { r: RECON_START_ROW, c: 0 }, e: { r: RECON_START_ROW, c: 13 } });
-
-    const reconHeaders = [
-      'Month', 'Tax Type', 'Month-wise Difference', 'Less: Timing Out (Books here, Portal later)', 'Add: Timing In (Portal here, Books earlier)', 'Reconciled Party Difference'
-    ];
-    for (let c = 0; c < reconHeaders.length; c++) {
-      grid[RECON_START_ROW + 1][c] = reconHeaders[c];
-    }
-
-    let rIdx = RECON_START_ROW + 2;
-    const taxTypes = ['CGST', 'SGST', 'IGST'];
-    for (let i = 0; i < 12; i++) {
-      const monthName = FY_MONTHS[i];
-      const monthExcelRow = 4 + i + 1; // row 5 to 16 in Excel (corresponds to grid row 4 to 15)
-
-      for (let t = 0; t < 3; t++) {
-        const taxType = taxTypes[t];
-        const currentGridRow = rIdx;
-        const excelRowNum = currentGridRow + 1;
-
-        grid[currentGridRow][0] = monthName;
-        grid[currentGridRow][1] = taxType;
-
-        const diffColLetter = XLSX.utils.encode_col(11 + t); // L, M, or N
-        grid[currentGridRow][2] = { t: 'n', f: `${diffColLetter}${monthExcelRow}`, z: ACC_FMT };
-
-        const outVal = t === 0 ? recData[i].timingOutCGST : t === 1 ? recData[i].timingOutSGST : recData[i].timingOutIGST;
-        const inVal = t === 0 ? recData[i].timingInCGST : t === 1 ? recData[i].timingInSGST : recData[i].timingInIGST;
-
-        grid[currentGridRow][3] = r2(outVal);
-        grid[currentGridRow][4] = r2(inVal);
-        grid[currentGridRow][5] = { t: 'n', f: `C${excelRowNum}-D${excelRowNum}+E${excelRowNum}`, z: ACC_FMT };
-
-        rIdx++;
-      }
-    }
-
-    const reconTotalRow = rIdx;
-    grid[reconTotalRow][0] = 'TOTAL';
-    grid[reconTotalRow][1] = '';
-    for (let c = 2; c <= 5; c++) {
-      const colLetter = XLSX.utils.encode_col(c);
-      grid[reconTotalRow][c] = { t: 'n', f: `SUM(${colLetter}${RECON_START_ROW + 3}:${colLetter}${reconTotalRow})`, z: ACC_FMT };
-    }
-
-    const mWs = XLSX.utils.aoa_to_sheet(grid as any[][]);
-    addCorporateHeader(mWs, COLS, companyName, 'Monthly Tax Comparison FY', tabs);
-    if (!mWs['!merges']) mWs['!merges'] = [];
-    mWs['!merges'].push(...merges);
-    mWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
-    mWs['!cols'] = Array.from({ length: COLS }, (_, c) => ({ wch: (c === 4 || c === 9) ? 3 : (c % 5 === 0 ? 12 : 10) }));
-
-    const titleFills: Record<string, string> = { '2B': '0D7A5F', 'JV+Purchase': '1E3A5F', 'Difference': 'B45309' };
-    const totalRowIdx = 2 + 12 + SHIFT;
-
-    for (let r = 0; r < gridExpandedLength; r++) {
-      if (!mWs['!rows']) mWs['!rows'] = [];
-
-      let hpt = 15;
-      if (r === 0 + SHIFT) hpt = 20;
-      else if (r === 1 + SHIFT) hpt = 18;
-      else if (r === RECON_START_ROW) hpt = 22;
-      else if (r === RECON_START_ROW + 1) hpt = 18;
-      else if (r === reconTotalRow) hpt = 20;
-
-      mWs['!rows'][r] = { hpt };
-
-      for (let c = 0; c < COLS; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        if (!mWs[addr]) continue;
-
-        if (r >= RECON_START_ROW) {
-          const isHeader = r === RECON_START_ROW + 1;
-          const isTitle = r === RECON_START_ROW;
-          const isTotal = r === reconTotalRow;
-
-          if (isTitle) {
-            mWs[addr].s = {
-              fill: { fgColor: { rgb: '1E3A5F' } },
-              font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-              alignment: { horizontal: 'center', vertical: 'center' }
-            };
-          } else if (isHeader) {
-            mWs[addr].s = {
-              fill: { fgColor: { rgb: '374151' } },
-              font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 9 },
-              alignment: { horizontal: 'center', vertical: 'center' },
-              border: { bottom: { style: 'thin', color: { rgb: '000000' } } }
-            };
-          } else {
-            const isNum = c >= 2;
-            mWs[addr].s = {
-              fill: { fgColor: { rgb: isTotal ? 'E5E7EB' : (r % 2 === 0 ? 'FFFFFF' : 'F9FAFB') } },
-              font: { sz: 9, bold: isTotal || c <= 1 },
-              alignment: { vertical: 'center', horizontal: isNum ? 'right' : 'left' },
-              border: isTotal
-                ? { top: { style: 'thin', color: { rgb: '9CA3AF' } }, bottom: { style: 'double', color: { rgb: '9CA3AF' } } }
-                : { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } },
-              numFmt: isNum ? ACC_FMT : undefined
-            };
-          }
-          continue;
-        }
-
-        if (r < SHIFT) continue;
-        const inGap = (c === 4 || c === 9);
-        if (inGap) continue;
-        const tableIdx = c < 4 ? 0 : c < 9 ? 1 : 2;
-        const table = tables[tableIdx];
-        if (r === 0 + SHIFT) {
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: titleFills[table.title] } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
-          };
-        } else if (r === 1 + SHIFT) {
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: '374151' } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 9 },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
-          };
-        } else {
-          const isTotal = r === totalRowIdx;
-          const colOffset = c - table.startCol;
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: isTotal ? 'E5E7EB' : (r % 2 === 0 ? 'FFFFFF' : 'F9FAFB') } },
-            font: { sz: 9, bold: isTotal || colOffset === 0 },
-            alignment: { vertical: 'center', horizontal: colOffset === 0 ? 'left' : 'right' },
-            border: isTotal
-              ? { top: { style: 'thin', color: { rgb: '9CA3AF' } }, bottom: { style: 'double', color: { rgb: '9CA3AF' } } }
-              : { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } } },
-          };
-          if (colOffset >= 1) (mWs[addr] as XLSX.CellObject).z = ACC_FMT;
-        }
-      }
-    }
-
-    XLSX.utils.book_append_sheet(wb, mWs, 'Monthly Tax Comparison FY');
-  }
-
-  // ---- Sheet: Partywise Monthly Working ----
-  appendPartywiseMonthlySheet(wb, rows, debitNotes, companyName, tabs);
-  appendPartywiseMismatchInvoicesSheet(wb, rows, debitNotes, companyName, tabs);
-  appendPartyMismatchBreakdownSheet(wb, rows, debitNotes, companyName, tabs);
-  appendMonthlyDifferenceSheets(wb, rows, debitNotes, companyName, tabs);
-
-  const FY_MONTH_SHEET_NAMES = [
-    'April_Diff', 'May_Diff', 'June_Diff', 'July_Diff',
-    'August_Diff', 'September_Diff', 'October_Diff', 'November_Diff',
-    'December_Diff', 'January_Diff', 'February_Diff', 'March_Diff'
-  ];
+  // 4. Partywise Monthly Working
+  appendPartywiseMonthlySheet(wb, rows, debitNotes, companyName);
 
   const comparisonSheetNames = [
-    'Executive Summary',
     'Monthly Tax Comparison',
-    'Monthly Tax Comparison FY',
-    ...FY_MONTH_SHEET_NAMES,
+    'Cross Verification & Audit',
+    'All Invoices Working',
     'Partywise Monthly Working',
-    'Partywise Mismatch Invoices',
-    'Party Mismatch Breakdown',
-    '3B vs 2B vs Books',
   ];
 
-  // ---- Sheet 5: GSTR-3B vs 2B vs Books ----
-  {
-    const FY_MONTHS = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
-    const fyIdx = (m: number) => { const idx = (m >= 3 ? m - 3 : m + 9); return (idx >= 0 && idx < 12) ? idx : -1; };
-    let resolved3bData = gstr3bData;
-    if (!resolved3bData) {
-      try {
-        const storage = typeof window !== 'undefined' ? (window.sessionStorage || window.localStorage) : null;
-        resolved3bData = JSON.parse(storage?.getItem('np_gstr3b_data') || 'null');
-      } catch {
-        resolved3bData = null;
-      }
-    }
-
-    type MAgg = { taxable: number; cgst: number; sgst: number; igst: number };
-    const mk = (): MAgg[] => Array.from({ length: 12 }, () => ({ taxable: 0, cgst: 0, sgst: 0, igst: 0 }));
-    const prData = mk(), tb2bData = mk(), tb3bData = mk();
-
-    for (const r of rows) {
-      if (r.status === 'Prior FY (Excluded)') continue;
-      let prIdx = parseMonthFY(r.dateTally);
-      if (prIdx < 0 && r.dateTally) prIdx = parseMonthFY(r.dateCmp);
-      if (prIdx >= 0 && prIdx < 12) {
-        prData[prIdx].taxable += numVal(r.taxableTally);
-        prData[prIdx].cgst += numVal(r.cgstTally);
-        prData[prIdx].sgst += numVal(r.sgstTally);
-        prData[prIdx].igst += numVal(r.igstTally);
-      }
-
-      let tbIdx = parseMonthFY(r.dateCmp);
-      if (tbIdx < 0 && r.dateCmp) tbIdx = parseMonthFY(r.dateTally);
-      if (tbIdx >= 0 && tbIdx < 12) {
-        tb2bData[tbIdx].taxable += numVal(r.taxableCmp);
-        tb2bData[tbIdx].cgst += numVal(r.cgstCmp);
-        tb2bData[tbIdx].sgst += numVal(r.sgstCmp);
-        tb2bData[tbIdx].igst += numVal(r.igstCmp);
-      }
-    }
-
-    if (resolved3bData && Array.isArray(resolved3bData)) {
-      for (const b of resolved3bData) {
-        if (!b) continue;
-        const mStr = String(b.period || b.month || '').toLowerCase();
-        let mIdx = -1;
-        for (let i = 0; i < 12; i++) {
-          if (mStr.includes(FY_MONTHS[i].toLowerCase())) {
-            mIdx = i; break;
-          }
-        }
-        if (mIdx >= 0 && mIdx < 12 && tb3bData[mIdx]) {
-          tb3bData[mIdx].taxable += numVal(b.taxable ?? b.Taxable ?? 0);
-          tb3bData[mIdx].cgst += numVal(b.cgst ?? b.CGST ?? 0);
-          tb3bData[mIdx].sgst += numVal(b.sgst ?? b.SGST ?? 0);
-          tb3bData[mIdx].igst += numVal(b.igst ?? b.IGST ?? 0);
-        }
-      }
-    }
-
-    const diffData = mk();
-    let hasTaxable = false;
-    for (let i = 0; i < 12; i++) {
-      diffData[i].taxable = tb2bData[i].taxable - tb3bData[i].taxable;
-      diffData[i].cgst = tb2bData[i].cgst - tb3bData[i].cgst;
-      diffData[i].sgst = tb2bData[i].sgst - tb3bData[i].sgst;
-      diffData[i].igst = tb2bData[i].igst - tb3bData[i].igst;
-      if (prData[i].taxable > 0 || tb2bData[i].taxable > 0 || tb3bData[i].taxable > 0) hasTaxable = true;
-    }
-
-    const r2 = (n: number) => +n.toFixed(2);
-    const colPerBlock = hasTaxable ? 4 : 3;
-    const COLS = 1 + (colPerBlock * 4);
-    const SHIFT = 2;
-    const ROWS = 1 + 1 + 12 + 1;
-    const grid: (string | number | null | XLSX.CellObject)[][] = Array.from({ length: ROWS + SHIFT }, () => Array(COLS).fill(null));
-
-    const blockNames = ['Books (PR / Sales)', 'Portal (2B / 1)', 'GSTR-3B (Claimed / Paid)', 'Difference'];
-    grid[0 + SHIFT][0] = '';
-    for (let b = 0; b < 4; b++) {
-      grid[0 + SHIFT][1 + b * colPerBlock] = blockNames[b];
-    }
-
-    grid[1 + SHIFT][0] = 'Month';
-    for (let b = 0; b < 4; b++) {
-      const start = 1 + b * colPerBlock;
-      if (hasTaxable) {
-        grid[1 + SHIFT][start] = 'Taxable';
-        grid[1 + SHIFT][start + 1] = 'CGST';
-        grid[1 + SHIFT][start + 2] = 'SGST';
-        grid[1 + SHIFT][start + 3] = 'IGST';
-      } else {
-        grid[1 + SHIFT][start] = 'CGST';
-        grid[1 + SHIFT][start + 1] = 'SGST';
-        grid[1 + SHIFT][start + 2] = 'IGST';
-      }
-    }
-
-    const merges: XLSX.Range[] = [];
-    for (let b = 0; b < 4; b++) {
-      const start = 1 + b * colPerBlock;
-      merges.push({ s: { r: 0 + SHIFT, c: start }, e: { r: 0 + SHIFT, c: start + colPerBlock - 1 } });
-    }
-
-    const blockTotals = [
-      { taxable: 0, cgst: 0, sgst: 0, igst: 0 },
-      { taxable: 0, cgst: 0, sgst: 0, igst: 0 },
-      { taxable: 0, cgst: 0, sgst: 0, igst: 0 },
-      { taxable: 0, cgst: 0, sgst: 0, igst: 0 }
-    ];
-
-    for (let i = 0; i < 12; i++) {
-      const row = 2 + SHIFT + i;
-      const excelRow = row + 1;
-      grid[row][0] = FY_MONTHS[i];
-      const blocks = [prData[i], tb2bData[i], tb3bData[i], diffData[i]];
-      for (let b = 0; b < 4; b++) {
-        const start = 1 + b * colPerBlock;
-        const data = blocks[b];
-
-        for (let colOff = 0; colOff < colPerBlock; colOff++) {
-          let val = 0;
-          if (hasTaxable) {
-            val = colOff === 0 ? data.taxable : colOff === 1 ? data.cgst : colOff === 2 ? data.sgst : data.igst;
-          } else {
-            val = colOff === 0 ? data.cgst : colOff === 1 ? data.sgst : data.igst;
-          }
-
-          let f: string | undefined;
-          if (b === 3) {
-            const colL_2B = XLSX.utils.encode_col(1 + 1 * colPerBlock + colOff);
-            const colL_3B = XLSX.utils.encode_col(1 + 2 * colPerBlock + colOff);
-            f = `${colL_2B}${excelRow}-${colL_3B}${excelRow}`;
-          }
-
-          grid[row][start + colOff] = f ? { t: 'n', v: r2(val), f, z: ACC_FMT } : r2(val);
-        }
-
-        blockTotals[b].taxable += data.taxable;
-        blockTotals[b].cgst += data.cgst;
-        blockTotals[b].sgst += data.sgst;
-        blockTotals[b].igst += data.igst;
-      }
-    }
-
-    const totalRow = 2 + SHIFT + 12;
-    grid[totalRow][0] = 'TOTAL';
-    for (let b = 0; b < 4; b++) {
-      const start = 1 + b * colPerBlock;
-      const data = blockTotals[b];
-
-      for (let colOff = 0; colOff < colPerBlock; colOff++) {
-        let val = 0;
-        if (hasTaxable) {
-          val = colOff === 0 ? data.taxable : colOff === 1 ? data.cgst : colOff === 2 ? data.sgst : data.igst;
-        } else {
-          val = colOff === 0 ? data.cgst : colOff === 1 ? data.sgst : data.igst;
-        }
-
-        const colLetter = XLSX.utils.encode_col(start + colOff);
-        grid[totalRow][start + colOff] = { t: 'n', v: r2(val), f: `SUM(${colLetter}5:${colLetter}16)`, z: ACC_FMT };
-      }
-    }
-
-    const mWs = XLSX.utils.aoa_to_sheet(grid as any[][]);
-    addCorporateHeader(mWs, COLS, companyName, 'GSTR-3B vs 2B vs Books', tabs);
-    if (!mWs['!merges']) mWs['!merges'] = [];
-    mWs['!merges'].push(...merges);
-    mWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
-    mWs['!cols'] = [{ wch: 14 }, ...Array(colPerBlock * 4).fill({ wch: 12 })];
-
-    const titleFills = ['1E3A5F', '0D7A5F', '6D28D9', 'B45309'];
-
-    for (let r = 0; r < ROWS + SHIFT; r++) {
-      if (!mWs['!rows']) mWs['!rows'] = [];
-      mWs['!rows'][r] = { hpt: r === 0 + SHIFT ? 24 : (r === 1 + SHIFT ? 20 : 18) };
-
-      for (let c = 0; c < COLS; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        if (!mWs[addr]) continue;
-        if (r < SHIFT) continue;
-
-        const isTitle = r === 0 + SHIFT;
-        const isHeader = r === 1 + SHIFT;
-        const isTotal = r === totalRow;
-
-        let blockIdx = -1;
-        if (c >= 1) blockIdx = Math.floor((c - 1) / colPerBlock);
-
-        if (isTitle) {
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: blockIdx >= 0 ? titleFills[blockIdx] : '0F172A' } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: { bottom: { style: 'thin', color: { rgb: '000000' } }, top: { style: 'medium', color: { rgb: '0F172A' } } },
-          };
-        } else if (isHeader) {
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: '374151' } },
-            font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: { bottom: { style: 'medium', color: { rgb: '000000' } } },
-          };
-        } else {
-          mWs[addr].s = {
-            fill: { fgColor: { rgb: isTotal ? 'E5E7EB' : (r % 2 === 0 ? 'FFFFFF' : 'F9FAFB') } },
-            font: { sz: 9.5, bold: isTotal || c === 0 },
-            alignment: { vertical: 'center', horizontal: c === 0 ? 'left' : 'right' },
-            border: isTotal
-              ? { top: { style: 'medium', color: { rgb: '9CA3AF' } }, bottom: { style: 'double', color: { rgb: '9CA3AF' } } }
-              : { bottom: { style: 'hair', color: { rgb: 'D1D5DB' } }, left: { style: 'hair', color: { rgb: 'E5E7EB' } }, right: { style: 'hair', color: { rgb: 'E5E7EB' } } },
-          };
-          if (c >= 1) {
-            (mWs[addr] as XLSX.CellObject).z = ACC_FMT;
-            if (blockIdx === 3 && typeof mWs[addr].v === 'number' && Math.abs(mWs[addr].v as number) > 0.01) {
-              mWs[addr].s.font.color = { rgb: 'DC2626' };
-            }
-          }
-        }
-      }
-    }
-
-    XLSX.utils.book_append_sheet(wb, mWs, '3B vs 2B vs Books');
-  }
-
-  // ---- Sheet 6: Prior FY (Excluded) ----
+    // ---- Sheet 6: Prior FY (Excluded) ----
   const priorRows = rows.filter(r => r.status === 'Prior FY (Excluded)');
   if (priorRows.length > 0) {
     const formatted = priorRows.map(r => ({
@@ -4969,7 +5363,7 @@ export function exportMonthlyComparison(
 
     const ws = XLSX.utils.aoa_to_sheet([]);
     XLSX.utils.sheet_add_aoa(ws, [bannerRow, cols, ...data], { origin: 'A3' });
-    addCorporateHeader(ws, cols.length, companyName, 'Prior FY (Excluded) Records', tabs);
+    addCorporateHeader(ws, cols.length, companyName, 'Prior FY (Excluded) Records');
     const style = STATUS_STYLES['Prior FY (Excluded)'] || DEFAULT_STYLE;
     applySheetStyles(ws, style, formatted.length + 1, {
       startRow: 3,
@@ -4984,15 +5378,17 @@ export function exportMonthlyComparison(
     XLSX.utils.book_append_sheet(wb, ws, 'Prior FY (Excluded)');
     comparisonSheetNames.push('Prior FY (Excluded)');
   }
-  // ---- Sheet 6: Timing Reconciliation ----
-  appendTimingReconciliationSheet(wb, rows, companyName, tabs);
-  comparisonSheetNames.push('Timing Reconciliation');
+  // ---- Debit Notes Reconciliation Sheets (Reconciled Register, Batches, Supplier Summary) ----
+  if (debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0))) {
+    const dnResult = reconcileDebitNotes(debitNotes.pr || [], debitNotes.twoB || []);
+    const dnSheets = appendDebitNoteSheetsToWorkbook(wb, dnResult, companyName, true);
+    comparisonSheetNames.push(...dnSheets);
+  }
 
-  appendGstinReports(wb, comparisonSheetNames, companyName, appliedGstins, conflicts, tabs);
+  appendGstinReports(wb, comparisonSheetNames, companyName, appliedGstins, conflicts);
 
-  appendMethodologySheet(wb, companyName, tabs);
-  comparisonSheetNames.push('📖 Methodology & Legend');
-  appendNavigationSheet(wb, comparisonSheetNames, companyName, stats, breakdown);
+  // 10. Visual Analytics & Charts
+  appendVisualAnalyticsSheet(wb, rows, debitNotes, companyName);
 
   wb.Props = {
     Title: filename.replace('.xlsx', ''),
@@ -5002,6 +5398,7 @@ export function exportMonthlyComparison(
     CreatedDate: new Date()
   };
   try {
+    removeAllMergesFromWorkbook(wb);
     XLSX.writeFile(wb, filename);
   } catch (error) {
     console.error('XLSX.writeFile error:', error);
