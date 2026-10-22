@@ -478,6 +478,18 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
     return () => window.removeEventListener('online', handleOnline);
   }, [workingData]);
 
+  // Global Ctrl+S / Cmd+S shortcut to save working paper instantly
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleManualSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workingData, isSyncingToServer]);
+
   const handleSelectClientFromHub = async (
     client: { gstin: string; trade_name?: string; legal_name?: string; address?: string },
     showNotification = true
@@ -936,7 +948,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-7 pt-10 md:pt-14 pb-20 animate-fade-in">
+    <div className="w-full max-w-7xl mx-auto space-y-4 pt-3 md:pt-4 pb-20 animate-fade-in">
       {/* Hidden file input for uploading CA Working .xlsx */}
       <input
         type="file"
@@ -946,176 +958,114 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
         className="hidden"
       />
 
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-800 pb-6 pt-2">
-        <div>
-          <button
-            onClick={onBack}
-            className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-[11px] mb-3 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Hub
-          </button>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">
-              <Calculator className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-                04. Returns Preparation & Filing
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-medium border border-purple-500/30">
-                  GSTR-3B Working Engine v2.0
-                </span>
-              </h1>
-              <p className="text-slate-400 text-xs md:text-sm font-medium mt-0.5">
-                Complete monthly CA working paper, Rule 88A set-off cascade, RCM cash liability, & portal-ready filing.
-              </p>
-            </div>
+      {/* ─── 1. TOP HEADER (Right-shifted title with refined text size, Back button left) ─── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3 pt-1">
+        <button
+          onClick={onBack}
+          className="text-slate-400 hover:text-white flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px] transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Hub
+        </button>
+
+        {/* Right-shifted Module Title with refined typography badge */}
+        <div className="flex items-center gap-2.5 sm:ml-auto">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold shrink-0">
+            <Calculator className="w-4 h-4" />
           </div>
-        </div>
-
-        {/* Global Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Save Working */}
-          <button
-            onClick={handleManualSave}
-            disabled={isSyncingToServer}
-            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-emerald-400/40"
-            title="Save complete 3B Working Sheet to Server & Local Storage"
-          >
-            {isSyncingToServer ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Save className="w-3.5 h-3.5" />
-            )}
-            <span>{isSyncingToServer ? 'Saving...' : 'Save Working'}</span>
-          </button>
-
-          {/* Export Excel */}
-          <button
-            onClick={handleExportExcel}
-            className="px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all hover:scale-[1.02]"
-            title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" /> Export Excel
-          </button>
-
-          {/* Export PDF (Selected Month Working) */}
-          <button
-            onClick={handleExportPdf}
-            className="px-3.5 py-1.5 bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-rose-950 transition-all hover:scale-[1.02]"
-            title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
-          >
-            <FileText className="w-3.5 h-3.5" /> Export PDF ({selectedMonth.slice(0, 3)})
-          </button>
-
-          {/* Download JSON */}
-          <button
-            onClick={handleDownloadJson}
-            className="px-3.5 py-1.5 bg-purple-600/90 hover:bg-purple-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-950 transition-all hover:scale-[1.02]"
-            title="Download GST Portal ready JSON file"
-          >
-            <Download className="w-3.5 h-3.5" /> Portal JSON
-          </button>
-
-          {/* Reset Sheet */}
-          <button
-            onClick={handleReset}
-            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-all hover:scale-[1.02]"
-            title="Clear all figures and reset sheet"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /> Reset Sheet
-          </button>
+          <div className="text-left sm:text-right">
+            <div className="flex items-center gap-2 justify-start sm:justify-end">
+              <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                04. Returns Preparation & Filing
+              </h1>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-medium border border-purple-500/30">
+                GSTR-3B v2.0
+              </span>
+            </div>
+            <p className="text-slate-400 text-[11px] font-medium hidden sm:block">
+              Rule 88A set-off cascade, RCM cash liability & portal-ready filing
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* ─── UNIVERSAL CLIENT SELECTION & COMMAND BAR (HERO COMPONENT) ─── */}
-      <div className="relative z-30 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-2xl backdrop-blur-md">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* LEFT: Client Identity & Switcher */}
-          <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-blue-900/30 ring-2 ring-blue-500/20">
-              <Building2 className="w-6 h-6" />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              {/* Firm Name with Quick Dropdown Trigger */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                  className="group text-base sm:text-lg md:text-xl font-extrabold text-white tracking-tight hover:text-blue-400 transition-colors flex items-center gap-2 text-left truncate max-w-full"
-                  title="Click to Switch Client"
-                >
-                  <span className="truncate">
-                    {workingData.profile.firmName || 'Select a Client to Begin'}
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-blue-400 shrink-0 transition-transform duration-200 ${isClientDropdownOpen ? 'rotate-180 text-blue-300' : 'group-hover:translate-y-0.5'}`} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(true)}
-                  className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition-colors"
-                  title="Edit client profile manually"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Sub-bar: GSTIN, FY Switcher, Sync status */}
-              <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-400 mt-1.5 font-medium">
-                {/* GSTIN Badge */}
-                <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 px-2.5 py-1 rounded-lg font-mono text-blue-300 font-semibold shadow-inner">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans">GSTIN:</span>
-                  <span>{workingData.profile.gstin || 'Not Specified'}</span>
-                </div>
-
-                {/* Financial Year Selector / Toggle */}
-                <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 p-0.5 rounded-lg">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider px-1.5 font-sans">FY:</span>
-                  {['2025-26', '2026-27'].map(fy => {
-                    const isSelected = normalizeFy(workingData.profile.financialYear || '2025-26') === fy;
-                    return (
-                      <button
-                        key={fy}
-                        type="button"
-                        onClick={() => handleFinancialYearChange(fy)}
-                        className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all ${
-                          isSelected
-                            ? 'bg-purple-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        {fy}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Server Sync Status Pill */}
-                {isSyncingToServer ? (
-                  <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin text-blue-400" /> Saving to Server...
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold flex items-center gap-1.5" title="All office PCs can open this client's latest saved data">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Synced to Server
-                  </span>
-                )}
-              </div>
-            </div>
+      {/* ─── 2. SERVER STORAGE & COMMAND CONTROL DECK ─── */}
+      <div className="relative z-30 obsidian-card p-4 md:p-5 shadow-2xl backdrop-blur-md space-y-4">
+        {/* Row A: Server Path (Top-Left) + Diagnostics (Top-Right) */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs text-slate-400 pb-3 border-b border-slate-800/70">
+          {/* Server Path Top Left */}
+          <div className="flex items-center gap-2 min-w-0">
+            <HardDrive className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="font-semibold text-slate-300 shrink-0">Server Storage:</span>
+            <span
+              className="font-mono text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md select-all cursor-text bg-slate-950/80 px-2.5 py-0.5 rounded border border-slate-800"
+              title={serverDataPath || 'Loading server path...'}
+            >
+              {serverDataPath || 'Loading server path...'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (serverDataPath) {
+                  navigator.clipboard.writeText(serverDataPath);
+                  toast.success('Server path copied to clipboard!');
+                }
+              }}
+              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+              title="Copy Server Path"
+            >
+              <Copy className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenStorageFolder}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition-colors flex items-center gap-1"
+              title="Open Folder in File Explorer"
+            >
+              <FolderOpen className="w-3 h-3 text-emerald-400" /> Open
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNewPathInput(serverDataPath);
+                setShowChangePathModal(true);
+              }}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition-colors flex items-center gap-1"
+              title="Change Server Data Path"
+            >
+              <Edit3 className="w-3 h-3 text-blue-400" /> Change
+            </button>
           </div>
 
-          {/* RIGHT: Action Toolbar & Switch Client Dropdown Anchor */}
-          <div className="flex flex-wrap items-center gap-2 relative shrink-0">
+          {/* Diagnostics on Top Right */}
+          <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+            <span className="flex items-center gap-1 text-slate-400">
+              <Server className="w-3 h-3 text-purple-400" />
+              {serverHost || 'localhost'}
+              {serverIps.length > 0 && <span className="text-slate-500">({serverIps[0]})</span>}
+            </span>
+            <span>•</span>
+            <span className="text-slate-300 font-semibold flex items-center gap-1">
+              <Database className="w-3 h-3 text-cyan-400" />
+              {storageStats.totalClientsWithData} on Disk
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+              LAN Active
+            </span>
+          </div>
+        </div>
+
+        {/* Row B: Client Selection (Top Left) & Vault/Launch/Upload Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Client Selection (Top Left) */}
+          <div className="flex flex-wrap items-center gap-2 relative">
             {/* Universal Client Switcher Button */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-blue-950/40 hover:scale-[1.02]"
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-blue-950/40 hover:scale-[1.02]"
               >
-                <Users className="w-4 h-4 text-blue-100" />
+                <Users className="w-3.5 h-3.5 text-blue-100" />
                 <span>Switch Client ({clientsHub.length || vaultClients.length})</span>
                 <ChevronDown className={`w-3.5 h-3.5 text-blue-200 transition-transform ${isClientDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -1128,7 +1078,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
                     onClick={() => setIsClientDropdownOpen(false)}
                   />
 
-                  <div className="absolute right-0 sm:left-auto top-full mt-2 w-80 sm:w-96 bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-700">
+                  <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-700">
                     {/* Search box inside dropdown */}
                     <div className="relative mb-2">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1210,7 +1160,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
             {/* Credentials Vault Button */}
             <button
               onClick={() => setShowCredentialsModal(true)}
-              className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02]"
+              className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02]"
               title="Manage Portal Usernames & Passwords"
             >
               <Key className="w-3.5 h-3.5 text-amber-400" />
@@ -1221,7 +1171,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
             <button
               onClick={handleLaunchPortalLogin}
               disabled={isLaunchingPortal}
-              className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] disabled:opacity-50"
+              className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] disabled:opacity-50"
               title="Launch visible Chrome & auto-fill GST Portal login credentials"
             >
               {isLaunchingPortal ? (
@@ -1236,73 +1186,149 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 transition-all hover:scale-[1.02]"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 transition-all hover:scale-[1.02]"
               title="Upload external CA Excel working file"
             >
-              <UploadCloud className="w-3.5 h-3.5 text-blue-400" /> .xlsx
+              <UploadCloud className="w-3.5 h-3.5 text-blue-400" /> Upload .xlsx
             </button>
+          </div>
+
+          {/* Server Sync Pill (Top-Right of row) */}
+          <div className="flex items-center gap-2">
+            {isSyncingToServer ? (
+              <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin text-blue-400" /> Saving to Server...
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold flex items-center gap-1.5" title="All office PCs can open this client's latest saved data">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Synced to Server
+              </span>
+            )}
           </div>
         </div>
 
-        {/* ── SUB-BAR: INTEGRATED SERVER STORAGE STRIP (MINIMAL & AESTHETIC) ── */}
-        <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs text-slate-400">
-          <div className="flex items-center gap-2 min-w-0">
-            <HardDrive className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span className="font-semibold text-slate-300 shrink-0">Server Storage:</span>
-            <span
-              className="font-mono text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md select-all cursor-text bg-slate-950/60 px-2 py-0.5 rounded border border-slate-800/80"
-              title={serverDataPath || 'Loading server path...'}
-            >
-              {serverDataPath || 'Loading server path...'}
-            </span>
+        {/* Row C: Selected Client Name (Prominently below client selection, as requested) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 py-2 px-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-blue-900/30 ring-2 ring-blue-500/20">
+              <Building2 className="w-5 h-5" />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsClientDropdownOpen(prev => !prev)}
+                  className="group text-base sm:text-lg font-extrabold text-white tracking-tight hover:text-blue-400 transition-colors flex items-center gap-2 text-left truncate max-w-full"
+                  title="Click to Switch Client"
+                >
+                  <span className="truncate">
+                    {workingData.profile.firmName || 'Select a Client to Begin'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-blue-400 shrink-0 transition-transform ${isClientDropdownOpen ? 'rotate-180 text-blue-300' : 'group-hover:translate-y-0.5'}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                  title="Edit client profile manually"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* GSTIN Pill */}
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5 font-medium">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans font-semibold">GSTIN:</span>
+                <span className="font-mono text-blue-300 font-semibold">{workingData.profile.gstin || 'Not Specified'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Row D: Financial Year Selector & Save Working Button (Beside FY Selector, as requested) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Top-Left: FY Selector + SAVE BUTTON */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Financial Year Selector */}
+            <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 p-1 rounded-xl">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider px-2 font-sans font-semibold">FY:</span>
+              {['2025-26', '2026-27'].map(fy => {
+                const isSelected = normalizeFy(workingData.profile.financialYear || '2025-26') === fy;
+                return (
+                  <button
+                    key={fy}
+                    type="button"
+                    onClick={() => handleFinancialYearChange(fy)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                      isSelected
+                        ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-400/30'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    {fy}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Save Working Button (Beside FY Selector) */}
             <button
-              type="button"
-              onClick={() => {
-                if (serverDataPath) {
-                  navigator.clipboard.writeText(serverDataPath);
-                  toast.success('Server path copied to clipboard!');
-                }
-              }}
-              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-              title="Copy Server Path"
+              onClick={handleManualSave}
+              disabled={isSyncingToServer}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-emerald-400/40"
+              title="Save complete 3B Working Sheet to Server & Local Storage (Ctrl+S)"
             >
-              <Copy className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenStorageFolder}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition-colors flex items-center gap-1"
-              title="Open Folder in File Explorer"
-            >
-              <FolderOpen className="w-3 h-3 text-emerald-400" /> Open
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setNewPathInput(serverDataPath);
-                setShowChangePathModal(true);
-              }}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition-colors flex items-center gap-1"
-              title="Change Server Data Path"
-            >
-              <Edit3 className="w-3 h-3 text-blue-400" /> Change
+              {isSyncingToServer ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              <span>{isSyncingToServer ? 'Saving...' : 'Save Working'}</span>
+              <kbd className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/60 font-mono text-emerald-200 border border-emerald-500/30">
+                Ctrl+S
+              </kbd>
             </button>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
-            <span className="flex items-center gap-1 text-slate-400">
-              <Server className="w-3 h-3 text-purple-400" />
-              {serverHost || 'localhost'}
-              {serverIps.length > 0 && <span className="text-slate-500">({serverIps[0]})</span>}
-            </span>
-            <span>•</span>
-            <span className="text-slate-300 font-semibold flex items-center gap-1">
-              <Database className="w-3 h-3 text-cyan-400" />
-              {storageStats.totalClientsWithData} on Disk
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
-              LAN Active
-            </span>
+          {/* Right: Export & Utility Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Export Excel */}
+            <button
+              onClick={handleExportExcel}
+              className="px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all hover:scale-[1.02]"
+              title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Export Excel
+            </button>
+
+            {/* Export PDF (Selected Month Working) */}
+            <button
+              onClick={handleExportPdf}
+              className="px-3.5 py-1.5 bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-rose-950 transition-all hover:scale-[1.02]"
+              title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
+            >
+              <FileText className="w-3.5 h-3.5" /> Export PDF ({selectedMonth.slice(0, 3)})
+            </button>
+
+            {/* Download JSON */}
+            <button
+              onClick={handleDownloadJson}
+              className="px-3.5 py-1.5 bg-purple-600/90 hover:bg-purple-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-950 transition-all hover:scale-[1.02]"
+              title="Download GST Portal ready JSON file"
+            >
+              <Download className="w-3.5 h-3.5" /> Portal JSON
+            </button>
+
+            {/* Reset Sheet */}
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-all hover:scale-[1.02]"
+              title="Clear all figures and reset sheet"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Sheet
+            </button>
           </div>
         </div>
       </div>
