@@ -65991,124 +65991,6 @@ function setupImsRoutes(app2, db2) {
             }
           }).catch(() => {
           });
-          const isHomePage = currentUrl.includes("/auth/home") || !currentUrl.includes("/dashboard") && !currentUrl.includes("/ims") && !currentUrl.includes("inward");
-          if (isHomePage) {
-            console.log('[IMS Automation] Step 1: Detected Home Page -> Clicking "Dashboard"...');
-            await updateStatusBanner('Step 1/7: On Home Page \u2794 Clicking "Dashboard"...', "#f59e0b");
-            let clickedDashboard = false;
-            try {
-              const dashLoc = page.locator('ul.navbar-nav li a[href*="dashboard"], a:has-text("Dashboard"), button:has-text("CONTINUE TO DASHBOARD"), a:has-text("CONTINUE TO DASHBOARD"), button:has-text("Dashboard"), a[href*="dashboard"]').first();
-              if (await dashLoc.isVisible({ timeout: 1500 })) {
-                await dashLoc.click();
-                clickedDashboard = true;
-                console.log("[IMS Automation] Clicked Dashboard button via Playwright locator");
-              }
-            } catch (e) {
-            }
-            if (!clickedDashboard) {
-              await page.evaluate(() => {
-                const elements = Array.from(document.querySelectorAll("a, button, li"));
-                const dash = elements.find((el) => {
-                  const t = (el.innerText || el.textContent || "").trim().toUpperCase();
-                  const h = (el.getAttribute("href") || "").toLowerCase();
-                  return t === "DASHBOARD" || t.includes("CONTINUE TO DASHBOARD") || h.includes("/dashboard");
-                });
-                if (dash) dash.click();
-              }).catch(() => {
-              });
-            }
-            await page.waitForTimeout(1500);
-            const afterDashUrl = page.url();
-            if (afterDashUrl.includes("/auth/home") || !afterDashUrl.includes("/dashboard") && !afterDashUrl.includes("/ims")) {
-              console.log("[IMS Automation] Navigating directly to https://services.gst.gov.in/services/auth/dashboard...");
-              await page.goto("https://services.gst.gov.in/services/auth/dashboard", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(() => {
-              });
-              await page.waitForTimeout(1500);
-            }
-            continue;
-          }
-          if (currentUrl.includes("/dashboard") && !currentUrl.includes("/ims") && !currentUrl.includes("inward")) {
-            console.log("[IMS Automation] Steps 2-4: On Dashboard -> Opening Services \u2794 Returns \u2794 IMS Dashboard...");
-            await updateStatusBanner("Steps 2-4: Opening Services \u2794 Returns \u2794 Invoice Management System (IMS)...", "#6366f1");
-            let clickedDirectIms = false;
-            try {
-              const directTile = page.locator('text="Invoice Management System", a[href*="ims"], button:has-text("IMS")').first();
-              if (await directTile.isVisible({ timeout: 1e3 })) {
-                await directTile.click();
-                clickedDirectIms = true;
-                console.log("[IMS Automation] Clicked direct IMS tile on Dashboard!");
-              }
-            } catch (e) {
-            }
-            if (!clickedDirectIms) {
-              await page.evaluate(() => {
-                const servicesLink = document.querySelector("li.dropdown.drpdwn > a") || Array.from(document.querySelectorAll("a.dropdown-toggle, li.dropdown > a")).find((a) => (a.textContent || "").trim().startsWith("Services"));
-                if (servicesLink) {
-                  servicesLink.click();
-                  if (servicesLink.parentElement) {
-                    servicesLink.parentElement.classList.add("open");
-                    const menu = servicesLink.parentElement.querySelector(".dropdown-menu");
-                    if (menu) menu.style.display = "block";
-                  }
-                }
-              }).catch(() => {
-              });
-              try {
-                const servicesBtn = page.locator('li.dropdown.drpdwn > a, a.dropdown-toggle:has-text("Services")').first();
-                if (await servicesBtn.isVisible({ timeout: 1e3 })) {
-                  await servicesBtn.click();
-                }
-              } catch (e) {
-              }
-              await page.waitForTimeout(400);
-              await page.evaluate(() => {
-                const retLink = Array.from(document.querySelectorAll("li.has-sub > a, .dropdown-menu > li > a")).find((a) => (a.textContent || "").trim().startsWith("Returns"));
-                if (retLink) {
-                  retLink.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-                  retLink.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-                  retLink.click();
-                  if (retLink.parentElement) {
-                    retLink.parentElement.classList.add("open");
-                    const subMenu = retLink.parentElement.querySelector("ul, .dropdown-menu, .sub-menu");
-                    if (subMenu) subMenu.style.display = "block";
-                  }
-                }
-              }).catch(() => {
-              });
-              try {
-                const returnsItem = page.locator('.dropdown-menu a:has-text("Returns"), li.has-sub a:has-text("Returns")').first();
-                if (await returnsItem.isVisible({ timeout: 1e3 })) {
-                  await returnsItem.hover();
-                  await returnsItem.click().catch(() => {
-                  });
-                }
-              } catch (e) {
-              }
-              await page.waitForTimeout(400);
-              let clickedIms = false;
-              try {
-                const imsItem = page.locator('a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("Invoice Management System"), a:has-text("IMS Dashboard")').first();
-                if (await imsItem.isVisible({ timeout: 1500 })) {
-                  await imsItem.click();
-                  clickedIms = true;
-                  console.log("[IMS Automation] Clicked IMS Dashboard via locator!");
-                }
-              } catch (e) {
-              }
-              if (!clickedIms) {
-                await page.evaluate(() => {
-                  const ims = Array.from(document.querySelectorAll("a, button")).find((a) => {
-                    const t = (a.innerText || a.textContent || "").trim().toUpperCase();
-                    return t.includes("INVOICE MANAGEMENT SYSTEM") || t === "IMS" || t.includes("IMS DASHBOARD");
-                  });
-                  if (ims) ims.click();
-                }).catch(() => {
-                });
-              }
-            }
-            await page.waitForTimeout(2e3);
-            continue;
-          }
           const isOfflineInwardScreen = await page.evaluate(() => {
             const bodyText = (document.body.innerText || "").toUpperCase();
             return bodyText.includes("GENERATE JSON FILE TO DOWNLOAD") || bodyText.includes("CLICK HERE TO DOWNLOAD") || bodyText.includes("OFFLINE DOWNLOAD AND UPLOAD FOR IMS-INWARD SUPPLIES") || bodyText.includes("DOWNLOAD DATA FOR IMS- INWARD SUPPLIES");
@@ -66140,7 +66022,7 @@ function setupImsRoutes(app2, db2) {
                   const isNavTab = await dlEl.evaluate((el) => Boolean(el.closest(".nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5"))).catch(() => false);
                   if (!isNavTab && text.toLowerCase() !== "download" && text.toLowerCase() !== "upload" && !text.toLowerCase().includes("download data for ims")) {
                     console.log(`[IMS Automation] Found ready file download link via locator "${sel}" (text: "${text}")! Clicking now...`);
-                    await updateStatusBanner('Step 7/7: Clicking "Click here to download file"...', "#10b981");
+                    await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
                     await dlEl.click({ force: true });
                     clickedDlLink = true;
                     break;
@@ -66175,7 +66057,7 @@ function setupImsRoutes(app2, db2) {
               }).catch(() => false);
               if (clickedDlLink) {
                 console.log('[IMS Automation] Clicked "Click here to download file" via DOM fallback!');
-                await updateStatusBanner('Step 7/7: Clicking "Click here to download file"...', "#10b981");
+                await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
               }
             }
             if (clickedDlLink) {
@@ -66226,7 +66108,7 @@ function setupImsRoutes(app2, db2) {
               break;
             }
             console.log('[IMS Automation] [Phase 1] No existing download file found. Clicking "GENERATE JSON FILE TO DOWNLOAD"...');
-            await updateStatusBanner('Step 6/7: Clicking "GENERATE JSON FILE TO DOWNLOAD"...', "#8b5cf6");
+            await updateStatusBanner('Step 3/4: Clicking "GENERATE JSON FILE TO DOWNLOAD"...', "#8b5cf6");
             let clickedGen = false;
             const genLocators = [
               'button:has-text("GENERATE JSON FILE TO DOWNLOAD")',
@@ -66285,7 +66167,7 @@ function setupImsRoutes(app2, db2) {
               const dlLinkAfterGen = page.locator('table tr td a, a:has-text("Click here to download file"), a:has-text("Click here to download")').first();
               if (await dlLinkAfterGen.isVisible({ timeout: 2500 })) {
                 console.log('[IMS Automation] "Click here to download file" link appeared immediately! Clicking now...');
-                await updateStatusBanner('Step 7/7: Clicking "Click here to download file"...', "#10b981");
+                await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
                 await dlLinkAfterGen.click();
                 await page.waitForTimeout(3e3);
                 continue;
@@ -66300,8 +66182,8 @@ function setupImsRoutes(app2, db2) {
             break;
           }
           if (currentUrl.includes("/ims")) {
-            console.log('[IMS Automation] Step 5: On IMS Dashboard -> Clicking "OFFLINE" button on Inward Supplies card...');
-            await updateStatusBanner('Step 5/7: On IMS Dashboard \u2794 Clicking "OFFLINE"...', "#3b82f6");
+            console.log('[IMS Automation] Step 2: On IMS Dashboard -> Clicking "OFFLINE" button on Inward Supplies card...');
+            await updateStatusBanner('Step 2/4: On IMS Dashboard \u2794 Clicking "OFFLINE"...', "#3b82f6");
             let clickedOffline = false;
             try {
               const offBtn = page.locator('button:has-text("OFFLINE"), a:has-text("OFFLINE"), text="OFFLINE"').first();
@@ -66321,6 +66203,99 @@ function setupImsRoutes(app2, db2) {
                 if (btn) btn.click();
               }).catch(() => {
               });
+            }
+            await page.waitForTimeout(2e3);
+            continue;
+          }
+          if (!currentUrl.includes("/ims") && !currentUrl.includes("inward")) {
+            console.log("[IMS Automation] Step 1: Navigating directly: Services \u2794 Returns \u2794 Invoice Management System (IMS)...");
+            await updateStatusBanner("Step 1/4: Opening Services \u2794 Returns \u2794 Invoice Management System (IMS)...", "#6366f1");
+            let clickedDirectIms = false;
+            try {
+              const directTile = page.locator('text="Invoice Management System", a[href*="ims"], button:has-text("IMS")').first();
+              if (await directTile.isVisible({ timeout: 1e3 })) {
+                await directTile.click();
+                clickedDirectIms = true;
+                console.log("[IMS Automation] Clicked direct IMS tile on current screen!");
+              }
+            } catch (e) {
+            }
+            if (!clickedDirectIms) {
+              await page.evaluate(() => {
+                const servicesLink = document.querySelector("li.dropdown.drpdwn > a") || Array.from(document.querySelectorAll("a.dropdown-toggle, li.dropdown > a")).find((a) => (a.textContent || "").trim().startsWith("Services"));
+                if (servicesLink) {
+                  servicesLink.click();
+                  if (servicesLink.parentElement) {
+                    servicesLink.parentElement.classList.add("open");
+                    const menu = servicesLink.parentElement.querySelector(".dropdown-menu");
+                    if (menu) menu.style.display = "block";
+                  }
+                }
+              }).catch(() => {
+              });
+              try {
+                const servicesBtn = page.locator('li.dropdown.drpdwn > a, a.dropdown-toggle:has-text("Services"), a:has-text("Services")').first();
+                if (await servicesBtn.isVisible({ timeout: 1e3 })) {
+                  await servicesBtn.click();
+                }
+              } catch (e) {
+              }
+              await page.waitForTimeout(400);
+              await page.evaluate(() => {
+                const retLink = Array.from(document.querySelectorAll("li.has-sub > a, .dropdown-menu > li > a")).find((a) => (a.textContent || "").trim().startsWith("Returns"));
+                if (retLink) {
+                  retLink.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+                  retLink.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+                  retLink.click();
+                  if (retLink.parentElement) {
+                    retLink.parentElement.classList.add("open");
+                    const subMenu = retLink.parentElement.querySelector("ul, .dropdown-menu, .sub-menu");
+                    if (subMenu) subMenu.style.display = "block";
+                  }
+                }
+              }).catch(() => {
+              });
+              try {
+                const returnsItem = page.locator('.dropdown-menu a:has-text("Returns"), li.has-sub a:has-text("Returns")').first();
+                if (await returnsItem.isVisible({ timeout: 1e3 })) {
+                  await returnsItem.hover();
+                  await returnsItem.click().catch(() => {
+                  });
+                }
+              } catch (e) {
+              }
+              await page.waitForTimeout(400);
+              let clickedIms = false;
+              try {
+                const imsItem = page.locator('a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("Invoice Management System"), a:has-text("IMS Dashboard")').first();
+                if (await imsItem.isVisible({ timeout: 1500 })) {
+                  await imsItem.click();
+                  clickedIms = true;
+                  console.log("[IMS Automation] Clicked IMS Dashboard via menu locator!");
+                }
+              } catch (e) {
+              }
+              if (!clickedIms) {
+                clickedIms = await page.evaluate(() => {
+                  const ims = Array.from(document.querySelectorAll("a, button")).find((a) => {
+                    const t = (a.innerText || a.textContent || "").trim().toUpperCase();
+                    return t.includes("INVOICE MANAGEMENT SYSTEM") || t === "IMS" || t.includes("IMS DASHBOARD");
+                  });
+                  if (ims) {
+                    ims.click();
+                    return true;
+                  }
+                  return false;
+                }).catch(() => false);
+              }
+              if (!clickedIms) {
+                const checkUrl = page.url();
+                if (!checkUrl.includes("/ims")) {
+                  console.log("[IMS Automation] Direct URL fallback: Navigating to https://return.gst.gov.in/returns/ims...");
+                  await page.goto("https://return.gst.gov.in/returns/ims", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(() => {
+                  });
+                }
+              }
             }
             await page.waitForTimeout(2e3);
             continue;
