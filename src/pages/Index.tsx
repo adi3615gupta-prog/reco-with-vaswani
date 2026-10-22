@@ -45,7 +45,6 @@ import TallyConverter from './TallyConverter';
 import TallyDirectImport from './TallyDirectImport';
 import TallyLedgerImport from './TallyLedgerImport';
 import ReturnsDashboard from './ReturnsDashboard';
-import ImageToExcel from './ImageToExcel';
 import LandingPage from './LandingPage';
 import GSTR2BTracker from './GSTR2BTracker';
 import FinancialStatements from './FinancialStatements';
@@ -202,7 +201,7 @@ export default function Index() {
   const [isGDriveConnectOpen, setIsGDriveConnectOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'ledger-import' | 'consolidation' | 'dashboard' | 'returns' | 'ocr' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'bank-cma' | 'depreciation' | 'audit' | 'income-tax' | 'clause44' | 'voucher-reclass'>(() => {
+  const [appRoute, setAppRoute] = useState<'hub' | 'reco' | 'tally' | 'tally-direct' | 'ledger-import' | 'consolidation' | 'dashboard' | 'returns' | 'tracker' | 'fin-statements' | 'gstin-scan' | 'tds-reco' | 'cma' | 'bank-cma' | 'depreciation' | 'audit' | 'income-tax' | 'clause44' | 'voucher-reclass'>(() => {
     return (safeGetItem('np_app_route') as any) || 'hub';
   });
 
@@ -1786,7 +1785,6 @@ export default function Index() {
             else if (appRoute === 'tally-direct') targetModule = 'tally-direct';
             else if (appRoute === 'tracker') targetModule = 'tracker';
             else if (appRoute === 'returns') targetModule = 'returns';
-            else if (appRoute === 'ocr') targetModule = 'ocr';
             else if (appRoute === 'fin-statements') targetModule = 'fin-statements';
             else if (appRoute === 'gstin-scan') targetModule = 'gstin-scan';
             else if (appRoute === 'tds-reco') targetModule = 'tds-reco';
@@ -1847,11 +1845,11 @@ export default function Index() {
                             Work In Progress (WIP) Suite
                           </h3>
                           <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                            Comprehensive practice control, GSTIN auditing, returns tracking, AI vision OCR &amp; financial reports.
+                            Comprehensive practice control, GSTIN auditing, returns tracking, financial reports.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
-                          {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '05. AI OCR', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
+                          {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
                             <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
                               {mod}
                             </span>
@@ -2079,7 +2077,7 @@ export default function Index() {
                             </div>
                             <div>
                               <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-                                Suite 01 • 8 Modules
+                                Suite 01 • 7 Modules
                               </div>
                               <h3 className="text-2xl font-black text-white tracking-tight mt-1">Work In Progress (WIP) Suite</h3>
                             </div>
@@ -2171,25 +2169,7 @@ export default function Index() {
                             </div>
                           </div>
 
-                          {/* 05. AI Deep-Vision OCR */}
-                          <div
-                            onClick={() => moduleConfig['OCR'] !== 0 && setAppRoute('ocr')}
-                            className={`p-5 rounded-2xl bg-slate-950/60 border border-yellow-500/20 hover:border-yellow-500/50 transition-all group ${moduleConfig['OCR'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
-                          >
-                            {moduleConfig['OCR'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                            <div className="flex items-center justify-between">
-                              <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                <ImageIcon className="w-5 h-5" />
-                              </div>
-                              <span className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Module 1.5</span>
-                            </div>
-                            <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-yellow-400 transition-colors flex items-center gap-1.5">
-                                05. AI Deep-Vision OCR <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-yellow-400" />
-                              </h4>
-                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Extract invoice data from pictures and screenshots instantly.</p>
-                            </div>
-                          </div>
+                          
 
                           {/* 06. Financial Statements */}
                           <div
@@ -2635,7 +2615,7 @@ export default function Index() {
 
             {appRoute === 'returns' && <ReturnsDashboard onBack={() => setAppRoute('hub')} />}
 
-            {appRoute === 'ocr' && <ImageToExcel onBack={() => setAppRoute('hub')} />}
+            
 
             {appRoute === 'tracker' && <GSTR2BTracker onBack={() => setAppRoute('hub')} companyName={companyName} />}
 

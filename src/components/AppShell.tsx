@@ -33,7 +33,6 @@ export type AppRoute =
   | 'consolidation'
   | 'dashboard'
   | 'returns'
-  | 'ocr'
   | 'tracker'
   | 'fin-statements'
   | 'gstin-scan'
@@ -103,7 +102,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'depreciation', label: 'Depreciation Engine', suite: 'Audit & CMA Suite', icon: CalendarClock, desc: 'Companies Act Schedule II vs IT Act WDV depreciation' },
   { id: 'voucher-reclass', label: 'Voucher Reclassifier', suite: 'Audit & CMA Suite', icon: ArrowRightLeft, desc: 'Batch classify and adjust ledger allocations' },
   { id: 'gstin-scan', label: 'GSTIN Scanner', suite: 'Audit & CMA Suite', icon: Search, desc: 'Multi-party GSTIN validation & status scanner' },
-  { id: 'ocr', label: 'OCR Bill Scanner', suite: 'Audit & CMA Suite', icon: ImageIcon, desc: 'Extract physical invoice scans into Excel registers' },
 ];
 
 export function AppShell({

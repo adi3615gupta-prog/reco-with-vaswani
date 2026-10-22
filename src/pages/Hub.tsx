@@ -47,7 +47,7 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                   <Zap className="w-6 h-6" />
                 </div>
                 <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-                  7 Modules
+                  6 Modules
                 </span>
               </div>
               <div>
@@ -56,11 +56,11 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                   Work In Progress (WIP) Suite
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                  Comprehensive practice control, GSTIN auditing, returns tracking, AI vision OCR &amp; financial reports.
+                  Comprehensive practice control, GSTIN auditing, returns tracking, financial reports.
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5 pt-2">
-                {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '05. AI OCR', '06. Financial Statements', '07. CMA Report'].map((mod, i) => (
+                {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '06. Financial Statements', '07. CMA Report'].map((mod, i) => (
                   <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
                     {mod}
                   </span>
@@ -337,31 +337,13 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                   </div>
                   <div className="mt-4">
                     <h4 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
-                      04. Offline Return Preparation <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+                      04. Returns Preparation & Filing <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
                     </h4>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">Validate registers offline &amp; auto-generate uploadable JSON returns.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">Master GSTR-3B monthly working, Rule 88A set-off cascade, &amp; portal returns.</p>
                   </div>
                 </div>
 
-                {/* 05. AI Deep-Vision OCR */}
-                <div
-                  onClick={() => moduleConfig['OCR'] !== 0 && setAppRoute('ocr')}
-                  className={`p-5 rounded-2xl bg-slate-950/60 border border-yellow-500/20 hover:border-yellow-500/50 transition-all group ${moduleConfig['OCR'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
-                >
-                  {moduleConfig['OCR'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <ImageIcon className="w-5 h-5" />
-                    </div>
-                    <span className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Module 1.5</span>
-                  </div>
-                  <div className="mt-4">
-                    <h4 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-yellow-400 transition-colors flex items-center gap-1.5">
-                      05. AI Deep-Vision OCR <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-yellow-400" />
-                    </h4>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">Extract invoice data from pictures and screenshots instantly.</p>
-                  </div>
-                </div>
+                
 
                 {/* 06. Financial Statements */}
                 <div
