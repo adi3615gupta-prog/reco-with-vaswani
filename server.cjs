@@ -65631,7 +65631,7 @@ function setupImsRoutes(app2, db2) {
     });
   });
   app2.post("/api/ims/portal-sync-browser", async (req, res) => {
-    const { gstin, period, username: customUser, password: customPass, phase } = req.body;
+    const { gstin, period, username: customUser, password: customPass, phase, forceFresh } = req.body;
     if (!gstin) {
       return res.status(400).json({ success: false, error: "gstin is required" });
     }
@@ -65655,13 +65655,25 @@ function setupImsRoutes(app2, db2) {
       });
     });
     const reqPhase = String(phase || "").toUpperCase();
+    const isForceFresh = Boolean(forceFresh || reqPhase === "PHASE_1");
     let isPhase2 = reqPhase === "PHASE_2";
-    if (!isPhase2 && reqPhase !== "PHASE_1" && batchRow) {
+    if (!isPhase2 && !isForceFresh && batchRow) {
       if (batchRow.generation_status === "REQUESTED" || batchRow.generation_status === "READY" || batchRow.status === "REQUESTED_WAITING") {
         isPhase2 = true;
       } else if (batchRow.generation_requested_at && Date.now() - batchRow.generation_requested_at < 24 * 60 * 60 * 1e3) {
         isPhase2 = true;
       }
+    }
+    if (isForceFresh) {
+      isPhase2 = false;
+      console.log(`[IMS Automation] Fresh download requested for ${gstin} (${returnPeriod}). Purana IMS data clear kar raha hai...`);
+      await new Promise((resolve) => {
+        db2.run("DELETE FROM ims_invoices WHERE client_gstin = ? AND return_period = ?", [gstin, returnPeriod], () => {
+          db2.run("DELETE FROM ims_batches WHERE client_gstin = ? AND return_period = ?", [gstin, returnPeriod], () => {
+            resolve(true);
+          });
+        });
+      });
     }
     console.log(`[IMS Automation] Automation session for ${gstin} (${returnPeriod}). Execution Phase: ${isPhase2 ? "PHASE_2 (Collect Ready Download)" : "PHASE_1 (Generate Request)"}`);
     let playwright;
@@ -65997,89 +66009,85 @@ function setupImsRoutes(app2, db2) {
           }).catch(() => false);
           if (isOfflineInwardScreen) {
             console.log(`[IMS Automation] Detected Offline Download Screen (isPhase2=${isPhase2})...`);
-            await updateStatusBanner(
-              isPhase2 ? "Phase 2: Locating generated IMS download link on GST Portal..." : "Checking for ready download link or requesting generation...",
-              "#10b981"
-            );
             await page.waitForTimeout(2500);
-            let clickedDlLink = false;
-            const dlLocators = [
-              'table tr td a:has-text("Click here to download file")',
-              'table tr td a:has-text("Click here to download")',
-              'table tr td a:has-text("Click here")',
-              'table tr td a:has-text("Download file")',
-              'table tr td a:has-text("Download JSON")',
-              "table tbody tr td a",
-              "table tr td a",
-              'a:has-text("Click here to download file")',
-              'a:has-text("Click here to download")'
-            ];
-            for (const sel of dlLocators) {
-              try {
-                const dlEl = page.locator(sel).first();
-                if (await dlEl.isVisible({ timeout: 1e3 })) {
-                  const text = (await dlEl.innerText().catch(() => "")).trim();
-                  const isNavTab = await dlEl.evaluate((el) => Boolean(el.closest(".nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5"))).catch(() => false);
-                  if (!isNavTab && text.toLowerCase() !== "download" && text.toLowerCase() !== "upload" && !text.toLowerCase().includes("download data for ims")) {
-                    console.log(`[IMS Automation] Found ready file download link via locator "${sel}" (text: "${text}")! Clicking now...`);
-                    await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
-                    await dlEl.click({ force: true });
-                    clickedDlLink = true;
+            if (isPhase2) {
+              await updateStatusBanner("Phase 2: Locating generated IMS download link on GST Portal...", "#10b981");
+              let clickedDlLink = false;
+              const dlLocators = [
+                'table tr td a:has-text("Click here to download file")',
+                'table tr td a:has-text("Click here to download")',
+                'table tr td a:has-text("Click here")',
+                'table tr td a:has-text("Download file")',
+                'table tr td a:has-text("Download JSON")',
+                "table tbody tr td a",
+                "table tr td a",
+                'a:has-text("Click here to download file")',
+                'a:has-text("Click here to download")'
+              ];
+              for (const sel of dlLocators) {
+                try {
+                  const dlEl = page.locator(sel).first();
+                  if (await dlEl.isVisible({ timeout: 1e3 })) {
+                    const text = (await dlEl.innerText().catch(() => "")).trim();
+                    const isNavTab = await dlEl.evaluate((el) => Boolean(el.closest(".nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5"))).catch(() => false);
+                    if (!isNavTab && text.toLowerCase() !== "download" && text.toLowerCase() !== "upload" && !text.toLowerCase().includes("download data for ims")) {
+                      console.log(`[IMS Automation] [Phase 2] Found ready file download link via locator "${sel}" (text: "${text}")! Clicking now...`);
+                      await updateStatusBanner("Step 4/4: Downloading prepared IMS JSON file...", "#10b981");
+                      await dlEl.click({ force: true });
+                      clickedDlLink = true;
+                      break;
+                    }
+                  }
+                } catch (e) {
+                }
+              }
+              if (!clickedDlLink) {
+                clickedDlLink = await page.evaluate(() => {
+                  const tableLinks = Array.from(document.querySelectorAll("table tbody tr td a, table tr td a"));
+                  const tblDl = tableLinks.find((el) => {
+                    if (el.closest(".nav, .nav-tabs, ul, h1, h2, h3, h4")) return false;
+                    const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+                    return t.includes("download") || t.includes("click here");
+                  });
+                  if (tblDl) {
+                    tblDl.click();
+                    return true;
+                  }
+                  const allLinks = Array.from(document.querySelectorAll("a"));
+                  const clickHere = allLinks.find((el) => {
+                    if (el.closest(".nav, .nav-tabs, ul, h1, h2, h3, h4")) return false;
+                    const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+                    return t.includes("click here to download file") || t.includes("click here to download");
+                  });
+                  if (clickHere) {
+                    clickHere.click();
+                    return true;
+                  }
+                  return false;
+                }).catch(() => false);
+                if (clickedDlLink) {
+                  console.log('[IMS Automation] [Phase 2] Clicked "Click here to download file" via DOM fallback!');
+                  await updateStatusBanner("Step 4/4: Downloading prepared IMS JSON file...", "#10b981");
+                }
+              }
+              if (clickedDlLink) {
+                console.log("[IMS Automation] [Phase 2] Triggered download! Waiting up to 10s for file capture / disk arrival...");
+                for (let w = 0; w < 10; w++) {
+                  await page.waitForTimeout(1e3);
+                  if (capturedJson) break;
+                  const diskInvs = await checkDiskForDownload();
+                  if (diskInvs && diskInvs.length > 0) {
+                    capturedJson = diskInvs;
                     break;
                   }
                 }
-              } catch (e) {
-              }
-            }
-            if (!clickedDlLink) {
-              clickedDlLink = await page.evaluate(() => {
-                const tableLinks = Array.from(document.querySelectorAll("table tbody tr td a, table tr td a"));
-                const tblDl = tableLinks.find((el) => {
-                  if (el.closest(".nav, .nav-tabs, ul, h1, h2, h3, h4")) return false;
-                  const t = (el.innerText || el.textContent || "").trim().toLowerCase();
-                  return t.includes("download") || t.includes("click here");
-                });
-                if (tblDl) {
-                  tblDl.click();
-                  return true;
-                }
-                const allLinks = Array.from(document.querySelectorAll("a"));
-                const clickHere = allLinks.find((el) => {
-                  if (el.closest(".nav, .nav-tabs, ul, h1, h2, h3, h4")) return false;
-                  const t = (el.innerText || el.textContent || "").trim().toLowerCase();
-                  return t.includes("click here to download file") || t.includes("click here to download");
-                });
-                if (clickHere) {
-                  clickHere.click();
-                  return true;
-                }
-                return false;
-              }).catch(() => false);
-              if (clickedDlLink) {
-                console.log('[IMS Automation] Clicked "Click here to download file" via DOM fallback!');
-                await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
-              }
-            }
-            if (clickedDlLink) {
-              console.log("[IMS Automation] Triggered download! Waiting up to 10s for file capture / disk arrival...");
-              for (let w = 0; w < 10; w++) {
-                await page.waitForTimeout(1e3);
-                if (capturedJson) break;
-                const diskInvs = await checkDiskForDownload();
-                if (diskInvs && diskInvs.length > 0) {
-                  capturedJson = diskInvs;
+                if (capturedJson) {
+                  console.log("[IMS Automation] [Phase 2] File successfully captured!");
                   break;
                 }
+                await page.waitForTimeout(2e3);
+                continue;
               }
-              if (capturedJson) {
-                console.log("[IMS Automation] File successfully captured!");
-                break;
-              }
-              await page.waitForTimeout(2e3);
-              continue;
-            }
-            if (isPhase2) {
-              console.log("[IMS Automation] [Phase 2] Download link not yet visible. Checking if portal table is still loading or compiling...");
               const stillProcessing = await page.evaluate(() => {
                 const text = (document.body.innerText || "").toUpperCase();
                 return text.includes("IN PROGRESS") || text.includes("BEING PROCESSED") || text.includes("UNDER PROCESS") || text.includes("REQUEST IS IN PROGRESS");
@@ -66095,6 +66103,7 @@ function setupImsRoutes(app2, db2) {
               await page.waitForTimeout(3e3);
               continue;
             }
+            await updateStatusBanner("Phase 1: Submitting Fresh Generation Request on GST Portal...", "#8b5cf6");
             const alreadyInProgress = await page.evaluate(() => {
               const text = (document.body.innerText || "").toUpperCase();
               return text.includes("IN PROGRESS") || text.includes("BEING PROCESSED") || text.includes("UNDER PROCESS") || text.includes("REQUEST IS IN PROGRESS");
@@ -66107,8 +66116,8 @@ function setupImsRoutes(app2, db2) {
               await page.waitForTimeout(2500);
               break;
             }
-            console.log('[IMS Automation] [Phase 1] No existing download file found. Clicking "GENERATE JSON FILE TO DOWNLOAD"...');
-            await updateStatusBanner('Step 3/4: Clicking "GENERATE JSON FILE TO DOWNLOAD"...', "#8b5cf6");
+            console.log('[IMS Automation] [Phase 1] Clicking "GENERATE JSON FILE TO DOWNLOAD"...');
+            await updateStatusBanner('Phase 1: Clicking "GENERATE JSON FILE TO DOWNLOAD"...', "#8b5cf6");
             let clickedGen = false;
             const genLocators = [
               'button:has-text("GENERATE JSON FILE TO DOWNLOAD")',
@@ -66163,21 +66172,10 @@ function setupImsRoutes(app2, db2) {
               }
             } catch (e) {
             }
-            try {
-              const dlLinkAfterGen = page.locator('table tr td a, a:has-text("Click here to download file"), a:has-text("Click here to download")').first();
-              if (await dlLinkAfterGen.isVisible({ timeout: 2500 })) {
-                console.log('[IMS Automation] "Click here to download file" link appeared immediately! Clicking now...');
-                await updateStatusBanner('Step 4/4: Clicking "Click here to download file"...', "#10b981");
-                await dlLinkAfterGen.click();
-                await page.waitForTimeout(3e3);
-                continue;
-              }
-            } catch (waitErr) {
-            }
             console.log("[IMS Automation] File generation queued by GST Portal (~20m wait). Closing browser and saving state...");
             isGenerationRequested = true;
             generationRequestedTimestamp = Date.now();
-            await updateStatusBanner("\u2713 Generation Requested! Portal takes ~20 mins. Closing browser & moving to next client...", "#f59e0b");
+            await updateStatusBanner("\u2713 Generation Requested! Portal takes ~20 mins. Closing browser & queued for Phase 2...", "#f59e0b");
             await page.waitForTimeout(2500);
             break;
           }

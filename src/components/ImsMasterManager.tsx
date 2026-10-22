@@ -1341,12 +1341,12 @@ export default function ImsMasterManager({
     }
   };
 
-  const handleOpenPortalSync = async (gstin: string, forcePhase?: 'PHASE_1' | 'PHASE_2') => {
+  const handleOpenPortalSync = async (gstin: string, forcePhase?: 'PHASE_1' | 'PHASE_2', forceFresh: boolean = false) => {
     const client = clients.find(c => c.gstin.toUpperCase() === gstin.toUpperCase());
     const cred = credentialsList.find(c => c.gstin.toUpperCase() === gstin.toUpperCase());
     const username = cred?.portal_username || '';
     const password = cred?.portal_password || '';
-    const isPhase2 = forcePhase === 'PHASE_2' || (!forcePhase && (client?.status === 'REQUESTED_WAITING' || client?.generation_status === 'REQUESTED'));
+    const isPhase2 = forcePhase === 'PHASE_2' || (!forcePhase && !forceFresh && (client?.status === 'REQUESTED_WAITING' || client?.generation_status === 'REQUESTED'));
 
     const controller = new AbortController();
     portalAbortRef.current = controller;
@@ -1355,8 +1355,8 @@ export default function ImsMasterManager({
     const toastId = toast.loading(
       isPhase2 
         ? `[Phase 2] Collecting ready IMS download for ${client?.trade_name || gstin}...` 
-        : `Opening Chrome for ${client?.trade_name || gstin}...`,
-      { description: 'Auto-filled credentials. Click Chrome on taskbar if minimized. Enter visual CAPTCHA & hit Login.' }
+        : `[Phase 1] Opening Chrome for fresh generation request: ${client?.trade_name || gstin}...`,
+      { description: 'Auto-filled credentials. Enter visual CAPTCHA & hit Login.' }
     );
 
     try {
@@ -1370,7 +1370,8 @@ export default function ImsMasterManager({
           password,
           period: activePeriod,
           fy: financialYear,
-          phase: isPhase2 ? 'PHASE_2' : 'PHASE_1'
+          phase: isPhase2 ? 'PHASE_2' : 'PHASE_1',
+          forceFresh: Boolean(forceFresh || forcePhase === 'PHASE_1')
         })
       });
 
@@ -1559,7 +1560,8 @@ export default function ImsMasterManager({
             password,
             period: activePeriod,
             fy: financialYear,
-            phase: 'PHASE_1'
+            phase: 'PHASE_1',
+            forceFresh: forceAll
           })
         });
 
@@ -1737,6 +1739,30 @@ export default function ImsMasterManager({
     toast.success('🎉 Phase 2 Complete! All ready client files collected.');
     fetchSummary();
   };
+
+  // ─── AUTO-LAUNCH PHASE 2 WHEN 20-MIN COUNTDOWN COMPLETES ────────────────────
+  const phase2AutoLaunchedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (
+      waitingClients.length > 0 &&
+      stillWaitingCount === 0 &&
+      !isBatchRunning &&
+      !portalConnecting &&
+      !phase2AutoLaunchedRef.current
+    ) {
+      phase2AutoLaunchedRef.current = true;
+      toast.info('⏱️ 20-Minute waiting completed! Automatically launching Phase 2 to collect files...', {
+        duration: 8000,
+        description: 'Auto-launching Chromium window to download prepared IMS packages from GST Portal.'
+      });
+      handleRunPhase2Queue();
+    }
+
+    if (waitingClients.length === 0 || stillWaitingCount > 0) {
+      phase2AutoLaunchedRef.current = false;
+    }
+  }, [waitingClients.length, stillWaitingCount, isBatchRunning, portalConnecting]);
 
   const handleResetWaiting = async (targetGstin?: string) => {
     try {
@@ -3709,11 +3735,11 @@ export default function ImsMasterManager({
                           <button
                             onClick={() => {
                               setShowBatchModal(false);
-                              handleOpenPortalSync(item.gstin, 'PHASE_1');
+                              handleOpenPortalSync(item.gstin, 'PHASE_1', true);
                             }}
                             disabled={isBatchRunning}
                             className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm"
-                            title="Re-run fresh sync / re-download for this client"
+                            title="Clear old IMS data and request fresh JSON generation from GST Portal"
                           >
                             <RefreshCw className="w-2.5 h-2.5" /> Fresh Download
                           </button>
