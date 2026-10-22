@@ -70052,6 +70052,55 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
     await updateBanner(`Navigating to Returns Dashboard for ${targetMonth} ${targetFy}...`);
     await page.waitForTimeout(300);
     await dismissPopups();
+    const fastPushToReturnDashboard = async () => {
+      console.log("[GSTR-2B Autopilot] \u26A1 Fast redirect to https://return.gst.gov.in/returns/auth/dashboard ...");
+      try {
+        const inPageClicked = await page.evaluate(() => {
+          const links = Array.from(document.querySelectorAll("a, button, div.card, div.panel, [ng-click]"));
+          const match = links.find((el) => {
+            const t = (el.innerText || el.textContent || "").trim().toUpperCase();
+            const h = (el.getAttribute("href") || "").toLowerCase();
+            return h.includes("returns/auth/dashboard") || t === "RETURNS DASHBOARD" || t === "RETURN DASHBOARD" || t === "FILE RETURNS";
+          });
+          if (match) {
+            match.scrollIntoView({ block: "center" });
+            match.click();
+            if (window.angular) {
+              try {
+                window.angular.element(match).triggerHandler("click");
+                window.angular.element(match).scope()?.$apply();
+              } catch (e) {
+              }
+            }
+            return true;
+          }
+          return false;
+        });
+        if (inPageClicked) {
+          console.log("[GSTR-2B Autopilot] \u26A1 Clicked in-page Returns Dashboard tile instantly!");
+        }
+      } catch (e) {
+      }
+      try {
+        await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "commit", timeout: 7e3 }).catch(async () => {
+          await page.evaluate(() => {
+            window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
+          }).catch(() => {
+          });
+        });
+      } catch (e) {
+      }
+      try {
+        await page.waitForSelector("select", { timeout: 6e3 });
+        await dismissPopups();
+        if (await page.locator("select").count() >= 2) {
+          console.log("[GSTR-2B Autopilot] \u2713 Returns Dashboard search dropdowns ready!");
+          return true;
+        }
+      } catch (e) {
+      }
+      return false;
+    };
     const ensureReturnsSearchScreen = async (timeoutMs = 2e4) => {
       const startWait = Date.now();
       while (Date.now() - startWait < timeoutMs) {
@@ -70072,7 +70121,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             if (await dashLink.isVisible({ timeout: 1500 }).catch(() => false)) {
               await dashLink.click().catch(() => {
               });
-              await page.waitForTimeout(1e3);
+              await page.waitForTimeout(800);
               await dismissPopups();
               continue;
             }
@@ -70080,20 +70129,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           }
         }
         if (curUrl.includes("quicklinks/returns")) {
-          console.log("[GSTR-2B Autopilot] Landed on quicklinks/returns URL. Redirecting directly to https://return.gst.gov.in/returns/auth/dashboard ...");
-          try {
-            await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(async () => {
-              await page.evaluate(() => {
-                window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
-              });
-            });
-            await page.waitForTimeout(1e3);
-            await dismissPopups();
-            if (await page.locator("select").count() >= 2) {
-              return true;
-            }
-          } catch (e) {
-          }
+          if (await fastPushToReturnDashboard()) return true;
           continue;
         }
         if (curUrl.includes("/download") || curUrl.includes("/inward/")) {
@@ -70139,23 +70175,10 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
             } catch (e) {
             }
           }
-          await page.waitForTimeout(600);
+          await page.waitForTimeout(200);
           const postClickUrl = page.url();
           if (postClickUrl.includes("quicklinks/returns")) {
-            console.log("[GSTR-2B Autopilot] Clicked BACK and landed on quicklinks/returns. Pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...");
-            try {
-              await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "domcontentloaded", timeout: 15e3 }).catch(async () => {
-                await page.evaluate(() => {
-                  window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
-                });
-              });
-              await page.waitForTimeout(1e3);
-              await dismissPopups();
-              if (await page.locator("select").count() >= 2) {
-                return true;
-              }
-            } catch (e) {
-            }
+            if (await fastPushToReturnDashboard()) return true;
           }
           try {
             await page.waitForSelector("select", { timeout: 12e3 });
