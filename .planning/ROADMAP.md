@@ -9,6 +9,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 1: Debit Note Advanced Waterfall & Batch Solver Integration** - Implement the 6-pass waterfall, 1-to-many subset-sum solver, composite guardrail, and 21-column schema. (completed 2026-10-22)
 - [x] **Phase 2: Spreadsheet Export Modularity & Memory Optimization** - Modularize `fileParser.ts` and optimize 12-month consolidated Excel generation. (completed 2026-10-22)
 - [x] **Phase 3: Automated Scrutiny Tests & Audit Trail Hardening** - Add end-to-end unit tests for batch solvers and implement immutable force-match audit logging. (completed 2026-10-22)
+- [ ] **Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening** - Harden 1-login 12-month autonomous loop, zero data loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny tests.
 
 ## Phase Details
 
@@ -60,6 +61,23 @@ Plans:
 Plans:
 - [x] 03-01: Comprehensive Vitest test suite for 6-pass debit note engine and batch solver
 - [x] 03-02: Immutable audit trail logging for user override actions
+
+### Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening
+
+**Goal**: Deep audit and harden Tab 4 GSTR-2B Autopilot for production reliability: 12-month autonomous loop resilience, zero-data-loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny test coverage.
+**Depends on**: Phase 1, Phase 2, Phase 3
+**Requirements**: G2B-01, G2B-02, G2B-03, G2B-04, CORE-01, CORE-03
+**Success Criteria** (what must be TRUE):
+  1. 1-Login 12-Month Autopilot navigates all 12 periods gracefully, auto-recovering from portal dropdown timeouts and "Access Denied" screens without aborting the session.
+  2. Golden Rule strictly enforced: existing GSTR-2B records are never deleted if a download attempt fails or encounters portal errors ("New data download nahi toh purana data remove nahi hoga").
+  3. Consolidated 8-sheet 12-Month SectionWiseSummary Excel strictly enforces Zero-Merge architecture (`ws['!merges'] = []`) and provides side-by-side monthly & party-wise matrices.
+  4. Comprehensive Vitest automated scrutiny tests validate GSTR-2B Excel/JSON parsing, batch metrics calculation, and zero-merge guarantees.
+
+**Plans**: 0/2 plans complete
+
+Plans:
+- [ ] 04-01: Autopilot 12M loop resilience, error recovery, and zero-data-loss protection
+- [ ] 04-02: Consolidated 8-sheet Zero-Merge Excel validation, UI sync hardening, and automated scrutiny tests
 
 ---
 *Roadmap defined: 2026-10-22*

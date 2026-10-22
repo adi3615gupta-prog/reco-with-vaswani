@@ -45,6 +45,13 @@
 - **ARCH-02**: Stream 12-month consolidated Excel generation via `exceljs` to optimize memory usage
 - **AUDIT-01**: Persist immutable audit log with timestamp and justification for manual force-matches
 
+### GSTR-2B Autopilot & Consolidated Downloader (Phase 4)
+
+- [ ] **G2B-01**: 1-Login 12-Month Autonomous Loop resilience with portal dropdown auto-retry, navbar Access Denied recovery, and non-blocking month failures
+- [ ] **G2B-02**: Golden Rule data safety: existing GSTR-2B data preserved on failed/aborted downloads, with clean separation between Nil returns and failed syncs
+- [ ] **G2B-03**: Consolidated 8-Sheet SectionWiseSummary workbook strictly enforces Zero-Merge (`ws['!merges'] = []`) with complete side-by-side Monthly and Party-wise matrices
+- [ ] **G2B-04**: Automated scrutiny Vitest test suite for GSTR-2B parsers, batch metric aggregations, and zero-merge guarantees
+
 ## Out of Scope
 
 | Feature | Reason |
