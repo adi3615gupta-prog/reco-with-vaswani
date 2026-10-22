@@ -11,6 +11,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 3: Automated Scrutiny Tests & Audit Trail Hardening** - Add end-to-end unit tests for batch solvers and implement immutable force-match audit logging. (completed 2026-10-22)
 - [x] **Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening** - Harden 1-login 12-month autonomous loop, zero data loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny tests. (completed 2026-10-22)
 - [x] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules. (completed 2026-10-22)
+- [ ] **Phase 6: Core Compliance Modules UI/UX Overhaul & Financial Cockpit Elevation** - Modernize high-traffic modules (Returns Dashboard, Party-Wise Dispute Hub, Tally Direct Bridge, TDS, Income Tax Sandbox) with Obsidian Glass styling, interactive charts, and high-density tables.
 
 ## Phase Details
 
@@ -97,6 +98,22 @@ Plans:
 - [x] 05-01: Persistent App Shell component with collapsible sidebar, topbar HUD, and integrated routing in `Index.tsx`
 - [x] 05-02: Obsidian Glass theme tokens, high-density table styles, and module-wide visual elevation
 
+### Phase 6: Core Compliance Modules UI/UX Overhaul & Financial Cockpit Elevation
+
+**Goal**: Transform high-traffic compliance modules (Returns Dashboard, Party-Wise Dispute Hub, Tally Direct Bridge, TDS Reconciliation, and Income Tax Sandbox) into sleek, obsidian financial cockpits with micro-interactions, responsive high-density tables, and clear visual hierarchy without touching core calculation engines or Zero-Merge exports.
+**Depends on**: Phase 5
+**Requirements**: UI-05, UI-06, UI-07
+**Success Criteria** (what must be TRUE):
+  1. `PartyWiseReport.tsx` displays high-density vendor summary cards, interactive dispute breakdown, and split-screen note comparison.
+  2. `ReturnsDashboard.tsx` & `Gstr2bMasterDownloader.tsx` feature telemetry timeline steppers, period status grid badges, and collapsible Playwright event logs.
+  3. `TallyDirectImport.tsx`, `TdsReconciliation.tsx`, and `IncomeTaxDashboard.tsx` adopt `.obsidian-card`, `.table-dense`, and `.cell-mono` classes consistently.
+
+**Plans**: 0/2 plans complete
+
+Plans:
+- [ ] 06-01: Returns Mission Control & Party-Wise Dispute Hub UI elevation
+- [ ] 06-02: Tally Direct Bridge, TDS & Income Tax Sandbox UI elevation
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-22 after Phase 5 registration*
+*Last updated: 2026-10-22 after Phase 6 registration*
