@@ -1305,8 +1305,8 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
           </div>
         </div>
       </div>
-      {/* Main Tab Bar */}
-      <div className="flex flex-wrap gap-1.5 obsidian-card p-1.5 backdrop-blur-md shadow-lg">
+      {/* Main Tab Bar (Single Row 5-Column High-Density Deck) */}
+      <div className="grid grid-cols-5 gap-1.5 obsidian-card p-1 backdrop-blur-md shadow-md">
         {[
           { id: 'working3b', label: '1. GSTR-3B Working Sheet', icon: Calculator },
           { id: 'matrix', label: '2. 12-Month FY Matrix', icon: Table },
@@ -1317,13 +1317,15 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
+            className={`px-2 py-1.5 rounded-lg font-bold text-[11px] xl:text-xs transition-all flex items-center justify-center gap-1.5 min-w-0 truncate ${
               activeTab === tab.id
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/40 ring-1 ring-blue-400/30'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-900/40 ring-1 ring-blue-400/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
+            title={tab.label}
           >
-            <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-blue-200' : 'text-slate-400'}`} /> {tab.label}
+            <tab.icon className={`w-3.5 h-3.5 shrink-0 ${activeTab === tab.id ? 'text-blue-200' : 'text-slate-400'}`} />
+            <span className="truncate">{tab.label}</span>
           </button>
         ))}
       </div>
