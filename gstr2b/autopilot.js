@@ -445,6 +445,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         };
 
         // Helper to guarantee the page is on the File Returns / Search screen with dropdowns
+        let postBackPendingRedirect = false;
         const ensureReturnsSearchScreen = async (timeoutMs = 20000) => {
             const startWait = Date.now();
             while (Date.now() - startWait < timeoutMs) {
@@ -458,6 +459,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     try {
                         const selectCount = await page.locator('select').count();
                         if (selectCount >= 2) {
+                            postBackPendingRedirect = false;
                             return true;
                         }
                     } catch(e) {}
@@ -509,12 +511,29 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                         } catch(e) {}
                     }
 
-                    // If after clicking BACK, the page is on ANY URL other than return dashboard, fast push immediately!
-                    await page.waitForTimeout(200);
-                    const postClickUrl = page.url();
-                    if (!postClickUrl.includes('return.gst.gov.in/returns/auth/dashboard') && !postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
-                        console.log(`[GSTR-2B Autopilot] Post-BACK URL is not Return Dashboard (${postClickUrl}). Fast pushing to dashboard...`);
-                        if (await fastPushToReturnDashboard()) return true;
+                    if (backClicked) {
+                        // Mark that we have clicked BACK: any departure from download to a non-dashboard URL triggers push
+                        postBackPendingRedirect = true;
+
+                        // Wait briefly for navigation/URL update triggered by BACK click (up to 3.5s)
+                        let postClickUrl = page.url();
+                        const waitUrlStart = Date.now();
+                        while (Date.now() - waitUrlStart < 3500) {
+                            await page.waitForTimeout(300);
+                            postClickUrl = page.url();
+                            if (!postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
+                                break;
+                            }
+                        }
+
+                        // SPECIFIC RULE: URL pushing happens ONLY after clicking BACK if it goes to another URL (e.g. quicklinks/returns)
+                        if (!postClickUrl.includes('return.gst.gov.in/returns/auth/dashboard') && !postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
+                            console.log(`[GSTR-2B Autopilot] After clicking BACK, landed on other URL: ${postClickUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
+                            if (await fastPushToReturnDashboard()) {
+                                postBackPendingRedirect = false;
+                                return true;
+                            }
+                        }
                     }
 
                     // WAIT for returns search screen dropdowns to appear (up to 12s, no frantic repeated clicks)
@@ -522,17 +541,20 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                         await page.waitForSelector('select', { timeout: 12000 });
                         await dismissPopups();
                         if (await page.locator('select').count() >= 2) {
+                            postBackPendingRedirect = false;
                             return true;
                         }
                     } catch(e) {}
                     continue;
                 }
 
-                // 3. ANY URL OTHER THAN https://return.gst.gov.in/returns/auth/dashboard -> FAST PUSH DIRECTLY!
-                // Covers quicklinks/returns, accessdenied, /error/, home page, services menu, etc.
-                if (!curUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
-                    console.log(`[GSTR-2B Autopilot] Detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
-                    if (await fastPushToReturnDashboard()) return true;
+                // 3. ONLY AFTER CLICKING BACK: If it arrived on another non-dashboard URL (e.g. quicklinks/returns, error), fast push!
+                if (postBackPendingRedirect && !curUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
+                    console.log(`[GSTR-2B Autopilot] After clicking BACK, detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
+                    if (await fastPushToReturnDashboard()) {
+                        postBackPendingRedirect = false;
+                        return true;
+                    }
                     continue;
                 }
 
