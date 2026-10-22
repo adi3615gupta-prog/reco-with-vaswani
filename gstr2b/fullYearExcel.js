@@ -2,6 +2,23 @@ import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 
 /**
+ * removeAllMergesFromWorkbook — Defense-in-depth zero-merge enforcement.
+ * Strips all '!merges' arrays from every worksheet in the workbook
+ * to guarantee 100% filterable and sortable spreadsheets for CAs.
+ */
+export function removeAllMergesFromWorkbook(wb) {
+    if (!wb || !wb.SheetNames) return wb;
+    for (const name of wb.SheetNames) {
+        const ws = wb.Sheets[name];
+        if (ws) {
+            ws['!merges'] = [];
+            delete ws['!merges'];
+        }
+    }
+    return wb;
+}
+
+/**
  * generateGstr2bFullYearWorkbook — Generates 12-Month Consolidated GSTR-2B Workbook
  * matching the exact architecture of GSTR2B_SectionWiseSummary_Amendment_152638.xlsx
  * 
@@ -622,6 +639,9 @@ export function generateGstr2bFullYearWorkbook({
     const cdnrRejWs = XLSX.utils.aoa_to_sheet(cdnrRejSheetData);
     cdnrRejWs['!merges'] = [];
     XLSX.utils.book_append_sheet(wb, cdnrRejWs, 'CDNR(Rejected)');
+
+    // Final Zero-Merge Defense-in-Depth Guardrail
+    removeAllMergesFromWorkbook(wb);
 
     return wb;
 }

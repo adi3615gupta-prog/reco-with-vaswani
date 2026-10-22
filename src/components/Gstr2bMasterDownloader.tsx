@@ -49,10 +49,11 @@ export interface Gstr2bClientBatch {
   email?: string;
   hasCreds: boolean;
   portalUsername?: string;
-  status: 'PENDING' | 'SYNCED' | 'PUSHED_TO_3B' | 'FAILED' | 'PARTIAL';
+  status: 'PENDING' | 'SYNCED' | 'PUSHED_TO_3B' | 'FAILED' | 'PARTIAL' | 'NIL_SYNCED';
   period: string;
   financialYear?: string;
   syncedMonths?: string[];
+  nilMonths?: string[];
   pendingMonths?: string[];
   syncedCount?: number;
   totalMonths?: number;
@@ -312,6 +313,7 @@ export default function Gstr2bMasterDownloader({
     } catch (e: any) {
       if (e.name === 'AbortError') {
         toast.info('Autopilot session cancelled');
+        safeApiFetch('/api/gstr2b/cancel', { method: 'POST' }).catch(() => {});
       } else {
         toast.error('2B Autopilot connection failed', { description: e.message });
       }
@@ -831,21 +833,34 @@ export default function Gstr2bMasterDownloader({
                       <td className="py-3.5 px-3 text-center">
                         {viewMode === 'FULL_YEAR' ? (
                           client.syncedCount === 12 ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-help"
+                              title={`All 12 Months Synced\nSynced: ${client.syncedMonths?.join(', ') || '12 Months'}${client.nilMonths && client.nilMonths.length > 0 ? `\n(Includes Nil: ${client.nilMonths.join(', ')})` : ''}`}
+                            >
                               <CheckCircle2 className="w-3 h-3" /> 12/12 Months
                             </span>
                           ) : (client.syncedCount || 0) > 0 ? (
                             <span
                               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 cursor-help"
-                              title={`Synced: ${client.syncedMonths?.join(', ') || 'None'}\nPending: ${client.pendingMonths?.join(', ') || 'All'}`}
+                              title={`Synced (${client.syncedCount}/12): ${client.syncedMonths?.join(', ') || 'None'}${client.nilMonths && client.nilMonths.length > 0 ? `\n(Nil: ${client.nilMonths.join(', ')})` : ''}\nPending (${12 - (client.syncedCount || 0)}): ${client.pendingMonths?.join(', ') || 'None'}`}
                             >
                               <Clock className="w-3 h-3" /> {client.syncedCount}/12 Months
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 cursor-help"
+                              title={`0/12 Months Synced\nPending: ${client.pendingMonths?.join(', ') || 'All 12 Months'}`}
+                            >
                               <AlertTriangle className="w-3 h-3" /> 0/12 Months
                             </span>
                           )
+                        ) : client.status === 'NIL_SYNCED' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/10 text-slate-300 border border-slate-500/20"
+                            title="Confirmed Nil Return: 0 inward supplies on GST Portal"
+                          >
+                            <CheckCircle2 className="w-3 h-3 text-slate-400" /> Nil Return (0 Inv)
+                          </span>
                         ) : isSynced ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             <CheckCircle2 className="w-3 h-3" /> Synced
@@ -1346,6 +1361,7 @@ export default function Gstr2bMasterDownloader({
               <button
                 onClick={() => {
                   autopilotAbortRef.current?.abort();
+                  safeApiFetch('/api/gstr2b/cancel', { method: 'POST' }).catch(() => {});
                   setActiveAutopilotClient(null);
                 }}
                 className="text-slate-400 hover:text-white"
@@ -1394,6 +1410,7 @@ export default function Gstr2bMasterDownloader({
                 <button
                   onClick={() => {
                     autopilotAbortRef.current?.abort();
+                    safeApiFetch('/api/gstr2b/cancel', { method: 'POST' }).catch(() => {});
                     setActiveAutopilotClient(null);
                   }}
                   className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-colors"

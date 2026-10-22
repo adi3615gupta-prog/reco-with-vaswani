@@ -68887,6 +68887,17 @@ var import_child_process3 = require("child_process");
 // gstr2b/fullYearExcel.js
 var xlsxModule2 = __toESM(require_xlsx(), 1);
 var XLSX3 = xlsxModule2.default || xlsxModule2;
+function removeAllMergesFromWorkbook(wb) {
+  if (!wb || !wb.SheetNames) return wb;
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (ws) {
+      ws["!merges"] = [];
+      delete ws["!merges"];
+    }
+  }
+  return wb;
+}
 var MONTH_ORDER = [
   "April",
   "May",
@@ -69689,6 +69700,7 @@ function generateGstr2bFullYearWorkbook({
   const cdnrRejWs = XLSX3.utils.aoa_to_sheet(cdnrRejSheetData);
   cdnrRejWs["!merges"] = [];
   XLSX3.utils.book_append_sheet(wb, cdnrRejWs, "CDNR(Rejected)");
+  removeAllMergesFromWorkbook(wb);
   return wb;
 }
 
