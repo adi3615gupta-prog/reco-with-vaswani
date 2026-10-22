@@ -11,15 +11,14 @@ import { appendPartywiseMonthlySheet } from './partyWiseExport';
 import { appendVisualAnalyticsSheet } from './executiveSummary';
 import { reconcileDebitNotes, appendDebitNoteSheetsToWorkbook } from '@/lib/debitNoteEngine';
 
-export function exportMonthlyComparison(
+export function buildMonthlyComparisonWorkbook(
   rows: MonthlyComparisonRow[],
-  filename: string,
   debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
   companyName?: string,
   appliedGstins?: any[],
   conflicts?: any[],
   gstr3bData?: any[]
-) {
+): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
   // Add Executive Summary
@@ -400,6 +399,20 @@ export function exportMonthlyComparison(
   // Visual Analytics & Charts
   appendVisualAnalyticsSheet(wb, rows, debitNotes, companyName);
 
+  removeAllMergesFromWorkbook(wb);
+  return wb;
+}
+
+export function exportMonthlyComparison(
+  rows: MonthlyComparisonRow[],
+  filename: string,
+  debitNotes?: { pr?: DebitNoteRecord[]; twoB?: DebitNoteRecord[] },
+  companyName?: string,
+  appliedGstins?: any[],
+  conflicts?: any[],
+  gstr3bData?: any[]
+) {
+  const wb = buildMonthlyComparisonWorkbook(rows, debitNotes, companyName, appliedGstins, conflicts, gstr3bData);
   wb.Props = {
     Title: filename.replace('.xlsx', ''),
     Subject: 'Monthly Tax Comparison Report',
@@ -408,7 +421,6 @@ export function exportMonthlyComparison(
     CreatedDate: new Date()
   };
   try {
-    removeAllMergesFromWorkbook(wb);
     XLSX.writeFile(wb, filename);
   } catch (error) {
     console.error('XLSX.writeFile error:', error);

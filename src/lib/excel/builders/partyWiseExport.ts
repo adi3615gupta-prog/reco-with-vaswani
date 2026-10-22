@@ -1682,14 +1682,13 @@ export function appendPartyMismatchBreakdownSheet(
   XLSX.utils.book_append_sheet(wb, ws, 'Party Mismatch Breakdown');
 }
 
-export function exportPartyWise(
+export function buildPartyWiseWorkbook(
   parties: PartySummary[],
-  filename: string,
   companyName?: string,
   statusFilter?: string[],
   appliedGstins?: any[],
   conflicts?: any[]
-) {
+): XLSX.WorkBook {
   const filteredParties = statusFilter && statusFilter.length > 0
     ? parties
       .map((p) => {
@@ -2068,6 +2067,19 @@ export function exportPartyWise(
 
   appendNavigationSheet(wb, partySheetNames, companyName, stats, breakdown);
 
+  removeAllMergesFromWorkbook(wb);
+  return wb;
+}
+
+export function exportPartyWise(
+  parties: PartySummary[],
+  filename: string,
+  companyName?: string,
+  statusFilter?: string[],
+  appliedGstins?: any[],
+  conflicts?: any[]
+) {
+  const wb = buildPartyWiseWorkbook(parties, companyName, statusFilter, appliedGstins, conflicts);
   wb.Props = {
     Title: filename.replace('.xlsx', ''),
     Subject: 'Party-wise Reconciliation Report',
@@ -2076,7 +2088,6 @@ export function exportPartyWise(
     CreatedDate: new Date()
   };
   try {
-    removeAllMergesFromWorkbook(wb);
     XLSX.writeFile(wb, filename);
   } catch (error) {
     console.error('XLSX.writeFile error:', error);

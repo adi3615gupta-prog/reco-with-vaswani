@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Download, RefreshCw, FileCheck2, AlertTriangle, AlertCircle, Info, Layers, ChevronDown } from 'lucide-react';
-import type { ReconciliationResult } from '@/lib/reconciliation';
-import { exportMonthlyComparison, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
+import { parseDate, type ReconciliationResult } from '@/lib/reconciliation';
+import { exportMonthlyComparison, exportMonthlyDiffSheets, exportWorkbookAsync, type MonthlyComparisonRow, type DebitNoteRecord } from '@/lib/fileParser';
 import { cn } from '@/lib/utils';
 import type { GSTR3BDataBlock } from '@/lib/gstr3bParser';
 
@@ -53,8 +53,8 @@ function diffColor(diff: number) {
 function getMonthKey(dateStr: string | undefined, normalizedDate: Date | string | undefined): { label: string; sortKey: string } | null {
   let d: Date | null = null;
   if (normalizedDate instanceof Date) d = normalizedDate;
-  else if (typeof normalizedDate === 'string') d = new Date(normalizedDate);
-  else if (dateStr) d = new Date(dateStr);
+  else if (typeof normalizedDate === 'string') d = parseDate(normalizedDate) || new Date(normalizedDate);
+  else if (dateStr) d = parseDate(dateStr) || new Date(dateStr);
   
   if (!d || isNaN(d.getTime())) return null;
   const y = d.getFullYear();
@@ -207,8 +207,65 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
           totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
         };
       });
-      exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', debitNotes, companyName);
-      toast.success('Monthly comparison exported successfully!');
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'MONTHLY_COMPARISON',
+        payload: {
+          rows: exportRows,
+          filename: 'Monthly_Tax_Comparison.xlsx',
+          debitNotes,
+          companyName
+        }
+      }).catch((err) => {
+        console.warn('Async worker export failed, falling back to synchronous:', err);
+        exportMonthlyComparison(exportRows, 'Monthly_Comparison.xlsx', debitNotes, companyName);
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleExportDiffSheets = () => {
+    if (!rows || rows.length === 0) return;
+    try {
+      const exportRows: MonthlyComparisonRow[] = rows.map((r) => {
+        const pr = r.prRecord;
+        const tb = r.twoBRecord;
+        return {
+          partyTally: pr?.supplierName || '',
+          gstinTally: pr?.gstin || '',
+          invoiceTally: pr?.invoiceNo || '',
+          cgstTally: pr?.cgst || 0,
+          sgstTally: pr?.sgst || 0,
+          igstTally: pr?.igst || 0,
+          taxableTally: pr?.taxableValue || 0,
+          dateTally: pr?.invoiceDate || '',
+          partyCmp: tb?.supplierName || '',
+          gstinCmp: tb?.gstin || '',
+          invoiceCmp: tb?.invoiceNo || '',
+          cgstCmp: tb?.cgst || 0,
+          sgstCmp: tb?.sgst || 0,
+          igstCmp: tb?.igst || 0,
+          taxableCmp: tb?.taxableValue || 0,
+          dateCmp: tb?.invoiceDate || '',
+          status: r.status,
+          totalDiff: (r.cgstDiff ?? 0) + (r.sgstDiff ?? 0) + (r.igstDiff ?? 0),
+        };
+      });
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'MONTHLY_DIFF',
+        payload: {
+          rows: exportRows,
+          filename: 'Monthly_Difference_Sheets.xlsx',
+          debitNotes,
+          companyName
+        }
+      }).catch((err) => {
+        console.warn('Async worker export failed, falling back to synchronous:', err);
+        exportMonthlyDiffSheets(exportRows, 'Monthly_Difference_Sheets.xlsx', debitNotes, companyName);
+      });
     } catch (error) {
       console.error('Export error:', error);
       toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -230,6 +287,9 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
         <div className="flex items-center gap-2">
           <button onClick={handleExport} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold">
             <Download className="w-3.5 h-3.5" /> Full Report
+          </button>
+          <button onClick={handleExportDiffSheets} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold hover:text-amber-400 hover:border-amber-500/50">
+            <Download className="w-3.5 h-3.5" /> Diff Sheets
           </button>
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}

@@ -9,7 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronDown, Search, ArrowUpDown, Download, Link, Unlink, Sparkles, CheckCircle2, ShieldCheck, Users, Plus, GitMerge, X, Check, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { aggregateByParty, type PartySummary, type PartyInvoiceRow } from '@/lib/partyWise';
-import { exportPartyWise, exportDebitNotes21Col } from '@/lib/fileParser';
+import { exportPartyWise, exportDebitNotes21Col, exportWorkbookAsync } from '@/lib/fileParser';
 import { reconcileDebitNotes } from '@/lib/debitNoteEngine';
 import { BatchBadge } from '@/components/StatusBadge';
 import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
@@ -599,11 +599,43 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       }
       const cleanComp = (companyName || 'GST').replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `${cleanComp}_Reconciled_Debit_Notes_21Col.xlsx`;
-      exportDebitNotes21Col(dnResult.reconciledRows, filename, companyName);
-      toast.success(`Exported ${dnResult.reconciledRows.length} rows to ${filename}`);
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'DEBIT_NOTES',
+        payload: {
+          rows: dnResult.reconciledRows,
+          filename,
+          companyName
+        }
+      }).catch((err) => {
+        console.warn('Async worker export failed, falling back to synchronous:', err);
+        exportDebitNotes21Col(dnResult.reconciledRows, filename, companyName);
+      });
     } catch (err: any) {
       console.error('Failed to export 21-col debit notes:', err);
       toast.error(err?.message || 'Failed to export 21-col Debit Notes Excel');
+    }
+  };
+
+  const handleExportPartyWise = () => {
+    try {
+      const cleanComp = (companyName || 'GST').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanComp}_Party_Wise_Report.xlsx`;
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'PARTY_WISE',
+        payload: {
+          parties: filtered,
+          filename,
+          companyName
+        }
+      }).catch((err) => {
+        console.warn('Async worker export failed, falling back to synchronous:', err);
+        exportPartyWise(filtered, filename, companyName);
+      });
+    } catch (err: any) {
+      console.error('Failed to export party-wise report:', err);
+      toast.error(err?.message || 'Failed to export Party-Wise Excel');
     }
   };
 
@@ -683,6 +715,14 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
               </button>
             </>
           )}
+          <button
+            onClick={handleExportPartyWise}
+            className="px-3 py-1 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
+            title="Export full Party-Wise Intelligence Report Excel"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-200" />
+            Export Party Report
+          </button>
           {debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0)) && (
             <button
               onClick={handleExport21ColDebitNotes}

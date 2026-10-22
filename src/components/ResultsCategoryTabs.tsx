@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, CheckCircle2, AlertTriangle, XCircle, FileText, UserX, LayoutGrid, BookOpen, Landmark } from 'lucide-react';
+import { Download, CheckCircle2, AlertTriangle, XCircle, FileText, UserX, LayoutGrid, BookOpen, Landmark, Receipt } from 'lucide-react';
 import { ResultsTable } from './ResultsTable';
-import { exportToXlsx } from '@/lib/fileParser';
+import { exportToXlsx, exportWorkbookAsync } from '@/lib/fileParser';
+import {
+  reconcileDebitNotes,
+  debitNoteRowsToReconciliationResults,
+  exportDebitNoteReconciliation,
+} from '@/lib/debitNoteEngine';
 import type { ReconciliationResult, MatchStatus, ReconciliationSummary } from '@/lib/reconciliation';
 import { cn } from '@/lib/utils';
 
@@ -16,7 +21,7 @@ interface ResultsCategoryTabsProps {
   debitNotes?: { pr?: any[]; twoB?: any[] };
 }
 
-type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'taxTypeError' | 'booksInput' | 'portalInput';
+type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'debitNotes' | 'taxTypeError' | 'booksInput' | 'portalInput';
 
 interface Category {
   key: CategoryKey;
@@ -116,6 +121,45 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     ).values()
   );
 
+  const isDebitNoteResult = (r: ReconciliationResult): boolean => {
+    const pr = r.prRecord;
+    const tb = r.twoBRecord;
+    const status = String(r.status || '').toLowerCase();
+    if (status.includes('debit note')) return true;
+    if (r.remark?.toLowerCase().includes('debit note') || r.remark?.toLowerCase().includes('cdnr') || r.remark?.toLowerCase().includes('dn-books') || r.remark?.toLowerCase().includes('dn-2b')) return true;
+    if (pr?.sourceLabel?.toLowerCase().includes('debit') || pr?.sourceLabel?.toLowerCase().includes('dn')) return true;
+    if (tb?.sourceLabel?.toLowerCase().includes('debit') || tb?.sourceLabel?.toLowerCase().includes('cdnr') || tb?.sourceLabel?.toLowerCase().includes('dn')) return true;
+
+    const hasNegative =
+      (pr?.igst ?? 0) < 0 || (pr?.cgst ?? 0) < 0 || (pr?.sgst ?? 0) < 0 || (pr?.taxableValue ?? 0) < 0 ||
+      (tb?.igst ?? 0) < 0 || (tb?.cgst ?? 0) < 0 || (tb?.sgst ?? 0) < 0 || (tb?.taxableValue ?? 0) < 0;
+    if (hasNegative) return true;
+
+    const dnRegex = /(^|[\/\-_ ])(DN|DBN|DRN|CDNR|DEBIT)(\b|[\/\-_ 0-9])/i;
+    if (pr?.invoiceNo && dnRegex.test(pr.invoiceNo)) return true;
+    if (tb?.invoiceNo && dnRegex.test(tb.invoiceNo)) return true;
+
+    return false;
+  };
+
+  const resultsDebitNotes = useMemo(() => {
+    return results.filter(isDebitNoteResult);
+  }, [results]);
+
+  const dnEngineResult = useMemo(() => {
+    if (!debitNotes || (!debitNotes.pr?.length && !debitNotes.twoB?.length)) return null;
+    return reconcileDebitNotes(debitNotes.pr || [], debitNotes.twoB || []);
+  }, [debitNotes]);
+
+  const standaloneDebitNotes = useMemo(() => {
+    if (!dnEngineResult) return [];
+    return debitNoteRowsToReconciliationResults(dnEngineResult.reconciledRows);
+  }, [dnEngineResult]);
+
+  const allDebitNotes = useMemo(() => {
+    return [...resultsDebitNotes, ...standaloneDebitNotes];
+  }, [resultsDebitNotes, standaloneDebitNotes]);
+
   const categories: Category[] = [
     { key: 'all', label: 'All Records', icon: LayoutGrid, statuses: [], count: summary.total, color: 'text-[var(--np-sky)]', activeColor: 'active' },
     { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, color: 'text-[var(--np-green)]', activeColor: 'active' },
@@ -123,6 +167,7 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     { key: 'invoiceMissing', label: 'Not in 2B/Govt', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-[var(--np-red)]', activeColor: 'active' },
     { key: 'unmatchedVendor', label: 'Party Not in 2B', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-[var(--np-red)]', activeColor: 'active' },
     { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-[#A87EE8]', activeColor: 'active' },
+    { key: 'debitNotes', label: 'Debit Notes (CDNR)', icon: Receipt, statuses: [], count: allDebitNotes.length, color: 'text-amber-400', activeColor: 'active' },
     { key: 'taxTypeError', label: 'Tax Type Error', icon: AlertTriangle, statuses: ['Tax Type Error'], count: summary.taxTypeError || 0, color: 'text-orange-500', activeColor: 'active' },
     { key: 'booksInput', label: 'Books Purchase & JV Data', icon: BookOpen, statuses: [], count: rawBooksData.length, color: 'text-cyan-400', activeColor: 'active' },
     { key: 'portalInput', label: 'Portal GSTR-2B Data', icon: Landmark, statuses: [], count: raw2bData.length, color: 'text-emerald-400', activeColor: 'active' },
@@ -130,6 +175,8 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
 
   const filteredResults = active === 'all'
     ? results
+    : active === 'debitNotes'
+    ? allDebitNotes
     : active === 'booksInput'
     ? results.filter((r) => r.prRecord !== undefined)
     : active === 'portalInput'
@@ -139,9 +186,28 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
   const handleExportCategory = () => {
     try {
       const cat = categories.find((c) => c.key === active);
-      const fileName = `GST_Reconciliation_${cat?.label.replace(/\s+/g, '_') || 'All'}.xlsx`;
-      exportToXlsx(getExportData(filteredResults), fileName, companyName, undefined, undefined, undefined, debitNotes, rawBooksData, raw2bData);
-      toast.success(`Exported ${cat?.label || 'records'} successfully!`);
+      if (active === 'debitNotes' && dnEngineResult) {
+        const fileName = 'Reconciled_Debit_Notes_GSTR2B_vs_Books.xlsx';
+        exportDebitNoteReconciliation(dnEngineResult, fileName, companyName);
+        toast.success(`Exported Reconciled Debit Notes (GSTR-2B vs Books) successfully!`);
+        return;
+      }
+      const fileName = `GST_Reconciliation_${cat?.label.replace(/[^a-zA-Z0-9]/g, '_') || 'All'}.xlsx`;
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'MASTER',
+        payload: {
+          results: getExportData(filteredResults),
+          filename: fileName,
+          companyName,
+          debitNotes,
+          rawBooksData,
+          raw2bData
+        }
+      }).catch((err) => {
+        console.warn('Async worker export failed, falling back to synchronous:', err);
+        exportToXlsx(getExportData(filteredResults), fileName, companyName, undefined, undefined, undefined, debitNotes, rawBooksData, raw2bData);
+      });
     } catch (error) {
       console.error('Export error:', error);
       toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

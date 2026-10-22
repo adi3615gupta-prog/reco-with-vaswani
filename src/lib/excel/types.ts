@@ -57,3 +57,34 @@ export interface DebitNoteRecord {
   noteNo?: string;
   taxableValue?: number;
 }
+
+export type ExportType =
+  | 'MASTER'
+  | 'MONTHLY_COMPARISON'
+  | 'MONTHLY_DIFF'
+  | 'PARTY_WISE'
+  | 'DEBIT_NOTES';
+
+export interface ExportWorkerRequest {
+  type: 'EXPORT_WORKBOOK';
+  exportType: ExportType;
+  payload: any;
+}
+
+export type ExportWorkerResponse =
+  | {
+      type: 'PROGRESS';
+      stage: string;
+      currentSheet: number;
+      totalSheets: number;
+      percent: number;
+    }
+  | {
+      type: 'SUCCESS';
+      buffer: ArrayBuffer;
+      filename: string;
+    }
+  | {
+      type: 'ERROR';
+      error: string;
+    };
