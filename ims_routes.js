@@ -2087,8 +2087,26 @@ export default function setupImsRoutes(app, db) {
                         break;
                     }
 
+                    // ─── 0B. AUTO-RECOVER FROM WAF REJECTED URL SCREEN ───
+                    const isWafRejected = currentUrl.includes('returns/ims') || await page.evaluate(() => {
+                        const bodyText = (document.body.innerText || '').toUpperCase();
+                        return bodyText.includes('REQUESTED URL WAS REJECTED') || bodyText.includes('CONSULT WITH YOUR ADMINISTRATOR');
+                    }).catch(() => false);
+
+                    if (isWafRejected) {
+                        console.log('[IMS Automation] Detected WAF rejected URL page! Redirecting to official endpoint: https://return.gst.gov.in/imsweb/auth/imsDashboard...');
+                        await updateStatusBanner('Recovering ➔ Navigating to https://return.gst.gov.in/imsweb/auth/imsDashboard...', '#ef4444');
+                        await page.goto('https://return.gst.gov.in/imsweb/auth/imsDashboard', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                        await page.waitForTimeout(2000);
+                        continue;
+                    }
+
                     // ─── CHECK 2: ARE WE ON THE IMS DASHBOARD (Card view with Inward / Outward)? (Screenshot 1) ───
-                    if (currentUrl.includes('/ims')) {
+                    const isImsDashboard = currentUrl.includes('imsweb') || 
+                                          currentUrl.includes('imsDashboard') || 
+                                          (currentUrl.includes('/ims') && !currentUrl.includes('returns/ims'));
+
+                    if (isImsDashboard) {
                         console.log('[IMS Automation] Step 2: On IMS Dashboard -> Clicking "OFFLINE" button on Inward Supplies card...');
                         await updateStatusBanner('Step 2/4: On IMS Dashboard ➔ Clicking "OFFLINE"...', '#3b82f6');
 
@@ -2120,14 +2138,14 @@ export default function setupImsRoutes(app, db) {
 
                     // ─── CHECK 3: DIRECT NAVIGATION: SERVICES ➔ RETURNS ➔ IMS DASHBOARD ───
                     // Directly access Services from Home (/auth/home) or any screen. Avoids redundant Dashboard hops!
-                    if (!currentUrl.includes('/ims') && !currentUrl.includes('inward')) {
+                    if (!isImsDashboard && !currentUrl.includes('inward')) {
                         console.log('[IMS Automation] Step 1: Navigating directly: Services ➔ Returns ➔ Invoice Management System (IMS)...');
                         await updateStatusBanner('Step 1/4: Opening Services ➔ Returns ➔ Invoice Management System (IMS)...', '#6366f1');
 
                         // 1. Direct IMS tile check (if already on-screen)
                         let clickedDirectIms = false;
                         try {
-                            const directTile = page.locator('text="Invoice Management System", a[href*="ims"], button:has-text("IMS")').first();
+                            const directTile = page.locator('text="Invoice Management System", a[href*="imsDashboard"], a[href*="imsweb"], a[href*="ims"], button:has-text("IMS")').first();
                             if (await directTile.isVisible({ timeout: 1000 })) {
                                 await directTile.click();
                                 clickedDirectIms = true;
@@ -2187,7 +2205,7 @@ export default function setupImsRoutes(app, db) {
                             // 4. Click Invoice Management System (IMS) Dashboard
                             let clickedIms = false;
                             try {
-                                const imsItem = page.locator('a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("Invoice Management System"), a:has-text("IMS Dashboard")').first();
+                                const imsItem = page.locator('a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("Invoice Management System"), a:has-text("IMS Dashboard"), a[href*="imsDashboard"], a[href*="imsweb"]').first();
                                 if (await imsItem.isVisible({ timeout: 1500 })) {
                                     await imsItem.click();
                                     clickedIms = true;
@@ -2199,7 +2217,8 @@ export default function setupImsRoutes(app, db) {
                                 clickedIms = await page.evaluate(() => {
                                     const ims = Array.from(document.querySelectorAll('a, button')).find(a => {
                                         const t = (a.innerText || a.textContent || '').trim().toUpperCase();
-                                        return t.includes('INVOICE MANAGEMENT SYSTEM') || t === 'IMS' || t.includes('IMS DASHBOARD');
+                                        const h = (a.getAttribute('href') || '').toLowerCase();
+                                        return t.includes('INVOICE MANAGEMENT SYSTEM') || t === 'IMS' || t.includes('IMS DASHBOARD') || h.includes('imsdashboard') || h.includes('imsweb');
                                     });
                                     if (ims) {
                                         ims.click();
@@ -2209,12 +2228,12 @@ export default function setupImsRoutes(app, db) {
                                 }).catch(() => false);
                             }
 
-                            // 5. Fallback: If menu interaction was delayed or didn't trigger, navigate directly to /returns/ims
+                            // 5. Fallback: If menu interaction was delayed or didn't trigger, navigate directly to official IMS URL
                             if (!clickedIms) {
                                 const checkUrl = page.url();
-                                if (!checkUrl.includes('/ims')) {
-                                    console.log('[IMS Automation] Direct URL fallback: Navigating to https://return.gst.gov.in/returns/ims...');
-                                    await page.goto('https://return.gst.gov.in/returns/ims', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                                if (!checkUrl.includes('imsweb') && !checkUrl.includes('imsDashboard')) {
+                                    console.log('[IMS Automation] Direct URL fallback: Navigating to https://return.gst.gov.in/imsweb/auth/imsDashboard...');
+                                    await page.goto('https://return.gst.gov.in/imsweb/auth/imsDashboard', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
                                 }
                             }
                         }
