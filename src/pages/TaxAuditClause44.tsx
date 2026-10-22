@@ -124,6 +124,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
     setIsRunning(true);
     setResult(null);
     try {
+      toast.info('Fetching voucher data from Tally...', { description: 'This may take up to 3 minutes for large datasets. Please keep TallyPrime open.' });
       const data = await fetchClause44Data(fromDate, toDate, taxLedgersInput, config);
       setResult(data);
       if (data.gstApplicable.length + data.nonGst.length === 0 && data.manualReview.length === 0) {
@@ -323,12 +324,12 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws['!cols'] = [
-        { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 40 }, { wch: 22 }, { wch: 30 }, { wch: 22 }
+        { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 45 }, { wch: 28 }, { wch: 35 }, { wch: 28 }
       ];
 
       applyTitleStyle(ws);
       applyHeaderStyle(ws, 4, 7);
-      formatNumbers(ws, 5, 4 + consolidatedRows.length, [4, 5, 6]);
+      formatNumbers(ws, 5, 5 + consolidatedRows.length, [4, 5, 6]);
       applyTotalStyle(ws, 5 + consolidatedRows.length, 7);
 
       // Add hyperlinks to Ledger names
@@ -526,7 +527,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
   }[connectionStatus];
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100">
+    <div className="w-full text-slate-100 space-y-6">
       {/* Header */}
       <div className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#0d1421]/90 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">

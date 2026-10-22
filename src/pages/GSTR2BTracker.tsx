@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner';
 import { pingTally, fetchCompanyInfo, fetchVouchers, type TallyCompanyInfo, type TallyFlatVoucher } from '@/lib/tallyApi';
 import { parseFile, detectColumnMapping, mapToRecords, type ColumnMapping } from '@/lib/fileParser';
+import { parseFileAsync } from '@/lib/asyncWorkerService';
 import { reconcile, type ReconciliationResult, type MatchStatus, type InvoiceRecord } from '@/lib/reconciliation';
 import * as XLSX from 'xlsx-js-style';
 import { FileUploadZone } from '@/components/FileUploadZone';
@@ -128,7 +129,7 @@ export default function GSTR2BTracker({ onBack, companyName: globalCompanyName }
   const handleTwoBUpload = async (f: File) => {
     setTwoBFile(f);
     try {
-      const { headers } = await parseFile(f);
+      const { headers } = await parseFileAsync(f);
       setTwoBHeaders(headers);
       setTwoBMapping(detectColumnMapping(headers));
       setIsMapping2B(true);
@@ -140,7 +141,7 @@ export default function GSTR2BTracker({ onBack, companyName: globalCompanyName }
   const handleConfirm2BMapping = async () => {
     if (!twoBFile) return;
     try {
-      const parsed = await parseFile(twoBFile);
+      const parsed = await parseFileAsync(twoBFile);
       const recs = mapToRecords(parsed.rows, twoBMapping as ColumnMapping, '2B', 'GSTR-2B');
       setTwoBRecords(recs);
       setIsMapping2B(false);
@@ -232,7 +233,7 @@ export default function GSTR2BTracker({ onBack, companyName: globalCompanyName }
   };
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-white p-6">
+    <div className="w-full text-white">
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}

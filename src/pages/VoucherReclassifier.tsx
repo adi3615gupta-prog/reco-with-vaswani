@@ -448,7 +448,7 @@ export default function VoucherReclassifier({ onBack }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-white">
+    <div className="w-full text-white space-y-6">
       <style>{`
         .vrc-glass { background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.06); }
         .vrc-row:hover { background: rgba(99, 102, 241, 0.06); }
