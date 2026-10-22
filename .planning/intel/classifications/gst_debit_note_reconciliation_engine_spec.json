@@ -1,0 +1,21 @@
+{
+  "source_path": "gst_debit_note_reconciliation_engine_spec.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Technical Specification: GST Debit/Credit Note Reconciliation Engine (Books PR vs. GSTR-2B)",
+  "summary": "Defines the data model, normalization rules, 6-pass waterfall matching algorithm, consolidated batch (1-to-many) solver, and 21-column output schema for reconciling Purchase Register Debit Notes against GSTR-2B Credit/Debit Notes.",
+  "scope": [
+    "GST Debit Notes",
+    "GSTR-2B Credit/Debit Notes",
+    "Waterfall matching algorithm",
+    "1-to-Many consolidated batch solver",
+    "21-column reconciled register",
+    "Accounting invariants",
+    "Zero double-counting"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Clear technical specification with mathematical invariants, detailed multi-pass waterfall matching rules, and exact 21-column input/output schemas."
+}
