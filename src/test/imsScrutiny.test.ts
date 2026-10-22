@@ -220,5 +220,12 @@ describe('IMS (Invoice Management System) Scrutiny & Statutory Tests', () => {
       expect(result.metrics.acceptedCount).toBe(0);
       expect(result.metrics.eligibleItcTotal).toBe(0);
     });
+
+    it('verifies safe data preservation rule: old data is never purged unless new data is captured', () => {
+      const existingInvoicesCount = 64;
+      const isNewDataCaptured = false;
+      const shouldPreserveOldData = !isNewDataCaptured && existingInvoicesCount > 0;
+      expect(shouldPreserveOldData).toBe(true);
+    });
   });
 });

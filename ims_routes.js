@@ -1474,17 +1474,12 @@ export default function setupImsRoutes(app, db) {
             }
         }
 
-        // Fresh Download: Purana IMS data clear karta hai (only for IMS for this client & period)
+        // Safe Fresh Download Guard: Purana IMS data upfront delete NAHI karenge.
+        // Golden Rule: "New data download nahi toh purana data remove nahi hoga"
+        // Old data sirf tab replace hoga jab new data successfully download aur parse ho jaye!
         if (isForceFresh) {
             isPhase2 = false;
-            console.log(`[IMS Automation] Fresh download requested for ${gstin} (${returnPeriod}). Purana IMS data clear kar raha hai...`);
-            await new Promise((resolve) => {
-                db.run('DELETE FROM ims_invoices WHERE client_gstin = ? AND return_period = ?', [gstin, returnPeriod], () => {
-                    db.run('DELETE FROM ims_batches WHERE client_gstin = ? AND return_period = ?', [gstin, returnPeriod], () => {
-                        resolve(true);
-                    });
-                });
-            });
+            console.log(`[IMS Automation] Fresh download requested for ${gstin} (${returnPeriod}). Old data preserved safely until new data arrives.`);
         }
 
         console.log(`[IMS Automation] Automation session for ${gstin} (${returnPeriod}). Execution Phase: ${isPhase2 ? 'PHASE_2 (Collect Ready Download)' : 'PHASE_1 (Generate Request)'}`);
@@ -1997,12 +1992,30 @@ export default function setupImsRoutes(app, db) {
                         }
 
                         // ─── ERROR & NO RECORDS DETECTION HELPER ───
+                        // ─── ERROR & NO RECORDS DETECTION HELPER ───
                         const checkForNoRecordsError = async () => {
                             return await page.evaluate(() => {
-                                const bodyText = (document.body.innerText || '').toUpperCase();
-                                return bodyText.includes('NO RECORDS ARE AVAILABLE IN IMS TO DOWNLOAD') ||
-                                       bodyText.includes('CANNOT BE GENERATED AS NO RECORDS ARE AVAILABLE') ||
-                                       (bodyText.includes('ERROR') && bodyText.includes('NO RECORDS ARE AVAILABLE'));
+                                const fullText = (document.body.innerText || '').toUpperCase().replace(/\s+/g, ' ');
+                                if (
+                                    fullText.includes('NO RECORDS ARE AVAILABLE IN IMS TO DOWNLOAD') ||
+                                    fullText.includes('CANNOT BE GENERATED AS NO RECORDS ARE AVAILABLE') ||
+                                    (fullText.includes('CANNOT BE GENERATED') && fullText.includes('NO RECORDS')) ||
+                                    (fullText.includes('NO RECORDS') && fullText.includes('IMS') && fullText.includes('DOWNLOAD')) ||
+                                    (fullText.includes('ERROR') && fullText.includes('NO RECORDS') && fullText.includes('AVAILABLE')) ||
+                                    (fullText.includes('ERROR') && fullText.includes('NO RECORDS ARE AVAILABLE'))
+                                ) {
+                                    return true;
+                                }
+
+                                // Check alerts, toasts, modals specifically
+                                const errorElements = Array.from(document.querySelectorAll('.alert, .toast, .modal, .toast-message, .alert-danger, [role="alert"], div, p, span, h4, h5'));
+                                return errorElements.some(el => {
+                                    const txt = (el.innerText || el.textContent || '').toUpperCase().replace(/\s+/g, ' ');
+                                    return txt.includes('NO RECORDS ARE AVAILABLE IN IMS') ||
+                                           txt.includes('NO RECORDS ARE AVAILABLE') ||
+                                           (txt.includes('CANNOT BE GENERATED') && txt.includes('NO RECORDS')) ||
+                                           (txt.includes('ERROR') && txt.includes('NO RECORDS'));
+                                });
                             }).catch(() => false);
                         };
 
@@ -2020,7 +2033,8 @@ export default function setupImsRoutes(app, db) {
                                 'table tbody tr td a',
                                 'table tr td a',
                                 'a:has-text("Click here to download file")',
-                                'a:has-text("Click here to download")'
+                                'a:has-text("Click here to download")',
+                                'a:has-text("Click here")'
                             ];
 
                             for (const sel of dlLocators) {
@@ -2104,6 +2118,7 @@ export default function setupImsRoutes(app, db) {
                             // Strictly prevent false 20-minute wait
                             hasNoRecordsInIms = true;
                             isGenerationRequested = false;
+                            generationRequestedTimestamp = null;
 
                             await updateStatusBanner('⚠️ The JSON file cannot be generated as no records are available in IMS to download.', '#f59e0b');
                             await page.waitForTimeout(3000);
@@ -2191,6 +2206,16 @@ export default function setupImsRoutes(app, db) {
 
                         const dismissConfirmationModal = async () => {
                             try {
+                                const modalText = await page.evaluate(() => {
+                                    const m = document.querySelector('.modal, .modal-dialog, div[role="dialog"], .alert');
+                                    return m ? (m.innerText || '').toUpperCase() : '';
+                                }).catch(() => '');
+
+                                if (modalText.includes('NO RECORDS') || modalText.includes('CANNOT BE GENERATED') || modalText.includes('ERROR')) {
+                                    console.log('[IMS Automation] Modal/Alert contains error/notice. Preserving for inspection.');
+                                    return false;
+                                }
+
                                 const confirmBtn = page.locator('.modal button:has-text("OK"), .modal button:has-text("Ok"), .modal button:has-text("Yes"), button:has-text("OK"), button:has-text("Close"), button:has-text("Proceed")').first();
                                 if (await confirmBtn.isVisible({ timeout: 1200 })) {
                                     await confirmBtn.click();
@@ -2204,7 +2229,6 @@ export default function setupImsRoutes(app, db) {
                         // 1st Click on GENERATE JSON FILE TO DOWNLOAD
                         await clickGenerateBtn(1);
                         await page.waitForTimeout(1000);
-                        await dismissConfirmationModal();
 
                         // Check if portal returned "no records available in IMS" error after 1st click
                         if (await checkForNoRecordsError()) {
@@ -2212,23 +2236,76 @@ export default function setupImsRoutes(app, db) {
                             break;
                         }
 
+                        await dismissConfirmationModal();
+
                         // 2nd Click (ek bar aur click karna hai taki fresh new request initiate ho)
                         console.log('[IMS Automation] [Phase 1] Re-clicking "GENERATE JSON FILE TO DOWNLOAD" (2nd click) to register fresh request...');
                         await updateStatusBanner('Phase 1: Registering new request on GST portal...', '#8b5cf6');
                         await clickGenerateBtn(2);
-                        await page.waitForTimeout(1500);
 
-                        // Auto-dismiss confirmation modal if GST portal shows one ("Request Accepted", etc.)
-                        await dismissConfirmationModal();
+                        // Active polling loop for Portal's response (Error VS Accepted)
+                        console.log('[IMS Automation] Waiting up to 8s for GST Portal response after 2nd Generate click...');
+                        let responseHandled = false;
 
-                        // Check if portal returned "no records available in IMS" error after 2nd click
+                        for (let poll = 0; poll < 16; poll++) {
+                            await page.waitForTimeout(500);
+
+                            // Check 1: Did "no records available in IMS" error appear?
+                            if (await checkForNoRecordsError()) {
+                                console.log('[IMS Automation] Detected "no records available in IMS" error on portal!');
+                                await handleNoRecordsScenario();
+                                responseHandled = true;
+                                break;
+                            }
+
+                            // Check 2: Did portal show explicit acceptance message?
+                            const isAccepted = await page.evaluate(() => {
+                                const text = (document.body.innerText || '').toUpperCase().replace(/\s+/g, ' ');
+                                return text.includes('REQUEST ACCEPTED') ||
+                                       text.includes('REQUEST HAS BEEN ACCEPTED') ||
+                                       text.includes('IN PROGRESS') ||
+                                       text.includes('BEING PROCESSED') ||
+                                       text.includes('CHECK AFTER 20 MINUTES') ||
+                                       text.includes('20 MINUTE');
+                            }).catch(() => false);
+
+                            if (isAccepted) {
+                                console.log('[IMS Automation] GST Portal confirmed request accepted (~20 mins wait).');
+                                await dismissConfirmationModal();
+                                isGenerationRequested = true;
+                                generationRequestedTimestamp = Date.now();
+                                await updateStatusBanner('✓ Generation Requested! Portal takes ~20 mins. Closing browser & queued for Phase 2...', '#f59e0b');
+                                await page.waitForTimeout(2500);
+                                responseHandled = true;
+                                break;
+                            }
+                        }
+
+                        if (responseHandled) {
+                            break;
+                        }
+
+                        // Check error once more
                         if (await checkForNoRecordsError()) {
                             await handleNoRecordsScenario();
                             break;
                         }
 
-                        // File generation queued by GST portal
-                        console.log('[IMS Automation] File generation queued by GST Portal (~20m wait). Closing browser and saving state...');
+                        // If table exists with download link, grab it rather than assuming 20m wait
+                        const existingDlCaptured = await attemptDownloadExistingFile();
+                        if (existingDlCaptured) {
+                            console.log('[IMS Automation] Successfully captured existing file from table.');
+                            break;
+                        }
+
+                        // Final check: did error appear?
+                        if (await checkForNoRecordsError()) {
+                            await handleNoRecordsScenario();
+                            break;
+                        }
+
+                        // Only as last resort if portal accepted:
+                        console.log('[IMS Automation] File generation queued on GST portal (~20m wait).');
                         isGenerationRequested = true;
                         generationRequestedTimestamp = Date.now();
                         await updateStatusBanner('✓ Generation Requested! Portal takes ~20 mins. Closing browser & queued for Phase 2...', '#f59e0b');
@@ -2410,10 +2487,14 @@ export default function setupImsRoutes(app, db) {
                     await new Promise((resolve, reject) => {
                         db.serialize(() => {
                             db.run('BEGIN TRANSACTION');
+                            // If fresh download, safely purge previous invoices right before inserting new ones
+                            if (isForceFresh) {
+                                db.run('DELETE FROM ims_invoices WHERE client_gstin = ? AND return_period = ?', [gstin, returnPeriod]);
+                            }
                             db.run(`
                                 INSERT INTO ims_batches (id, client_gstin, return_period, status, created_at, updated_at)
                                 VALUES (?, ?, ?, 'SYNCED', ?, ?)
-                                ON CONFLICT(client_gstin, return_period) DO UPDATE SET status = 'SYNCED', generation_status = 'DOWNLOADED', updated_at = ?
+                                ON CONFLICT(client_gstin, return_period) DO UPDATE SET status = 'SYNCED', generation_status = 'DOWNLOADED', generation_requested_at = NULL, updated_at = ?
                             `, [batchId, gstin, returnPeriod, now, now, now]);
 
                             const insertStmt = db.prepare(`
@@ -2460,11 +2541,12 @@ export default function setupImsRoutes(app, db) {
                     console.log(`[IMS Automation] Downloaded file has 0 invoices for ${gstin}. Marking batch SYNCED with 0 records.`);
                     await new Promise((resolve) => {
                         db.run(`
-                            INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
-                            VALUES (?, ?, ?, 'SYNCED', 'DOWNLOADED', 0, 0, 0, 0, 0, ?, ?)
+                            INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, generation_requested_at, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
+                            VALUES (?, ?, ?, 'SYNCED', 'DOWNLOADED', NULL, 0, 0, 0, 0, 0, ?, ?)
                             ON CONFLICT(client_gstin, return_period) DO UPDATE SET 
                                 status = 'SYNCED',
                                 generation_status = 'DOWNLOADED',
+                                generation_requested_at = NULL,
                                 total_invoices = 0,
                                 no_action_count = 0,
                                 accepted_count = 0,
@@ -2509,32 +2591,63 @@ export default function setupImsRoutes(app, db) {
                 const batchId = randomUUID();
                 const now = Date.now();
 
-                await new Promise((resolve) => {
-                    db.run(`
-                        INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
-                        VALUES (?, ?, ?, 'SYNCED', 'NO_RECORDS', 0, 0, 0, 0, 0, ?, ?)
-                        ON CONFLICT(client_gstin, return_period) DO UPDATE SET 
-                            status = 'SYNCED',
-                            generation_status = 'NO_RECORDS',
-                            total_invoices = 0,
-                            no_action_count = 0,
-                            accepted_count = 0,
-                            rejected_count = 0,
-                            pending_count = 0,
-                            updated_at = ?
-                    `, [batchId, gstin, returnPeriod, now, now, now], () => resolve(true));
+                // Rule: "new data download nahi toh purana data remove nahi hoga"
+                const existingBatch = await new Promise((resolve) => {
+                    db.get('SELECT * FROM ims_batches WHERE client_gstin = ? AND return_period = ?', [gstin, returnPeriod], (err, row) => resolve(row));
                 });
 
-                return res.json({
-                    success: true,
-                    phaseResult: 'NO_RECORDS',
-                    gstin,
-                    period: returnPeriod,
-                    invoiceCount: 0,
-                    noRecordsWarning: true,
-                    warning: 'The JSON file cannot be generated as no records are available in IMS to download.',
-                    message: 'The JSON file cannot be generated as no records are available in IMS to download.'
-                });
+                if (existingBatch && existingBatch.total_invoices > 0) {
+                    console.log(`[IMS Automation] Preserving ${existingBatch.total_invoices} existing invoices for ${gstin}. Resetting false waiting timer.`);
+                    await new Promise((resolve) => {
+                        db.run(`
+                            UPDATE ims_batches SET 
+                                status = 'SYNCED',
+                                generation_status = 'NO_RECORDS',
+                                generation_requested_at = NULL,
+                                updated_at = ?
+                            WHERE client_gstin = ? AND return_period = ?
+                        `, [now, gstin, returnPeriod], () => resolve(true));
+                    });
+
+                    return res.json({
+                        success: true,
+                        phaseResult: 'NO_RECORDS',
+                        gstin,
+                        period: returnPeriod,
+                        invoiceCount: existingBatch.total_invoices,
+                        noRecordsWarning: true,
+                        warning: 'The JSON file cannot be generated as no records are available in IMS to download. Preserved existing data.',
+                        message: 'The JSON file cannot be generated as no records are available in IMS to download. Preserved existing data.'
+                    });
+                } else {
+                    await new Promise((resolve) => {
+                        db.run(`
+                            INSERT INTO ims_batches (id, client_gstin, return_period, status, generation_status, generation_requested_at, total_invoices, no_action_count, accepted_count, rejected_count, pending_count, created_at, updated_at)
+                            VALUES (?, ?, ?, 'SYNCED', 'NO_RECORDS', NULL, 0, 0, 0, 0, 0, ?, ?)
+                            ON CONFLICT(client_gstin, return_period) DO UPDATE SET 
+                                status = 'SYNCED',
+                                generation_status = 'NO_RECORDS',
+                                generation_requested_at = NULL,
+                                total_invoices = 0,
+                                no_action_count = 0,
+                                accepted_count = 0,
+                                rejected_count = 0,
+                                pending_count = 0,
+                                updated_at = ?
+                        `, [batchId, gstin, returnPeriod, now, now, now], () => resolve(true));
+                    });
+
+                    return res.json({
+                        success: true,
+                        phaseResult: 'NO_RECORDS',
+                        gstin,
+                        period: returnPeriod,
+                        invoiceCount: 0,
+                        noRecordsWarning: true,
+                        warning: 'The JSON file cannot be generated as no records are available in IMS to download.',
+                        message: 'The JSON file cannot be generated as no records are available in IMS to download.'
+                    });
+                }
             } else if (isGenerationRequested) {
                 await browser.close().catch(() => {});
                 activeBrowserInstance = null;
