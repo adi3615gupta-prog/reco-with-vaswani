@@ -142,7 +142,11 @@
   - **GOLDEN RULE DATA PRESERVATION ("New data download nahi toh purana data remove nahi hoga"):** Download failure ya timeout par existing 2B invoices aur batches kabhi delete ya truncate nahi hote.
   - **NIL RETURN EXPLICIT DISTINCTION:** Portal confirmed 0 records par hi batch ko `NIL_SYNCED` (total_invoices = 0) mark karta hai via `markGstr2bMonthNilSynced`; unconfirmed timeouts `PENDING` rehte hain.
   - **STRICT ON-SCREEN BACK BUTTON NAVIGATION:** Download screen se return search dashboard par wapas aane ke liye autopilot sirf aur sirf on-screen official `BACK` button target karta hai; breadcrumbs ya browser back navigation use nahi karta taaki portal session state intact rahe.
-  - **POST-BACK REDIRECT PROTOCOL (ONLY AFTER CLICKING BACK):** Download screen se official on-screen `BACK` button click karne ke baad hi URL push check trigger hota hai. Agar BACK click hone ke baad browser kisi doosre URL par jata hai (jaise `quicklinks/returns`, access-denied, ya services menu), tab aur sirf tab autopilot high-speed in-page tile click (<50ms) aur commit-level navigation se use turant `https://return.gst.gov.in/returns/auth/dashboard` par push karega. Initial login ya normal dashboard state par arbitrary redirects nahi honge balki standard UI elements use honge.
+  - **STRICT PROHIBITION OF URL PUSHING (ACCESS DENIED PREVENTION):** GST Portal ka SSO authentication gateway direct cross-subdomain GET request (`page.goto` ya `window.location.href` to `return.gst.gov.in`) ko block karke "Access Denied" error throw kar deta hai. Isliye returns dashboard par jaane ke liye URL push 100% banned hai.
+  - **DUAL-TIER IN-PAGE CLICK FROM QUICK LINKS:** Download screen se official on-screen `BACK` button click karne ke baad portal naturally `Returns Quick Links` (`https://services.gst.gov.in/services/auth/quicklinks/returns`) par jata hai. Autopilot solely authentic in-page DOM/Playwright clicks execute karega:
+    - **Tier 1:** Screen par "Returns Dashboard" / "File Returns" tile/card/button par direct in-page click.
+    - **Tier 2 (Fallback):** Agar tile na mile, toh top navbar `Services` -> `Returns` -> `Returns Dashboard` link par click.
+    - Click hone ke baad portal session cookies ke sath safely `return.gst.gov.in/returns/auth/dashboard` par aata hai aur period `<select>` dropdowns aane par agla month download karta hai.
   - **CLEAN PROCESS CANCELLATION:** Modal close ya cancellation par `POST /api/gstr2b/cancel` Playwright Chromium instances ko Windows par cleanly kill karta hai.
 
 ### B. File Map & Exact Line Reference

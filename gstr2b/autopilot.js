@@ -392,61 +392,107 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         await page.waitForTimeout(300);
         await dismissPopups();
 
-        // Helper to instantly push browser to https://return.gst.gov.in/returns/auth/dashboard without waiting for heavy assets
-        const fastPushToReturnDashboard = async () => {
-            console.log('[GSTR-2B Autopilot] ⚡ Fast redirect to https://return.gst.gov.in/returns/auth/dashboard ...');
+        // Helper to navigate from Returns Quick Links / Services to Return Dashboard via authentic in-page click
+        // STRICT ZERO URL PUSH: Direct page.goto or window.location.href to return.gst.gov.in triggers "Access Denied" by GSTN WAF.
+        const clickReturnsDashboardInPage = async () => {
+            console.log('[GSTR-2B Autopilot] ⚡ Navigating to Returns Dashboard via authentic in-page click (Zero URL Push)...');
 
-            // 1. Instant in-page link/button click (< 50ms SPA transition)
+            // Tier 1: On-screen Tile / Card / Button / Link click (Returns Dashboard / File Returns)
+            let clicked = false;
             try {
-                const inPageClicked = await page.evaluate(() => {
-                    const links = Array.from(document.querySelectorAll('a, button, div.card, div.panel, [ng-click]'));
-                    const match = links.find(el => {
+                clicked = await page.evaluate(() => {
+                    const elements = Array.from(document.querySelectorAll('a, button, div.card, div.panel, div.box, div.tile, div[class*="card"], div[class*="box"], h3, h4, h5, p, span, [ng-click]'));
+                    const target = elements.find(el => {
                         const t = (el.innerText || el.textContent || '').trim().toUpperCase();
                         const h = (el.getAttribute('href') || '').toLowerCase();
-                        return h.includes('returns/auth/dashboard') || t === 'RETURNS DASHBOARD' || t === 'RETURN DASHBOARD' || t === 'FILE RETURNS';
+                        return t === 'RETURNS DASHBOARD' || t === 'RETURN DASHBOARD' || t === 'FILE RETURNS' || h.includes('returns/auth/dashboard');
                     });
-                    if (match) {
-                        match.scrollIntoView({ block: 'center' });
-                        match.click();
+                    if (target) {
+                        const clickable = target.closest('a, button, div.card, div.panel, [ng-click]') || target;
+                        clickable.scrollIntoView({ block: 'center' });
+                        clickable.click();
                         if (window.angular) {
                             try {
-                                window.angular.element(match).triggerHandler('click');
-                                window.angular.element(match).scope()?.$apply();
+                                window.angular.element(clickable).triggerHandler('click');
+                                window.angular.element(clickable).scope()?.$apply();
                             } catch(e) {}
                         }
                         return true;
                     }
                     return false;
                 });
-                if (inPageClicked) {
-                    console.log('[GSTR-2B Autopilot] ⚡ Clicked in-page Returns Dashboard tile instantly!');
+                if (clicked) {
+                    console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen Returns Dashboard tile via DOM');
                 }
             } catch(e) {}
 
-            // 2. High-speed navigation with 'commit' (only waits for HTTP headers, does not wait for full JS/analytics)
-            try {
-                await page.goto('https://return.gst.gov.in/returns/auth/dashboard', { waitUntil: 'commit', timeout: 7000 }).catch(async () => {
-                    await page.evaluate(() => {
-                        window.location.href = 'https://return.gst.gov.in/returns/auth/dashboard';
-                    }).catch(() => {});
-                });
-            } catch(e) {}
+            // Tier 1b: Playwright locator targeting Returns Dashboard / File Returns tile or button
+            if (!clicked) {
+                try {
+                    const tileLoc = page.locator('a, button, div.card, div.panel')
+                        .filter({ hasText: /^(Returns Dashboard|Return Dashboard|File Returns)$/i })
+                        .first();
+                    if (await tileLoc.isVisible({ timeout: 1500 }).catch(() => false)) {
+                        await tileLoc.scrollIntoViewIfNeeded().catch(() => {});
+                        await tileLoc.click({ timeout: 2000 }).catch(() => {});
+                        clicked = true;
+                        console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen Returns Dashboard tile via locator');
+                    }
+                } catch(e) {}
+            }
 
-            // 3. Fast detection of select dropdowns
+            // Tier 2: Top Navbar Fallback (Services -> Returns -> Returns Dashboard)
+            if (!clicked) {
+                console.log('[GSTR-2B Autopilot] Tile not found, attempting Top Navbar (Services -> Returns -> Returns Dashboard)...');
+                try {
+                    clicked = await page.evaluate(() => {
+                        const allLinks = Array.from(document.querySelectorAll('a'));
+                        // Direct match on Returns Dashboard in dropdown or menu
+                        const rLink = allLinks.find(el => {
+                            const t = (el.innerText || el.textContent || '').trim().toUpperCase();
+                            const h = (el.getAttribute('href') || '').toLowerCase();
+                            return t === 'RETURNS DASHBOARD' || t === 'RETURN DASHBOARD' || h.includes('returns/auth/dashboard');
+                        });
+                        if (rLink) {
+                            rLink.scrollIntoView({ block: 'center' });
+                            rLink.click();
+                            return true;
+                        }
+                        // Or trigger Services dropdown first
+                        const sMenu = allLinks.find(el => (el.innerText || el.textContent || '').trim().toUpperCase() === 'SERVICES');
+                        if (sMenu) {
+                            sMenu.click();
+                        }
+                        return false;
+                    });
+                } catch(e) {}
+
+                if (!clicked) {
+                    try {
+                        const rLinkLoc = page.locator('a:has-text("Returns Dashboard"), a:has-text("Return Dashboard")').first();
+                        if (await rLinkLoc.isVisible({ timeout: 2000 }).catch(() => false)) {
+                            await rLinkLoc.click().catch(() => {});
+                            clicked = true;
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            // Wait for landing on https://return.gst.gov.in/returns/auth/dashboard with dropdowns
             try {
-                await page.waitForSelector('select', { timeout: 6000 });
+                await page.waitForSelector('select', { timeout: 12000 });
                 await dismissPopups();
                 if (await page.locator('select').count() >= 2) {
-                    console.log('[GSTR-2B Autopilot] ✓ Returns Dashboard search dropdowns ready!');
+                    console.log('[GSTR-2B Autopilot] ✓ Landed on Returns Dashboard with select dropdowns ready!');
                     return true;
                 }
             } catch(e) {}
+
             return false;
         };
 
         // Helper to guarantee the page is on the File Returns / Search screen with dropdowns
-        let postBackPendingRedirect = false;
-        const ensureReturnsSearchScreen = async (timeoutMs = 20000) => {
+        const ensureReturnsSearchScreen = async (timeoutMs = 25000) => {
             const startWait = Date.now();
             while (Date.now() - startWait < timeoutMs) {
                 if (page.isClosed()) return false;
@@ -459,7 +505,6 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     try {
                         const selectCount = await page.locator('select').count();
                         if (selectCount >= 2) {
-                            postBackPendingRedirect = false;
                             return true;
                         }
                     } catch(e) {}
@@ -512,10 +557,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     }
 
                     if (backClicked) {
-                        // Mark that we have clicked BACK: any departure from download to a non-dashboard URL triggers push
-                        postBackPendingRedirect = true;
-
-                        // Wait briefly for navigation/URL update triggered by BACK click (up to 3.5s)
+                        // Wait briefly for navigation triggered by BACK click (up to 3.5s)
                         let postClickUrl = page.url();
                         const waitUrlStart = Date.now();
                         while (Date.now() - waitUrlStart < 3500) {
@@ -526,33 +568,32 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                             }
                         }
 
-                        // SPECIFIC RULE: URL pushing happens ONLY after clicking BACK if it goes to another URL (e.g. quicklinks/returns)
-                        if (!postClickUrl.includes('return.gst.gov.in/returns/auth/dashboard') && !postClickUrl.includes('/download') && !postClickUrl.includes('/inward/')) {
-                            console.log(`[GSTR-2B Autopilot] After clicking BACK, landed on other URL: ${postClickUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
-                            if (await fastPushToReturnDashboard()) {
-                                postBackPendingRedirect = false;
+                        console.log(`[GSTR-2B Autopilot] After clicking BACK, landed on: ${postClickUrl}`);
+
+                        // If landed on Returns Quick Links or Services page, click Returns Dashboard tile/navbar (Zero URL Push!)
+                        if (postClickUrl.includes('quicklinks/returns') || postClickUrl.includes('services.gst.gov.in')) {
+                            console.log('[GSTR-2B Autopilot] Landed on Returns Quick Links. Clicking on-screen Returns Dashboard tile...');
+                            if (await clickReturnsDashboardInPage()) {
                                 return true;
                             }
                         }
                     }
 
-                    // WAIT for returns search screen dropdowns to appear (up to 12s, no frantic repeated clicks)
+                    // WAIT for returns search screen dropdowns to appear (up to 12s)
                     try {
                         await page.waitForSelector('select', { timeout: 12000 });
                         await dismissPopups();
                         if (await page.locator('select').count() >= 2) {
-                            postBackPendingRedirect = false;
                             return true;
                         }
                     } catch(e) {}
                     continue;
                 }
 
-                // 3. ONLY AFTER CLICKING BACK: If it arrived on another non-dashboard URL (e.g. quicklinks/returns, error), fast push!
-                if (postBackPendingRedirect && !curUrl.includes('return.gst.gov.in/returns/auth/dashboard')) {
-                    console.log(`[GSTR-2B Autopilot] After clicking BACK, detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
-                    if (await fastPushToReturnDashboard()) {
-                        postBackPendingRedirect = false;
+                // 3. If on Returns Quick Links screen at any point -> Click Returns Dashboard tile/navbar (Zero URL Push!)
+                if (curUrl.includes('quicklinks/returns') || curUrl.includes('/quicklinks')) {
+                    console.log('[GSTR-2B Autopilot] Detected Returns Quick Links screen. Clicking Returns Dashboard tile in-page...');
+                    if (await clickReturnsDashboardInPage()) {
                         return true;
                     }
                     continue;

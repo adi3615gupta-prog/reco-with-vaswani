@@ -34,6 +34,13 @@ This phase delivers production-grade hardening, zero-data-loss protection, 12-mo
   - Zero-merge integrity of generated workbooks (`generateGstr2bFullYearWorkbook`).
   - Database non-destructive upsert logic.
 
+### 5. Post-BACK Returns Quick Links Navigation (Zero URL Pushing)
+- **D-08 (Strict Prohibition of URL Pushing):** Direct URL manipulation (`page.goto` or `window.location.href = 'https://return.gst.gov.in/returns/auth/dashboard'`) is strictly banned because cross-origin / direct GET between `services.gst.gov.in` and `return.gst.gov.in` causes GSTN SSO gateway to throw "Access Denied".
+- **D-09 (Dual-Tier In-Page Click on Returns Quick Links):** When the official on-screen `BACK` button is clicked on the download/inward page, the portal navigates to `Returns Quick Links` (`https://services.gst.gov.in/services/auth/quicklinks/returns`). Autopilot MUST navigate back to the returns dashboard solely via in-page clicks:
+  - **Primary (Tier 1):** Click the on-screen "Returns Dashboard" / "File Returns" tile/card/link.
+  - **Secondary (Tier 2 Fallback):** If tile is not found, navigate via top navbar: `Services` -> `Returns` -> `Returns Dashboard`.
+  - Once on `return.gst.gov.in/returns/auth/dashboard`, wait for `<select>` period dropdowns and continue the 12-month loop.
+
 ### Antigravity Builder's Discretion
 - Fine-tuning timeout thresholds for portal download links (15s to 20s polling).
 - Frontend badge color coding (`NIL_SYNCED` as neutral gray/blue badge vs `SYNCED` as emerald badge).

@@ -44,6 +44,18 @@
 
 ---
 
+## 4. Post-BACK Returns Quick Links Navigation (Access Denied Prevention)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Direct in-page tile click on 'Returns Dashboard' + Navbar fallback | Zero URL push. Download hone ke baad BACK click karne par portal 'Returns Quick Links' me jata hai; wahan screen par 'Returns Dashboard' tile par in-page click karo. Backup me Navbar (Services -> Returns -> Returns Dashboard) use karo. | ✓ |
+| Hard URL push / `page.goto` | Push browser to `https://return.gst.gov.in/returns/auth/dashboard` | ✗ (Throws 'Access Denied') |
+
+**User's choice:** Direct in-page tile click on 'Returns Dashboard' + Navbar fallback. URL push is completely disabled because GST portal SSO gateway rejects direct cross-subdomain GET with "Access Denied".
+**Notes:** Real-world testing revealed that direct URL push causes Access Denied. Navigation must strictly be driven by authentic user-initiated in-page clicks.
+
+---
+
 ## the agent's Discretion
 
 - Fine-tuning timeout thresholds for portal download links (15s to 20s polling).
