@@ -54,8 +54,8 @@ const firebaseApp = initializeApp(firebaseConfig);
 const firestore = getFirestore(firebaseApp);
 setLogLevel("silent");
 
-const __filename = typeof __filename !== 'undefined' ? __filename : (typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '');
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : (path && __filename ? path.dirname(__filename) : process.cwd());
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
