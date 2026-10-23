@@ -18,6 +18,8 @@
     "test:watch": "vitest",
     "obfuscate": "node obfuscate.cjs",
     "build:exe": "npm run obfuscate && vite build && electron-builder -w -p never",
+    "ship": "npm run build:exe && node scripts/publish_release.cjs",
+    "publish:github": "node scripts/publish_release.cjs",
     "release": "npm version patch --no-git-tag-version && npm run obfuscate && vite build && electron-builder --publish always",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\""
