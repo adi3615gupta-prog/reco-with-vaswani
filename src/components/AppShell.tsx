@@ -5,8 +5,8 @@ import {
   CalendarClock, ArrowRightLeft, Search, ImageIcon, Activity,
   Server, History, Cloud, BookOpen, LogOut, PanelLeftClose,
   PanelLeftOpen, ChevronRight, CheckCircle2, Command as CommandIcon,
-  Layers, ArrowLeft
-} from 'lucide-react';
+  Layers, ArrowLeft, Settings } from 'lucide-react';
+import { SettingsModal } from '@/components/SettingsModal';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
@@ -131,6 +131,7 @@ export function AppShell({
   });
 
   const [commandOpen, setCommandOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const toggleSidebar = () => {
     setIsCollapsed(prev => {
@@ -303,21 +304,43 @@ export function AppShell({
           })}
         </div>
 
-        {/* Sidebar Footer HUD */}
-        <div className="p-3 border-t border-[#1E293B] bg-slate-950/40 space-y-2">
+        {/* Sidebar Footer HUD & Bottom-Left Settings Tab */}
+        <div className="p-2.5 border-t border-[#1E293B] bg-slate-950/60 space-y-2">
+          {/* Bottom-Left Settings Tab Trigger */}
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className={cn(
+              "w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border",
+              "bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10",
+              isCollapsed ? "justify-center" : "justify-between"
+            )}
+            title="System Settings & Connectivity (Data Path & Tally)"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:rotate-45 transition-transform">
+                <Settings className="w-3.5 h-3.5" />
+              </div>
+              {!isCollapsed && (
+                <div className="flex flex-col text-left truncate">
+                  <span className="truncate leading-tight text-white">System Settings</span>
+                  <span className="text-[9px] text-slate-400 font-mono">Data Path &amp; Tally</span>
+                </div>
+              )}
+            </div>
+            {!isCollapsed && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            )}
+          </button>
+
           {!isCollapsed ? (
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1 pt-1 border-t border-slate-900">
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>SQLite Active</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span>SQLite LAN</span>
               </span>
-              <span className="text-slate-400 font-bold uppercase">{loginUser}</span>
+              <span className="text-slate-400 font-bold uppercase truncate max-w-[90px]">{loginUser}</span>
             </div>
-          ) : (
-            <div className="flex justify-center" title="Local SQLite DB Active">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            </div>
-          )}
+          ) : null}
         </div>
       </aside>
 
@@ -472,6 +495,8 @@ export function AppShell({
           ))}
         </CommandList>
       </CommandDialog>
+
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
 }
