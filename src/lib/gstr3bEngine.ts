@@ -12,7 +12,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx-js-style';
+import * as XLSX from 'xlsx';
 
 // ─── TYPES & INTERFACES ────────────────────────────────────────────────────────
 
@@ -88,6 +88,7 @@ export interface TaxPayableAndSetoff {
   adjustment: TaxBreakdown;       // (-) Adjustment (Rule 88A IGST / CGST / SGST set-off)
   payableAfterAdjustment: TaxBreakdown; // Final Liability Payable (after adjustment & TDS/TCS cash credit)
   balanceCfNextMonth: TaxBreakdown;     // Balance C/f to next month (Surplus unutilized ITC)
+  isManualAdjustment?: boolean;   // If true, user manually specified or edited adjustment proportion
 }
 
 export interface CashAndFinalSettlement {
@@ -391,178 +392,112 @@ export function recalculateMonthData(
   setoff.rawPayable.igst = round2(L_igst - ITC_igst);
   setoff.rawPayable.total = round2(setoff.rawPayable.cgst + setoff.rawPayable.sgst + setoff.rawPayable.igst);
 
-  // 9. STATUTORY GST SET-OFF ENGINE (RULE 88A, SECTIONS 49/49A/49B, CIRCULAR 98/17/2019-GST & ADVISORY 647)
-  let u_igst_igst = 0;
-  let u_igst_cgst = 0;
-  let u_igst_sgst = 0;
-  let u_cgst_cgst = 0;
-  let u_cgst_igst = 0;
-  let u_sgst_sgst = 0;
-  let u_sgst_igst = 0;
+  // 9. STATUTORY GST SET-OFF ENGINE (RULE 88A, SECTIONS 49/49A/49B, CIRCULAR 98/17/2019-GST)
+  let adjCgst = 0;
+  let adjSgst = 0;
+  let adjIgst = 0;
 
-  // STEP 1: Clear IGST Output Liability with IGST ITC
-  u_igst_igst = Math.min(L_igst, ITC_igst);
-  let rem_L_igst = round2(L_igst - u_igst_igst);
-  let surplus_ITC_igst = round2(ITC_igst - u_igst_igst);
+  const isManual = Boolean(
+    setoff.isManualAdjustment ||
+    (setoff.adjustment && (setoff.adjustment.cgst !== 0 || setoff.adjustment.sgst !== 0 || setoff.adjustment.igst !== 0))
+  );
 
-  let rem_L_cgst = L_cgst;
-  let rem_L_sgst = L_sgst;
-  let rem_ITC_cgst = ITC_cgst;
-  let rem_ITC_sgst = ITC_sgst;
+  if (isManual && setoff.adjustment) {
+    adjCgst = round2(setoff.adjustment.cgst || 0);
+    adjSgst = round2(setoff.adjustment.sgst || 0);
+    adjIgst = round2(setoff.adjustment.igst !== undefined ? setoff.adjustment.igst : -(adjCgst + adjSgst));
+  } else {
+    let u_igst_igst = 0;
+    let u_igst_cgst = 0;
+    let u_igst_sgst = 0;
+    let u_cgst_igst = 0;
+    let u_sgst_igst = 0;
 
-  // STEP 2: Allocate Surplus IGST ITC (Rule 88A Optimization)
-  // Dynamic allocation: prioritize head facing higher shortfall relative to own ITC,
-  // equalizing net cash payments to Rs. 0 or lowest possible across both heads.
-  if (surplus_ITC_igst > 0) {
-    const shortfall_cgst = Math.max(0, round2(rem_L_cgst - rem_ITC_cgst));
-    const shortfall_sgst = Math.max(0, round2(rem_L_sgst - rem_ITC_sgst));
-    const totalShortfall = round2(shortfall_cgst + shortfall_sgst);
+    // STEP 1: Clear IGST Output Liability with IGST ITC
+    u_igst_igst = Math.min(L_igst, ITC_igst);
+    let rem_L_igst = round2(L_igst - u_igst_igst);
+    let surplus_ITC_igst = round2(ITC_igst - u_igst_igst);
 
-    if (surplus_ITC_igst <= totalShortfall) {
-      if (shortfall_cgst > shortfall_sgst) {
-        const diff = round2(shortfall_cgst - shortfall_sgst);
-        const giveCgst = Math.min(surplus_ITC_igst, diff);
-        u_igst_cgst = round2(u_igst_cgst + giveCgst);
-        surplus_ITC_igst = round2(surplus_ITC_igst - giveCgst);
+    let rem_L_cgst = L_cgst;
+    let rem_L_sgst = L_sgst;
+    let rem_ITC_cgst = ITC_cgst;
+    let rem_ITC_sgst = ITC_sgst;
 
-        if (surplus_ITC_igst > 0) {
+    // STEP 2: Allocate Surplus IGST ITC (Rule 88A Optimization)
+    if (surplus_ITC_igst > 0) {
+      const shortfall_cgst = Math.max(0, round2(rem_L_cgst - rem_ITC_cgst));
+      const shortfall_sgst = Math.max(0, round2(rem_L_sgst - rem_ITC_sgst));
+      const totalShortfall = round2(shortfall_cgst + shortfall_sgst);
+
+      if (surplus_ITC_igst <= totalShortfall) {
+        if (shortfall_cgst > shortfall_sgst) {
+          const diff = round2(shortfall_cgst - shortfall_sgst);
+          const giveCgst = Math.min(surplus_ITC_igst, diff);
+          u_igst_cgst = round2(u_igst_cgst + giveCgst);
+          surplus_ITC_igst = round2(surplus_ITC_igst - giveCgst);
+
+          if (surplus_ITC_igst > 0) {
+            const half = round2(surplus_ITC_igst / 2);
+            const otherHalf = round2(surplus_ITC_igst - half);
+            u_igst_cgst = round2(u_igst_cgst + half);
+            u_igst_sgst = round2(u_igst_sgst + otherHalf);
+            surplus_ITC_igst = 0;
+          }
+        } else if (shortfall_sgst > shortfall_cgst) {
+          const diff = round2(shortfall_sgst - shortfall_cgst);
+          const giveSgst = Math.min(surplus_ITC_igst, diff);
+          u_igst_sgst = round2(u_igst_sgst + giveSgst);
+          surplus_ITC_igst = round2(surplus_ITC_igst - giveSgst);
+
+          if (surplus_ITC_igst > 0) {
+            const half = round2(surplus_ITC_igst / 2);
+            const otherHalf = round2(surplus_ITC_igst - half);
+            u_igst_sgst = round2(u_igst_sgst + half);
+            u_igst_cgst = round2(u_igst_cgst + otherHalf);
+            surplus_ITC_igst = 0;
+          }
+        } else {
           const half = round2(surplus_ITC_igst / 2);
           const otherHalf = round2(surplus_ITC_igst - half);
           u_igst_cgst = round2(u_igst_cgst + half);
           u_igst_sgst = round2(u_igst_sgst + otherHalf);
           surplus_ITC_igst = 0;
         }
-      } else if (shortfall_sgst > shortfall_cgst) {
-        const diff = round2(shortfall_sgst - shortfall_cgst);
-        const giveSgst = Math.min(surplus_ITC_igst, diff);
-        u_igst_sgst = round2(u_igst_sgst + giveSgst);
-        surplus_ITC_igst = round2(surplus_ITC_igst - giveSgst);
-
-        if (surplus_ITC_igst > 0) {
-          const half = round2(surplus_ITC_igst / 2);
-          const otherHalf = round2(surplus_ITC_igst - half);
-          u_igst_sgst = round2(u_igst_sgst + half);
-          u_igst_cgst = round2(u_igst_cgst + otherHalf);
-          surplus_ITC_igst = 0;
-        }
       } else {
-        const half = round2(surplus_ITC_igst / 2);
-        const otherHalf = round2(surplus_ITC_igst - half);
-        u_igst_cgst = round2(u_igst_cgst + half);
-        u_igst_sgst = round2(u_igst_sgst + otherHalf);
-        surplus_ITC_igst = 0;
-      }
-    } else {
-      // Surplus IGST ITC exceeds total shortfalls -> wipe out both shortfalls to 0 cash!
-      u_igst_cgst = shortfall_cgst;
-      u_igst_sgst = shortfall_sgst;
-      surplus_ITC_igst = round2(surplus_ITC_igst - totalShortfall);
+        u_igst_cgst = shortfall_cgst;
+        u_igst_sgst = shortfall_sgst;
+        surplus_ITC_igst = round2(surplus_ITC_igst - totalShortfall);
 
-      // Remaining surplus IGST ITC is applied against remaining CGST/SGST liabilities
-      // to optimize/equalize remaining credit carry-forward across both ledgers.
-      const cap_cgst = round2(rem_L_cgst - u_igst_cgst);
-      const cap_sgst = round2(rem_L_sgst - u_igst_sgst);
-      const maxPossibleExtra = round2(cap_cgst + cap_sgst);
-      const extraToAllocate = Math.min(surplus_ITC_igst, maxPossibleExtra);
+        const cap_cgst = round2(rem_L_cgst - u_igst_cgst);
+        const cap_sgst = round2(rem_L_sgst - u_igst_sgst);
+        const maxPossibleExtra = round2(cap_cgst + cap_sgst);
+        const extraToAllocate = Math.min(surplus_ITC_igst, maxPossibleExtra);
 
-      if (extraToAllocate > 0) {
-        const baseCf_cgst = round2(rem_ITC_cgst - cap_cgst);
-        const baseCf_sgst = round2(rem_ITC_sgst - cap_sgst);
-        let extra_cgst = 0;
-        let extra_sgst = 0;
-
-        if (baseCf_cgst < baseCf_sgst) {
-          const diff = round2(baseCf_sgst - baseCf_cgst);
-          extra_cgst = Math.min(extraToAllocate, diff, cap_cgst);
-          const remExtra = round2(extraToAllocate - extra_cgst);
-          if (remExtra > 0) {
-            const half = Math.min(round2(remExtra / 2), round2(cap_cgst - extra_cgst));
-            extra_cgst = round2(extra_cgst + half);
-            extra_sgst = round2(Math.min(remExtra - half, cap_sgst));
-          }
-        } else if (baseCf_sgst < baseCf_cgst) {
-          const diff = round2(baseCf_cgst - baseCf_sgst);
-          extra_sgst = Math.min(extraToAllocate, diff, cap_sgst);
-          const remExtra = round2(extraToAllocate - extra_sgst);
-          if (remExtra > 0) {
-            const half = Math.min(round2(remExtra / 2), round2(cap_sgst - extra_sgst));
-            extra_sgst = round2(extra_sgst + half);
-            extra_cgst = round2(Math.min(remExtra - half, cap_cgst));
-          }
-        } else {
+        if (extraToAllocate > 0) {
           const half = Math.min(round2(extraToAllocate / 2), cap_cgst);
-          extra_cgst = half;
-          extra_sgst = round2(Math.min(extraToAllocate - half, cap_sgst));
+          u_igst_cgst = round2(u_igst_cgst + half);
+          u_igst_sgst = round2(u_igst_sgst + Math.min(extraToAllocate - half, cap_sgst));
         }
-
-        u_igst_cgst = round2(u_igst_cgst + extra_cgst);
-        u_igst_sgst = round2(u_igst_sgst + extra_sgst);
-        surplus_ITC_igst = round2(surplus_ITC_igst - (extra_cgst + extra_sgst));
       }
     }
 
-    rem_L_cgst = round2(Math.max(0, rem_L_cgst - u_igst_cgst));
-    rem_L_sgst = round2(Math.max(0, rem_L_sgst - u_igst_sgst));
-  }
-
-  // STEP 3: Clear Intra-State & Residual Liabilities
-  // 3A. Clear Intra-State Liabilities with own ITC
-  u_cgst_cgst = Math.min(rem_L_cgst, rem_ITC_cgst);
-  rem_L_cgst = round2(rem_L_cgst - u_cgst_cgst);
-  rem_ITC_cgst = round2(rem_ITC_cgst - u_cgst_cgst);
-
-  u_sgst_sgst = Math.min(rem_L_sgst, rem_ITC_sgst);
-  rem_L_sgst = round2(rem_L_sgst - u_sgst_sgst);
-  rem_ITC_sgst = round2(rem_ITC_sgst - u_sgst_sgst);
-
-  // 3B. Residual IGST Liability (Post-2026 GSTN Advisory 647 Rule)
-  // If residual IGST liability remains after Step 1 and IGST ITC is Rs. 0,
-  // apply remaining CGST ITC or SGST ITC in optimal combination that preserves cash flow & balances ledgers.
-  if (rem_L_igst > 0 && surplus_ITC_igst === 0) {
-    const totalAvailIntra = round2(rem_ITC_cgst + rem_ITC_sgst);
-    if (totalAvailIntra <= rem_L_igst) {
-      u_cgst_igst = rem_ITC_cgst;
-      u_sgst_igst = rem_ITC_sgst;
-      rem_L_igst = round2(rem_L_igst - totalAvailIntra);
-      rem_ITC_cgst = 0;
-      rem_ITC_sgst = 0;
-    } else {
-      const igstNeeded = rem_L_igst;
-      if (rem_ITC_cgst > rem_ITC_sgst) {
-        const diff = round2(rem_ITC_cgst - rem_ITC_sgst);
-        const takeCgst = Math.min(igstNeeded, diff);
-        u_cgst_igst = takeCgst;
-        const remNeeded = round2(igstNeeded - takeCgst);
-        if (remNeeded > 0) {
-          const half = round2(remNeeded / 2);
-          u_cgst_igst = round2(u_cgst_igst + half);
-          u_sgst_igst = round2(u_sgst_igst + (remNeeded - half));
-        }
-      } else if (rem_ITC_sgst > rem_ITC_cgst) {
-        const diff = round2(rem_ITC_sgst - rem_ITC_cgst);
-        const takeSgst = Math.min(igstNeeded, diff);
-        u_sgst_igst = takeSgst;
-        const remNeeded = round2(igstNeeded - takeSgst);
-        if (remNeeded > 0) {
-          const half = round2(remNeeded / 2);
-          u_sgst_igst = round2(u_sgst_igst + half);
-          u_cgst_igst = round2(u_cgst_igst + (remNeeded - half));
-        }
-      } else {
-        const half = round2(igstNeeded / 2);
-        u_cgst_igst = half;
-        u_sgst_igst = round2(igstNeeded - half);
+    // Residual IGST Liability paid from CGST/SGST ITC
+    if (rem_L_igst > 0 && surplus_ITC_igst === 0) {
+      const availC = Math.max(0, round2(rem_ITC_cgst - rem_L_cgst));
+      const availS = Math.max(0, round2(rem_ITC_sgst - rem_L_sgst));
+      const takeC = Math.min(availC, round2(rem_L_igst / 2));
+      u_cgst_igst = takeC;
+      const remNeeded = round2(rem_L_igst - takeC);
+      u_sgst_igst = Math.min(availS, remNeeded);
+      if (u_sgst_igst < remNeeded && availC > takeC) {
+        u_cgst_igst = Math.min(availC, round2(u_cgst_igst + (remNeeded - u_sgst_igst)));
       }
-      rem_ITC_cgst = round2(rem_ITC_cgst - u_cgst_igst);
-      rem_ITC_sgst = round2(rem_ITC_sgst - u_sgst_igst);
-      rem_L_igst = 0;
     }
-  }
 
-  // Inter-Head Adjustment Row (Rule 88A)
-  const adjCgst = round2(u_igst_cgst - u_cgst_igst);
-  const adjSgst = round2(u_igst_sgst - u_sgst_igst);
-  const adjIgst = round2(-(adjCgst + adjSgst));
+    adjCgst = round2(u_igst_cgst - u_cgst_igst);
+    adjSgst = round2(u_igst_sgst - u_sgst_igst);
+    adjIgst = round2(-(adjCgst + adjSgst));
+  }
 
   setoff.adjustment = {
     taxable: 0,
@@ -572,17 +507,26 @@ export function recalculateMonthData(
     total: round2(adjCgst + adjSgst + adjIgst),
   };
 
-  // STEP 4: Final Cash Computation & Surplus Carry Forward
+  // STEP 4: Exact CA Practice Excel Formulas:
   // Row 48: Final Liability Payable = IF(E43-E44>0, E43-E44, 0) - E46 (TDS/TCS Cash)
+  // Row 50: Balance C/f to next month = IF(E43-E44<0, E44-E43, 0)
   if (stl.tdsTcsOpeningCash) {
     stl.tdsTcsOpeningCash.total = round2(
       (stl.tdsTcsOpeningCash.cgst || 0) + (stl.tdsTcsOpeningCash.sgst || 0) + (stl.tdsTcsOpeningCash.igst || 0)
     );
   }
 
-  const finalPayableCgst = Math.max(0, round2(rem_L_cgst - (stl.tdsTcsOpeningCash?.cgst || 0)));
-  const finalPayableSgst = Math.max(0, round2(rem_L_sgst - (stl.tdsTcsOpeningCash?.sgst || 0)));
-  const finalPayableIgst = Math.max(0, round2(rem_L_igst - (stl.tdsTcsOpeningCash?.igst || 0)));
+  const rawCgstAfterAdj = round2(setoff.rawPayable.cgst - setoff.adjustment.cgst);
+  const rawSgstAfterAdj = round2(setoff.rawPayable.sgst - setoff.adjustment.sgst);
+  const rawIgstAfterAdj = round2(setoff.rawPayable.igst - setoff.adjustment.igst);
+
+  const tdsCgst = round2(stl.tdsTcsOpeningCash?.cgst || 0);
+  const tdsSgst = round2(stl.tdsTcsOpeningCash?.sgst || 0);
+  const tdsIgst = round2(stl.tdsTcsOpeningCash?.igst || 0);
+
+  const finalPayableCgst = Math.max(0, round2((rawCgstAfterAdj > 0 ? rawCgstAfterAdj : 0) - tdsCgst));
+  const finalPayableSgst = Math.max(0, round2((rawSgstAfterAdj > 0 ? rawSgstAfterAdj : 0) - tdsSgst));
+  const finalPayableIgst = Math.max(0, round2((rawIgstAfterAdj > 0 ? rawIgstAfterAdj : 0) - tdsIgst));
 
   setoff.payableAfterAdjustment = {
     taxable: 0,
@@ -595,11 +539,14 @@ export function recalculateMonthData(
   // Balance C/F to Next Month (Surplus unutilized ITC in Electronic Credit Ledger)
   setoff.balanceCfNextMonth = {
     taxable: 0,
-    cgst: rem_ITC_cgst,
-    sgst: rem_ITC_sgst,
-    igst: surplus_ITC_igst,
-    total: round2(rem_ITC_cgst + rem_ITC_sgst + surplus_ITC_igst),
+    cgst: rawCgstAfterAdj < 0 ? round2(-rawCgstAfterAdj) : 0,
+    sgst: rawSgstAfterAdj < 0 ? round2(-rawSgstAfterAdj) : 0,
+    igst: rawIgstAfterAdj < 0 ? round2(-rawIgstAfterAdj) : 0,
+    total: 0,
   };
+  setoff.balanceCfNextMonth.total = round2(
+    setoff.balanceCfNextMonth.cgst + setoff.balanceCfNextMonth.sgst + setoff.balanceCfNextMonth.igst
+  );
 
   // 12. Settlement / Cash Liability
   // RCM Payable: MANDATORY CASH PAYMENT (Sec 49(4))
@@ -1678,11 +1625,22 @@ export async function parseGstr3bWorkingFile(file: File): Promise<GSTR3BAnnualWo
   };
 
   const parseRowTax = (r: any[]): TaxBreakdown => {
-    const taxable = parseNum(r[2] !== undefined && r[2] !== '' ? r[2] : r[3]);
-    const cgst = parseNum(r[3] !== undefined && typeof r[2] === 'number' ? r[3] : r[4]);
-    const sgst = parseNum(r[4] !== undefined && typeof r[2] === 'number' ? r[4] : r[5]);
-    const igst = parseNum(r[5] !== undefined && typeof r[2] === 'number' ? r[5] : r[6]);
-    const total = parseNum(r[6] !== undefined && typeof r[2] === 'number' ? r[6] : r[7]) || (cgst + sgst + igst);
+    const isColBLabel = Boolean(r[1] && typeof r[1] === 'string' && r[1].trim());
+    let taxable = 0, cgst = 0, sgst = 0, igst = 0, total = 0;
+
+    if (isColBLabel) {
+      taxable = parseNum(r[2]);
+      cgst = parseNum(r[3]);
+      sgst = parseNum(r[4]);
+      igst = parseNum(r[5]);
+      total = parseNum(r[6]) || (cgst + sgst + igst);
+    } else {
+      taxable = parseNum(r[1]);
+      cgst = parseNum(r[2]);
+      sgst = parseNum(r[3]);
+      igst = parseNum(r[4]);
+      total = parseNum(r[5]) || (cgst + sgst + igst);
+    }
     return { taxable, cgst, sgst, igst, total };
   };
 
@@ -1787,6 +1745,13 @@ export async function parseGstr3bWorkingFile(file: File): Promise<GSTR3BAnnualWo
         mData.inward.debitNotes = parseRowTax(r);
       } else if (rowTxt.includes('ITC REVERSED') || rowTxt.includes('INELIGIBLE CREDIT')) {
         mData.inward.itcReversed = parseRowTax(r);
+      }
+      // SET-OFF & ADJUSTMENT
+      else if (rowTxt.includes('(-) ADJUSTMENT') || rowTxt.includes('ADJUSTMENT')) {
+        mData.setoff.adjustment = parseRowTax(r);
+        if (mData.setoff.adjustment.cgst !== 0 || mData.setoff.adjustment.sgst !== 0 || mData.setoff.adjustment.igst !== 0) {
+          mData.setoff.isManualAdjustment = true;
+        }
       }
       // SETTLEMENT
       else if (rowTxt.includes('TDS/TCS') || rowTxt.includes('GST TDS')) {

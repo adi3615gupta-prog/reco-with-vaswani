@@ -790,7 +790,7 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
 
   // Helper to update a specific field in the selected month
   const updateCurrentMonthField = (
-    section: 'outward' | 'inward' | 'settlement',
+    section: 'outward' | 'inward' | 'settlement' | 'setoff',
     field: string,
     subKey: 'taxable' | 'cgst' | 'sgst' | 'igst',
     value: number
@@ -824,9 +824,89 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
         } else {
           (targetMonth.settlement as any)[field] = value;
         }
+      } else if (section === 'setoff') {
+        let row = (targetMonth.setoff as any)[field];
+        if (!row) {
+          row = { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+          (targetMonth.setoff as any)[field] = row;
+        }
+        row[subKey] = value;
+        targetMonth.setoff.isManualAdjustment = true;
+
+        // Auto-balance IGST adjustment when user edits CGST or SGST adjustment
+        if (field === 'adjustment') {
+          if (subKey === 'cgst' || subKey === 'sgst') {
+            const rawIgst = targetMonth.setoff.rawPayable?.igst || 0;
+            if (rawIgst < 0) {
+              const c = Number(row.cgst || 0);
+              const s = Number(row.sgst || 0);
+              row.igst = Math.round(-(c + s) * 100) / 100;
+            }
+          }
+          row.total = Math.round((Number(row.cgst || 0) + Number(row.sgst || 0) + Number(row.igst || 0)) * 100) / 100;
+        }
       }
 
-      return recalculateAnnualWorking(cloned);
+      const updated = recalculateAnnualWorking(cloned);
+      saveToServerStorage(updated).catch(() => {});
+      return updated;
+    });
+  };
+
+  // Quick Action presets for Table 6.1 Set-off & Utilization
+  const handleSetoffPreset = (mode: 'auto' | 'all_cgst' | 'all_sgst' | 'equal' | 'clear') => {
+    setWorkingData(prev => {
+      const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
+      const targetMonth = cloned.months[selectedMonth];
+      if (!targetMonth) return prev;
+
+      const raw = targetMonth.setoff.rawPayable;
+      const surplusIgst = raw.igst < 0 ? Math.abs(raw.igst) : 0;
+
+      if (mode === 'clear') {
+        targetMonth.setoff.adjustment = { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        targetMonth.setoff.isManualAdjustment = true;
+      } else if (mode === 'all_cgst') {
+        const canTake = Math.min(surplusIgst, Math.max(0, raw.cgst));
+        const adjC = canTake > 0 ? canTake : surplusIgst;
+        targetMonth.setoff.adjustment = {
+          taxable: 0,
+          cgst: adjC,
+          sgst: 0,
+          igst: -adjC,
+          total: 0
+        };
+        targetMonth.setoff.isManualAdjustment = true;
+      } else if (mode === 'all_sgst') {
+        const canTake = Math.min(surplusIgst, Math.max(0, raw.sgst));
+        const adjS = canTake > 0 ? canTake : surplusIgst;
+        targetMonth.setoff.adjustment = {
+          taxable: 0,
+          cgst: 0,
+          sgst: adjS,
+          igst: -adjS,
+          total: 0
+        };
+        targetMonth.setoff.isManualAdjustment = true;
+      } else if (mode === 'equal') {
+        const half = Math.round((surplusIgst / 2) * 100) / 100;
+        const otherHalf = Math.round((surplusIgst - half) * 100) / 100;
+        targetMonth.setoff.adjustment = {
+          taxable: 0,
+          cgst: half,
+          sgst: otherHalf,
+          igst: -surplusIgst,
+          total: 0
+        };
+        targetMonth.setoff.isManualAdjustment = true;
+      } else if (mode === 'auto') {
+        targetMonth.setoff.isManualAdjustment = false;
+        targetMonth.setoff.adjustment = { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+      }
+
+      const updated = recalculateAnnualWorking(cloned);
+      saveToServerStorage(updated).catch(() => {});
+      return updated;
     });
   };
 
@@ -1943,42 +2023,155 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
                   </tr>
 
                   {/* SECTION 3: SET-OFF & UTILIZATION */}
-                  <tr className="bg-slate-950/40 font-sans font-bold text-amber-400">
-                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-amber-950/20 border-y border-amber-900/30">
-                      3. Statutory Set-off & Utilization (Table 6.1)
+                  <tr className="bg-slate-950/50 font-sans font-bold text-amber-400 border-y border-amber-900/30">
+                    <td colSpan={7} className="py-2.5 px-4 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-950">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs tracking-wider uppercase font-extrabold text-amber-400">
+                            3. Statutory Set-off & Utilization (Table 6.1)
+                          </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border ${
+                            currentMonthData.setoff.isManualAdjustment
+                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          }`}>
+                            {currentMonthData.setoff.isManualAdjustment ? '✎ Manual Proportion' : '⚡ Auto Rule 88A'}
+                          </span>
+                        </div>
+                        {/* Quick Presets for Rule 88A */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className="text-slate-400 font-semibold mr-1">Presets:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSetoffPreset('auto')}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 font-bold transition-all"
+                            title="Auto Rule 88A Optimization"
+                          >
+                            ⚡ Auto
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetoffPreset('all_cgst')}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-blue-300 border border-blue-500/30 font-bold transition-all"
+                            title="Set off 100% surplus IGST credit against CGST"
+                          >
+                            👉 All to CGST
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetoffPreset('all_sgst')}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-blue-300 border border-blue-500/30 font-bold transition-all"
+                            title="Set off 100% surplus IGST credit against SGST"
+                          >
+                            👉 All to SGST
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetoffPreset('equal')}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 font-bold transition-all"
+                            title="Split surplus IGST credit 50/50 between CGST and SGST"
+                          >
+                            ⚖️ 50 / 50
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetoffPreset('clear')}
+                            className="px-1.5 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all"
+                            title="Clear all adjustment amounts to 0"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
 
                   {/* Payable / Difference */}
                   <tr className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Raw Set-off</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">(A-B) Payable / (Surplus ITC)</td>
+                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">
+                      <div className="flex items-center justify-between">
+                        <span>(A-B) Payable / (Surplus ITC)</span>
+                        {currentMonthData.setoff.rawPayable.igst < 0 && (
+                          <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">
+                            Surplus IGST: {formatCur(Math.abs(currentMonthData.setoff.rawPayable.igst))}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
-                    <td className={`py-2 px-4 text-right ${currentMonthData.setoff.rawPayable.cgst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                    <td className={`py-2 px-4 text-right font-mono font-bold ${currentMonthData.setoff.rawPayable.cgst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                       {formatCur(currentMonthData.setoff.rawPayable.cgst)}
                     </td>
-                    <td className={`py-2 px-4 text-right ${currentMonthData.setoff.rawPayable.sgst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                    <td className={`py-2 px-4 text-right font-mono font-bold ${currentMonthData.setoff.rawPayable.sgst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                       {formatCur(currentMonthData.setoff.rawPayable.sgst)}
                     </td>
-                    <td className={`py-2 px-4 text-right ${currentMonthData.setoff.rawPayable.igst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                    <td className={`py-2 px-4 text-right font-mono font-bold ${currentMonthData.setoff.rawPayable.igst > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                       {formatCur(currentMonthData.setoff.rawPayable.igst)}
                     </td>
-                    <td className={`py-2 px-4 text-right font-bold ${currentMonthData.setoff.rawPayable.total > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                    <td className={`py-2 px-4 text-right font-mono font-bold ${currentMonthData.setoff.rawPayable.total > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                       {formatCur(currentMonthData.setoff.rawPayable.total)}
                     </td>
                   </tr>
 
-                  {/* (-) Adjustment */}
-                  <tr className="bg-slate-950/30 hover:bg-slate-800/40 transition-colors">
-                    <td className="py-2 px-4 text-slate-400 font-sans text-xs">Inter-Head</td>
+                  {/* (-) Adjustment - FULLY EDITABLE */}
+                  <tr className="bg-blue-950/20 hover:bg-blue-950/30 transition-colors border-y border-blue-900/30">
+                    <td className="py-2 px-4 text-blue-400 font-sans text-xs font-bold flex items-center gap-1">
+                      <span>Inter-Head</span>
+                    </td>
                     <td className="py-2 px-4 text-blue-300 font-sans font-medium text-xs">
-                      (-) Adjustment (Rule 88A IGST set-off vs CGST/SGST)
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold">(-) Adjustment (Rule 88A Proportion)</span>
+                        <span className="text-[10px] text-blue-400/80 font-mono">(Editable)</span>
+                      </div>
                     </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
-                    <td className="py-2 px-4 text-right text-blue-300">{formatCur(currentMonthData.setoff.adjustment.cgst)}</td>
-                    <td className="py-2 px-4 text-right text-blue-300">{formatCur(currentMonthData.setoff.adjustment.sgst)}</td>
-                    <td className="py-2 px-4 text-right text-blue-300">{formatCur(currentMonthData.setoff.adjustment.igst)}</td>
-                    <td className="py-2 px-4 text-right text-blue-300 font-bold">{formatCur(currentMonthData.setoff.adjustment.total)}</td>
+                    {/* CGST Adjustment Input */}
+                    <td className="py-1.5 px-3 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={currentMonthData.setoff.adjustment?.cgst ?? ''}
+                        placeholder="0.00"
+                        onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'cgst', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        title="Utilize surplus IGST to pay CGST liability"
+                      />
+                    </td>
+                    {/* SGST Adjustment Input */}
+                    <td className="py-1.5 px-3 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={currentMonthData.setoff.adjustment?.sgst ?? ''}
+                        placeholder="0.00"
+                        onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'sgst', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        title="Utilize surplus IGST to pay SGST liability"
+                      />
+                    </td>
+                    {/* IGST Adjustment Input */}
+                    <td className="py-1.5 px-3 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={currentMonthData.setoff.adjustment?.igst ?? ''}
+                        placeholder="0.00"
+                        onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'igst', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        title="IGST credit surrendered to pay CGST/SGST (negative if surplus IGST)"
+                      />
+                    </td>
+                    {/* Total Adjustment */}
+                    <td className="py-2 px-4 text-right text-blue-300 font-mono font-extrabold">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        Math.abs(currentMonthData.setoff.adjustment?.total || 0) < 0.01
+                          ? 'text-emerald-300 bg-emerald-950/40'
+                          : 'text-amber-300 bg-amber-950/40'
+                      }`}>
+                        {formatCur(currentMonthData.setoff.adjustment?.total || 0)}
+                      </span>
+                    </td>
                   </tr>
 
                   {/* (-) GST TDS/TCS Opening Cash Balance */}
