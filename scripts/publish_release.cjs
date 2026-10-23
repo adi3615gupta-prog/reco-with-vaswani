@@ -22,32 +22,45 @@ async function getToken() {
   });
 }
 
-async function uploadAsset(uploadUrlTemplate, filePath, fileName, token, contentType) {
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function uploadAssetWithRetry(uploadUrlTemplate, filePath, fileName, token, contentType, maxRetries = 3) {
   const uploadUrl = uploadUrlTemplate.replace(/\{(\?name,label|.*)\}/, `?name=${encodeURIComponent(fileName)}`);
   const fileData = fs.readFileSync(filePath);
   const fileSize = fileData.length;
 
-  console.log(`-> Uploading ${fileName} (${(fileSize / (1024 * 1024)).toFixed(2)} MB)...`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`-> Uploading ${fileName} (${(fileSize / (1024 * 1024)).toFixed(2)} MB) [Attempt ${attempt}/${maxRetries}]...`);
 
-  const res = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `token ${token}`,
-      'Content-Type': contentType || 'application/octet-stream',
-      'Content-Length': fileSize.toString(),
-      'User-Agent': 'Node-Release-Uploader'
-    },
-    body: fileData
-  });
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': contentType || 'application/octet-stream',
+          'Content-Length': fileSize.toString(),
+          'User-Agent': 'Node-Release-Uploader'
+        },
+        body: fileData
+      });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Failed to upload ${fileName}: HTTP ${res.status} - ${errText}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+
+      const result = await res.json();
+      console.log(`   [OK] Successfully uploaded ${fileName} (id: ${result.id})`);
+      return result;
+    } catch (err) {
+      console.warn(`   [WARN] Attempt ${attempt} failed: ${err.message}`);
+      if (attempt === maxRetries) {
+        throw new Error(`Failed to upload ${fileName} after ${maxRetries} attempts: ${err.message}`);
+      }
+      console.log(`   Retrying in 4 seconds...`);
+      await sleep(4000);
+    }
   }
-
-  const result = await res.json();
-  console.log(`   [OK] Uploaded ${fileName} (id: ${result.id})`);
-  return result;
 }
 
 async function main() {
@@ -76,13 +89,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Ensure both hyphenated and spaced copies exist
+  // Ensure hyphenated copies exist for standard URLs
   if (fs.existsSync(spacedExe) && !fs.existsSync(hyphenExe)) {
-    console.log(`Creating hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe`);
+    console.log(`Preparing hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe`);
     fs.copyFileSync(spacedExe, hyphenExe);
   }
   if (fs.existsSync(blockmap) && !fs.existsSync(hyphenBlockmap)) {
-    console.log(`Creating hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe.blockmap`);
+    console.log(`Preparing hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe.blockmap`);
     fs.copyFileSync(blockmap, hyphenBlockmap);
   }
 
@@ -101,7 +114,7 @@ async function main() {
   let releaseData;
   if (releaseRes.status === 200) {
     releaseData = await releaseRes.json();
-    console.log(`Release ${tag} already exists (ID: ${releaseData.id}).`);
+    console.log(`Release ${tag} already exists on GitHub (ID: ${releaseData.id}).`);
   } else {
     console.log(`Creating new release ${tag}...`);
     const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
@@ -115,7 +128,7 @@ async function main() {
         tag_name: tag,
         target_commitish: 'main',
         name: tag,
-        body: `### Release ${tag}\n\n- Chrome-First Browser Architecture for GSTR-2B, GSTR-1, and IMS.\n- Client startup stability and auto-update hardening.`,
+        body: `### Release ${tag}\n\n- Chrome-First Browser Architecture across all automation modules (GSTR-2B, GSTR-1, IMS).\n- Auto-update and client startup hardening.`,
         draft: false,
         prerelease: false
       })
@@ -132,30 +145,41 @@ async function main() {
   const uploadUrl = releaseData.upload_url;
   const existingAssets = releaseData.assets || [];
 
+  // Key assets required by electron-updater and users
   const filesToUpload = [
     { path: hyphenExe, name: `AUDIT-WITH-VASWANI-Setup-${version}.exe`, type: 'application/octet-stream' },
     { path: hyphenBlockmap, name: `AUDIT-WITH-VASWANI-Setup-${version}.exe.blockmap`, type: 'application/octet-stream' },
-    { path: spacedExe, name: `AUDIT WITH VASWANI Setup ${version}.exe`, type: 'application/octet-stream' },
     { path: latestYml, name: 'latest.yml', type: 'text/yaml' }
   ];
 
   for (const f of filesToUpload) {
-    if (!fs.existsSync(f.path)) continue;
+    if (!fs.existsSync(f.path)) {
+      console.warn(`[WARN] File not found on disk, skipping: ${f.path}`);
+      continue;
+    }
 
+    const localSize = fs.statSync(f.path).size;
     const existing = existingAssets.find(a => a.name === f.name);
+
     if (existing) {
-      console.log(`Overwriting existing asset: ${f.name}...`);
+      // If the file already exists and size matches, we can skip re-uploading to save bandwidth
+      if (existing.size === localSize && f.name !== 'latest.yml') {
+        console.log(`[SKIP] Asset ${f.name} already exists with matching size (${(localSize / (1024 * 1024)).toFixed(2)} MB).`);
+        continue;
+      }
+
+      console.log(`Updating asset ${f.name} (replacing old id: ${existing.id})...`);
       await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/assets/${existing.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `token ${token}`, 'User-Agent': 'Node-Release-Uploader' }
       });
     }
 
-    await uploadAsset(uploadUrl, f.path, f.name, token, f.type);
+    await uploadAssetWithRetry(uploadUrl, f.path, f.name, token, f.type);
   }
 
   console.log(`\n======================================================`);
-  console.log(`RELEASE ${tag} PUBLISHED SUCCESSFULLY!`);
+  console.log(`RELEASE ${tag} IS 100% READY & PUBLISHED!`);
   console.log(`URL: https://github.com/${owner}/${repo}/releases/tag/${tag}`);
   console.log(`======================================================`);
 }
