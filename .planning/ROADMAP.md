@@ -147,11 +147,11 @@ Plans:
   3. Fresh installations in packaged mode automatically seed `network_data.db` from the bundled master database in `resources/` so all 400+ clients and credentials are fully loaded.
   4. GSTR-2B autopilot successfully autofills `#username` and `#user_pass` and advances to portal period selection.
 
-**Plans**: 1/1 plan pending execution
+**Plans**: 1/1 plan complete
 
 Plans:
-- [ ] 08-01: Shield Playwright automation from obfuscation, bundle and auto-seed `network_data.db`, and verify end-to-end execution
+- [x] 08-01: Shield Playwright automation from obfuscation, bundle and auto-seed `network_data.db`, and verify end-to-end execution
 
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-23 after Phase 8 planning*
+*Last updated: 2026-10-23 after Phase 8 execution and verification*
