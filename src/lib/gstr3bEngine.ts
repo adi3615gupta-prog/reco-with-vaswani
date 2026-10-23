@@ -1398,6 +1398,23 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
   const mIndexStr = mIndex.toString().padStart(2, '0');
   const retPeriod = `${mIndexStr}${monthData.year}`;
 
+  // 4(A)(5) All other ITC: Net figure after deducting supplier credit notes (debitNotes) & adding supplier debit notes (creditNotes)
+  const netOtherItcIgst = round2(
+    (monthData.inward.itc2b?.igst || 0) -
+    (monthData.inward.debitNotes?.igst || 0) +
+    (monthData.inward.creditNotes?.igst || 0)
+  );
+  const netOtherItcCgst = round2(
+    (monthData.inward.itc2b?.cgst || 0) -
+    (monthData.inward.debitNotes?.cgst || 0) +
+    (monthData.inward.creditNotes?.cgst || 0)
+  );
+  const netOtherItcSgst = round2(
+    (monthData.inward.itc2b?.sgst || 0) -
+    (monthData.inward.debitNotes?.sgst || 0) +
+    (monthData.inward.creditNotes?.sgst || 0)
+  );
+
   const payload: any = {
     gstin: profile.gstin,
     ret_period: retPeriod,
@@ -1487,10 +1504,10 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
           csamt: 0
         },
         {
-          ty: 'OTH', // All other ITC
-          iamt: round2(monthData.inward.itc2b.igst),
-          camt: round2(monthData.inward.itc2b.cgst),
-          samt: round2(monthData.inward.itc2b.sgst),
+          ty: 'OTH', // All other ITC (Net figure after deducting credit notes & adding debit notes)
+          iamt: netOtherItcIgst,
+          camt: netOtherItcCgst,
+          samt: netOtherItcSgst,
           csamt: 0
         }
       ],
@@ -1504,9 +1521,9 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
         },
         {
           ty: 'OTH',
-          iamt: round2(monthData.inward.itcReversed.igst + (monthData.inward.debitNotes?.igst || 0)),
-          camt: round2(monthData.inward.itcReversed.cgst + (monthData.inward.debitNotes?.cgst || 0)),
-          samt: round2(monthData.inward.itcReversed.sgst + (monthData.inward.debitNotes?.sgst || 0)),
+          iamt: round2(monthData.inward.itcReversed?.igst || 0),
+          camt: round2(monthData.inward.itcReversed?.cgst || 0),
+          samt: round2(monthData.inward.itcReversed?.sgst || 0),
           csamt: 0
         }
       ],
