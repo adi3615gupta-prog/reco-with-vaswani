@@ -7,7 +7,7 @@ import {
   Lock, Key, Laptop, Activity, Server, AlertCircle, LogOut,
   ChevronRight, CalendarClock, ShieldAlert, GitCompare,
   Star, MessageSquare, X, Phone, Mail, MapPin, CheckCircle2, AlertTriangle, Lightbulb, Zap, Search,
-  BookOpen, Landmark, ArrowRightLeft
+  BookOpen, Landmark, ArrowRightLeft, Calculator, Table, DownloadCloud, ArrowUpRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
@@ -205,7 +205,8 @@ export default function Index() {
     return (safeGetItem('np_app_route') as any) || 'hub';
   });
 
-  const [activeCategoryCard, setActiveCategoryCard] = useState<'wip' | 'reco' | 'collector' | 'audit' | 'tax' | 'cma-bank' | null>(null);
+  const [activeCategoryCard, setActiveCategoryCard] = useState<'returns' | 'wip' | 'reco' | 'collector' | 'audit' | 'tax' | 'cma-bank' | null>(null);
+  const [returnsInitialTab, setReturnsInitialTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader'>('working3b');
 
     const [showAdmin, setShowAdmin] = useState(false);
     const [networkDiagnostics, setNetworkDiagnostics] = useState({ latency: 0, status: 'Online' });
@@ -1825,6 +1826,43 @@ export default function Index() {
                   /* 5 MAIN CATEGORY CARDS - CLICK TO EXPAND */
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
+                    {/* Primary Suite: Returns Preparation & Filing */}
+                    <div 
+                      onClick={() => setActiveCategoryCard('returns')}
+                      className="glass-card-np neon-purple p-6 md:p-7 rounded-3xl border border-purple-500/30 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-purple-500/70 hover:scale-[1.02] transition-all group flex flex-col justify-between shadow-xl shadow-purple-950/20"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-lg shadow-purple-500/10">
+                            <Send className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-purple-500/15 border border-purple-500/40 text-purple-300 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" /> 5 Autopilot Modules
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest font-bold">Suite 04 • Core Returns</span>
+                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-purple-300 transition-colors">
+                            Returns Preparation &amp; Filing
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            Master GSTR-3B monthly working, 12M FY Matrix, GST IMS portal, and GSTR-2B &amp; GSTR-1 autonomous loop downloaders.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {['01. GSTR-3B Working', '02. 12M FY Matrix', '03. GST IMS Manager', '04. GSTR-2B Autopilot', '05. GSTR-1 Autopilot'].map((mod, i) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-purple-500/30 text-purple-200">
+                              {mod}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-purple-500/20 flex items-center justify-between text-purple-400 text-xs font-bold">
+                        <span>Open Returns Suite</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+
                     {/* Card 01: Work In Progress (WIP) Suite */}
                     <div 
                       onClick={() => setActiveCategoryCard('wip')}
@@ -1836,7 +1874,7 @@ export default function Index() {
                             <Zap className="w-6 h-6" />
                           </div>
                           <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-                            8 Modules
+                            6 Modules
                           </span>
                         </div>
                         <div>
@@ -1849,7 +1887,7 @@ export default function Index() {
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
-                          {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
+                          {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
                             <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
                               {mod}
                             </span>
@@ -2067,6 +2105,183 @@ export default function Index() {
                       </div>
                     </div>
 
+                    {/* RETURNS PREPARATION & FILING SUITE DRILL-DOWN (5 DEDICATED CARDS) */}
+                    {activeCategoryCard === 'returns' && (
+                      <div className="glass-card-np neon-purple p-6 md:p-8 rounded-3xl border border-purple-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-purple-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-lg shadow-purple-500/10">
+                              <Send className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/40 text-purple-300 text-[10px] font-black uppercase tracking-widest">
+                                Core Returns Suite • 5 Modules
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight mt-1">Returns Preparation &amp; Filing</h3>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            Comprehensive filing suite: GSTR-3B tax computation, Rule 88A set-off, multi-period comparative matrix, IMS invoice actions &amp; automated portal downloads.
+                          </p>
+                        </div>
+
+                        {/* 5 Distinct Interactive Module Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+                          {/* Card 1: 01. GSTR-3B Working Sheet */}
+                          <div
+                            onClick={() => {
+                              setReturnsInitialTab('working3b');
+                              setAppRoute('returns');
+                            }}
+                            className="p-5 rounded-2xl bg-slate-950/70 border border-blue-500/20 hover:border-blue-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Calculator className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
+                                Module 4.1
+                              </span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors flex items-center gap-1.5">
+                                01. GSTR-3B Working Sheet <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                Master monthly tax computation, auto-pilot ingestion deck, Table 3.1 &amp; Table 4 set-off cascade, and official GSTN portal JSON.
+                              </p>
+                            </div>
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-blue-400 text-[11px] font-bold">
+                              <span>Open Working Sheet</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Card 2: 02. 12-Month FY Matrix */}
+                          <div
+                            onClick={() => {
+                              setReturnsInitialTab('matrix');
+                              setAppRoute('returns');
+                            }}
+                            className="p-5 rounded-2xl bg-slate-950/70 border border-teal-500/20 hover:border-teal-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Table className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20">
+                                Module 4.2
+                              </span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-teal-300 transition-colors flex items-center gap-1.5">
+                                02. 12-Month FY Matrix <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-teal-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                Full-year April–March comparative tax matrix, annual tax liability trends, ITC claims, and monthly cash outflow analysis.
+                              </p>
+                            </div>
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-teal-400 text-[11px] font-bold">
+                              <span>Open FY Matrix</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Card 3: 03. GST IMS & 2B Manager */}
+                          <div
+                            onClick={() => {
+                              setReturnsInitialTab('ims2b');
+                              setAppRoute('returns');
+                            }}
+                            className="p-5 rounded-2xl bg-slate-950/70 border border-amber-500/20 hover:border-amber-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Sparkles className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                                Module 4.3
+                              </span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                                03. GST IMS &amp; 2B Manager <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-amber-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                Multi-client Inward Supplies action portal: Accept, Reject, or mark Pending inward B2B invoices &amp; CDNR with 300+ client selector.
+                              </p>
+                            </div>
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-amber-400 text-[11px] font-bold">
+                              <span>Open IMS Manager</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Card 4: 04. GSTR-2B Downloader (Autopilot) */}
+                          <div
+                            onClick={() => {
+                              setReturnsInitialTab('gstr2b_downloader');
+                              setAppRoute('returns');
+                            }}
+                            className="p-5 rounded-2xl bg-slate-950/70 border border-emerald-500/20 hover:border-emerald-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <DownloadCloud className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                Module 4.4
+                              </span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+                                04. GSTR-2B Downloader <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                1-Login 12-month autonomous loop download, non-blocking resilience, multi-period ingestion, and local SQLite persistence.
+                              </p>
+                            </div>
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-emerald-400 text-[11px] font-bold">
+                              <span>Launch 2B Autopilot</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Card 5: 05. GSTR-1 Downloader (Autopilot) */}
+                          <div
+                            onClick={() => {
+                              setReturnsInitialTab('gstr1_downloader');
+                              setAppRoute('returns');
+                            }}
+                            className="p-5 rounded-2xl bg-slate-950/70 border border-indigo-500/20 hover:border-indigo-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <ArrowUpRight className="w-5 h-5" />
+                              </div>
+                              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                                Module 4.5
+                              </span>
+                            </div>
+                            <div className="mt-4">
+                              <h4 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-1.5">
+                                05. GSTR-1 Downloader <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-400" />
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                Single-login 12-month GSTR-1 outward sales autonomous downloader, multi-period parsing, and full-year consolidated Excel.
+                              </p>
+                            </div>
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-indigo-400 text-[11px] font-bold">
+                              <span>Launch GSTR-1 Autopilot</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
                     {/* CARD 1 DRILL-DOWN: WIP SUITE */}
                     {activeCategoryCard === 'wip' && (
                       <div className="glass-card-np neon-amber p-6 md:p-8 rounded-3xl border border-amber-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-6">
@@ -2077,7 +2292,7 @@ export default function Index() {
                             </div>
                             <div>
                               <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-                                Suite 01 • 7 Modules
+                                Suite 01 • 6 Modules
                               </div>
                               <h3 className="text-2xl font-black text-white tracking-tight mt-1">Work In Progress (WIP) Suite</h3>
                             </div>
@@ -2148,28 +2363,6 @@ export default function Index() {
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Invoice-wise 2B matching &amp; monthly GSTR-3B summary analysis.</p>
                             </div>
                           </div>
-
-                          {/* 04. Offline Return Preparation */}
-                          <div
-                            onClick={() => moduleConfig['Returns'] !== 0 && setAppRoute('returns')}
-                            className={`p-5 rounded-2xl bg-slate-950/60 border border-purple-500/20 hover:border-purple-500/50 transition-all group ${moduleConfig['Returns'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
-                          >
-                            {moduleConfig['Returns'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                            <div className="flex items-center justify-between">
-                              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                <Send className="w-5 h-5" />
-                              </div>
-                              <span className="text-[9px] font-black text-purple-500/80 uppercase tracking-widest">Module 1.4</span>
-                            </div>
-                            <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
-                                04. Returns Preparation & Filing <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
-                              </h4>
-                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">Master GSTR-3B monthly working, Rule 88A set-off cascade, &amp; portal returns.</p>
-                            </div>
-                          </div>
-
-                          
 
                           {/* 06. Financial Statements */}
                           <div
@@ -2613,7 +2806,7 @@ export default function Index() {
 
             {appRoute === 'ledger-import' && <TallyLedgerImport onBack={() => setAppRoute('hub')} />}
 
-            {appRoute === 'returns' && <ReturnsDashboard onBack={() => setAppRoute('hub')} />}
+            {appRoute === 'returns' && <ReturnsDashboard onBack={() => setAppRoute('hub')} initialTab={returnsInitialTab} />}
 
             
 

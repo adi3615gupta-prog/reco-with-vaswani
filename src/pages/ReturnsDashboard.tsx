@@ -36,14 +36,22 @@ import Gstr1MasterDownloader from '@/components/Gstr1MasterDownloader';
 
 interface ReturnsDashboardProps {
   onBack: () => void;
+  initialTab?: 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader';
 }
 
-export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
+export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboardProps) {
   // Navigation & View States
-  const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader'>('working3b');
+  const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader'>(initialTab || 'working3b');
   const [selectedMonth, setSelectedMonth] = useState<GSTR3BMonthKey>('April');
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Sync activeTab when initialTab prop changes
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Core Working Data State - Empty by default, no hardcoded practice data
   const [workingData, setWorkingData] = useState<GSTR3BAnnualWorking>(() => createEmptyAnnualWorking());
@@ -1393,29 +1401,44 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
           </div>
         </div>
       </div>
-      {/* Main Tab Bar (Single Row 5-Column High-Density Deck) */}
-      <div className="grid grid-cols-5 gap-1.5 obsidian-card p-1 backdrop-blur-md shadow-md">
+      {/* Main Tab Bar (5-Card Interactive Module Launcher) */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800/80 shadow-lg backdrop-blur-md">
         {[
-          { id: 'working3b', label: '1. GSTR-3B Working Sheet', icon: Calculator },
-          { id: 'matrix', label: '2. 12-Month FY Matrix', icon: Table },
-          { id: 'ims2b', label: '3. GST IMS & 2B Manager (300+ Clients)', icon: Sparkles },
-          { id: 'gstr2b_downloader', label: '4. GSTR-2B Downloader (Autopilot)', icon: DownloadCloud },
-          { id: 'gstr1_downloader', label: '5. GSTR-1 Downloader (Autopilot)', icon: ArrowUpRight }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-2 py-1.5 rounded-lg font-bold text-[11px] xl:text-xs transition-all flex items-center justify-center gap-1.5 min-w-0 truncate ${
-              activeTab === tab.id
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-900/40 ring-1 ring-blue-400/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-            title={tab.label}
-          >
-            <tab.icon className={`w-3.5 h-3.5 shrink-0 ${activeTab === tab.id ? 'text-blue-200' : 'text-slate-400'}`} />
-            <span className="truncate">{tab.label}</span>
-          </button>
-        ))}
+          { id: 'working3b', num: '01', label: 'GSTR-3B Working', sub: 'Monthly Tax & Set-Off', icon: Calculator },
+          { id: 'matrix', num: '02', label: '12-Month FY Matrix', sub: 'Annual Comparative Grid', icon: Table },
+          { id: 'ims2b', num: '03', label: 'GST IMS & 2B Manager', sub: '300+ Clients Inward Action', icon: Sparkles },
+          { id: 'gstr2b_downloader', num: '04', label: 'GSTR-2B Downloader', sub: '12M Autopilot Loop', icon: DownloadCloud },
+          { id: 'gstr1_downloader', num: '05', label: 'GSTR-1 Downloader', sub: 'Outward Sales Autopilot', icon: ArrowUpRight }
+        ].map(tab => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`p-2.5 rounded-xl font-bold transition-all flex flex-col items-start gap-1 text-left relative overflow-hidden group ${
+                isActive
+                  ? 'bg-gradient-to-br from-blue-600/90 to-indigo-700/90 text-white shadow-lg shadow-blue-950/60 ring-1 ring-blue-400/40'
+                  : 'bg-slate-900/60 hover:bg-slate-800/80 text-slate-300 border border-slate-800/60 hover:border-slate-700'
+              }`}
+            >
+              <div className="w-full flex items-center justify-between">
+                <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>
+                  {tab.num}
+                </span>
+                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400 group-hover:text-white'}`}>
+                  <tab.icon className="w-3 h-3" />
+                </div>
+              </div>
+              <div className="w-full min-w-0">
+                <span className="text-xs font-extrabold block truncate">{tab.label}</span>
+                <span className={`text-[10px] block truncate font-medium ${isActive ? 'text-blue-100/80' : 'text-slate-400'}`}>{tab.sub}</span>
+              </div>
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-300 animate-pulse" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* TAB 1: GSTR-3B WORKING SHEET (THE CORE PRACTICE WORKSPACE) */}

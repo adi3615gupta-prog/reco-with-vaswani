@@ -60,7 +60,7 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5 pt-2">
-                {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '04. Return Prep', '06. Financial Statements', '07. CMA Report'].map((mod, i) => (
+                {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '06. Financial Statements', '07. CMA Report'].map((mod, i) => (
                   <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
                     {mod}
                   </span>
@@ -251,7 +251,7 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                   </div>
                   <div>
                     <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-                      Suite 01 • 7 Modules
+                      Suite 01 • 6 Modules
                     </div>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">Work In Progress (WIP) Suite</h3>
                   </div>
@@ -322,28 +322,6 @@ export default function Hub({ moduleConfig, setAppRoute, setMode, setStep }: Hub
                     <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">Invoice-wise 2B matching &amp; monthly GSTR-3B summary analysis.</p>
                   </div>
                 </div>
-
-                {/* 04. Offline Return Preparation */}
-                <div
-                  onClick={() => moduleConfig['Returns'] !== 0 && setAppRoute('returns')}
-                  className={`p-5 rounded-2xl bg-slate-950/60 border border-purple-500/20 hover:border-purple-500/50 transition-all group ${moduleConfig['Returns'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
-                >
-                  {moduleConfig['Returns'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Send className="w-5 h-5" />
-                    </div>
-                    <span className="text-[9px] font-black text-purple-500/80 uppercase tracking-widest">Module 1.4</span>
-                  </div>
-                  <div className="mt-4">
-                    <h4 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
-                      04. Returns Preparation & Filing <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
-                    </h4>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">Master GSTR-3B monthly working, Rule 88A set-off cascade, &amp; portal returns.</p>
-                  </div>
-                </div>
-
-                
 
                 {/* 06. Financial Statements */}
                 <div
