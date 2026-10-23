@@ -13,7 +13,8 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules. (completed 2026-10-22)
 - [x] **Phase 6: Core Compliance Modules UI/UX Overhaul & Financial Cockpit Elevation** - Modernize high-traffic modules (Returns Dashboard, Party-Wise Dispute Hub, Tally Direct Bridge, TDS, Income Tax Sandbox, Dropzone & KPI Cockpit) with Obsidian Glass styling, interactive charts, and high-density tables. (completed 2026-10-22)
 - [x] **Phase 7: Browser Autopilot Chrome-First Architecture & Windows Client Hardening** - Prioritize Google Chrome over Microsoft Edge in Playwright automation cascades across GSTR-2B, GSTR-1, IMS, and GSTIN Search modules. (completed 2026-10-23)
-- [ ] **Phase 8: Autopilot Runtime Execution & Production Database Hardening** - Shield browser evaluation code from obfuscator scrambling and auto-seed master clients database in packaged Windows builds.
+- [x] **Phase 8: Autopilot Runtime Execution & Production Database Hardening** - Shield browser evaluation code from obfuscator scrambling and auto-seed master clients database in packaged Windows builds. (completed 2026-10-23)
+- [x] **Phase 9: Suite 04 Returns Enterprise Fluid Dashboard Layout Overhaul** - Elevate and restructure Returns Preparation & Filing across all 5 tabs per the Stitch enterprise design package (`stitch_vaswani_audit_enterprise_dashboard`). (completed 2026-10-24)
 
 ## Phase Details
 
@@ -154,6 +155,26 @@ Plans:
 Plans:
 - [x] 08-01: Shield Playwright automation from obfuscation, bundle and auto-seed `network_data.db`, and verify end-to-end execution
 
+### Phase 9: Suite 04 Returns Enterprise Fluid Dashboard Layout Overhaul
+
+**Goal**: Transform and align the visual architecture and component hierarchy of Suite 04 (Returns Preparation & Filing) with the Google Stitch enterprise dashboard design package (`stitch_vaswani_audit_enterprise_dashboard`), elevating all 5 tabs (GSTR-3B Working Sheet, 12-Month Matrix, GST IMS Manager, GSTR-2B Autopilot, GSTR-1 Autopilot) while guaranteeing 100% functional invariance of all calculation algorithms, set-off cascades, SQLite queries, and Playwright automation routines.
+**Depends on**: Phase 6, Phase 7, Phase 8
+**Requirements**: UI-STITCH-01, UI-STITCH-02, UI-STITCH-03, UI-STITCH-04, UI-STITCH-05
+**Success Criteria** (what must be TRUE):
+  1. Tab 1 (GSTR-3B Working): Implements the sleek micro-pill tab deck, combined period track & ingestion breathing bar (Apr-Mar pills, sync triggers, reco match percentage), Table 3.1 & Table 4 high-density financial tables, and Rule 88A waterfall card.
+  2. Tab 2 (12-Month Matrix): Implements the high-density annual comparative grid with compact vs detailed view toggles and monthly tax breakdown columns.
+  3. Tab 3 (GST IMS Manager): Implements the 300+ client selector with session timer countdown, 4-metric compact KPI bar (Total Invoices, Accepted, Rejected, Pending), batch action toolbar, and ledger table.
+  4. Tab 4 (GSTR-2B Downloader): Implements client telemetry header, Golden Rule mini pill, side-by-side autonomous loop & CAPTCHA resolver card, live progress bar, and 12-month sync status matrix.
+  5. Tab 5 (GSTR-1 Downloader): Implements turnover telemetry header, 12-month batch velocity progress bar, Outward Tables Coverage Deck (Table 4, 5, 7, 9, 12, 13 chips), and multi-period outward sync grid.
+  6. Functional Invariance: Strictly 0 regressions in Rule 88A tax computations, Table 4 ITC claims, Excel zero-merge exports, SQLite persistence, and Playwright Chromium automation.
+
+**Plans**: 3/3 plans complete
+
+Plans:
+- [x] 09-01: Tab 1 GSTR-3B Working Sheet & Tab 2 12-Month Matrix Stitch Fluid Layout Overhaul
+- [x] 09-02: Tab 3 GST IMS Manager 300+ Client Hub & Action Ledger Stitch Fluid Layout Overhaul
+- [x] 09-03: Tab 4 GSTR-2B & Tab 5 GSTR-1 Autopilot 12M Sync Matrix Stitch Fluid Layout Overhaul
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-23 after Phase 8 execution and verification*
+*Last updated: 2026-10-24 after Phase 9 completion*

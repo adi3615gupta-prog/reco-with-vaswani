@@ -688,7 +688,7 @@ export default function Gstr2bMasterDownloader({
     <div className="space-y-6 animate-fade-in">
       {/* ─── 1. MASTER KPI CARDS ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-        <div className="obsidian-card rounded-2xl p-4 shadow-xl">
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Total Clients</span>
             <Users className="w-4 h-4 text-blue-400" />
@@ -739,7 +739,7 @@ export default function Gstr2bMasterDownloader({
       </div>
 
       {/* ─── 2. CONTROL ACTION TOOLBAR ────────────────────────────────────────── */}
-      <div className="obsidian-card rounded-2xl p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-2.5">
           {/* 1-Click Multi-Sync Autopilot Button */}
           <button
@@ -799,7 +799,7 @@ export default function Gstr2bMasterDownloader({
 
         {/* VIEW MODE TOGGLE & SCOPE BADGE */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => setViewMode('MONTH')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -824,7 +824,7 @@ export default function Gstr2bMasterDownloader({
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3.5 py-2 rounded-xl text-xs font-mono">
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-mono">
             {viewMode === 'FULL_YEAR' ? (
               <>
                 <Layers className="w-4 h-4 text-purple-400" />
@@ -843,7 +843,7 @@ export default function Gstr2bMasterDownloader({
       </div>
 
       {/* ─── 3. SEARCH & STATUS FILTER ────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
           <input
@@ -851,7 +851,7 @@ export default function Gstr2bMasterDownloader({
             placeholder="Search by Client Name, GSTIN, Phone..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:border-blue-500 outline-none"
+            className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-500 outline-none"
           />
         </div>
 
@@ -878,11 +878,11 @@ export default function Gstr2bMasterDownloader({
       </div>
 
       {/* ─── 4. CLIENT MASTER TABLE ──────────────────────────────────────────── */}
-      <div className="obsidian-card rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-950/80 text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider">
+              <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider">
                 <th className="py-3 px-3 w-10 text-center">
                   <input
                     type="checkbox"
@@ -900,7 +900,7 @@ export default function Gstr2bMasterDownloader({
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100">
               {filteredClients.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-500">
@@ -990,7 +990,7 @@ export default function Gstr2bMasterDownloader({
                       <td className="py-3.5 px-3 text-center font-mono font-medium text-slate-300">
                         {client.stats.totalInvoices > 0 ? (
                           <div>
-                            <span className="text-white font-bold">{client.stats.totalInvoices}</span>
+                            <span className="text-slate-900 font-bold">{client.stats.totalInvoices}</span>
                             <div className="text-[10px] text-slate-500">
                               B2B: {client.stats.b2bCount} | CDNR: {client.stats.cdnrCount}
                             </div>
@@ -1098,7 +1098,7 @@ export default function Gstr2bMasterDownloader({
 
       {/* ─── 5. LINE-ITEM INSPECTOR DRILLDOWN MODAL ─────────────────────────── */}
       {activeClientDetail && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/60">
@@ -1322,7 +1322,7 @@ export default function Gstr2bMasterDownloader({
 
       {/* ─── 6. BATCH MULTI-SYNC QUEUE MODAL ──────────────────────────────────── */}
       {showBatchModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <div className="flex items-center gap-3">
@@ -1402,7 +1402,7 @@ export default function Gstr2bMasterDownloader({
 
       {/* ─── 7. DROPZONE MODAL ────────────────────────────────────────────────── */}
       {showDropzoneModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <h3 className="text-white font-extrabold text-base flex items-center gap-2">
@@ -1437,7 +1437,7 @@ export default function Gstr2bMasterDownloader({
 
       {/* ─── 8. SINGLE PORTAL SYNC MODAL ───────────────────────────────────────── */}
       {showSingleModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <h3 className="text-white font-extrabold text-sm flex items-center gap-2">
@@ -1506,7 +1506,7 @@ export default function Gstr2bMasterDownloader({
 
       {/* ─── 9. LIVE AUTOPILOT HUD MODAL ─────────────────────────────────────── */}
       {activeAutopilotClient && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 border border-blue-500/30 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <div className="flex items-center gap-3">

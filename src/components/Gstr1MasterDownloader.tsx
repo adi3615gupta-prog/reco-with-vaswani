@@ -618,7 +618,7 @@ export default function Gstr1MasterDownloader({
     <div className="space-y-6 animate-fade-in">
       {/* ─── 1. MASTER KPI CARDS ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl">
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Total Clients</span>
             <Users className="w-4 h-4 text-blue-400" />
@@ -658,7 +658,7 @@ export default function Gstr1MasterDownloader({
           <p className="text-[11px] text-slate-400 mt-1">B2B, B2CL, B2CS, CDNR, EXP</p>
         </div>
 
-        <div className="col-span-2 md:col-span-1 bg-gradient-to-br from-indigo-950/40 via-slate-900/80 to-blue-950/40 border border-indigo-500/30 rounded-2xl p-4 shadow-xl">
+        <div className="col-span-2 md:col-span-1 bg-white border border-indigo-200/80 rounded-2xl p-3.5 shadow-xs hover:border-indigo-300 transition-all">
           <div className="flex items-center justify-between text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Total Outward Tax</span>
             <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -669,7 +669,7 @@ export default function Gstr1MasterDownloader({
       </div>
 
       {/* ─── 2. CONTROL ACTION TOOLBAR ────────────────────────────────────────── */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-2.5">
           {/* 1-Click Multi-Sync Autopilot Button */}
           <button
@@ -723,13 +723,13 @@ export default function Gstr1MasterDownloader({
 
         {/* VIEW MODE TOGGLE & SCOPE BADGE */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => setViewMode('MONTH')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 viewMode === 'MONTH'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-950'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-slate-900 text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
@@ -739,8 +739,8 @@ export default function Gstr1MasterDownloader({
               onClick={() => setViewMode('FULL_YEAR')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 viewMode === 'FULL_YEAR'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-slate-900 text-white shadow-xs font-bold ring-1 ring-purple-500/40'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
               }`}
             >
               <Layers className="w-3.5 h-3.5 text-purple-200" />
@@ -755,8 +755,50 @@ export default function Gstr1MasterDownloader({
         </div>
       </div>
 
+      {/* ─── 3. {/* ─── GSTR-1 OUTWARD TABLES COVERAGE DECK (Stitch Micro-Deck) ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs space-y-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">GSTR-1 Outward Tables Coverage Deck</h3>
+            <span className="text-[11px] text-slate-500 font-normal">Payload schema alignment across statutory outward disclosures</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> All Tables Active
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-pink-700 font-semibold bg-pink-50 border border-pink-200/60 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse"></span> Multi-Thread Engine
+            </span>
+          </div>
+        </div>
+
+        {/* Compact 10-Table Badge Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10 gap-1.5">
+          {[
+            { code: '4A, 4B, 6B', title: 'B2B Invoices', status: 'Synced' },
+            { code: '5A, 5B', title: 'B2C Large', status: 'Synced' },
+            { code: 'Table 7', title: 'B2C Small Net', status: 'Synced' },
+            { code: '9B Reg', title: 'CDNR Reg', status: 'Synced' },
+            { code: '9B Unreg', title: 'CDNR Unreg', status: 'Synced' },
+            { code: '6A - EXP', title: 'Exports / SEZ', status: 'Synced' },
+            { code: 'Table 8', title: 'Nil / Exempt', status: 'Synced' },
+            { code: 'Table 11', title: 'Advances / Adj', status: 'Synced' },
+            { code: 'Table 12', title: 'HSN Summary', status: 'Synced' },
+            { code: 'Table 13', title: 'Doc Summary', status: 'Synced' }
+          ].map(table => (
+            <div key={table.code} className="bg-slate-50 hover:bg-slate-100/80 p-2 rounded-xl border border-slate-200/70 transition-colors flex flex-col justify-between">
+              <div className="font-mono font-bold text-[11px] text-slate-900 truncate">{table.code}</div>
+              <div className="text-[10px] text-slate-500 truncate mb-1">{table.title}</div>
+              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1 py-0.2 rounded w-fit flex items-center gap-0.5">
+                ✓ {table.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ─── 3. SEARCH & STATUS FILTER ────────────────────────────────────────── */}
-      <div className="bg-slate-900/60 border border-slate-800/90 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-3 sm:p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
@@ -764,7 +806,7 @@ export default function Gstr1MasterDownloader({
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by client trade name, GSTIN, username or phone..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:border-blue-500 outline-none"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-500 outline-none"
           />
         </div>
 
@@ -780,8 +822,8 @@ export default function Gstr1MasterDownloader({
               onClick={() => setStatusFilter(f.id as any)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                 statusFilter === f.id
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-900'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
+                  ? 'bg-slate-900 text-white shadow-xs font-bold'
+                  : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
             >
               {f.label}
@@ -791,11 +833,11 @@ export default function Gstr1MasterDownloader({
       </div>
 
       {/* ─── 4. CLIENT BATCHES TABLE ─────────────────────────────────────────── */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
-              <tr className="bg-slate-950/90 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800 text-[11px]">
+              <tr className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200 text-[11px]">
                 <th className="py-3 px-4 w-10 text-center">
                   <input
                     type="checkbox"
@@ -816,7 +858,7 @@ export default function Gstr1MasterDownloader({
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-sans">
+            <tbody className="divide-y divide-slate-100 font-sans">
               {loading ? (
                 <tr>
                   <td colSpan={viewMode === 'FULL_YEAR' ? 9 : 8} className="py-12 text-center text-slate-400">
@@ -1285,7 +1327,7 @@ export default function Gstr1MasterDownloader({
                         <td className="py-2 px-3 text-right text-slate-300">{formatCur(inv.iamt)}</td>
                         <td className="py-2 px-3 text-right text-slate-300">{formatCur(inv.camt)}</td>
                         <td className="py-2 px-3 text-right text-slate-300">{formatCur(inv.samt)}</td>
-                        <td className="py-2 px-3 text-right text-white font-bold">{formatCur(inv.val || (inv.txval + inv.iamt + inv.camt + inv.samt + inv.csamt))}</td>
+                        <td className="py-2 px-3 text-right text-slate-900 font-bold">{formatCur(inv.val || (inv.txval + inv.iamt + inv.camt + inv.samt + inv.csamt))}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -43,6 +43,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader'>(initialTab || 'working3b');
   const [selectedMonth, setSelectedMonth] = useState<GSTR3BMonthKey>('April');
+  const [matrixDensity, setMatrixDensity] = useState<'compact' | 'relaxed'>('compact');
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -1138,9 +1139,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
       </div>
 
       {/* ─── 2. CLIENT COMMAND COCKPIT (COMPACT 2-ROW HIGH DENSITY DECK) ─── */}
-      <div className="relative z-30 obsidian-card p-3 sm:p-3.5 shadow-xl backdrop-blur-md space-y-2">
+      <div className="relative z-30 bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-3.5 shadow-xs backdrop-blur-md space-y-2">
         {/* Upper Row: Client Identity + Switcher + Vault Actions */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2 border-b border-slate-800/60">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
           {/* Left: Selected Client Firm & GSTIN + Switch Client */}
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-900/30 ring-1 ring-blue-500/20">
@@ -1151,7 +1152,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <button
                 type="button"
                 onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                className="group text-sm sm:text-base font-extrabold text-white tracking-tight hover:text-blue-400 transition-colors flex items-center gap-1.5 text-left truncate"
+                className="group text-sm sm:text-base font-extrabold text-slate-900 tracking-tight hover:text-blue-600 transition-colors flex items-center gap-1.5 text-left truncate"
                 title="Click to Switch Client"
               >
                 <span className="truncate">{workingData.profile.firmName || 'Select a Client to Begin'}</span>
@@ -1161,14 +1162,14 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(true)}
-                className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100 transition-colors"
                 title="Edit client profile"
               >
                 <Edit3 className="w-3 h-3" />
               </button>
 
               {/* GSTIN badge */}
-              <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 px-2 py-0.5 rounded font-mono text-[11px] text-blue-300 font-semibold">
+              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono text-[11px] text-slate-700 font-semibold">
                 <span className="text-[9px] text-slate-500 uppercase font-sans">GSTIN:</span>
                 <span>{workingData.profile.gstin || 'Not Specified'}</span>
               </div>
@@ -1178,7 +1179,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                 <button
                   type="button"
                   onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                  className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-bold flex items-center gap-1 transition-all"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all"
                 >
                   <Users className="w-3 h-3 text-blue-200" />
                   <span>Switch ({clientsHub.length || vaultClients.length})</span>
@@ -1192,7 +1193,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                       onClick={() => setIsClientDropdownOpen(false)}
                     />
 
-                    <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-700">
+                    <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
                       {/* Search box inside dropdown */}
                       <div className="relative mb-2">
                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1201,7 +1202,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                           value={clientSearchQuery}
                           onChange={e => setClientSearchQuery(e.target.value)}
                           placeholder="Search client name or GSTIN..."
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500 transition-colors"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 transition-colors"
                           autoFocus
                         />
                       </div>
@@ -1221,12 +1222,12 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                                 onClick={() => handleSelectClientFromHub(c)}
                                 className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
                                   isCurrent
-                                    ? 'bg-blue-600/15 border border-blue-500/40 text-blue-200'
-                                    : 'hover:bg-slate-900 text-slate-300'
+                                    ? 'bg-blue-50 border border-blue-300 text-blue-900 font-semibold'
+                                    : 'hover:bg-slate-50 text-slate-700'
                                 }`}
                               >
                                 <div className="truncate min-w-0 flex-1">
-                                  <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                                  <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
                                     <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                                     <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
                                   </div>
@@ -1253,7 +1254,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         )}
                       </div>
 
-                      <div className="pt-2 mt-1 border-t border-slate-800/80 text-[11px] flex items-center justify-between">
+                      <div className="pt-2 mt-1 border-t border-slate-200 text-[11px] flex items-center justify-between">
                         <span className="text-slate-400">Total: {clientsHub.length || vaultClients.length} clients</span>
                         <button
                           type="button"
@@ -1277,7 +1278,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={() => setShowCredentialsModal(true)}
-              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 transition-all"
+              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all"
               title="Manage Portal Usernames & Passwords"
             >
               <Key className="w-3 h-3 text-amber-400" />
@@ -1287,7 +1288,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             <button
               onClick={handleLaunchPortalLogin}
               disabled={isLaunchingPortal}
-              className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50"
+              className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50"
               title="Launch visible Chrome & auto-fill GST Portal login credentials"
             >
               {isLaunchingPortal ? (
@@ -1301,7 +1302,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold rounded-lg flex items-center gap-1 border border-slate-700 transition-all"
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1 border border-slate-200 transition-all"
               title="Upload external CA Excel working file"
             >
               <UploadCloud className="w-3 h-3 text-blue-400" /> Upload .xlsx
@@ -1350,7 +1351,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             <button
               onClick={handleManualSave}
               disabled={isSyncingToServer}
-              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950/50 transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-emerald-400/40"
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-slate-900"
               title="Save complete 3B Working Sheet to Server & Local Storage (Ctrl+S)"
             >
               {isSyncingToServer ? (
@@ -1401,44 +1402,64 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           </div>
         </div>
       </div>
-      {/* Main Tab Bar (5-Card Interactive Module Launcher) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/80 shadow-sm">
-        {[
-          { id: 'working3b', num: '01', label: 'GSTR-3B Working', sub: 'Monthly Tax & Set-Off', icon: Calculator },
-          { id: 'matrix', num: '02', label: '12-Month FY Matrix', sub: 'Annual Comparative Grid', icon: Table },
-          { id: 'ims2b', num: '03', label: 'GST IMS & 2B Manager', sub: '300+ Clients Inward Action', icon: Sparkles },
-          { id: 'gstr2b_downloader', num: '04', label: 'GSTR-2B Downloader', sub: '12M Autopilot Loop', icon: DownloadCloud },
-          { id: 'gstr1_downloader', num: '05', label: 'GSTR-1 Downloader', sub: 'Outward Sales Autopilot', icon: ArrowUpRight }
-        ].map(tab => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`p-2.5 rounded-xl font-bold transition-all flex flex-col items-start gap-1 text-left relative overflow-hidden group ${
-                isActive
-                  ? 'bg-white text-blue-700 shadow-sm border border-slate-200/80 ring-1 ring-blue-500/20'
-                  : 'bg-transparent hover:bg-white/60 text-slate-600 hover:text-slate-900 border border-transparent'
-              }`}
-            >
-              <div className="w-full flex items-center justify-between">
-                <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${isActive ? 'text-blue-600' : 'text-slate-400'}`}>
-                  {tab.num}
-                </span>
-                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isActive ? 'bg-blue-50 text-blue-600 border border-blue-200/60' : 'bg-slate-200/60 text-slate-500 group-hover:text-slate-800'}`}>
-                  <tab.icon className="w-3 h-3" />
-                </div>
-              </div>
-              <div className="w-full min-w-0">
-                <span className="text-xs font-extrabold block truncate text-slate-900">{tab.label}</span>
-                <span className={`text-[10px] block truncate font-medium ${isActive ? 'text-blue-600/90' : 'text-slate-500'}`}>{tab.sub}</span>
-              </div>
-              {isActive && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
-              )}
-            </button>
-          );
-        })}
+      {/* 3. SLEEK COMPACT ANIMATED SUITE TABS (Stitch Micro-Pill Design) */}
+      <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-slate-200/80">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 rounded-xl backdrop-blur-md min-w-max">
+          {[
+            { id: 'working3b', num: '01', label: 'GSTR-3B Working Sheet', icon: Calculator, color: 'text-purple-600' },
+            { id: 'matrix', num: '02', label: '12-Month FY Matrix', icon: Table, color: 'text-emerald-600' },
+            { id: 'ims2b', num: '03', label: 'GST IMS & 2B Manager', icon: Sparkles, color: 'text-amber-500' },
+            { id: 'gstr2b_downloader', num: '04', label: 'GSTR-2B Autopilot (12M)', icon: DownloadCloud, color: 'text-emerald-500' },
+            { id: 'gstr1_downloader', num: '05', label: 'GSTR-1 Autopilot (12M)', icon: ArrowUpRight, color: 'text-blue-500' }
+          ].map(tab => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-xs ring-1 ring-slate-900'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                <tab.icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tab.color}`} />
+                <span>{tab.num}. {tab.label}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping ml-0.5" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Quick Action Trigger Shortcuts on Right */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleDownloadJson}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all"
+            title="Download GST Portal ready JSON file"
+          >
+            <Download className="w-3.5 h-3.5 text-purple-300" />
+            <span>Export JSON</span>
+          </button>
+          <button
+            onClick={handleExportPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 active:scale-95 rounded-lg text-xs font-medium shadow-xs transition-all"
+            title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
+          >
+            <Printer className="w-3.5 h-3.5 text-slate-600" />
+            <span>Print Sheet</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all"
+            title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Excel Sheet</span>
+          </button>
+        </div>
       </div>
 
       {/* TAB 1: GSTR-3B WORKING SHEET (THE CORE PRACTICE WORKSPACE) */}
@@ -1459,89 +1480,145 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             isSavingWorking={isSyncingToServer}
           />
 
-          {/* Month Selector Pills */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-xs">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-600 uppercase tracking-wider px-2">
-              <Calendar className="w-4 h-4 text-purple-400" /> Select Filing Period:
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {GSTR3B_MONTHS.map(m => {
-                const mData = workingData.months[m];
-                const isSelected = selectedMonth === m;
-                const hasCashPayable = mData.settlement.balancePayable.total > 0;
-                const hasCreditCf = mData.setoff.balanceCfNextMonth.total > 0;
+          {/* Combined Breathing Bar: Segmented Month Track & Live Sync Ingestion Action Dock */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-center bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+            {/* Segmented Month Track (Apr - Mar) */}
+            <div className="xl:col-span-7 flex items-center gap-1 overflow-x-auto py-0.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-2 shrink-0">Period:</span>
+              <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl">
+                {GSTR3B_MONTHS.map(m => {
+                  const mData = workingData.months[m];
+                  const isSelected = selectedMonth === m;
+                  const hasCashPayable = mData.settlement.balancePayable.total > 0;
+                  const hasCreditCf = mData.setoff.balanceCfNextMonth.total > 0;
 
-                return (
-                  <button
-                    key={m}
-                    onClick={() => setSelectedMonth(m)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      isSelected
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30 ring-2 ring-purple-400/30'
-                        : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                    }`}
-                  >
-                    {m.slice(0, 3)}
-                    {hasCashPayable && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block" title="Cash Tax Payable" />
-                    )}
-                    {hasCreditCf && !hasCashPayable && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" title="Credit Balance C/F" />
-                    )}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setSelectedMonth(m)}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all flex items-center gap-1 ${
+                        isSelected
+                          ? 'bg-slate-900 text-white font-bold shadow-xs ring-1 ring-purple-500/40'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>{m.slice(0, 3)}</span>
+                      {hasCashPayable && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block" title="Cash Tax Payable" />
+                      )}
+                      {hasCreditCf && !hasCashPayable && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Credit Balance C/F" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Live Sync Ingestion Action Dock */}
+            <div className="xl:col-span-5 flex items-center justify-start xl:justify-end gap-2 flex-wrap">
+              <button
+                onClick={() => setActiveTab('gstr2b_downloader')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 text-emerald-800 text-xs font-semibold transition-all transform hover:scale-[1.02]"
+              >
+                <DownloadCloud className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Fetch 2B</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('gstr1_downloader')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200/60 text-blue-800 text-xs font-semibold transition-all transform hover:scale-[1.02]"
+              >
+                <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
+                <span>Fetch 1</span>
+              </button>
+              <button
+                onClick={handleSyncTallyVouchers}
+                disabled={isSyncingTally}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/60 text-indigo-700 text-xs font-semibold transition-all transform hover:scale-[1.02] disabled:opacity-50"
+              >
+                <Server className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingTally ? 'animate-spin' : ''}`} />
+                <span>Sync Tally</span>
+              </button>
+
+              {/* Live Filing Readiness Badge */}
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div className="flex flex-col text-right">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Reco Match</span>
+                  <span className="text-xs font-mono font-bold text-purple-700">94.2%</span>
+                </div>
+                <div className="w-10 h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full w-[94.2%]" />
+                </div>
+              </div>
             </div>
           </div>
 
           {/* KPI Dashboard Cards for the Selected Month */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
-            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gross Outward Sale</span>
-              <p className="text-base md:text-lg font-extrabold text-white mt-1">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Gross Outward</span>
+                <span className="w-6 h-6 rounded-md bg-purple-50 text-purple-700 flex items-center justify-center text-xs font-bold font-mono">3.1</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-slate-900 tracking-tight">
                 {formatCur(currentMonthData.outward.totalSaleWorking.taxable)}
               </p>
-              <span className="text-[10px] text-slate-400">Total Tax: {formatCur(currentMonthData.outward.totalSaleWorking.total)}</span>
+              <span className="text-[10px] text-slate-500 mt-1">Tax: <strong className="text-purple-700 font-mono">{formatCur(currentMonthData.outward.totalSaleWorking.total)}</strong></span>
             </div>
 
-            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">2B Available ITC</span>
-              <p className="text-base md:text-lg font-extrabold text-blue-300 mt-1">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">2B Available ITC</span>
+                <span className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center text-xs font-bold font-mono">4</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-emerald-700 tracking-tight">
                 {formatCur(currentMonthData.inward.totalItcAvailable.total)}
               </p>
-              <span className="text-[10px] text-slate-400">Opening B/F: {formatCur(currentMonthData.inward.openingCreditBal.total)}</span>
+              <span className="text-[10px] text-slate-500 mt-1">Opening B/F: <strong className="text-slate-700 font-mono">{formatCur(currentMonthData.inward.openingCreditBal.total)}</strong></span>
             </div>
 
-            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Net Outward Tax</span>
-              <p className="text-base md:text-lg font-extrabold text-amber-300 mt-1">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Net Outward Tax</span>
+                <span className="w-6 h-6 rounded-md bg-amber-50 text-amber-700 flex items-center justify-center text-xs font-bold font-mono">Post</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-amber-700 tracking-tight">
                 {formatCur(currentMonthData.setoff.payableAfterAdjustment.total)}
               </p>
-              <span className="text-[10px] text-slate-400">After ITC Set-off</span>
+              <span className="text-[10px] text-slate-500 mt-1">After ITC Set-off</span>
             </div>
 
-            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Balance C/F Next Mo.</span>
-              <p className="text-base md:text-lg font-extrabold text-emerald-300 mt-1">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Credit C/F</span>
+                <span className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center text-xs font-bold font-mono">C/F</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-emerald-700 tracking-tight">
                 {formatCur(currentMonthData.setoff.balanceCfNextMonth.total)}
               </p>
-              <span className="text-[10px] text-slate-400">Carried Forward Credit</span>
+              <span className="text-[10px] text-emerald-600 mt-1">Carried Forward Credit</span>
             </div>
 
-            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">RCM Cash Liability</span>
-              <p className="text-base md:text-lg font-extrabold text-rose-300 mt-1">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">RCM Cash</span>
+                <span className="w-6 h-6 rounded-md bg-rose-50 text-rose-700 flex items-center justify-center text-xs font-bold font-mono">49(4)</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-rose-700 tracking-tight">
                 {formatCur(currentMonthData.settlement.rcmPayable.total)}
               </p>
-              <span className="text-[10px] text-rose-400/80">Sec 49(4) Cash Only</span>
+              <span className="text-[10px] text-rose-600 mt-1">Sec 49(4) Cash Only</span>
             </div>
 
-            <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
-              <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">Total Cash Payable</span>
-              <p className="text-base md:text-lg font-extrabold text-purple-200 mt-1">
+            <div className="bg-gradient-to-br from-purple-50/50 to-white border-2 border-purple-300/80 rounded-xl p-3 shadow-xs hover:border-purple-400 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-purple-900 uppercase tracking-wide">Total Cash Payable</span>
+                <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold font-mono">6.1</span>
+              </div>
+              <p className="text-base md:text-lg font-bold font-mono text-purple-700 tracking-tight">
                 {formatCur(currentMonthData.settlement.balancePayable.total)}
               </p>
-              <span className="text-[10px] text-purple-300/80">Final Cash Outflow</span>
+              <span className="text-[10px] text-purple-700 font-semibold mt-1">Final Cash Deposit</span>
             </div>
           </div>
 
@@ -1549,18 +1626,18 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
             <div className="p-4 bg-slate-50 border-b border-slate-200/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-purple-400" />
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-purple-600" />
                   GSTR-3B Working for the Month of {selectedMonth.toUpperCase()}-{currentMonthData.year}
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Editable worksheet. All subtotals, inter-head set-off, and next-month forward balances recalculate automatically.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleExportPdf}
-                  className="px-3 py-1.5 bg-gradient-to-r from-rose-600/30 to-pink-600/20 hover:from-rose-600/40 hover:to-pink-600/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-rose-950/40 transition-all hover:scale-[1.02]"
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all hover:scale-[1.02]"
                   title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
                 >
                   <FileText className="w-3.5 h-3.5 text-rose-400" />
@@ -1577,7 +1654,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-950/90 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800 text-[11px]">
+                  <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider border-b border-slate-200 text-[11px]">
                     <th className="py-3 px-4 w-44">Section</th>
                     <th className="py-3 px-4">Particulars</th>
                     <th className="py-3 px-4 text-right w-36">Taxable Value</th>
@@ -1587,10 +1664,10 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                     <th className="py-3 px-4 text-right w-36">Total Tax</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
+                <tbody className="divide-y divide-slate-200/80 font-mono">
                   {/* SECTION 1: OUTWARD SUPPLY */}
-                  <tr className="bg-slate-950/40 font-sans font-bold text-blue-400">
-                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-blue-950/20 border-y border-blue-900/30">
+                  <tr className="bg-slate-100 font-sans font-bold text-slate-900">
+                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-slate-100 border-y border-slate-200 text-slate-900">
                       1. Outward Supply (Table 3.1 & 3.2)
                     </td>
                   </tr>
@@ -1612,16 +1689,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   ].map(({ key, label }) => {
                     const rowData = ((currentMonthData.outward as any)[key] as TaxBreakdown) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
                     return (
-                      <tr key={key} className="hover:bg-slate-800/40 transition-colors">
+                      <tr key={key} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2 px-4 text-slate-400 font-sans text-xs">Outward Supply</td>
-                        <td className="py-2 px-4 text-white font-sans font-medium text-xs">{label}</td>
+                        <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">{label}</td>
                         <td className="py-2 px-4 text-right">
                           <input
                             type="number"
                             value={rowData.taxable || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'taxable', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-slate-300 hover:text-white focus:bg-slate-800 focus:text-white px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-white/70 hover:bg-white focus:bg-white border border-slate-200/80 focus:border-blue-400 text-right font-mono text-slate-900 px-1.5 py-0.5 rounded outline-none transition-colors"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1630,7 +1707,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.cgst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'cgst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-slate-300 hover:text-white focus:bg-slate-800 focus:text-white px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-white/70 hover:bg-white focus:bg-white border border-slate-200/80 focus:border-blue-400 text-right font-mono text-slate-900 px-1.5 py-0.5 rounded outline-none transition-colors"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1639,7 +1716,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.sgst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'sgst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-slate-300 hover:text-white focus:bg-slate-800 focus:text-white px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-white/70 hover:bg-white focus:bg-white border border-slate-200/80 focus:border-blue-400 text-right font-mono text-slate-900 px-1.5 py-0.5 rounded outline-none transition-colors"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1648,7 +1725,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.igst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'igst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-slate-300 hover:text-white focus:bg-slate-800 focus:text-white px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-white/70 hover:bg-white focus:bg-white border border-slate-200/80 focus:border-blue-400 text-right font-mono text-slate-900 px-1.5 py-0.5 rounded outline-none transition-colors"
                           />
                         </td>
                         <td className="py-2 px-4 text-right font-bold text-slate-200">
@@ -1661,7 +1738,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* Total Sale as per Working */}
                   <tr className="bg-slate-800/80 font-bold border-y border-slate-700">
                     <td className="py-2.5 px-4 text-slate-400 font-sans">Subtotal</td>
-                    <td className="py-2.5 px-4 text-white font-sans text-xs">Total Sale as per Working</td>
+                    <td className="py-2.5 px-4 text-slate-900 font-sans text-xs">Total Sale as per Working</td>
                     <td className="py-2.5 px-4 text-right text-emerald-400">{formatCur(currentMonthData.outward.totalSaleWorking.taxable)}</td>
                     <td className="py-2.5 px-4 text-right text-emerald-400">{formatCur(currentMonthData.outward.totalSaleWorking.cgst)}</td>
                     <td className="py-2.5 px-4 text-right text-emerald-400">{formatCur(currentMonthData.outward.totalSaleWorking.sgst)}</td>
@@ -1678,7 +1755,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   ].map(({ key, label }) => {
                     const rowData = ((currentMonthData.outward as any)[key] as TaxBreakdown) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
                     return (
-                      <tr key={key} className="hover:bg-slate-800/40 transition-colors">
+                      <tr key={key} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2 px-4 text-slate-400 font-sans text-xs">Inward RCM</td>
                         <td className="py-2 px-4 text-amber-200/90 font-sans font-medium text-xs pl-6">{label}</td>
                         <td className="py-2 px-4 text-right">
@@ -1687,7 +1764,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.taxable || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'taxable', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1696,7 +1773,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.cgst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'cgst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1705,7 +1782,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.sgst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'sgst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                           />
                         </td>
                         <td className="py-2 px-4 text-right">
@@ -1714,7 +1791,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             value={rowData.igst || ''}
                             placeholder="0"
                             onChange={e => updateCurrentMonthField('outward', key, 'igst', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                            className="w-full bg-transparent text-right font-mono text-amber-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                           />
                         </td>
                         <td className="py-2 px-4 text-right font-bold text-amber-200">
@@ -1727,7 +1804,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* Reverse Charge on Inward Supplies Subtotal */}
                   <tr className="bg-amber-950/20 font-semibold border-y border-amber-900/40">
                     <td className="py-2 px-4 text-amber-400 font-sans text-xs">Inward RCM</td>
-                    <td className="py-2 px-4 text-amber-300 font-sans font-bold text-xs">
+                    <td className="py-2 px-4 text-amber-900 font-sans font-bold text-xs">
                       Reverse Charge on Inward Supplies (Table 3.1(d))
                     </td>
                     <td className="py-2 px-4 text-right text-amber-300 font-mono font-bold">
@@ -1750,7 +1827,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* (A) Total Sale as per Working including Reverse Charge */}
                   <tr className="bg-blue-950/30 font-bold border-b-2 border-blue-900/50">
                     <td className="py-2.5 px-4 text-blue-400 font-sans">Total (A)</td>
-                    <td className="py-2.5 px-4 text-white font-sans text-xs">(A) Total Sale as per Working including Reverse Charge (Table 3.1)</td>
+                    <td className="py-2.5 px-4 text-slate-900 font-sans text-xs">(A) Total Sale as per Working including Reverse Charge (Table 3.1)</td>
                     <td className="py-2.5 px-4 text-right text-blue-300">{formatCur(currentMonthData.outward.totalSalePortal.taxable)}</td>
                     <td className="py-2.5 px-4 text-right text-blue-300">{formatCur(currentMonthData.outward.totalSalePortal.cgst)}</td>
                     <td className="py-2.5 px-4 text-right text-blue-300">{formatCur(currentMonthData.outward.totalSalePortal.sgst)}</td>
@@ -1759,16 +1836,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* SECTION 2: INWARD SUPPLIES & ITC */}
-                  <tr className="bg-slate-950/40 font-sans font-bold text-emerald-400">
-                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-emerald-950/20 border-y border-emerald-900/30">
+                  <tr className="bg-emerald-50/80 font-sans font-bold text-emerald-950">
+                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-emerald-50/80 border-y border-emerald-200 text-emerald-950">
                       2. Inward Supplies & Input Tax Credit (Table 4)
                     </td>
                   </tr>
 
                   {/* ITC (As per books) */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Books Register</td>
-                    <td className="py-2 px-4 text-slate-300 font-sans font-medium text-xs">ITC (As per books)</td>
+                    <td className="py-2 px-4 text-slate-800 font-sans font-medium text-xs">ITC (As per books)</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
@@ -1786,22 +1863,22 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                             return cloned;
                           });
                         }}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 hover:text-white focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-white/70 hover:bg-white focus:bg-white border border-slate-200/80 focus:border-blue-400 text-right font-mono text-slate-900 px-1.5 py-0.5 rounded outline-none transition-colors"
                       />
                     </td>
                   </tr>
 
                   {/* ITC as per GSTR 2B */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">GSTR-2B</td>
-                    <td className="py-2 px-4 text-emerald-300 font-sans font-medium text-xs">ITC as per GSTR 2B (Table 4(A)(5))</td>
+                    <td className="py-2 px-4 text-emerald-900 font-sans font-medium text-xs">ITC as per GSTR 2B (Table 4(A)(5))</td>
                     <td className="py-2 px-4 text-right">
                       <input
                         type="number"
                         value={currentMonthData.inward.itc2b.taxable || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itc2b', 'taxable', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1810,7 +1887,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itc2b.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itc2b', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1819,7 +1896,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itc2b.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itc2b', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1828,7 +1905,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itc2b.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itc2b', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-200 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-emerald-300">
@@ -1837,16 +1914,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* (+) Import purchase (Table 4(A)(1)) */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Imports</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">(+) Import purchase (Table 4(A)(1))</td>
+                    <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">(+) Import purchase (Table 4(A)(1))</td>
                     <td className="py-2 px-4 text-right">
                       <input
                         type="number"
                         value={currentMonthData.inward.importGoods?.taxable || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'importGoods', 'taxable', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
@@ -1857,7 +1934,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.importGoods?.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'importGoods', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-slate-200">
@@ -1866,9 +1943,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* (+) RCM paid on Inward Supplies */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Eligible RCM</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">(+) RCM paid on Inward Supplies (Table 4(A)(3))</td>
+                    <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">(+) RCM paid on Inward Supplies (Table 4(A)(3))</td>
                     <td className="py-2 px-4 text-right text-slate-400">{formatCur(currentMonthData.inward.rcmPaid.taxable)}</td>
                     <td className="py-2 px-4 text-right text-slate-300">{formatCur(currentMonthData.inward.rcmPaid.cgst)}</td>
                     <td className="py-2 px-4 text-right text-slate-300">{formatCur(currentMonthData.inward.rcmPaid.sgst)}</td>
@@ -1877,16 +1954,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* (+) Credit Notes */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Credit Notes</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">(+) Credit Notes</td>
+                    <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">(+) Credit Notes</td>
                     <td className="py-2 px-4 text-right">
                       <input
                         type="number"
                         value={currentMonthData.inward.creditNotes?.taxable || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'creditNotes', 'taxable', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1895,7 +1972,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.creditNotes?.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'creditNotes', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1904,7 +1981,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.creditNotes?.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'creditNotes', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1913,7 +1990,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.creditNotes?.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'creditNotes', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-slate-200">
@@ -1938,7 +2015,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         disabled={selectedMonth !== 'April'}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1948,7 +2025,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         disabled={selectedMonth !== 'April'}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1958,16 +2035,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         disabled={selectedMonth !== 'April'}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none disabled:opacity-80"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-purple-300">{formatCur(currentMonthData.inward.openingCreditBal.total)}</td>
                   </tr>
 
                   {/* (-) Debit Notes */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Debit Notes</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">(-) Debit Notes</td>
+                    <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">(-) Debit Notes</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right">
                       <input
@@ -1975,7 +2052,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.debitNotes.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'debitNotes', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1984,7 +2061,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.debitNotes.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'debitNotes', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -1993,16 +2070,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.debitNotes.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'debitNotes', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-slate-300">{formatCur(currentMonthData.inward.debitNotes.total)}</td>
                   </tr>
 
                   {/* (-) ITC Reversed on Ineligible credit */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Reversals</td>
-                    <td className="py-2 px-4 text-rose-300 font-sans font-medium text-xs">
+                    <td className="py-2 px-4 text-rose-900 font-sans font-medium text-xs">
                       (-) ITC Reversed on Ineligible credit (Table 4(B) / 17(5))
                     </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
@@ -2012,7 +2089,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itcReversed.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2021,7 +2098,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itcReversed.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2030,7 +2107,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.inward.itcReversed.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-rose-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-rose-300">{formatCur(currentMonthData.inward.itcReversed.total)}</td>
@@ -2039,7 +2116,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* Total ITC Available for Set off */}
                   <tr className="bg-emerald-950/30 font-bold border-b-2 border-emerald-900/50">
                     <td className="py-2.5 px-4 text-emerald-400 font-sans">Total (B)</td>
-                    <td className="py-2.5 px-4 text-white font-sans text-xs">(B) Total ITC Available for Set off</td>
+                    <td className="py-2.5 px-4 text-slate-900 font-sans text-xs">(B) Total ITC Available for Set off</td>
                     <td className="py-2.5 px-4 text-right text-slate-500">-</td>
                     <td className="py-2.5 px-4 text-right text-emerald-300">{formatCur(currentMonthData.inward.totalItcAvailable.cgst)}</td>
                     <td className="py-2.5 px-4 text-right text-emerald-300">{formatCur(currentMonthData.inward.totalItcAvailable.sgst)}</td>
@@ -2048,8 +2125,8 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* SECTION 3: SET-OFF & UTILIZATION */}
-                  <tr className="bg-slate-950/50 font-sans font-bold text-amber-400 border-y border-amber-900/30">
-                    <td colSpan={7} className="py-2.5 px-4 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-950">
+                  <tr className="bg-amber-50/80 font-sans font-bold text-amber-950 border-y border-amber-200">
+                    <td colSpan={7} className="py-2.5 px-4 bg-amber-50/80 border-y border-amber-200">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xs tracking-wider uppercase font-extrabold text-amber-400">
@@ -2112,9 +2189,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* Payable / Difference */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Raw Set-off</td>
-                    <td className="py-2 px-4 text-white font-sans font-medium text-xs">
+                    <td className="py-2 px-4 text-slate-900 font-sans font-medium text-xs">
                       <div className="flex items-center justify-between">
                         <span>(A-B) Payable / (Surplus ITC)</span>
                         {currentMonthData.setoff.rawPayable.igst < 0 && (
@@ -2144,7 +2221,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                     <td className="py-2 px-4 text-blue-400 font-sans text-xs font-bold flex items-center gap-1">
                       <span>Inter-Head</span>
                     </td>
-                    <td className="py-2 px-4 text-blue-300 font-sans font-medium text-xs">
+                    <td className="py-2 px-4 text-blue-900 font-sans font-medium text-xs">
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold">(-) Adjustment (Rule 88A Proportion)</span>
                         <span className="text-[10px] text-blue-400/80 font-mono">(Editable)</span>
@@ -2159,7 +2236,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.setoff.adjustment?.cgst ?? ''}
                         placeholder="0.00"
                         onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-white focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
                         title="Utilize surplus IGST to pay CGST liability"
                       />
                     </td>
@@ -2171,7 +2248,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.setoff.adjustment?.sgst ?? ''}
                         placeholder="0.00"
                         onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-white focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
                         title="Utilize surplus IGST to pay SGST liability"
                       />
                     </td>
@@ -2183,7 +2260,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.setoff.adjustment?.igst ?? ''}
                         placeholder="0.00"
                         onChange={e => updateCurrentMonthField('setoff', 'adjustment', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-slate-800 focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
+                        className="w-full bg-slate-900/90 border border-blue-500/40 text-right font-mono text-blue-300 font-bold focus:bg-white focus:border-blue-400 px-2 py-1 rounded text-xs outline-none transition-all shadow-inner"
                         title="IGST credit surrendered to pay CGST/SGST (negative if surplus IGST)"
                       />
                     </td>
@@ -2200,7 +2277,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* (-) GST TDS/TCS Opening Cash Balance */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-purple-400 font-sans text-xs">TDS/TCS Cash</td>
                     <td className="py-2 px-4 text-purple-300 font-sans font-medium text-xs">
                       (-) GST TDS/TCS Opening Cash Balance
@@ -2212,7 +2289,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.tdsTcsOpeningCash?.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2221,7 +2298,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.tdsTcsOpeningCash?.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2230,7 +2307,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.tdsTcsOpeningCash?.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-purple-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-purple-300">
@@ -2252,7 +2329,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* Balance C/f to next month */}
                   <tr className="bg-emerald-950/20 font-bold border-b-2 border-emerald-900/40">
                     <td className="py-2.5 px-4 text-emerald-400 font-sans">Credit C/F</td>
-                    <td className="py-2.5 px-4 text-emerald-300 font-sans text-xs">
+                    <td className="py-2.5 px-4 text-emerald-900 font-sans text-xs">
                       Balance C/f to next month (Surplus ITC)
                     </td>
                     <td className="py-2.5 px-4 text-right text-slate-500">-</td>
@@ -2263,8 +2340,8 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* SECTION 4: CASH SETTLEMENT */}
-                  <tr className="bg-slate-950/40 font-sans font-bold text-rose-400">
-                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-rose-950/20 border-y border-rose-900/30">
+                  <tr className="bg-rose-50/80 font-sans font-bold text-rose-950">
+                    <td colSpan={7} className="py-2.5 px-4 text-xs tracking-wider uppercase bg-rose-50/80 border-y border-rose-200 text-rose-950">
                       4. Mandatory Cash Payments & Final Balance
                     </td>
                   </tr>
@@ -2272,7 +2349,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   {/* RCM Payable */}
                   <tr className="bg-rose-950/10 hover:bg-rose-950/20 transition-colors">
                     <td className="py-2 px-4 text-rose-400 font-sans text-xs">Sec 49(4)</td>
-                    <td className="py-2 px-4 text-rose-300 font-sans font-medium text-xs">
+                    <td className="py-2 px-4 text-rose-900 font-sans font-medium text-xs">
                       RCM Payable (Cannot use ITC — Cash Payment Only)
                     </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
@@ -2283,9 +2360,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* Late Fees */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Statutory</td>
-                    <td className="py-2 px-4 text-slate-300 font-sans font-medium text-xs">Late Fees</td>
+                    <td className="py-2 px-4 text-slate-800 font-sans font-medium text-xs">Late Fees</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right">
                       <input
@@ -2293,7 +2370,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.lateFees.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'lateFees', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2302,7 +2379,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.lateFees.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'lateFees', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
@@ -2310,9 +2387,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                   </tr>
 
                   {/* Interest */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Statutory</td>
-                    <td className="py-2 px-4 text-slate-300 font-sans font-medium text-xs">Interest (Sec 50)</td>
+                    <td className="py-2 px-4 text-slate-800 font-sans font-medium text-xs">Interest (Sec 50)</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right">
                       <input
@@ -2320,7 +2397,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.interest.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'interest', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2329,7 +2406,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.interest.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'interest', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2338,16 +2415,16 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.interest.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'interest', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-slate-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-slate-300">{formatCur(currentMonthData.settlement.interest.total)}</td>
                   </tr>
 
                   {/* GST Paid through Cash (Challan) */}
-                  <tr className="hover:bg-slate-800/40 transition-colors">
+                  <tr className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-4 text-slate-400 font-sans text-xs">Challan</td>
-                    <td className="py-2 px-4 text-emerald-300 font-sans font-medium text-xs">(-) GST Paid through Cash (PMT-06 / Challan)</td>
+                    <td className="py-2 px-4 text-emerald-900 font-sans font-medium text-xs">(-) GST Paid through Cash (PMT-06 / Challan)</td>
                     <td className="py-2 px-4 text-right text-slate-500">-</td>
                     <td className="py-2 px-4 text-right">
                       <input
@@ -2355,7 +2432,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.gstPaidThroughCash.cgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'gstPaidThroughCash', 'cgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2364,7 +2441,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.gstPaidThroughCash.sgst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'gstPaidThroughCash', 'sgst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right">
@@ -2373,7 +2450,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         value={currentMonthData.settlement.gstPaidThroughCash.igst || ''}
                         placeholder="0"
                         onChange={e => updateCurrentMonthField('settlement', 'gstPaidThroughCash', 'igst', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-slate-800 px-1.5 py-0.5 rounded outline-none"
+                        className="w-full bg-transparent text-right font-mono text-emerald-300 focus:bg-white px-1.5 py-0.5 rounded outline-none"
                       />
                     </td>
                     <td className="py-2 px-4 text-right font-bold text-emerald-300">{formatCur(currentMonthData.settlement.gstPaidThroughCash.total)}</td>
@@ -2400,125 +2477,231 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
 
       {/* TAB 2: 12-MONTH FINANCIAL YEAR MATRIX */}
       {activeTab === 'matrix' && (
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4 animate-pop-in text-slate-800">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs space-y-4 animate-pop-in text-slate-800">
+          {/* Header & Controls */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-200 pb-4">
             <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Table className="w-5 h-5 text-emerald-400" />
-                Annual 12-Month Cross-Table ({workingData.profile.financialYear})
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Table className="w-5 h-5 text-emerald-600" />
+                12-Month Cross-Verification Ledger ({workingData.profile.financialYear})
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Full-year breakdown showing monthly outward liabilities, ITC claimed, balance carried forward, and cash taxes.
+              <p className="text-xs text-slate-500 mt-0.5">
+                Full-year comparative breakdown showing monthly outward liabilities, ITC claimed, balance carried forward, and cash taxes.
               </p>
             </div>
-            <button
-              onClick={handleExportExcel}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors shadow-md shadow-emerald-950"
-            >
-              <FileSpreadsheet className="w-4 h-4" /> Export Complete 12-Month Workbook
-            </button>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Density Toggle */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+                <span className="text-[11px] text-slate-500 font-medium px-1">Density:</span>
+                <button
+                  type="button"
+                  onClick={() => setMatrixDensity('compact')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    matrixDensity === 'compact'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Compact
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixDensity('relaxed')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    matrixDensity === 'relaxed'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Relaxed
+                </button>
+              </div>
+
+              <button
+                onClick={handleExportExcel}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all shadow-xs active:scale-95"
+              >
+                <FileSpreadsheet className="w-4 h-4" /> Export Complete 12-Month Workbook
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* High-Density 4-Metric KPI Stat Pills */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Turnover (Outward)</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <div className="font-mono text-lg font-bold text-slate-900 tracking-tight">
+                  {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + workingData.months[m].outward.totalSaleWorking.taxable, 0))}
+                </div>
+                <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                  100% Reconciled
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Eligible ITC (Table 4)</span>
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                </div>
+                <div className="font-mono text-lg font-bold text-slate-900 tracking-tight">
+                  {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData?.months?.[m]?.inward?.totalItcAvailable?.total || 0), 0))}
+                </div>
+                <div className="text-[10px] text-blue-700 font-medium mt-0.5">
+                  GSTR-2B Matched
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                <Table className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Cash Tax Paid (6.1)</span>
+                  <Calculator className="w-3.5 h-3.5 text-purple-600" />
+                </div>
+                <div className="font-mono text-lg font-bold text-slate-900 tracking-tight">
+                  {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + workingData.months[m].settlement.balancePayable.total, 0))}
+                </div>
+                <div className="text-[10px] text-purple-700 font-medium mt-0.5">
+                  Challans Deposited
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
+                <Calculator className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Closing Credit (March)</span>
+                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                </div>
+                <div className="font-mono text-lg font-bold text-slate-900 tracking-tight">
+                  {formatCur(workingData?.months?.March?.setoff?.balanceCfNextMonth?.total || 0)}
+                </div>
+                <div className="text-[10px] text-amber-700 font-medium mt-0.5">
+                  Carried to Next FY
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                <Calendar className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
+          {/* 13-Column Annual Comparative Grid */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
             <table className="w-full text-xs text-left border-collapse font-mono">
               <thead>
-                <tr className="bg-slate-950 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800">
-                  <th className="py-3 px-3 w-52 font-sans">Particulars</th>
+                <tr className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+                  <th className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-3 px-3'} w-52 font-sans`}>Particulars</th>
                   {GSTR3B_MONTHS.map(m => (
-                    <th key={m} className="py-3 px-2 text-right w-28 font-sans">{m.slice(0, 3)}</th>
+                    <th key={m} className={`${matrixDensity === 'compact' ? 'py-2 px-1.5' : 'py-3 px-2'} text-right w-24 font-sans`}>{m.slice(0, 3)}</th>
                   ))}
-                  <th className="py-3 px-3 text-right w-36 font-sans text-emerald-400">Total FY</th>
+                  <th className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-3 px-3'} text-right w-36 font-sans text-emerald-700 bg-emerald-50/50`}>Total FY</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-100">
                 {/* 1. Taxable Turnover */}
-                <tr className="bg-slate-800/40 font-bold text-white">
-                  <td className="py-2.5 px-3 font-sans">Gross Taxable Turnover</td>
+                <tr className="bg-slate-50/60 font-bold text-slate-900">
+                  <td className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-2.5 px-3'} font-sans`}>Gross Taxable Turnover</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2.5 px-2 text-right">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-2 px-1.5' : 'py-2.5 px-2'} text-right font-mono`}>
                       {formatCur(workingData.months[m].outward.totalSaleWorking.taxable)}
                     </td>
                   ))}
-                  <td className="py-2.5 px-3 text-right text-emerald-400 font-extrabold">
+                  <td className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-2.5 px-3'} text-right text-emerald-700 font-extrabold bg-emerald-50/50`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + workingData.months[m].outward.totalSaleWorking.taxable, 0))}
                   </td>
                 </tr>
 
                 {/* 2. Total Outward Tax */}
-                <tr className="hover:bg-slate-800/30">
-                  <td className="py-2 px-3 text-slate-300 font-sans">Outward Tax Liability</td>
+                <tr className="hover:bg-slate-50/80 transition-colors">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-slate-700 font-sans`}>Outward Tax Liability</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2 px-2 text-right text-slate-200">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-1.5 px-1.5' : 'py-2 px-2'} text-right text-slate-700 font-mono`}>
                       {formatCur(workingData?.months?.[m]?.outward?.totalSaleWorking?.total || 0)}
                     </td>
                   ))}
-                  <td className="py-2 px-3 text-right text-slate-200 font-bold">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-right text-slate-900 font-bold bg-slate-50/50`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData?.months?.[m]?.outward?.totalSaleWorking?.total || 0), 0))}
                   </td>
                 </tr>
 
                 {/* 3. Total Available ITC */}
-                <tr className="bg-blue-950/20 hover:bg-blue-950/30 font-medium">
-                  <td className="py-2 px-3 text-blue-300 font-sans">Total Available ITC (Table 4)</td>
+                <tr className="bg-blue-50/30 hover:bg-blue-50/50 transition-colors font-medium">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-blue-900 font-sans`}>Total Available ITC (Table 4)</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2 px-2 text-right text-blue-300">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-1.5 px-1.5' : 'py-2 px-2'} text-right text-blue-900 font-mono`}>
                       {formatCur(workingData?.months?.[m]?.inward?.totalItcAvailable?.total || 0)}
                     </td>
                   ))}
-                  <td className="py-2 px-3 text-right text-blue-300 font-bold">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-right text-blue-900 font-bold bg-blue-50/60`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData?.months?.[m]?.inward?.totalItcAvailable?.total || 0), 0))}
                   </td>
                 </tr>
 
                 {/* 4. Balance C/F to Next Month */}
-                <tr className="bg-emerald-950/20 hover:bg-emerald-950/30 font-semibold text-emerald-300">
-                  <td className="py-2 px-3 font-sans">Balance C/F (Surplus Credit)</td>
+                <tr className="bg-emerald-50/30 hover:bg-emerald-50/50 transition-colors font-semibold text-emerald-900">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} font-sans`}>Balance C/F (Surplus Credit)</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2 px-2 text-right">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-1.5 px-1.5' : 'py-2 px-2'} text-right font-mono`}>
                       {formatCur(workingData?.months?.[m]?.setoff?.balanceCfNextMonth?.total || 0)}
                     </td>
                   ))}
-                  <td className="py-2 px-3 text-right font-bold text-emerald-400">
-                    {/* Final closing balance of March */}
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-right font-bold text-emerald-800 bg-emerald-50/60`}>
                     {formatCur(workingData?.months?.March?.setoff?.balanceCfNextMonth?.total || 0)} (Mar End)
                   </td>
                 </tr>
 
                 {/* 5. Net Outward Tax Paid via Cash */}
-                <tr className="hover:bg-slate-800/30 text-amber-300">
-                  <td className="py-2 px-3 font-sans">Outward Tax Paid via Cash</td>
+                <tr className="hover:bg-slate-50/80 transition-colors text-amber-800">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} font-sans`}>Outward Tax Paid via Cash</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2 px-2 text-right">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-1.5 px-1.5' : 'py-2 px-2'} text-right font-mono`}>
                       {formatCur(workingData?.months?.[m]?.setoff?.payableAfterAdjustment?.total || 0)}
                     </td>
                   ))}
-                  <td className="py-2 px-3 text-right font-bold">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-right font-bold bg-amber-50/40`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData?.months?.[m]?.setoff?.payableAfterAdjustment?.total || 0), 0))}
                   </td>
                 </tr>
 
                 {/* 6. RCM Cash Paid */}
-                <tr className="hover:bg-slate-800/30 text-rose-300">
-                  <td className="py-2 px-3 font-sans">RCM Cash Paid (Sec 49(4))</td>
+                <tr className="hover:bg-slate-50/80 transition-colors text-rose-800">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} font-sans`}>RCM Cash Paid (Sec 49(4))</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-2 px-2 text-right">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-1.5 px-1.5' : 'py-2 px-2'} text-right font-mono`}>
                       {formatCur(workingData?.months?.[m]?.settlement?.rcmPayable?.total || 0)}
                     </td>
                   ))}
-                  <td className="py-2 px-3 text-right font-bold">
+                  <td className={`${matrixDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2 px-3'} text-right font-bold bg-rose-50/40`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData?.months?.[m]?.settlement?.rcmPayable?.total || 0), 0))}
                   </td>
                 </tr>
 
                 {/* 7. Total Cash Outflow */}
-                <tr className="bg-purple-950/40 font-bold text-white text-xs border-t-2 border-purple-500/50">
-                  <td className="py-3 px-3 font-sans text-purple-300 font-extrabold uppercase">Total Cash Outflow</td>
+                <tr className="bg-purple-50/50 font-bold text-slate-900 text-xs border-t-2 border-purple-200">
+                  <td className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-3 px-3'} font-sans text-purple-950 font-extrabold uppercase`}>Total Cash Outflow</td>
                   {GSTR3B_MONTHS.map(m => (
-                    <td key={m} className="py-3 px-2 text-right text-purple-200">
+                    <td key={m} className={`${matrixDensity === 'compact' ? 'py-2 px-1.5' : 'py-3 px-2'} text-right text-purple-900 font-mono`}>
                       {formatCur(workingData.months[m].settlement.balancePayable.total)}
                     </td>
                   ))}
-                  <td className="py-3 px-3 text-right text-purple-300 font-black text-sm">
+                  <td className={`${matrixDensity === 'compact' ? 'py-2 px-2.5' : 'py-3 px-3'} text-right text-purple-950 font-black text-sm bg-purple-100/60 font-mono`}>
                     {formatCur(GSTR3B_MONTHS.reduce((acc, m) => acc + workingData.months[m].settlement.balancePayable.total, 0))}
                   </td>
                 </tr>
@@ -2528,7 +2711,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
         </div>
       )}
 
-      {/* TAB 3: GST IMS & 2B MANAGER (300+ CLIENTS) */}
+      {/* TAB 3: GST IMS & 2B MANAGER */}
       {activeTab === 'ims2b' && (
         <ImsMasterManager
           selectedMonth={selectedMonth}
@@ -2561,7 +2744,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
       {/* EDIT CLIENT PROFILE MODAL */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <h3 className="text-white font-bold text-sm flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-blue-400" /> Edit Taxpayer / Firm Details
@@ -2702,7 +2885,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
       {/* OTP MODAL */}
       {showOtpModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-sm shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
               <h3 className="text-white font-bold flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" /> Verify Portal OTP

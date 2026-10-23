@@ -1904,55 +1904,55 @@ export default function ImsMasterManager({
     <div className="space-y-6 animate-fade-in">
       {/* ─── MASTER KPI CONTROL TOWER BAR ─────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1 shadow-xs hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between text-slate-500">
             <span className="text-[10px] uppercase font-bold tracking-wider">Total Clients</span>
-            <Users className="w-4 h-4" />
+            <Users className="w-4 h-4 text-slate-400" />
           </div>
           <p className="text-2xl font-black text-slate-900 font-mono tabular-nums">{stats.totalClients}</p>
           <span className="text-[10px] text-slate-500 font-mono">Master Database</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 space-y-1">
-          <div className="flex items-center justify-between text-blue-400">
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1 shadow-xs hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between text-blue-600">
             <span className="text-[10px] uppercase font-bold tracking-wider">IMS Synced</span>
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-4 h-4 text-blue-500" />
           </div>
-          <p className="text-2xl font-black text-blue-400">{stats.syncedClients}</p>
-          <span className="text-[10px] text-blue-500/80">Inward Data Available</span>
+          <p className="text-2xl font-black text-blue-600 font-mono tabular-nums">{stats.syncedClients}</p>
+          <span className="text-[10px] text-blue-600/80">Inward Data Available</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-1">
-          <div className="flex items-center justify-between text-amber-400">
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1 shadow-xs hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between text-amber-600">
             <span className="text-[10px] uppercase font-bold tracking-wider">Awaiting Client</span>
-            <Clock className="w-4 h-4" />
+            <Clock className="w-4 h-4 text-amber-500" />
           </div>
-          <p className="text-2xl font-black text-amber-400">{stats.pendingClients}</p>
-          <span className="text-[10px] text-amber-500/80">Links Sent / Reviewing</span>
+          <p className="text-2xl font-black text-amber-600 font-mono tabular-nums">{stats.pendingClients}</p>
+          <span className="text-[10px] text-amber-600/80">Links Sent / Reviewing</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
-          <div className="flex items-center justify-between text-emerald-400">
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1 shadow-xs hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between text-emerald-600">
             <span className="text-[10px] uppercase font-bold tracking-wider">Client Approved</span>
-            <CheckCheck className="w-4 h-4" />
+            <CheckCheck className="w-4 h-4 text-emerald-500" />
           </div>
-          <p className="text-2xl font-black text-emerald-400">{stats.reviewedClients}</p>
-          <span className="text-[10px] text-emerald-500/80">Ready to Push</span>
+          <p className="text-2xl font-black text-emerald-600 font-mono tabular-nums">{stats.reviewedClients}</p>
+          <span className="text-[10px] text-emerald-600/80">Ready to Push</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 space-y-1">
-          <div className="flex items-center justify-between text-purple-400">
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1 shadow-xs hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between text-purple-600">
             <span className="text-[10px] uppercase font-bold tracking-wider">3B Table 4 Ready</span>
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4 text-purple-500" />
           </div>
-          <p className="text-2xl font-black text-purple-400">{stats.pushedClients}</p>
-          <span className="text-[10px] text-purple-500/80">ITC Locked in 3B</span>
+          <p className="text-2xl font-black text-purple-600 font-mono tabular-nums">{stats.pushedClients}</p>
+          <span className="text-[10px] text-purple-600/80">ITC Locked in 3B</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-500/30 space-y-1 col-span-2 md:col-span-1 shadow-lg shadow-emerald-950/20">
-          <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">Net Eligible 2B ITC</span>
-          <p className="text-xl md:text-2xl font-black text-slate-900 font-mono tabular-nums font-mono">{fmt(stats.totalEligibleItc)}</p>
-          <span className="text-[10px] text-emerald-300/80">Across Accepted Bills</span>
+        <div className="p-3.5 rounded-2xl bg-white border border-emerald-200/80 space-y-1 col-span-2 md:col-span-1 shadow-xs hover:border-emerald-300 transition-all">
+          <span className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider block">Net Eligible 2B ITC</span>
+          <p className="text-xl md:text-2xl font-black text-emerald-700 font-mono tabular-nums">{fmt(stats.totalEligibleItc)}</p>
+          <span className="text-[10px] text-emerald-600">Across Accepted Bills</span>
         </div>
       </div>
 
@@ -2000,7 +2000,7 @@ export default function ImsMasterManager({
               </p>
 
               {/* Mini visual progress bar */}
-              <div className="w-full max-w-md bg-slate-950/80 rounded-full h-2 border border-slate-800 overflow-hidden mt-1">
+              <div className="w-full max-w-md bg-slate-50 rounded-full h-2 border border-slate-200 overflow-hidden mt-1">
                 <div
                   className={`h-full transition-all duration-1000 ${
                     stillWaitingCount === 0
@@ -2017,7 +2017,7 @@ export default function ImsMasterManager({
             {/* Right: Digital Countdown Clock & Actions */}
             <div className="flex flex-wrap items-center gap-3">
               {stillWaitingCount > 0 ? (
-                <div className="px-4 py-2 rounded-xl bg-slate-950/90 border border-amber-500/50 text-center shadow-lg">
+                <div className="px-4 py-2 rounded-xl bg-slate-50 border border-amber-500/50 text-center shadow-lg">
                   <span className="text-[10px] text-amber-400/90 font-bold block uppercase tracking-wider">
                     Phase 2 Auto-Ready In
                   </span>
@@ -2059,7 +2059,7 @@ export default function ImsMasterManager({
 
                 <button
                   onClick={() => handleResetWaiting()}
-                  className="px-2.5 py-2.5 rounded-xl bg-slate-900/80 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/40 text-xs font-bold transition-all"
+                  className="px-2.5 py-2.5 rounded-xl bg-slate-900/80 hover:bg-rose-950/50 text-slate-400 hover:text-rose-300 border border-slate-200 hover:border-rose-500/40 text-xs font-bold transition-all"
                   title="Reset 20-minute waiting timer"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -2071,12 +2071,12 @@ export default function ImsMasterManager({
       )}
 
       {/* ─── ACTION COMMAND BAR ───────────────────────────────────────────── */}
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl backdrop-blur-md">
+      <div className="bg-white border border-slate-200/80 p-3 sm:p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-2">
           {/* ⚡ 1-Click Multi-Sync Queue */}
           <button
             onClick={() => handleOpenBatchSync(selectedGstins.size > 0 ? Array.from(selectedGstins) : undefined)}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-indigo-950 transition-all hover:scale-[1.03] border border-indigo-400/40 animate-pulse hover:animate-none"
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95"
             title="1-Click Automated Sequential Sync across multiple or all clients"
           >
             <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
@@ -2087,7 +2087,7 @@ export default function ImsMasterManager({
           <button
             onClick={handleScanDownloadsFolder}
             disabled={batchScanningDownloads}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 text-xs font-bold flex items-center gap-2 border border-blue-500/30 transition-all shadow-md"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-2 border border-slate-200 transition-all shadow-xs"
             title="1-Click Auto-Ingest: Scans Downloads folder for all client IMS ZIP/JSON files"
           >
             <FolderSearch className={`w-3.5 h-3.5 text-blue-400 ${batchScanningDownloads ? 'animate-spin' : ''}`} />
@@ -2097,7 +2097,7 @@ export default function ImsMasterManager({
           {/* Assisted Portal Login */}
           <button
             onClick={() => setShowPortalModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-2 border border-slate-700 transition-all"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-2 border border-slate-200 transition-all"
           >
             <Globe className="w-3.5 h-3.5 text-indigo-400" />
             Single Portal Sync
@@ -2106,7 +2106,7 @@ export default function ImsMasterManager({
           {/* Client Credentials Vault */}
           <button
             onClick={() => setShowCredentialsModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-amber-950 transition-all hover:scale-[1.02]"
+            className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center gap-2 border border-amber-200 transition-all"
             title="Manage Portal Usernames & Passwords for 300+ Clients"
           >
             <Key className="w-3.5 h-3.5" />
@@ -2116,7 +2116,7 @@ export default function ImsMasterManager({
           {/* Bulk Dropzone */}
           <button
             onClick={() => setShowDropzoneModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 border border-slate-700 transition-all"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-2 border border-slate-200 transition-all"
           >
             <UploadCloud className="w-3.5 h-3.5 text-blue-400" />
             Drop Inward IMS Files
@@ -2149,7 +2149,7 @@ export default function ImsMasterManager({
           {/* Import Returned Excel */}
           <button
             onClick={() => bulkExcelInputRef.current?.click()}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-2 border border-slate-700 transition-all"
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-2 border border-slate-200 transition-all"
             title="Import Excel returned by a client"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
@@ -2177,7 +2177,7 @@ export default function ImsMasterManager({
       </div>
 
       {/* ─── SEARCH & FILTER TOOLBAR ──────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-200">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -2185,7 +2185,7 @@ export default function ImsMasterManager({
             placeholder="Search across 300+ clients by Name, GSTIN, or Phone..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
 
@@ -2202,8 +2202,8 @@ export default function ImsMasterManager({
               onClick={() => setStatusFilter(tab.id as any)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                 statusFilter === tab.id
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  ? 'bg-slate-900 text-white shadow-xs font-bold'
+                  : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
             >
               {tab.label}
@@ -2213,17 +2213,17 @@ export default function ImsMasterManager({
       </div>
 
       {/* ─── MASTER CLIENT GRID (300+ ROWS) ───────────────────────────────── */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
+      <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+            <thead className="sticky top-0 z-20 bg-slate-50 border-b border-slate-200 text-slate-600 uppercase text-[10px] font-bold tracking-wider">
               <tr>
                 <th className="p-4 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={selectedGstins.size === filteredClients.length && filteredClients.length > 0}
                     onChange={e => handleSelectAll(e.target.checked)}
-                    className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0"
+                    className="rounded border-slate-200 bg-white text-indigo-600 focus:ring-0"
                   />
                 </th>
                 <th className="p-4">Taxpayer / Trade Name</th>
@@ -2234,7 +2234,7 @@ export default function ImsMasterManager({
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100">
               {filteredClients.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-12 text-center text-slate-500">
@@ -2260,7 +2260,7 @@ export default function ImsMasterManager({
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelect(client.gstin)}
-                          className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0"
+                          className="rounded border-slate-200 bg-white text-indigo-600 focus:ring-0"
                         />
                       </td>
 
@@ -2270,7 +2270,7 @@ export default function ImsMasterManager({
                         onClick={() => handleOpenDetail(client)}
                         title="🔍 Click to open full client details & line-item invoices"
                       >
-                        <div className="font-bold text-white text-sm group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                        <div className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
                           <span className="group-hover:underline underline-offset-2">{client.trade_name || client.legal_name || 'Client Details Missing'}</span>
                           <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-all text-indigo-400 shrink-0" />
                         </div>
@@ -2281,7 +2281,7 @@ export default function ImsMasterManager({
 
                       {/* GSTIN & Phone */}
                       <td className="p-4 font-mono">
-                        <div className="text-slate-200 font-semibold">{client.gstin}</div>
+                        <div className="text-slate-800 font-semibold">{client.gstin}</div>
                         <div className="text-[11px] text-slate-500">
                           {client.phone ? `+91 ${client.phone}` : 'No phone saved'}
                         </div>
@@ -2289,7 +2289,7 @@ export default function ImsMasterManager({
 
                       {/* Invoices Count */}
                       <td className="p-4 text-center">
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono font-bold text-slate-200">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 font-mono font-bold text-slate-800">
                           {client.total_invoices || 0}
                         </span>
                       </td>
@@ -2342,7 +2342,7 @@ export default function ImsMasterManager({
                             );
                           }
                         })() : (
-                          <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-400 font-semibold text-[10px] flex items-center gap-1.5 w-fit">
+                          <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-200 text-slate-400 font-semibold text-[10px] flex items-center gap-1.5 w-fit">
                             Not Synced
                           </span>
                         )}
@@ -2396,7 +2396,7 @@ export default function ImsMasterManager({
                           {/* Export Excel */}
                           <button
                             onClick={() => handleExportClientExcel(client)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-200 transition-colors"
                             title="Export Client Review Excel (.xlsx)"
                           >
                             <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
@@ -2405,7 +2405,7 @@ export default function ImsMasterManager({
                           {/* View Invoices */}
                           <button
                             onClick={() => handleOpenDetail(client)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-200 transition-colors"
                             title="Inspect Bills in Detail"
                           >
                             <Eye className="w-3.5 h-3.5 text-indigo-400" />
@@ -2423,16 +2423,16 @@ export default function ImsMasterManager({
 
       {/* ─── CLIENT INVOICE DETAIL INSPECTOR MODAL (EXCEL SPREADSHEET VIEW) ─────────────────────────── */}
       {activeClientDetail && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto p-2 sm:p-4 md:p-6 animate-fade-in">
-          <div className="w-full max-w-[99vw] 2xl:max-w-[1600px] bg-slate-900 border border-slate-700/90 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xl mx-auto my-3">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md overflow-y-auto p-2 sm:p-4 md:p-6 animate-fade-in">
+          <div className="w-full max-w-[99vw] 2xl:max-w-[1600px] bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xl mx-auto my-3">
             {/* Modal Header: Client Details & Quick Actions */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-mono uppercase tracking-widest text-indigo-400 font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                     Client IMS Working &amp; Decision Hub
                   </span>
-                  <span className="text-[10px] font-mono text-slate-300 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                  <span className="text-[10px] font-mono text-slate-300 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-200">
                     Period: <strong className="text-white">{activePeriod}</strong>
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border ${
@@ -2440,21 +2440,21 @@ export default function ImsMasterManager({
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : activeClientDetail.status === 'SYNCED'
                       ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                      : 'bg-slate-800 text-slate-400 border-slate-200'
                   }`}>
                     {activeClientDetail.status === 'PUSHED_TO_3B' ? 'Pushed to 3B' : activeClientDetail.status || 'SYNCED'}
                   </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+                  <h3 className="text-lg md:text-xl font-black text-slate-900 flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-indigo-400 shrink-0" />
                     <span>{activeClientDetail.trade_name || activeClientDetail.legal_name || 'Client Invoices'}</span>
                   </h3>
 
-                  <div className="flex items-center gap-1.5 bg-slate-800/90 px-2.5 py-0.5 rounded-lg border border-slate-700 text-xs font-mono">
+                  <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200 text-xs font-mono">
                     <span className="text-slate-400">GSTIN:</span>
-                    <strong className="text-white select-all">{activeClientDetail.gstin}</strong>
+                    <strong className="text-slate-800 select-all">{activeClientDetail.gstin}</strong>
                     <button
                       onClick={() => handleCopyGstin(activeClientDetail.gstin)}
                       className="text-slate-400 hover:text-white transition-colors"
@@ -2478,7 +2478,7 @@ export default function ImsMasterManager({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => handleExportClientExcel(activeClientDetail)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors shadow-sm"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition-colors shadow-sm"
                   title="Export Client Review Excel (.xlsx)"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
@@ -2520,7 +2520,7 @@ export default function ImsMasterManager({
 
                 <button
                   onClick={() => setActiveClientDetail(null)}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-200"
                   title="Close Inspector"
                 >
                   <X className="w-5 h-5" />
@@ -2528,8 +2528,93 @@ export default function ImsMasterManager({
               </div>
             </div>
 
+            {/* STITCH 4-METRIC COMPACT KPI SUMMARY BAR */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Total Inward Invoices</span>
+                    <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xl font-bold text-slate-900 tracking-tight">{modalStats.totalCount}</span>
+                    <span className="text-[11px] text-slate-500 font-medium">Docs</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <span className="font-mono font-semibold text-slate-700">{fmt(modalStats.totalInvoiceVal)}</span>
+                    <span className="text-[10px] text-slate-400">Total Value</span>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide">Action Taken (Accepted)</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xl font-bold text-emerald-700 tracking-tight">{modalStats.acceptedCount}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                      {modalStats.totalCount > 0 ? Math.round((modalStats.acceptedCount / modalStats.totalCount) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <span className="font-mono font-semibold text-emerald-600">{fmt(modalStats.acceptedGst)}</span>
+                    <span className="text-[10px] text-emerald-600 font-medium">Claimable</span>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <Check className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[11px] font-semibold text-rose-700 uppercase tracking-wide">Action Taken (Rejected)</span>
+                    <X className="w-3.5 h-3.5 text-rose-500" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xl font-bold text-rose-600 tracking-tight">{modalStats.rejectedCount}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200/60">Ineligible</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <span className="font-mono font-semibold text-rose-600">{fmt(modalStats.rejectedGst)}</span>
+                    <span className="text-[10px] text-rose-600 font-medium">Blocked</span>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
+                  <X className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wide">Pending Action</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xl font-bold text-amber-600 tracking-tight">{modalStats.pendingCount + modalStats.noActionCount}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200/60">Needs Review</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <span className="font-mono font-semibold text-amber-700">{fmt(modalStats.pendingGst)}</span>
+                    <span className="text-[10px] text-amber-700 font-medium">Before 3B</span>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                  <Clock className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+
             {/* Excel-Style Simplified Status Strip & Toolbar */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-950/90 p-2.5 rounded-xl border border-slate-800">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
               {/* Quick Status Filter Tabs with Excel Counts */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
@@ -2537,7 +2622,7 @@ export default function ImsMasterManager({
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
                     detailActionFilter === 'ALL'
                       ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                      : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                      : 'bg-slate-900 text-slate-300 border-slate-200 hover:border-slate-200'
                   }`}
                 >
                   <span>All Invoices</span>
@@ -2622,7 +2707,7 @@ export default function ImsMasterManager({
                     value={detailSearch}
                     onChange={e => setDetailSearch(e.target.value)}
                     placeholder="Search vendor, bill no, GSTIN, amount..."
-                    className="w-48 sm:w-60 pl-8 pr-7 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-48 sm:w-60 pl-8 pr-7 py-1.5 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   {detailSearch && (
                     <button
@@ -2635,7 +2720,7 @@ export default function ImsMasterManager({
                 </div>
 
                 {filteredDetailInvoices.length > 0 && (
-                  <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
+                  <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
                     <button
                       onClick={() => handleBulkSetFilteredAction('ACCEPT')}
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 transition-colors flex items-center gap-1"
@@ -2662,7 +2747,7 @@ export default function ImsMasterManager({
                     </button>
                     <button
                       onClick={() => handleBulkSetFilteredAction('NO_ACTION')}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-bold border border-slate-700 transition-colors"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-bold border border-slate-200 transition-colors"
                       title="Reset all currently filtered invoices to No Action"
                     >
                       ↺ Reset
@@ -2673,11 +2758,11 @@ export default function ImsMasterManager({
             </div>
 
             {/* ─── EXCEL SPREADSHEET TABLE GRID (WHOLE SCREEN SCROLLS NATURALLY) ─────────────────── */}
-            <div className="border border-slate-700/80 rounded-xl overflow-hidden bg-slate-950 shadow-inner">
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
-                  <thead className="sticky top-0 bg-slate-800 text-slate-200 z-10 shadow-sm border-b border-slate-700 select-none">
-                    <tr className="divide-x divide-slate-700/60 text-[11px] font-bold uppercase tracking-wider">
+                  <thead className="sticky top-0 bg-slate-100 text-slate-700 z-10 shadow-xs border-b border-slate-200 select-none">
+                    <tr className="divide-x divide-slate-200 text-[11px] font-bold uppercase tracking-wider">
                       <th className="py-2.5 px-2 text-center w-8">#</th>
                       <th className="py-2.5 px-3">Supplier Name</th>
                       <th className="py-2.5 px-3">Supplier GSTIN</th>
@@ -2697,7 +2782,7 @@ export default function ImsMasterManager({
                       <th className="py-2.5 px-3">Remarks / Note</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/80 text-slate-200">
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
                     {loadingDetail ? (
                       <tr>
                         <td colSpan={17} className="py-16 text-center text-slate-400">
@@ -2853,7 +2938,7 @@ export default function ImsMasterManager({
                                     value={remarkInput}
                                     onChange={e => setRemarkInput(e.target.value)}
                                     placeholder="Note..."
-                                    className="px-2 py-0.5 bg-slate-950 border border-indigo-500 rounded text-xs text-white w-32 focus:outline-none"
+                                    className="px-2 py-0.5 bg-white border border-indigo-500 rounded text-xs text-white w-32 focus:outline-none"
                                     autoFocus
                                     onKeyDown={e => {
                                       if (e.key === 'Enter') handleSaveInvoiceRemark(inv.id, remarkInput);
@@ -2894,7 +2979,7 @@ export default function ImsMasterManager({
                   </tbody>
                   {/* Excel Summary Total Footer */}
                   {filteredDetailInvoices.length > 0 && (
-                    <tfoot className="sticky bottom-0 bg-slate-900 border-t-2 border-slate-700 font-bold text-white z-10 text-xs font-mono">
+                    <tfoot className="sticky bottom-0 bg-slate-900 border-t-2 border-slate-200 font-bold text-white z-10 text-xs font-mono">
                       <tr className="divide-x divide-slate-700/60">
                         <td colSpan={8} className="py-2.5 px-3 text-right font-sans uppercase font-bold text-slate-300">
                           Total ({filteredDetailInvoices.length} Bills):
@@ -2917,7 +3002,7 @@ export default function ImsMasterManager({
                         <td className="py-2.5 px-3 text-right font-bold text-emerald-400">
                           {fmt(filteredDetailInvoices.reduce((acc, i) => acc + (Number(i.igst) || 0) + (Number(i.cgst) || 0) + (Number(i.sgst) || 0) + (Number(i.cess) || 0), 0))}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-black text-white bg-slate-950">
+                        <td className="py-2.5 px-3 text-right font-black text-white bg-white">
                           {fmt(filteredDetailInvoices.reduce((acc, i) => {
                             const gst = (Number(i.igst) || 0) + (Number(i.cgst) || 0) + (Number(i.sgst) || 0) + (Number(i.cess) || 0);
                             return acc + (Number(i.total_val) > 0 ? Number(i.total_val) : ((Number(i.txval) || 0) + gst));
@@ -2934,7 +3019,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer: Net 2B ITC & Apply to 3B */}
-            <div className="border-t border-slate-800 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="border-t border-slate-200 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="flex flex-wrap items-center gap-4 text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -2954,7 +3039,7 @@ export default function ImsMasterManager({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setActiveClientDetail(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors border border-slate-700"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors border border-slate-200"
                 >
                   Close
                 </button>
@@ -2978,7 +3063,7 @@ export default function ImsMasterManager({
       {/* ─── OFFLINE DROPZONE MODAL ───────────────────────────────────────── */}
       {showDropzoneModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-lg w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 space-y-5 shadow-2xl text-center">
+          <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-5 shadow-2xl text-center">
             <div className="w-16 h-16 mx-auto rounded-3xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
               <UploadCloud className="w-8 h-8" />
             </div>
@@ -2992,7 +3077,7 @@ export default function ImsMasterManager({
 
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-2xl p-8 cursor-pointer transition-all bg-slate-950/40 hover:bg-indigo-950/10 space-y-2"
+              className="border-2 border-dashed border-slate-200 hover:border-indigo-500/60 rounded-2xl p-8 cursor-pointer transition-all bg-slate-50 hover:bg-indigo-950/10 space-y-2"
             >
               <FileJson className="w-8 h-8 text-indigo-400 mx-auto" />
               <p className="text-xs font-bold text-slate-300">Click to Browse or Drag Files Here</p>
@@ -3021,7 +3106,7 @@ export default function ImsMasterManager({
       {/* ─── ASSISTED GST PORTAL LOGIN MODAL ──────────────────────────────── */}
       {showPortalModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 space-y-5 shadow-2xl">
+          <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-5 shadow-2xl">
             <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
               <Globe className="w-7 h-7" />
             </div>
@@ -3049,13 +3134,13 @@ export default function ImsMasterManager({
                     placeholder="Enter or select GSTIN (e.g. 27AAACS1234A1Z1)"
                     value={portalGstin}
                     onChange={e => handleSelectPortalGstin(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
                   />
                   {clients.length > 0 && (
                     <select
                       value={portalGstin}
                       onChange={e => handleSelectPortalGstin(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-200 rounded-xl text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
                     >
                       <option value="">-- Or Choose From Client List ({clients.length}) --</option>
                       {clients.map(c => {
@@ -3122,7 +3207,7 @@ export default function ImsMasterManager({
                   placeholder="Username"
                   value={portalUsername}
                   onChange={e => setPortalUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -3133,7 +3218,7 @@ export default function ImsMasterManager({
                   placeholder="••••••••"
                   value={portalPassword}
                   onChange={e => setPortalPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -3147,7 +3232,7 @@ export default function ImsMasterManager({
                   </span>
                   <span>Browser Launched & Active!</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
                   <p className="font-semibold text-amber-300 flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                     Action Required on Desktop:
@@ -3172,7 +3257,7 @@ export default function ImsMasterManager({
               </div>
             ) : (
               <>
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400 leading-relaxed space-y-1">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-400 leading-relaxed space-y-1">
                   <span className="text-amber-400 font-bold block flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     Browser CAPTCHA Prompt
@@ -3204,9 +3289,9 @@ export default function ImsMasterManager({
       {/* ─── CLIENT CREDENTIALS VAULT MODAL (300+ CLIENTS) ─────────────────── */}
       {showCredentialsModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-950/40">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-inner">
                   <Key className="w-5 h-5" />
@@ -3226,7 +3311,7 @@ export default function ImsMasterManager({
 
               {/* KPI Badges */}
               <div className="hidden sm:flex items-center gap-2">
-                <div className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-center">
+                <div className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-200 text-center">
                   <span className="text-[10px] text-slate-400 block font-semibold">Total</span>
                   <span className="text-xs font-bold text-white">{credentialsStats.total}</span>
                 </div>
@@ -3256,7 +3341,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Action & Filter Toolbar */}
-            <div className="p-4 border-b border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-3">
+            <div className="p-4 border-b border-slate-200 bg-slate-900 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 flex-1 max-w-lg">
                 {/* Search */}
                 <div className="relative flex-1 min-w-[200px]">
@@ -3266,7 +3351,7 @@ export default function ImsMasterManager({
                     placeholder="Search by Client Name, GSTIN, Username..."
                     value={credentialsSearch}
                     onChange={e => setCredentialsSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
                   />
                   {credentialsSearch && (
                     <button
@@ -3279,7 +3364,7 @@ export default function ImsMasterManager({
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
                   <button
                     onClick={() => setCredentialsFilter('ALL')}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
@@ -3311,7 +3396,7 @@ export default function ImsMasterManager({
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleDownloadCredentialsTemplate}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-all hover:border-amber-500/50"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition-all hover:border-amber-500/50"
                   title="Download Excel with all clients pre-populated to fill passwords in bulk"
                 >
                   <Download className="w-3.5 h-3.5 text-amber-400" />
@@ -3355,9 +3440,9 @@ export default function ImsMasterManager({
                   <p className="text-sm font-semibold">No clients match the current search or filter.</p>
                 </div>
               ) : (
-                <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/60 shadow-inner">
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-inner">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900 border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 sticky top-0 z-10">
+                    <thead className="bg-slate-900 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-400 sticky top-0 z-10">
                       <tr>
                         <th className="py-2.5 px-3 w-10 text-center">#</th>
                         <th className="py-2.5 px-3 min-w-[180px]">Client / Trade Name</th>
@@ -3379,7 +3464,7 @@ export default function ImsMasterManager({
                         const isPasswordVisible = Boolean(showPasswords[c.gstin]);
 
                         return (
-                          <tr key={c.gstin} className="hover:bg-slate-900/60 transition-colors">
+                          <tr key={c.gstin} className="hover:bg-slate-50 transition-colors">
                             <td className="py-2.5 px-3 text-center text-slate-500 font-mono text-[11px]">{i + 1}</td>
                             <td className="py-2.5 px-3 font-semibold text-slate-200">
                               <div className="flex items-center gap-1.5">
@@ -3407,7 +3492,7 @@ export default function ImsMasterManager({
                                     }
                                   }));
                                 }}
-                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
                               />
                             </td>
                             <td className="py-2.5 px-3">
@@ -3428,7 +3513,7 @@ export default function ImsMasterManager({
                                       }
                                     }));
                                   }}
-                                  className="w-full pl-2.5 pr-8 py-1 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-500"
+                                  className="w-full pl-2.5 pr-8 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-500"
                                 />
                                 <button
                                   type="button"
@@ -3457,7 +3542,7 @@ export default function ImsMasterManager({
                                     }
                                   }));
                                 }}
-                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
+                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
                               />
                             </td>
                             <td className="py-2.5 px-3 text-center">
@@ -3490,7 +3575,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2 text-slate-400 text-[11px]">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 <span>
@@ -3511,7 +3596,7 @@ export default function ImsMasterManager({
       {/* ─── FLOATING MULTI-CLIENT SELECTION DOCK ──────────────────────────── */}
       {selectedGstins.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-indigo-500/50 shadow-2xl shadow-indigo-950/80 rounded-2xl px-6 py-3 flex items-center gap-4 backdrop-blur-xl animate-in slide-in-from-bottom-5">
-          <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-200">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-ping" />
             <span className="text-white font-bold text-xs">
               {selectedGstins.size} Client{selectedGstins.size > 1 ? 's' : ''} Selected
@@ -3546,9 +3631,9 @@ export default function ImsMasterManager({
       {/* ─── BATCH MULTI-SYNC RUNNER MODAL ─────────────────────────────────── */}
       {showBatchModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-4xl w-full bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 space-y-6 shadow-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
+          <div className="max-w-4xl w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-6 shadow-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
             {/* Header */}
-            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
@@ -3583,7 +3668,7 @@ export default function ImsMasterManager({
 
             {/* Top Stats Banner */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="p-3 rounded-xl bg-white border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-400">Total in Queue</span>
                 <p className="text-xl font-black text-white">{batchQueue.length}</p>
               </div>
@@ -3627,7 +3712,7 @@ export default function ImsMasterManager({
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="px-4 py-2 rounded-xl bg-slate-950 border border-amber-500/50 text-center shadow-md">
+                    <div className="px-4 py-2 rounded-xl bg-white border border-amber-500/50 text-center shadow-md">
                       <span className="text-[10px] text-amber-400/80 font-bold block uppercase">Phase 2 Starts In</span>
                       <span className="text-2xl font-black font-mono text-amber-300">
                         {formatCountdown(batchSecondsLeft)}
@@ -3666,7 +3751,7 @@ export default function ImsMasterManager({
                 </p>
               </div>
             ) : (
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
                 <div className="space-y-1">
                   <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -3705,7 +3790,7 @@ export default function ImsMasterManager({
                         ? 'bg-amber-950/10 border-amber-500/30'
                         : item.status === 'FAILED'
                         ? 'bg-rose-950/10 border-rose-500/30'
-                        : 'bg-slate-950/50 border-slate-800'
+                        : 'bg-slate-50 border-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -3795,7 +3880,7 @@ export default function ImsMasterManager({
                         </div>
                       ) : item.status === 'SKIPPED' ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-[10px] font-semibold">
+                          <span className="px-3 py-1 rounded-full bg-slate-800 border border-slate-200 text-slate-400 text-[10px] font-semibold">
                             Skipped
                           </span>
                           <button
@@ -3807,7 +3892,7 @@ export default function ImsMasterManager({
                           </button>
                         </div>
                       ) : (
-                        <span className="px-3 py-1 rounded-full bg-slate-800/60 border border-slate-700/60 text-slate-400 text-[10px] font-semibold">
+                        <span className="px-3 py-1 rounded-full bg-slate-800/60 border border-slate-200/60 text-slate-400 text-[10px] font-semibold">
                           Queued
                         </span>
                       )}
@@ -3818,7 +3903,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer Controls */}
-            <div className="flex items-center justify-between border-t border-slate-800 pt-4 gap-3">
+            <div className="flex items-center justify-between border-t border-slate-200 pt-4 gap-3">
               <div className="text-xs text-slate-500">
                 Period: <strong className="text-slate-300">{activePeriod}</strong>
               </div>
@@ -3903,10 +3988,10 @@ export default function ImsMasterManager({
 
       {/* ─── 📧 EMAIL BROADCAST & GMAIL INTEGRATION MODAL ───────────────────────── */}
       {showEmailBroadcastModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-950/60">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 shadow-md">
                   <Mail className="w-5 h-5" />
@@ -3939,7 +4024,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Tab Switcher */}
-            <div className="flex border-b border-slate-800 bg-slate-950/40 px-5 pt-2 gap-2">
+            <div className="flex border-b border-slate-200 bg-slate-50 px-5 pt-2 gap-2">
               <button
                 onClick={() => setEmailModalTab('BROADCAST')}
                 className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 ${
@@ -3994,7 +4079,7 @@ export default function ImsMasterManager({
                       </button>
                     </div>
                   ) : (
-                    <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 text-xs text-slate-300">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span>
@@ -4023,7 +4108,7 @@ export default function ImsMasterManager({
                         value={broadcastSubject}
                         onChange={(e) => setBroadcastSubject(e.target.value)}
                         placeholder="Action Required: GST IMS Inward Invoices Review..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
                       />
                     </div>
 
@@ -4038,7 +4123,7 @@ export default function ImsMasterManager({
                         value={broadcastNote}
                         onChange={(e) => setBroadcastNote(e.target.value)}
                         placeholder="e.g. Kindly review all invoices before 11th 5:00 PM..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
                       />
                     </div>
                   </div>
@@ -4058,9 +4143,9 @@ export default function ImsMasterManager({
                       <span className="text-[11px] text-slate-500">Verify email addresses before dispatching</span>
                     </div>
 
-                    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/60 max-h-64 overflow-y-auto">
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 max-h-64 overflow-y-auto">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-900/90 text-slate-400 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-800">
+                        <thead className="bg-slate-900/90 text-slate-400 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
                           <tr>
                             <th className="p-3">Client</th>
                             <th className="p-3">GSTIN</th>
@@ -4078,7 +4163,7 @@ export default function ImsMasterManager({
                             const emailValue = isEditing ? inlineEmailEdits[c.gstin] : currentEmail;
 
                             return (
-                              <tr key={c.gstin} className="hover:bg-slate-900/40">
+                              <tr key={c.gstin} className="hover:bg-slate-50">
                                 <td className="p-3 font-semibold text-white max-w-[180px] truncate">
                                   {c.trade_name || c.legal_name || c.gstin}
                                 </td>
@@ -4148,7 +4233,7 @@ export default function ImsMasterManager({
 
                   {/* Broadcast Execution Results (if available) */}
                   {broadcastProgress && (
-                    <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white flex items-center gap-2">
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -4212,7 +4297,7 @@ export default function ImsMasterManager({
                         value={emailSettings.sender_name}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sender_name: e.target.value }))}
                         placeholder="e.g. Sourav Vaswani & Co."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                       />
                     </div>
 
@@ -4224,7 +4309,7 @@ export default function ImsMasterManager({
                         value={emailSettings.sender_email}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sender_email: e.target.value }))}
                         placeholder="yourname@gmail.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                       />
                     </div>
 
@@ -4247,7 +4332,7 @@ export default function ImsMasterManager({
                           value={emailSettings.app_password}
                           onChange={(e) => setEmailSettings(prev => ({ ...prev, app_password: e.target.value }))}
                           placeholder="abcd efgh ijkl mnop"
-                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono tracking-wider focus:outline-none focus:border-indigo-500"
+                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs font-mono tracking-wider focus:outline-none focus:border-indigo-500"
                         />
                         <button
                           type="button"
@@ -4270,7 +4355,7 @@ export default function ImsMasterManager({
                         value={emailSettings.ca_phone}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, ca_phone: e.target.value }))}
                         placeholder="+91 98765 43210"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   </div>
@@ -4286,12 +4371,12 @@ export default function ImsMasterManager({
                       value={emailSettings.public_base_url}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, public_base_url: e.target.value }))}
                       placeholder="https://reco-vaswani-server.loca.lt"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs font-mono focus:outline-none focus:border-indigo-500"
                     />
                   </div>
 
                   {/* Connection Test Strip */}
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <div className="space-y-1">
                       <span className="text-xs font-bold text-slate-200 block">Verify Gmail Connection</span>
                       <div className="flex items-center gap-2">
@@ -4300,7 +4385,7 @@ export default function ImsMasterManager({
                           value={testEmailRecipient}
                           onChange={(e) => setTestEmailRecipient(e.target.value)}
                           placeholder="test.recipient@gmail.com"
-                          className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-xs w-60 focus:outline-none focus:border-indigo-500"
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-200 text-slate-200 text-xs w-60 focus:outline-none focus:border-indigo-500"
                         />
                         <button
                           onClick={handleTestEmailConnection}
@@ -4324,7 +4409,7 @@ export default function ImsMasterManager({
                   </div>
 
                   {/* 60-Second Setup Guide */}
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
                     <h5 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       How to get your 16-Character Google App Password in 60 seconds:
@@ -4341,7 +4426,7 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer Controls */}
-            <div className="p-4 border-t border-slate-800 flex items-center justify-between gap-3 bg-slate-950/60">
+            <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
               <div className="text-xs text-slate-500">
                 Period: <strong className="text-slate-300">{activePeriod}</strong>
               </div>
