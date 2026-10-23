@@ -845,10 +845,10 @@ export default function Reconciliation(props: any) {
 
               {/* Detailed results tabs */}
               <div className="dash-card shadow-2xl">
-                <div className="dash-topbar bg-slate-950/20 flex items-center justify-between">
+                <div className="dash-topbar bg-slate-50 flex items-center justify-between border-b border-slate-200">
                   <div className="flex items-center gap-3">
                     <div className="dash-dots"><span style={{ background: '#4A9EE8' }}></span><span style={{ background: '#7EC8F0' }}></span></div>
-                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Reconciliation Audit Ledger</span>
+                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest font-bold">Reconciliation Audit Ledger</span>
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                   </div>
                   <button

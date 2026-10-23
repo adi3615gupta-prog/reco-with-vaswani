@@ -30,12 +30,12 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
       <div className="obsidian-card px-4 py-2.5 flex items-center justify-between text-xs font-mono">
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-4 h-4 text-emerald-400" />
-          <span className="font-bold text-slate-200 uppercase tracking-wider">Reconciliation Health:</span>
+          <span className="font-bold text-slate-700 uppercase tracking-wider">Reconciliation Health:</span>
           <span className="text-emerald-400 font-extrabold text-sm">{matchRate.toFixed(1)}% Matched</span>
         </div>
         <div className="flex items-center gap-3 text-slate-400">
           <span>{summary.perfectMatch} of {summary.total} matched</span>
-          <div className="w-32 h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700/60">
+          <div className="w-32 h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-700"
               style={{ width: `${Math.max(matchRate, 2)}%` }}
@@ -83,7 +83,7 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
               
               <div className="p-3 pt-2 space-y-1.5 flex-1 flex flex-col justify-between">
                 <div>
-                  <div className="text-xl font-mono font-black text-white tracking-tight leading-none">
+                  <div className="text-xl font-mono font-black text-slate-900 tracking-tight leading-none">
                     {c.value.toLocaleString('en-IN')}
                   </div>
                   <div className="text-[9px] font-mono font-bold uppercase tracking-wider mt-1" style={{ color: c.color }}>
@@ -91,7 +91,7 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
                   </div>
                 </div>
                 
-                <div className="h-1 w-full bg-slate-800/80 rounded-full overflow-hidden">
+                <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/40">
                   <div 
                     className="h-full transition-all duration-700 ease-out" 
                     style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: c.color }} 

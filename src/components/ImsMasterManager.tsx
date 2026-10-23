@@ -1909,7 +1909,7 @@ export default function ImsMasterManager({
             <span className="text-[10px] uppercase font-bold tracking-wider">Total Clients</span>
             <Users className="w-4 h-4" />
           </div>
-          <p className="text-2xl font-black text-white">{stats.totalClients}</p>
+          <p className="text-2xl font-black text-slate-900 font-mono tabular-nums">{stats.totalClients}</p>
           <span className="text-[10px] text-slate-500 font-mono">Master Database</span>
         </div>
 
@@ -1951,7 +1951,7 @@ export default function ImsMasterManager({
 
         <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-500/30 space-y-1 col-span-2 md:col-span-1 shadow-lg shadow-emerald-950/20">
           <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">Net Eligible 2B ITC</span>
-          <p className="text-xl md:text-2xl font-black text-white font-mono">{fmt(stats.totalEligibleItc)}</p>
+          <p className="text-xl md:text-2xl font-black text-slate-900 font-mono tabular-nums font-mono">{fmt(stats.totalEligibleItc)}</p>
           <span className="text-[10px] text-emerald-300/80">Across Accepted Bills</span>
         </div>
       </div>
@@ -2051,7 +2051,7 @@ export default function ImsMasterManager({
 
                 <button
                   onClick={() => handleOpenBatchSync()}
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                  className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs hover:border-slate-600 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
                 >
                   <Eye className="w-3.5 h-3.5 text-indigo-400" />
                   View Queue Modal
@@ -2251,7 +2251,7 @@ export default function ImsMasterManager({
                   return (
                     <tr
                       key={client.gstin || idx}
-                      className={`hover:bg-slate-800/40 transition-colors ${
+                      className={`hover:bg-slate-50/80 transition-colors ${
                         isSelected ? 'bg-indigo-950/20' : ''
                       }`}
                     >

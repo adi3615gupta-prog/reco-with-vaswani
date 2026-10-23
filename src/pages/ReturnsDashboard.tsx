@@ -1325,7 +1325,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           {/* Left: FY Selector + Save Working Button */}
           <div className="flex flex-wrap items-center gap-2">
             {/* FY Selector */}
-            <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 p-0.5 rounded-lg">
+            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 p-0.5 rounded-lg">
               <span className="text-[10px] text-slate-500 uppercase px-1.5 font-sans font-semibold">FY:</span>
               {['2025-26', '2026-27'].map(fy => {
                 const isSelected = normalizeFy(workingData.profile.financialYear || '2025-26') === fy;
@@ -1336,8 +1336,8 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                     onClick={() => handleFinancialYearChange(fy)}
                     className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all ${
                       isSelected
-                        ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-400/30'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
                     }`}
                   >
                     {fy}
@@ -1402,7 +1402,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
         </div>
       </div>
       {/* Main Tab Bar (5-Card Interactive Module Launcher) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800/80 shadow-lg backdrop-blur-md">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/80 shadow-sm">
         {[
           { id: 'working3b', num: '01', label: 'GSTR-3B Working', sub: 'Monthly Tax & Set-Off', icon: Calculator },
           { id: 'matrix', num: '02', label: '12-Month FY Matrix', sub: 'Annual Comparative Grid', icon: Table },
@@ -1417,24 +1417,24 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               onClick={() => setActiveTab(tab.id as any)}
               className={`p-2.5 rounded-xl font-bold transition-all flex flex-col items-start gap-1 text-left relative overflow-hidden group ${
                 isActive
-                  ? 'bg-gradient-to-br from-blue-600/90 to-indigo-700/90 text-white shadow-lg shadow-blue-950/60 ring-1 ring-blue-400/40'
-                  : 'bg-slate-900/60 hover:bg-slate-800/80 text-slate-300 border border-slate-800/60 hover:border-slate-700'
+                  ? 'bg-white text-blue-700 shadow-sm border border-slate-200/80 ring-1 ring-blue-500/20'
+                  : 'bg-transparent hover:bg-white/60 text-slate-600 hover:text-slate-900 border border-transparent'
               }`}
             >
               <div className="w-full flex items-center justify-between">
-                <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>
+                <span className={`text-[10px] font-mono font-black uppercase tracking-wider ${isActive ? 'text-blue-600' : 'text-slate-400'}`}>
                   {tab.num}
                 </span>
-                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400 group-hover:text-white'}`}>
+                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isActive ? 'bg-blue-50 text-blue-600 border border-blue-200/60' : 'bg-slate-200/60 text-slate-500 group-hover:text-slate-800'}`}>
                   <tab.icon className="w-3 h-3" />
                 </div>
               </div>
               <div className="w-full min-w-0">
-                <span className="text-xs font-extrabold block truncate">{tab.label}</span>
-                <span className={`text-[10px] block truncate font-medium ${isActive ? 'text-blue-100/80' : 'text-slate-400'}`}>{tab.sub}</span>
+                <span className="text-xs font-extrabold block truncate text-slate-900">{tab.label}</span>
+                <span className={`text-[10px] block truncate font-medium ${isActive ? 'text-blue-600/90' : 'text-slate-500'}`}>{tab.sub}</span>
               </div>
               {isActive && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-300 animate-pulse" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
               )}
             </button>
           );
@@ -1460,8 +1460,8 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           />
 
           {/* Month Selector Pills */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-2">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-600 uppercase tracking-wider px-2">
               <Calendar className="w-4 h-4 text-purple-400" /> Select Filing Period:
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1496,7 +1496,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
 
           {/* KPI Dashboard Cards for the Selected Month */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
-            <div className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gross Outward Sale</span>
               <p className="text-base md:text-lg font-extrabold text-white mt-1">
                 {formatCur(currentMonthData.outward.totalSaleWorking.taxable)}
@@ -1504,7 +1504,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <span className="text-[10px] text-slate-400">Total Tax: {formatCur(currentMonthData.outward.totalSaleWorking.total)}</span>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">2B Available ITC</span>
               <p className="text-base md:text-lg font-extrabold text-blue-300 mt-1">
                 {formatCur(currentMonthData.inward.totalItcAvailable.total)}
@@ -1512,7 +1512,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <span className="text-[10px] text-slate-400">Opening B/F: {formatCur(currentMonthData.inward.openingCreditBal.total)}</span>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Net Outward Tax</span>
               <p className="text-base md:text-lg font-extrabold text-amber-300 mt-1">
                 {formatCur(currentMonthData.setoff.payableAfterAdjustment.total)}
@@ -1520,7 +1520,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <span className="text-[10px] text-slate-400">After ITC Set-off</span>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Balance C/F Next Mo.</span>
               <p className="text-base md:text-lg font-extrabold text-emerald-300 mt-1">
                 {formatCur(currentMonthData.setoff.balanceCfNextMonth.total)}
@@ -1528,7 +1528,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <span className="text-[10px] text-slate-400">Carried Forward Credit</span>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">RCM Cash Liability</span>
               <p className="text-base md:text-lg font-extrabold text-rose-300 mt-1">
                 {formatCur(currentMonthData.settlement.rcmPayable.total)}
@@ -1536,7 +1536,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <span className="text-[10px] text-rose-400/80">Sec 49(4) Cash Only</span>
             </div>
 
-            <div className="bg-gradient-to-br from-slate-900 to-purple-950/40 border border-purple-500/30 rounded-xl p-3.5 shadow-lg">
+            <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all">
               <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">Total Cash Payable</span>
               <p className="text-base md:text-lg font-extrabold text-purple-200 mt-1">
                 {formatCur(currentMonthData.settlement.balancePayable.total)}
@@ -1546,8 +1546,8 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           </div>
 
           {/* THE MASTER GSTR-3B WORKING PAPER TABLE */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
-            <div className="p-4 bg-slate-950 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
+            <div className="p-4 bg-slate-50 border-b border-slate-200/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <FileText className="w-4 h-4 text-purple-400" />
@@ -2400,7 +2400,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
 
       {/* TAB 2: 12-MONTH FINANCIAL YEAR MATRIX */}
       {activeTab === 'matrix' && (
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4 animate-pop-in">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4 animate-pop-in text-slate-800">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">

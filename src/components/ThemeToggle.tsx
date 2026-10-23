@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 export function ThemeToggle() {
   const [dark, setDark] = useState(() => {
     if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') ||
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const saved = localStorage.getItem('theme');
+      if (saved) return saved === 'dark';
+      return document.documentElement.classList.contains('dark');
     }
     return false;
   });

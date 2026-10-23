@@ -623,38 +623,38 @@ export default function Gstr1MasterDownloader({
             <span>Total Clients</span>
             <Users className="w-4 h-4 text-blue-400" />
           </div>
-          <div className="text-2xl font-black text-white">{overview.totalClients}</div>
+          <div className="text-2xl font-black text-slate-900 font-mono tabular-nums">{overview.totalClients}</div>
           <p className="text-[11px] text-slate-400 mt-1">Master Database</p>
         </div>
 
-        <div className="bg-slate-900/80 border border-emerald-500/20 rounded-2xl p-4 shadow-xl">
+        <div className="bg-emerald-50/50 border border-emerald-200 shadow-xs rounded-2xl p-4 shadow-xl">
           <div className="flex items-center justify-between text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>{viewMode === 'FULL_YEAR' ? '12M Fully Synced' : 'GSTR-1 Synced'}</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-2xl font-black text-emerald-300">{overview.downloadedClients}</div>
+          <div className="text-2xl font-black text-emerald-700 font-mono tabular-nums">{overview.downloadedClients}</div>
           <p className="text-[11px] text-slate-400 mt-1">
             {viewMode === 'FULL_YEAR' ? 'All 12 Months Ingested' : 'Outward Data Available'}
           </p>
         </div>
 
-        <div className="bg-slate-900/80 border border-amber-500/20 rounded-2xl p-4 shadow-xl">
+        <div className="bg-amber-50/50 border border-amber-200 shadow-xs rounded-2xl p-4 shadow-xl">
           <div className="flex items-center justify-between text-amber-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>{viewMode === 'FULL_YEAR' ? 'Partial / Pending' : 'Pending GSTR-1'}</span>
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
-          <div className="text-2xl font-black text-amber-300">{overview.pendingClients}</div>
+          <div className="text-2xl font-black text-amber-700 font-mono tabular-nums">{overview.pendingClients}</div>
           <p className="text-[11px] text-slate-400 mt-1">
             {viewMode === 'FULL_YEAR' ? 'Missing 1+ Months' : 'Ready for Autopilot'}
           </p>
         </div>
 
-        <div className="bg-slate-900/80 border border-purple-500/20 rounded-2xl p-4 shadow-xl">
+        <div className="bg-purple-50/50 border border-purple-200 shadow-xs rounded-2xl p-4 shadow-xl">
           <div className="flex items-center justify-between text-purple-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Total Invoices</span>
             <Database className="w-4 h-4 text-purple-400" />
           </div>
-          <div className="text-2xl font-black text-purple-300">{overview.totalInvoices.toLocaleString('en-IN')}</div>
+          <div className="text-2xl font-black text-purple-700 font-mono tabular-nums">{overview.totalInvoices.toLocaleString('en-IN')}</div>
           <p className="text-[11px] text-slate-400 mt-1">B2B, B2CL, B2CS, CDNR, EXP</p>
         </div>
 
@@ -691,7 +691,7 @@ export default function Gstr1MasterDownloader({
           <button
             onClick={handleScanDownloads}
             disabled={isScanningDownloads}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
             title="Scan Windows Downloads folder for GSTR1 JSON/Excel files"
           >
             <FolderSearch className={`w-4 h-4 text-cyan-400 ${isScanningDownloads ? 'animate-spin' : ''}`} />
@@ -714,7 +714,7 @@ export default function Gstr1MasterDownloader({
           <button
             onClick={fetchSummary}
             disabled={loading}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors"
+            className="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 shadow-xs transition-colors"
             title="Refresh summary"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -838,8 +838,8 @@ export default function Gstr1MasterDownloader({
                   return (
                     <tr
                       key={c.gstin}
-                      className={`hover:bg-slate-800/40 transition-colors ${
-                        isSelected ? 'bg-blue-950/20' : ''
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        isSelected ? 'bg-blue-50/80' : ''
                       }`}
                     >
                       {/* Checkbox */}

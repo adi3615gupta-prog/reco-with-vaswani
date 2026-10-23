@@ -81,26 +81,27 @@ const themeStyles = `
     100% { transform: translateY(-105vh) scale(0.4); opacity: 0; }
   }
   .global-bg {
-    background: #090d16;
+    background: #F8FAFC;
   }
   .glass-card-np {
-    background: rgba(15, 23, 42, 0.45);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 1.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .glass-card-np:hover {
     border-color: var(--card-hover-border);
-    box-shadow: 0 0 25px var(--card-glow);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.07), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
     transform: translateY(-4px);
   }
-  .neon-amber { --card-hover-border: rgba(245, 158, 11, 0.3); --card-glow: rgba(245, 158, 11, 0.15); }
-  .neon-blue { --card-hover-border: rgba(59, 130, 246, 0.3); --card-glow: rgba(59, 130, 246, 0.15); }
-  .neon-emerald { --card-hover-border: rgba(16, 185, 129, 0.3); --card-glow: rgba(16, 185, 129, 0.15); }
-  .neon-pink { --card-hover-border: rgba(236, 72, 153, 0.3); --card-glow: rgba(236, 72, 153, 0.15); }
-  .neon-purple { --card-hover-border: rgba(139, 92, 246, 0.3); --card-glow: rgba(139, 92, 246, 0.15); }
-  .neon-yellow { --card-hover-border: rgba(234, 179, 8, 0.3); --card-glow: rgba(234, 179, 8, 0.15); }
-  .neon-indigo { --card-hover-border: rgba(99, 102, 241, 0.3); --card-glow: rgba(99, 102, 241, 0.15); }
+  .neon-amber { --card-hover-border: #F59E0B; --card-glow: rgba(245, 158, 11, 0.12); }
+  .neon-blue { --card-hover-border: #2563EB; --card-glow: rgba(37, 99, 235, 0.12); }
+  .neon-emerald { --card-hover-border: #059669; --card-glow: rgba(5, 150, 105, 0.12); }
+  .neon-pink { --card-hover-border: #DB2777; --card-glow: rgba(219, 39, 119, 0.12); }
+  .neon-purple { --card-hover-border: #7C3AED; --card-glow: rgba(124, 58, 237, 0.12); }
+  .neon-yellow { --card-hover-border: #D97706; --card-glow: rgba(217, 119, 6, 0.12); }
+  .neon-indigo { --card-hover-border: #4F46E5; --card-glow: rgba(79, 70, 229, 0.12); }
 `;
 
 // Safe storage utilities wrapped in try-catch to prevent Electron security violations
@@ -1809,14 +1810,14 @@ export default function Index() {
               <div className="space-y-12 max-w-6xl mx-auto w-full animate-slow-reveal">
 
                 {/* INTUITIVE GRAPHIC DESIGN HERO */}
-                <div className="text-center space-y-4 max-w-3xl mx-auto mb-16">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-400" /> Interactive Compliance Hub
+                <div className="text-center space-y-4 max-w-3xl mx-auto mb-12">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold uppercase tracking-widest shadow-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" /> Interactive Compliance Hub
                   </div>
-                  <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white">
+                  <h2 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">
                     Unified Workspace Suite
                   </h2>
-                  <p className="text-sm text-slate-400 max-w-xl mx-auto leading-relaxed">
+                  <p className="text-sm text-slate-500 max-w-xl mx-auto leading-relaxed">
                     Access high-performance compliance modules directly from this command console. All local data is processed and kept strictly on-premise.
                   </p>
                 </div>
@@ -1866,35 +1867,35 @@ export default function Index() {
                     {/* Card 01: Work In Progress (WIP) Suite */}
                     <div 
                       onClick={() => setActiveCategoryCard('wip')}
-                      className="glass-card-np neon-amber p-6 md:p-7 rounded-3xl border border-amber-500/20 bg-slate-900/60 backdrop-blur-xl relative overflow-hidden space-y-5 cursor-pointer hover:border-amber-500/60 hover:scale-[1.02] transition-all group flex flex-col justify-between"
+                      className="glass-card-np neon-amber p-6 md:p-7 rounded-3xl border border-amber-200/80 bg-white relative overflow-hidden space-y-5 cursor-pointer hover:border-amber-400 hover:scale-[1.02] transition-all group flex flex-col justify-between shadow-sm hover:shadow-md"
                     >
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/5">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 group-hover:scale-110 transition-transform shadow-xs">
                             <Zap className="w-6 h-6" />
                           </div>
-                          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                          <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black uppercase tracking-widest shadow-xs">
                             6 Modules
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-bold">Suite 01</span>
-                          <h3 className="text-2xl font-black text-white tracking-tight mt-1 group-hover:text-amber-400 transition-colors">
+                          <span className="text-[10px] font-mono text-amber-600 uppercase tracking-widest font-bold">Suite 01</span>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight mt-1 group-hover:text-amber-600 transition-colors">
                             Work In Progress (WIP) Suite
                           </h3>
-                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                          <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                             Comprehensive practice control, GSTIN auditing, returns tracking, financial reports.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
                           {['01. Practice Dashboard', '02. GSTIN Scan', '03. 2B/3B Tracker', '06. Financial Statements', '07. CMA Report', '08. Voucher Re-classifier'].map((mod, i) => (
-                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/20 text-slate-300">
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-amber-50/70 border border-amber-200 text-amber-800 font-medium">
                               {mod}
                             </span>
                           ))}
                         </div>
                       </div>
-                      <div className="pt-4 border-t border-amber-500/15 flex items-center justify-between text-amber-400 text-xs font-bold">
+                      <div className="pt-4 border-t border-amber-100 flex items-center justify-between text-amber-600 text-xs font-bold">
                         <span>Open Suite 01</span>
                         <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </div>
@@ -1925,7 +1926,7 @@ export default function Index() {
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
                           {['01. GST Consolidator', '02. GST Reco Engine', '03. TDS Reconciliation'].map((mod, i) => (
-                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-emerald-500/20 text-slate-300">
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50/70 border border-slate-200 hover:border-emerald-400 hover:bg-white text-slate-300">
                               {mod}
                             </span>
                           ))}
@@ -1999,7 +2000,7 @@ export default function Index() {
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
                           {['01. Dual Depreciation', '02. Tax Audit Clause 44', '03. Analytical Audit Module'].map((mod, i) => (
-                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-indigo-500/20 text-slate-300">
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50/70 border border-slate-200 hover:border-indigo-400 hover:bg-white text-slate-300">
                               {mod}
                             </span>
                           ))}
@@ -2036,7 +2037,7 @@ export default function Index() {
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-2">
                           {['01. Income Tax Calculator'].map((mod, i) => (
-                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950/70 border border-blue-500/20 text-slate-300">
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50/70 border border-slate-200 hover:border-blue-400 hover:bg-white text-slate-300">
                               {mod}
                             </span>
                           ))}
@@ -2091,17 +2092,17 @@ export default function Index() {
                   <div className="space-y-6 animate-fadeIn">
                     
                     {/* BACK NAVIGATION BAR */}
-                    <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                       <button
                         onClick={() => setActiveCategoryCard(null)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all border border-slate-700/80 shadow-md hover:scale-[1.02]"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all border border-slate-200 shadow-xs hover:scale-[1.02]"
                       >
-                        <ArrowLeft className="w-4 h-4 text-blue-400" />
+                        <ArrowLeft className="w-4 h-4 text-blue-600" />
                         <span>← Back to All Suites</span>
                       </button>
 
-                      <div className="text-xs text-slate-400 font-mono">
-                        Active Suite: <span className="text-amber-400 font-bold uppercase">{activeCategoryCard}</span>
+                      <div className="text-xs text-slate-500 font-mono">
+                        Active Suite: <span className="text-blue-700 font-bold uppercase">{activeCategoryCard}</span>
                       </div>
                     </div>
 
@@ -2134,7 +2135,7 @@ export default function Index() {
                               setReturnsInitialTab('working3b');
                               setAppRoute('returns');
                             }}
-                            className="p-5 rounded-2xl bg-slate-950/70 border border-blue-500/20 hover:border-blue-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-blue-400 hover:bg-white transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
                           >
                             <div className="flex items-center justify-between">
                               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -2145,14 +2146,14 @@ export default function Index() {
                               </span>
                             </div>
                             <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors flex items-center gap-1.5">
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
                                 01. GSTR-3B Working Sheet <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                                 Master monthly tax computation, auto-pilot ingestion deck, Table 3.1 &amp; Table 4 set-off cascade, and official GSTN portal JSON.
                               </p>
                             </div>
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-blue-400 text-[11px] font-bold">
+                            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-blue-400 text-[11px] font-bold">
                               <span>Open Working Sheet</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -2164,7 +2165,7 @@ export default function Index() {
                               setReturnsInitialTab('matrix');
                               setAppRoute('returns');
                             }}
-                            className="p-5 rounded-2xl bg-slate-950/70 border border-teal-500/20 hover:border-teal-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-teal-400 hover:bg-white transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
                           >
                             <div className="flex items-center justify-between">
                               <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -2175,14 +2176,14 @@ export default function Index() {
                               </span>
                             </div>
                             <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-teal-300 transition-colors flex items-center gap-1.5">
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-teal-600 transition-colors flex items-center gap-1.5">
                                 02. 12-Month FY Matrix <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-teal-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                                 Full-year April–March comparative tax matrix, annual tax liability trends, ITC claims, and monthly cash outflow analysis.
                               </p>
                             </div>
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-teal-400 text-[11px] font-bold">
+                            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-teal-400 text-[11px] font-bold">
                               <span>Open FY Matrix</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -2194,7 +2195,7 @@ export default function Index() {
                               setReturnsInitialTab('ims2b');
                               setAppRoute('returns');
                             }}
-                            className="p-5 rounded-2xl bg-slate-950/70 border border-amber-500/20 hover:border-amber-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-amber-400 hover:bg-white transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
                           >
                             <div className="flex items-center justify-between">
                               <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -2205,14 +2206,14 @@ export default function Index() {
                               </span>
                             </div>
                             <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-amber-600 transition-colors flex items-center gap-1.5">
                                 03. GST IMS &amp; 2B Manager <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-amber-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                                 Multi-client Inward Supplies action portal: Accept, Reject, or mark Pending inward B2B invoices &amp; CDNR with 300+ client selector.
                               </p>
                             </div>
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-amber-400 text-[11px] font-bold">
+                            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-amber-400 text-[11px] font-bold">
                               <span>Open IMS Manager</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -2224,7 +2225,7 @@ export default function Index() {
                               setReturnsInitialTab('gstr2b_downloader');
                               setAppRoute('returns');
                             }}
-                            className="p-5 rounded-2xl bg-slate-950/70 border border-emerald-500/20 hover:border-emerald-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-emerald-400 hover:bg-white transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
                           >
                             <div className="flex items-center justify-between">
                               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -2235,14 +2236,14 @@ export default function Index() {
                               </span>
                             </div>
                             <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-emerald-600 transition-colors flex items-center gap-1.5">
                                 04. GSTR-2B Downloader <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                                 1-Login 12-month autonomous loop download, non-blocking resilience, multi-period ingestion, and local SQLite persistence.
                               </p>
                             </div>
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-emerald-400 text-[11px] font-bold">
+                            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-emerald-400 text-[11px] font-bold">
                               <span>Launch 2B Autopilot</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -2254,7 +2255,7 @@ export default function Index() {
                               setReturnsInitialTab('gstr1_downloader');
                               setAppRoute('returns');
                             }}
-                            className="p-5 rounded-2xl bg-slate-950/70 border border-indigo-500/20 hover:border-indigo-500/60 transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
+                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-indigo-400 hover:bg-white transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[190px] shadow-lg relative overflow-hidden"
                           >
                             <div className="flex items-center justify-between">
                               <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -2265,14 +2266,14 @@ export default function Index() {
                               </span>
                             </div>
                             <div className="mt-4">
-                              <h4 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-1.5">
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
                                 05. GSTR-1 Downloader <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-400" />
                               </h4>
                               <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                                 Single-login 12-month GSTR-1 outward sales autonomous downloader, multi-period parsing, and full-year consolidated Excel.
                               </p>
                             </div>
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-indigo-400 text-[11px] font-bold">
+                            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-indigo-400 text-[11px] font-bold">
                               <span>Launch GSTR-1 Autopilot</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -2790,7 +2791,7 @@ export default function Index() {
                 )}
 
                 {/* FOOTER TEXT */}
-                <div className="text-center pt-8 border-t border-slate-800/80">
+                <div className="text-center pt-8 border-t border-slate-200/80">
                   <p className="text-[9px] font-mono tracking-[0.3em] text-slate-500 uppercase">OFFLINE COMPLIANCE PLATFORM • AUDIT WITH VASWANI • ALL RIGHTS SECURED</p>
                 </div>
               </div>

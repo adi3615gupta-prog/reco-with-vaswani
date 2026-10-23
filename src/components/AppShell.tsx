@@ -161,16 +161,16 @@ export function AppShell({
   const suites = Array.from(new Set(NAV_ITEMS.map(i => i.suite)));
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#090D16] text-[#E4EEF8]">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-slate-800">
       {/* 1. PERSISTENT COLLAPSIBLE SIDEBAR */}
       <aside
         className={cn(
-          'flex flex-col border-r border-[#1E293B] bg-[#0c1220]/90 backdrop-blur-2xl transition-all duration-300 z-30 select-none shrink-0',
+          'flex flex-col border-r border-slate-200/80 bg-white/95 backdrop-blur-2xl transition-all duration-300 z-30 select-none shrink-0 shadow-sm',
           isCollapsed ? 'w-16' : 'w-64'
         )}
       >
         {/* Sidebar Brand Header */}
-        <div className="flex h-16 items-center justify-between px-3.5 border-b border-[#1E293B]">
+        <div className="flex h-16 items-center justify-between px-3.5 border-b border-slate-200/80">
           <div
             onClick={() => setAppRoute('hub')}
             className={cn(
@@ -179,15 +179,15 @@ export function AppShell({
             )}
             title="AUDIT WITH VASWANI"
           >
-            <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 group-hover:border-blue-500 group-hover:shadow-[0_0_12px_rgba(74,158,232,0.3)] transition-all">
+            <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0 group-hover:border-blue-500 group-hover:shadow-md transition-all shadow-xs">
               <img src="./logo.png" alt="Logo" className="w-5 h-5 object-contain" />
             </div>
             {!isCollapsed && (
               <div className="flex flex-col min-w-0">
-                <span className="text-xs font-black tracking-tight text-white truncate flex items-center gap-1.5">
-                  VASWANI <span className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-bold">PRO</span>
+                <span className="text-xs font-black tracking-tight text-slate-900 truncate flex items-center gap-1.5">
+                  VASWANI <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-200">PRO</span>
                 </span>
-                <span className="text-[8px] text-slate-400 font-mono tracking-widest uppercase">Compliance v1.4</span>
+                <span className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">Compliance v1.4</span>
               </div>
             )}
           </div>
@@ -195,7 +195,7 @@ export function AppShell({
           {!isCollapsed && (
             <button
               onClick={toggleSidebar}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               title="Collapse Sidebar"
             >
               <PanelLeftClose className="w-4 h-4" />
@@ -205,10 +205,10 @@ export function AppShell({
 
         {/* Sidebar Collapse Toggle Button (When Collapsed) */}
         {isCollapsed && (
-          <div className="flex justify-center py-2 border-b border-[#1E293B]">
+          <div className="flex justify-center py-2 border-b border-slate-200/80">
             <button
               onClick={toggleSidebar}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               title="Expand Sidebar"
             >
               <PanelLeftOpen className="w-4 h-4" />
@@ -217,21 +217,21 @@ export function AppShell({
         )}
 
         {/* Quick Search Shortcut Pill */}
-        <div className="p-2.5 border-b border-[#1E293B]/60">
+        <div className="p-2.5 border-b border-slate-200/60">
           <button
             onClick={() => setCommandOpen(true)}
             className={cn(
-              'w-full flex items-center gap-2 rounded-xl bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-blue-500/40 transition-all text-xs font-medium',
+              'w-full flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 hover:border-blue-400 transition-all text-xs font-medium',
               isCollapsed ? 'justify-center p-2' : 'px-3 py-1.5'
             )}
             title="Search Modules (Ctrl+K)"
           >
-            <Search className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <Search className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             {!isCollapsed && (
-              <span className="flex-1 text-left text-[11px] truncate text-slate-400">Search (Ctrl+K)</span>
+              <span className="flex-1 text-left text-[11px] truncate text-slate-600">Search (Ctrl+K)</span>
             )}
             {!isCollapsed && (
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono text-slate-400 border border-slate-700/60">
+              <kbd className="px-1.5 py-0.5 rounded bg-white text-[9px] font-mono text-slate-500 border border-slate-200 shadow-xs">
                 ⌘K
               </kbd>
             )}
@@ -239,7 +239,7 @@ export function AppShell({
         </div>
 
         {/* Navigation Suites List */}
-        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-800">
+        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-200">
           {suites.map(suite => {
             const items = NAV_ITEMS.filter(item => item.suite === suite);
             return (
@@ -261,26 +261,26 @@ export function AppShell({
                         'w-full flex items-center gap-2.5 rounded-xl text-xs font-medium transition-all group relative',
                         isCollapsed ? 'justify-center p-2.5' : 'px-3 py-2 text-left',
                         isActive
-                          ? 'bg-blue-600/15 text-blue-400 font-semibold border border-blue-500/30 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                          ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 border border-transparent'
                       )}
                     >
-                      <Icon className={cn('w-4 h-4 shrink-0 transition-transform group-hover:scale-110', isActive ? 'text-blue-400' : 'text-slate-400')} />
+                      <Icon className={cn('w-4 h-4 shrink-0 transition-transform group-hover:scale-110', isActive ? 'text-blue-600' : 'text-slate-500')} />
                       {!isCollapsed && (
                         <span className="flex-1 truncate">{item.label}</span>
                       )}
                       {!isCollapsed && item.badge && (
                         <span className={cn(
                           'text-[9px] px-1.5 py-0.5 rounded-full font-mono uppercase tracking-wider font-bold',
-                          item.badge === 'Live' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
-                          item.badge === 'Core' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' :
-                          'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                          item.badge === 'Live' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          item.badge === 'Core' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                          'bg-amber-50 text-amber-700 border border-amber-200'
                         )}>
                           {item.badge}
                         </span>
                       )}
                       {isActive && (
-                        <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-blue-500"></span>
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-blue-600"></span>
                       )}
                     </button>
                   );
@@ -305,40 +305,40 @@ export function AppShell({
         </div>
 
         {/* Sidebar Footer HUD & Bottom-Left Settings Tab */}
-        <div className="p-2.5 border-t border-[#1E293B] bg-slate-950/60 space-y-2">
+        <div className="p-2.5 border-t border-slate-200/80 bg-slate-50/70 space-y-2">
           {/* Bottom-Left Settings Tab Trigger */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={cn(
               "w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border",
-              "bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10",
+              "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400 hover:shadow-sm",
               isCollapsed ? "justify-center" : "justify-between"
             )}
             title="System Settings & Connectivity (Data Path & Tally)"
           >
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:rotate-45 transition-transform">
+              <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 group-hover:rotate-45 transition-transform">
                 <Settings className="w-3.5 h-3.5" />
               </div>
               {!isCollapsed && (
                 <div className="flex flex-col text-left truncate">
-                  <span className="truncate leading-tight text-white">System Settings</span>
-                  <span className="text-[9px] text-slate-400 font-mono">Data Path &amp; Tally</span>
+                  <span className="truncate leading-tight text-slate-900 font-bold">System Settings</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Data Path &amp; Tally</span>
                 </div>
               )}
             </div>
             {!isCollapsed && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
             )}
           </button>
 
           {!isCollapsed ? (
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1 pt-1 border-t border-slate-900">
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-1 pt-1 border-t border-slate-200/60">
               <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                 <span>SQLite LAN</span>
               </span>
-              <span className="text-slate-400 font-bold uppercase truncate max-w-[90px]">{loginUser}</span>
+              <span className="text-slate-700 font-bold uppercase truncate max-w-[90px]">{loginUser}</span>
             </div>
           ) : null}
         </div>
@@ -347,13 +347,13 @@ export function AppShell({
       {/* 2. MAIN APPLICATION WORKSPACE AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Top Command Bar */}
-        <header className="h-16 border-b border-[#1E293B] bg-[#0c1220]/80 backdrop-blur-xl flex items-center justify-between px-6 z-20 shrink-0">
+        <header className="h-16 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl flex items-center justify-between px-6 z-20 shrink-0">
           {/* Breadcrumb & Navigation History */}
           <div className="flex items-center gap-3 min-w-0">
             {appRoute !== 'hub' && (
               <button
                 onClick={() => setAppRoute('hub')}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-800 transition-colors flex items-center gap-1 text-xs"
+                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors flex items-center gap-1 text-xs font-semibold shadow-xs"
                 title="Back to Command Hub"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -361,19 +361,19 @@ export function AppShell({
               </button>
             )}
 
-            <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
-              <span className="text-slate-400 font-medium">{currentItem.suite}</span>
-              <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
-              <span className="text-white font-bold truncate flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+              <span className="text-slate-500 font-medium">{currentItem.suite}</span>
+              <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+              <span className="text-slate-900 font-bold truncate flex items-center gap-1.5">
                 {currentItem.label}
               </span>
             </div>
 
             {/* Active Client / FY Pill */}
             {companyName && (
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 font-medium truncate max-w-xs">
-                <span className="font-bold text-white truncate">{companyName}</span>
-                <span className="text-[10px] font-mono text-blue-400 font-bold px-1.5 py-0.2 rounded bg-blue-500/20">
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-[11px] text-blue-700 font-medium truncate max-w-xs shadow-xs">
+                <span className="font-bold text-slate-900 truncate">{companyName}</span>
+                <span className="text-[10px] font-mono text-blue-700 font-bold px-1.5 py-0.2 rounded bg-blue-100/70">
                   FY {financialYear}
                 </span>
               </div>
@@ -383,17 +383,17 @@ export function AppShell({
           {/* Top Actions & System Health HUD */}
           <div className="flex items-center gap-3">
             {/* Live System Diagnostics */}
-            <div className="hidden xl:flex items-center gap-3 px-3.5 py-1.5 rounded-full bg-slate-950/60 border border-slate-800/80 text-[10px] font-mono tracking-wide text-slate-400">
+            <div className="hidden xl:flex items-center gap-3 px-3.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[10px] font-mono tracking-wide text-slate-600 shadow-xs">
               <span className="flex items-center gap-1.5">
-                <Server className="w-3 h-3 text-slate-500" /> Host:
-                <span className="text-slate-300">
+                <Server className="w-3 h-3 text-slate-400" /> Host:
+                <span className="text-slate-700 font-bold">
                   {appMode === 'server' && serverIpInfo ? serverIpInfo.ip : '127.0.0.1'}
                 </span>
               </span>
-              <span className="w-px h-3 bg-slate-800"></span>
+              <span className="w-px h-3 bg-slate-200"></span>
               <span className="flex items-center gap-1.5">
-                <Activity className="w-3 h-3 text-slate-500" /> Ping:
-                <span className={cn('font-bold', networkDiagnostics.status === 'Connected' ? 'text-emerald-400' : 'text-rose-400')}>
+                <Activity className="w-3 h-3 text-slate-400" /> Ping:
+                <span className={cn('font-bold', networkDiagnostics.status === 'Connected' ? 'text-emerald-600' : 'text-rose-600')}>
                   {networkDiagnostics.status === 'Connected' ? `${networkDiagnostics.latency}ms` : 'Offline'}
                 </span>
               </span>
@@ -403,7 +403,7 @@ export function AppShell({
             {onOpenHistory && (
               <button
                 onClick={onOpenHistory}
-                className="px-3 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 border border-purple-500/20 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
                 title="Local PC & Cloud History Backups"
               >
                 <History className="w-3.5 h-3.5" /> <span className="hidden md:inline">Backups</span>
@@ -414,7 +414,7 @@ export function AppShell({
             {onOpenGDrive && (
               <button
                 onClick={onOpenGDrive}
-                className="px-3 py-1.5 bg-sky-600/10 hover:bg-sky-600/20 text-sky-400 border border-sky-500/20 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
                 title="Google Drive Cloud Storage"
               >
                 <Cloud className="w-3.5 h-3.5" /> <span className="hidden md:inline">Drive</span>
@@ -425,7 +425,7 @@ export function AppShell({
             {onOpenUserGuide && (
               <button
                 onClick={onOpenUserGuide}
-                className="px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
                 title="Open Help & User Guide"
               >
                 <BookOpen className="w-3.5 h-3.5" /> <span className="hidden md:inline">Guide</span>
@@ -436,7 +436,7 @@ export function AppShell({
             {isAdmin && onOpenAdmin && (
               <button
                 onClick={onOpenAdmin}
-                className="px-3 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-xs"
               >
                 Admin
               </button>
@@ -448,7 +448,7 @@ export function AppShell({
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="p-2 text-slate-400 hover:text-rose-400 bg-slate-900/50 hover:bg-rose-500/10 border border-slate-800 rounded-xl transition-colors"
+                className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 border border-slate-200 rounded-xl transition-colors shadow-xs"
                 title="Secure Session Logout"
               >
                 <LogOut className="w-4 h-4" />
@@ -458,7 +458,7 @@ export function AppShell({
         </header>
 
         {/* Dynamic Module Content View */}
-        <main className="flex-1 overflow-y-auto relative px-4 py-2 sm:px-6 sm:py-3">
+        <main className="flex-1 overflow-y-auto relative px-4 py-2 sm:px-6 sm:py-3 bg-[#F8FAFC]">
           <div className="max-w-[1700px] mx-auto w-full">
             {children}
           </div>
