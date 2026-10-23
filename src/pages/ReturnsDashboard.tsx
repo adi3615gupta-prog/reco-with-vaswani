@@ -374,12 +374,14 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
       // 4. Generate Portal Upload JSON & Trigger Browser Download
       let portalJsonData: any = null;
       try {
-        portalJsonData = generateGstr3bPortalJson(currentMonthData, workingData.profile);
-        const jsonBlob = new Blob([JSON.stringify(portalJsonData, null, 2)], { type: 'application/json' });
+        const jsonStr = generateGstr3bPortalJson(currentMonthData, workingData.profile);
+        portalJsonData = JSON.parse(jsonStr);
+        const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
         const jsonUrl = URL.createObjectURL(jsonBlob);
         const jsonA = document.createElement('a');
         jsonA.href = jsonUrl;
-        jsonA.download = `GSTR-3B_PORTAL_${safeFirm}_${selectedMonth.toUpperCase()}_${currentMonthData.year}_${dateTimeStamp}.json`;
+        const mIdx = (currentMonthData.calendarMonthIndex || 9).toString().padStart(2, '0');
+        jsonA.download = `GSTR3B_${workingData.profile.gstin || 'GSTIN'}_${mIdx}${currentMonthData.year}.json`;
         document.body.appendChild(jsonA);
         jsonA.click();
         document.body.removeChild(jsonA);

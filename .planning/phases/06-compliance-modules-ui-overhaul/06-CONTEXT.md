@@ -48,6 +48,8 @@ Scope is strictly locked to `ReturnsAutoIngestDeck.tsx`, `ReturnsDashboard.tsx`,
 ## Canonical References
 
 - `.planning/phases/06-compliance-modules-ui-overhaul/06-07-PLAN.md` — Plan for Returns Autopilot & Ingestion Deck Split.
+- `.planning/phases/06-compliance-modules-ui-overhaul/06-08-PLAN.md` — Plan for GSTR-3B Official GSTN Offline JSON Schema Compliance.
+- `C:\Users\PC-10\Downloads\GSTR3B_Excel_Utility\GSTR3B_Excel_Utility\GSTR3B_Excel_Utility_V5.8.xlsm` — Official GSTN Offline Excel Utility (Source of Truth for JSON Schema).
 - `src/components/ReturnsAutoIngestDeck.tsx` — Ingestion Deck UI component.
 - `src/pages/ReturnsDashboard.tsx` — Returns Preparation & Filing cockpit container.
 - `src/lib/gstrAutoIngest.ts` — Injection transformer mapping GSTR-1/GSTR-2B to GSTR-3B working sheet.

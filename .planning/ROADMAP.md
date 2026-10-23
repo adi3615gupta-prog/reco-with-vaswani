@@ -110,7 +110,7 @@ Plans:
   2. `ReturnsDashboard.tsx` & `Gstr2bMasterDownloader.tsx` feature telemetry timeline steppers, period status grid badges, and collapsible Playwright event logs.
   3. `TallyDirectImport.tsx`, `TdsReconciliation.tsx`, and `IncomeTaxDashboard.tsx` adopt `.obsidian-card`, `.table-dense`, and `.cell-mono` classes consistently.
 
-**Plans**: 6/7 plans complete (1 pending)
+**Plans**: 8/8 plans complete
 
 Plans:
 - [x] 06-01: Returns Mission Control & Party-Wise Dispute Hub UI elevation
@@ -119,7 +119,8 @@ Plans:
 - [x] 06-04: Interactive KPI Cockpit with Match Rate Hero & Click-to-Filter (`SummaryCards.tsx`)
 - [x] 06-05: Scroll Architecture Polish & Shimmer Loading Skeletons
 - [x] 06-06: Returns Preparation & Filing (`ReturnsDashboard.tsx`) Header & Layout Re-architecture
-- [ ] 06-07: Split Returns Autopilot & Ingestion Deck (Independent GSTR-1 & GSTR-2B Sync & Table 3.1 / Table 4 Injection)
+- [x] 06-07: Split Returns Autopilot & Ingestion Deck (Independent GSTR-1 & GSTR-2B Sync & Table 3.1 / Table 4 Injection)
+- [x] 06-08: GSTR-3B Official GSTN Offline JSON Schema Compliance (RT-SCVU101 Remediation)
 
 ### Phase 7: Browser Autopilot Chrome-First Architecture & Windows Client Hardening
 

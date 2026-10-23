@@ -1382,26 +1382,25 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
 
 /**
  * Generates the official uploadable GSTN GSTR-3B JSON payload.
- * Schema conforms to GSTN Offline Utility format.
+ * Schema conforms strictly to official GSTN Offline Excel Utility V5.8 (Sheet1.cls).
+ * Removes obsolete / illegal keys (sec_sum, tax_pmt) that trigger error RT-SCVU101.
  */
 export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GSTR3BClientProfile): string {
-  const mIndexStr = monthData.calendarMonthIndex.toString().padStart(2, '0');
+  let mIndex = monthData.calendarMonthIndex;
+  if (!mIndex || mIndex < 1 || mIndex > 12) {
+    const monthNames: GSTR3BMonthKey[] = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const foundIdx = monthNames.findIndex(m => m.toLowerCase() === monthData.month.toLowerCase());
+    mIndex = foundIdx !== -1 ? foundIdx + 1 : 9;
+  }
+  const mIndexStr = mIndex.toString().padStart(2, '0');
   const retPeriod = `${mIndexStr}${monthData.year}`;
 
-  const payload = {
+  const payload: any = {
     gstin: profile.gstin,
     ret_period: retPeriod,
-    sec_sum: {
-      sec_nm: 'GSTR-3B',
-      sec_type: 'GSTR-3B',
-      ttl_rec: 5,
-      ttl_val: round2(monthData.outward.totalSalePortal.taxable),
-      ttl_tax: round2(monthData.outward.totalSalePortal.total),
-      ttl_igst: round2(monthData.outward.totalSalePortal.igst),
-      ttl_cgst: round2(monthData.outward.totalSalePortal.cgst),
-      ttl_sgst: round2(monthData.outward.totalSalePortal.sgst),
-      ttl_cess: 0
-    },
     sup_details: {
       // 3.1(a) Outward taxable supplies (other than zero rated, nil rated and exempted)
       osup_det: {
@@ -1415,11 +1414,17 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
       osup_zero: {
         txval: round2(monthData.outward.zeroRated.taxable + monthData.outward.sezWithPayment.taxable + monthData.outward.sezWithoutPayment.taxable),
         iamt: round2(monthData.outward.zeroRated.igst + monthData.outward.sezWithPayment.igst),
+        camt: 0,
+        samt: 0,
         csamt: 0
       },
       // 3.1(c) Other outward supplies (nil rated, exempted)
       osup_nil_exmp: {
-        txval: round2(monthData.outward.nilRated.taxable + monthData.outward.exempt.taxable)
+        txval: round2(monthData.outward.nilRated.taxable + monthData.outward.exempt.taxable),
+        iamt: 0,
+        camt: 0,
+        samt: 0,
+        csamt: 0
       },
       // 3.1(d) Inward supplies (liable to reverse charge)
       isup_rev: {
@@ -1431,19 +1436,42 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
       },
       // 3.1(e) Non-GST outward supplies
       osup_nongst: {
+        txval: 0,
+        iamt: 0,
+        camt: 0,
+        samt: 0,
+        csamt: 0
+      }
+    },
+    // 3.1.1 Supplies notified under Section 9(5) (mandatory in GSTN V5.8 since July 2022)
+    eco_dtls: {
+      eco_sup: {
+        txval: 0,
+        iamt: 0,
+        camt: 0,
+        samt: 0,
+        csamt: 0
+      },
+      eco_reg_sup: {
         txval: 0
       }
     },
-    inter_sup: {
-      // 3.2 Inter-state supplies made to unregistered persons, composition dealers and UIN holders
-      unreg_details: [],
-      comp_details: [],
-      uin_details: []
-    },
     itc_elg: {
       itc_avl: [
-        { ty: 'IMPG', iamt: round2(monthData.inward.importGoods?.igst || 0), csamt: 0 },
-        { ty: 'IMPS', iamt: 0, csamt: 0 },
+        {
+          ty: 'IMPG',
+          iamt: round2(monthData.inward.importGoods?.igst || 0),
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        },
+        {
+          ty: 'IMPS',
+          iamt: 0,
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        },
         {
           ty: 'ISRC', // Inward supplies liable to reverse charge
           iamt: round2(monthData.inward.rcmPaid.igst),
@@ -1451,7 +1479,13 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
           samt: round2(monthData.inward.rcmPaid.sgst),
           csamt: 0
         },
-        { ty: 'ISD', iamt: 0, camt: 0, samt: 0, csamt: 0 },
+        {
+          ty: 'ISD',
+          iamt: 0,
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        },
         {
           ty: 'OTH', // All other ITC
           iamt: round2(monthData.inward.itc2b.igst),
@@ -1461,12 +1495,18 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
         }
       ],
       itc_rev: [
-        { ty: 'RUL', iamt: 0, camt: 0, samt: 0, csamt: 0 },
+        {
+          ty: 'RUL',
+          iamt: 0,
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        },
         {
           ty: 'OTH',
-          iamt: round2(monthData.inward.itcReversed.igst),
-          camt: round2(monthData.inward.itcReversed.cgst),
-          samt: round2(monthData.inward.itcReversed.sgst),
+          iamt: round2(monthData.inward.itcReversed.igst + (monthData.inward.debitNotes?.igst || 0)),
+          camt: round2(monthData.inward.itcReversed.cgst + (monthData.inward.debitNotes?.cgst || 0)),
+          samt: round2(monthData.inward.itcReversed.sgst + (monthData.inward.debitNotes?.sgst || 0)),
           csamt: 0
         }
       ],
@@ -1476,7 +1516,22 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
         samt: round2(monthData.inward.totalItcAvailable.sgst),
         csamt: 0
       },
-      itc_inelg: []
+      itc_inelg: [
+        {
+          ty: 'RUL',
+          iamt: 0,
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        },
+        {
+          ty: 'OTH',
+          iamt: 0,
+          camt: 0,
+          samt: 0,
+          csamt: 0
+        }
+      ]
     },
     inward_sup: {
       isup_details: [
@@ -1484,50 +1539,30 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
         { ty: 'NONGST', inter: 0, intra: 0 }
       ]
     },
-    tax_pmt: {
-      // 6.1 Payment of tax
-      tx_pmt: [
-        {
-          liab_id: 1, // IGST
-          trans_typ: 1,
-          iamt: round2(monthData.outward.totalSalePortal.igst),
-          camt: 0, samt: 0, csamt: 0,
-          paid_itc: {
-            iamt: round2(monthData.inward.totalItcAvailable.igst),
-            camt: 0, samt: 0, csamt: 0
-          },
-          paid_cash: round2(monthData.settlement.balancePayable.igst)
-        },
-        {
-          liab_id: 2, // CGST
-          trans_typ: 1,
-          iamt: 0,
-          camt: round2(monthData.outward.totalSalePortal.cgst),
-          samt: 0, csamt: 0,
-          paid_itc: {
-            iamt: round2(Math.max(0, -monthData.setoff.adjustment.cgst)),
-            camt: round2(monthData.inward.totalItcAvailable.cgst),
-            samt: 0, csamt: 0
-          },
-          paid_cash: round2(monthData.settlement.balancePayable.cgst)
-        },
-        {
-          liab_id: 3, // SGST
-          trans_typ: 1,
-          iamt: 0, camt: 0,
-          samt: round2(monthData.outward.totalSalePortal.sgst),
-          csamt: 0,
-          paid_itc: {
-            iamt: round2(Math.max(0, -monthData.setoff.adjustment.sgst)),
-            camt: 0,
-            samt: round2(monthData.inward.totalItcAvailable.sgst),
-            csamt: 0
-          },
-          paid_cash: round2(monthData.settlement.balancePayable.sgst)
-        }
-      ]
+    // Table 5.1 Interest & Late fee payable
+    intr_ltfee: {
+      intr_details: {
+        iamt: round2(monthData.settlement.interest?.igst || 0),
+        camt: round2(monthData.settlement.interest?.cgst || 0),
+        samt: round2(monthData.settlement.interest?.sgst || 0),
+        csamt: 0
+      },
+      ltfee_details: {
+        camt: round2(monthData.settlement.lateFees?.cgst || 0),
+        samt: round2(monthData.settlement.lateFees?.sgst || 0)
+      }
     }
   };
+
+  // CR28570A: For periods prior to August 2025 (e.g. pre-Nov 2024), include inter_sup; for 2025-26+ portal auto-populates 3.2 from GSTR-1
+  const isAfterInterSupRemoval = (monthData.year > 2025) || (monthData.year === 2025 && mIndex >= 8);
+  if (!isAfterInterSupRemoval) {
+    payload.inter_sup = {
+      unreg_details: [],
+      comp_details: [],
+      uin_details: []
+    };
+  }
 
   return JSON.stringify(payload, null, 2);
 }
