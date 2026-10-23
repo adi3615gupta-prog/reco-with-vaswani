@@ -155,6 +155,52 @@ const loadJson = (p) => fs.existsSync(p) ? JSON.parse(fs.readFileSync(p)) : {};
 const saveJson = (p, data) => fs.writeFileSync(p, JSON.stringify(data, null, 2));
 const getAuditLogs = () => { try { const data = JSON.parse(fs.readFileSync(AUDIT_PATH)); return Array.isArray(data) ? data : []; } catch { return []; } };
 
+// Ensure master database is seeded into production userDataPath if missing or empty
+function ensureProductionDatabase(targetDbPath, userDataDir) {
+    try {
+        if (!fs.existsSync(userDataDir)) {
+            fs.mkdirSync(userDataDir, { recursive: true });
+        }
+
+        const candidateMasters = [
+            path.join(path.dirname(process.execPath), 'resources', 'network_data.db'),
+            path.join(process.cwd(), 'resources', 'network_data.db'),
+            typeof __dirname !== 'undefined' ? path.join(__dirname, 'network_data.db') : null,
+            path.join(process.cwd(), 'network_data.db'),
+            path.join(path.dirname(process.execPath), 'network_data.db')
+        ].filter(Boolean);
+
+        let masterSeedPath = null;
+        for (const candidate of candidateMasters) {
+            try {
+                if (fs.existsSync(candidate) && path.resolve(candidate) !== path.resolve(targetDbPath)) {
+                    const stats = fs.statSync(candidate);
+                    if (stats.size > 50000) {
+                        masterSeedPath = candidate;
+                        break;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (!masterSeedPath) return;
+
+        const targetExists = fs.existsSync(targetDbPath);
+        const targetSize = targetExists ? fs.statSync(targetDbPath).size : 0;
+
+        // If target doesn't exist, or is small / empty
+        if (!targetExists || targetSize < 50000) {
+            console.log(`[DB Init] Seeding production database from master (${masterSeedPath}) to (${targetDbPath})...`);
+            fs.copyFileSync(masterSeedPath, targetDbPath);
+            console.log('[DB Init] Master database successfully seeded with all client records!');
+        }
+    } catch (err) {
+        console.warn('[DB Init] Warning during master database seeding:', err.message);
+    }
+}
+
+ensureProductionDatabase(DB_PATH, userDataPath);
+
 // 1. Initialize SQLite Database
 const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) console.error("Database connection error:", err);

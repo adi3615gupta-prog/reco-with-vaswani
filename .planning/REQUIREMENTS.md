@@ -91,6 +91,11 @@
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 5 | Complete |
 | AUTOPILOT-CHROME-01 | Phase 7 | Complete |
+| AUTOPILOT-PROD-01 | Phase 8 | Pending |
+
+### Browser Autopilot & Production Hardening (Phase 8)
+
+- [ ] **AUTOPILOT-PROD-01**: Shield Playwright browser evaluations (`page.evaluate`, `page.waitForFunction`) from obfuscation variable mangling and auto-seed master clients database (`network_data.db`) in packaged Electron environments.
 
 ### Browser Autopilot & Client Automation (Phase 7)
 

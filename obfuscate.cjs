@@ -3,7 +3,7 @@ const { execSync } = require('child_process');
 const JavaScriptObfuscator = require('javascript-obfuscator');
 
 console.log('Bundling server.js to CommonJS...');
-execSync('npx esbuild server.js --bundle --platform=node --target=node18 --format=cjs --outfile=server.cjs --external:express --external:cors --external:sqlite3 --external:bcryptjs --external:jsonwebtoken --external:helmet --external:firebase/app --external:firebase/firestore --external:localtunnel --external:playwright --external:node-fetch --external:nodemailer --external:exceljs');
+execSync('npx esbuild server.js --bundle --platform=node --target=node18 --format=cjs --legal-comments=inline --outfile=server.cjs --external:express --external:cors --external:sqlite3 --external:bcryptjs --external:jsonwebtoken --external:helmet --external:firebase/app --external:firebase/firestore --external:localtunnel --external:playwright --external:node-fetch --external:nodemailer --external:exceljs');
 
 let source = fs.readFileSync('server.cjs', 'utf8');
 

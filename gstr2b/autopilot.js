@@ -1,3 +1,4 @@
+/*! javascript-obfuscator:disable */
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -25,12 +26,12 @@ const XLSX = xlsxModule.default || xlsxModule;
  * 5. Locate GSTR-2B card -> Click DOWNLOAD
  * 6. Download official Excel & JSON files, extract line-item invoices & persist to SQLite
  */
-export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYear, req, res, browserState, isFullYear = false }) {
+export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYear, portal_username, portal_password, req, res, browserState, isFullYear = false }) {
     const gstinUpper = gstin.trim().toUpperCase();
 
-    // 1. Fetch Client Credentials from Database Vault
-    let portalUser = '';
-    let portalPass = '';
+    // 1. Fetch Client Credentials from Database Vault (with direct payload fallback)
+    let portalUser = (portal_username || '').trim();
+    let portalPass = (portal_password || '').trim();
     let clientTradeName = '';
 
     try {
@@ -40,8 +41,8 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             });
         });
         if (clientRow) {
-            portalUser = clientRow.portal_username || '';
-            portalPass = clientRow.portal_password || '';
+            portalUser = clientRow.portal_username || portalUser;
+            portalPass = clientRow.portal_password || portalPass;
             clientTradeName = clientRow.trade_name || clientRow.legal_name || '';
         }
     } catch (e) {
@@ -231,32 +232,36 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             console.log('[GSTR-2B Autopilot] Notice on login inputs:', e.message);
         }
 
-        // Inject assistive banner
-        await page.evaluate(({ clientName, clientGstin, hasCreds }) => {
-            const banner = document.createElement('div');
-            banner.id = 'antigravity-2b-banner';
-            banner.style.cssText = `
-                position: fixed; top: 0; left: 0; right: 0; z-index: 9999999;
-                background: linear-gradient(135deg, #0284c7, #1e1b4b);
-                color: #f8fafc; padding: 10px 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center;
-                border-bottom: 3px solid #38bdf8; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-            `;
-            banner.innerHTML = `
-                <div style="display:flex;align-items:center;gap:10px;">
-                    <span style="background:#38bdf8;color:#0f172a;font-size:10px;font-weight:900;padding:3px 8px;border-radius:6px;text-transform:uppercase;">
-                        ⚡ GSTR-2B AUTOPILOT
-                    </span>
-                    <span>
-                        ${hasCreds ? 'Credentials auto-filled! Please enter CAPTCHA & click Login.' : 'Please enter your Login credentials & CAPTCHA.'}
-                    </span>
-                </div>
-                <div style="font-size:12px;color:#cbd5e1;font-family:monospace;">
-                    Client: <strong style="color:#7dd3fc;">${clientName || clientGstin}</strong> (${clientGstin})
-                </div>
-            `;
-            document.body.prepend(banner);
-        }, { clientName: clientTradeName, clientGstin: gstinUpper, hasCreds: Boolean(portalUser && portalPass) });
+        // Inject assistive banner (wrapped in try/catch so DOM styling never blocks login flow)
+        try {
+            await page.evaluate(({ clientName, clientGstin, hasCreds }) => {
+                const banner = document.createElement('div');
+                banner.id = 'antigravity-2b-banner';
+                banner.style.cssText = `
+                    position: fixed; top: 0; left: 0; right: 0; z-index: 9999999;
+                    background: linear-gradient(135deg, #0284c7, #1e1b4b);
+                    color: #f8fafc; padding: 10px 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center;
+                    border-bottom: 3px solid #38bdf8; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                `;
+                banner.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="background:#38bdf8;color:#0f172a;font-size:10px;font-weight:900;padding:3px 8px;border-radius:6px;text-transform:uppercase;">
+                            ⚡ GSTR-2B AUTOPILOT
+                        </span>
+                        <span>
+                            ${hasCreds ? 'Credentials auto-filled! Please enter CAPTCHA & click Login.' : 'Please enter your Login credentials & CAPTCHA.'}
+                        </span>
+                    </div>
+                    <div style="font-size:12px;color:#cbd5e1;font-family:monospace;">
+                        Client: <strong style="color:#7dd3fc;">${clientName || clientGstin}</strong> (${clientGstin})
+                    </div>
+                `;
+                document.body.prepend(banner);
+            }, { clientName: clientTradeName, clientGstin: gstinUpper, hasCreds: Boolean(portalUser && portalPass) });
+        } catch (bannerErr) {
+            console.warn('[GSTR-2B Autopilot] Non-fatal banner notice:', bannerErr.message);
+        }
 
         // Wait for user login (URL leaves /login, 180s timeout)
         console.log('[GSTR-2B Autopilot] Waiting for user to complete login...');
@@ -1397,4 +1402,6 @@ export async function openPortalLoginHelper({ db, gstin, browserState }) {
 
     return { success: true, clientName, username: portalUser };
 }
+/*! javascript-obfuscator:enable */
+
 

@@ -34,6 +34,11 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // node_modules/multer/node_modules/media-typer/index.js
 var require_media_typer = __commonJS({
   "node_modules/multer/node_modules/media-typer/index.js"(exports2) {
+    /*!
+     * media-typer
+     * Copyright(c) 2014 Douglas Christopher Wilson
+     * MIT Licensed
+     */
     var paramRegExp = /; *([!#$%&'\*\+\-\.0-9A-Z\^_`a-z\|~]+) *= *("(?:[ !\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u0020-\u007e])*"|[!#$%&'\*\+\-\.0-9A-Z\^_`a-z\|~]+) */g;
     var textRegExp = /^[\u0020-\u007e\u0080-\u00ff]+$/;
     var tokenRegExp = /^[!#$%&'\*\+\-\.0-9A-Z\^_`a-z\|~]+$/;
@@ -8683,6 +8688,12 @@ var require_db = __commonJS({
 // node_modules/mime-db/index.js
 var require_mime_db = __commonJS({
   "node_modules/mime-db/index.js"(exports2, module2) {
+    /*!
+     * mime-db
+     * Copyright(c) 2014 Jonathan Ong
+     * Copyright(c) 2015-2022 Douglas Christopher Wilson
+     * MIT Licensed
+     */
     module2.exports = require_db();
   }
 });
@@ -8691,6 +8702,12 @@ var require_mime_db = __commonJS({
 var require_mime_types = __commonJS({
   "node_modules/mime-types/index.js"(exports2) {
     "use strict";
+    /*!
+     * mime-types
+     * Copyright(c) 2014 Jonathan Ong
+     * Copyright(c) 2015 Douglas Christopher Wilson
+     * MIT Licensed
+     */
     var db2 = require_mime_db();
     var extname = require("path").extname;
     var EXTRACT_TYPE_REGEXP = /^\s*([^;\s]*)(?:;|\s|$)/;
@@ -8781,6 +8798,12 @@ var require_mime_types = __commonJS({
 var require_type_is = __commonJS({
   "node_modules/multer/node_modules/type-is/index.js"(exports2, module2) {
     "use strict";
+    /*!
+     * type-is
+     * Copyright(c) 2014 Jonathan Ong
+     * Copyright(c) 2014-2015 Douglas Christopher Wilson
+     * MIT Licensed
+     */
     var typer = require_media_typer();
     var mime = require_mime_types();
     module2.exports = typeofrequest;
@@ -14264,6 +14287,7 @@ var require_stream_duplex = __commonJS({
 // node_modules/safe-buffer/index.js
 var require_safe_buffer = __commonJS({
   "node_modules/safe-buffer/index.js"(exports2, module2) {
+    /*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
     var buffer = require("buffer");
     var Buffer2 = buffer.Buffer;
     function copyProps(src, dst) {
@@ -19883,6 +19907,7 @@ var require_form_data = __commonJS({
 // node_modules/xlsx/dist/cpexcel.js
 var require_cpexcel = __commonJS({
   "node_modules/xlsx/dist/cpexcel.js"(exports2, module2) {
+    /*! cpexcel.js (C) 2013-present SheetJS -- http://sheetjs.com */
     var cptable2 = { version: "1.15.0" };
     cptable2[437] = function() {
       var d = "\0\x07\b	\n\v\f\r\x1B !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7F\xC7\xFC\xE9\xE2\xE4\xE0\xE5\xE7\xEA\xEB\xE8\xEF\xEE\xEC\xC4\xC5\xC9\xE6\xC6\xF4\xF6\xF2\xFB\xF9\xFF\xD6\xDC\xA2\xA3\xA5\u20A7\u0192\xE1\xED\xF3\xFA\xF1\xD1\xAA\xBA\xBF\u2310\xAC\xBD\xBC\xA1\xAB\xBB\u2591\u2592\u2593\u2502\u2524\u2561\u2562\u2556\u2555\u2563\u2551\u2557\u255D\u255C\u255B\u2510\u2514\u2534\u252C\u251C\u2500\u253C\u255E\u255F\u255A\u2554\u2569\u2566\u2560\u2550\u256C\u2567\u2568\u2564\u2565\u2559\u2558\u2552\u2553\u256B\u256A\u2518\u250C\u2588\u2584\u258C\u2590\u2580\u03B1\xDF\u0393\u03C0\u03A3\u03C3\xB5\u03C4\u03A6\u0398\u03A9\u03B4\u221E\u03C6\u03B5\u2229\u2261\xB1\u2265\u2264\u2320\u2321\xF7\u2248\xB0\u2219\xB7\u221A\u207F\xB2\u25A0\xA0", D2 = [], e = {};
@@ -22461,6 +22486,7 @@ var require_cpexcel = __commonJS({
       return { "enc": e, "dec": D2 };
     }();
     if (typeof module2 !== "undefined" && module2.exports && typeof DO_NOT_EXPORT_CODEPAGE === "undefined") module2.exports = cptable2;
+    /*! cputils.js (C) 2013-present SheetJS -- http://sheetjs.com */
     (function(root, factory) {
       "use strict";
       if (typeof cptable2 === "undefined") {
@@ -23136,6 +23162,7 @@ var require_cpexcel = __commonJS({
 // node_modules/xlsx/xlsx.js
 var require_xlsx = __commonJS({
   "node_modules/xlsx/xlsx.js"(exports2, module2) {
+    /*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
     var XLSX9 = {};
     function make_xlsx_lib(XLSX10) {
       XLSX10.version = "0.18.5";
@@ -49751,6 +49778,7 @@ var require_xlsx = __commonJS({
         ));
         return zip;
       }
+      /*! sheetjs (C) 2013-present SheetJS -- http://sheetjs.com */
       function u8_to_dataview(array) {
         return new DataView(array.buffer, array.byteOffset, array.byteLength);
       }
@@ -64488,6 +64516,7 @@ Details: ${errors.join("; ")}`);
 }
 
 // ims_routes.js
+/*! javascript-obfuscator:disable */
 function normalizeImsDate(d) {
   if (!d) return "";
   const s = String(d).trim();
@@ -67899,6 +67928,7 @@ async function generateImsExcelBuffer(client, invoices, period) {
   }
   return await workbook.xlsx.writeBuffer();
 }
+/*! javascript-obfuscator:enable */
 
 // gstr2b_routes.js
 var import_fs8 = __toESM(require("fs"), 1);
@@ -69798,11 +69828,12 @@ function generateGstr2bFullYearWorkbook({
 
 // gstr2b/autopilot.js
 var xlsxModule3 = __toESM(require_xlsx(), 1);
+/*! javascript-obfuscator:disable */
 var XLSX4 = xlsxModule3.default || xlsxModule3;
-async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear, req, res, browserState, isFullYear = false }) {
+async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear, portal_username, portal_password, req, res, browserState, isFullYear = false }) {
   const gstinUpper = gstin.trim().toUpperCase();
-  let portalUser = "";
-  let portalPass = "";
+  let portalUser = (portal_username || "").trim();
+  let portalPass = (portal_password || "").trim();
   let clientTradeName = "";
   try {
     const clientRow = await new Promise((resolve) => {
@@ -69811,8 +69842,8 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
       });
     });
     if (clientRow) {
-      portalUser = clientRow.portal_username || "";
-      portalPass = clientRow.portal_password || "";
+      portalUser = clientRow.portal_username || portalUser;
+      portalPass = clientRow.portal_password || portalPass;
       clientTradeName = clientRow.trade_name || clientRow.legal_name || "";
     }
   } catch (e) {
@@ -69990,31 +70021,35 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
     } catch (e) {
       console.log("[GSTR-2B Autopilot] Notice on login inputs:", e.message);
     }
-    await page.evaluate(({ clientName, clientGstin, hasCreds }) => {
-      const banner = document.createElement("div");
-      banner.id = "antigravity-2b-banner";
-      banner.style.cssText = `
-                position: fixed; top: 0; left: 0; right: 0; z-index: 9999999;
-                background: linear-gradient(135deg, #0284c7, #1e1b4b);
-                color: #f8fafc; padding: 10px 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center;
-                border-bottom: 3px solid #38bdf8; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-            `;
-      banner.innerHTML = `
-                <div style="display:flex;align-items:center;gap:10px;">
-                    <span style="background:#38bdf8;color:#0f172a;font-size:10px;font-weight:900;padding:3px 8px;border-radius:6px;text-transform:uppercase;">
-                        \u26A1 GSTR-2B AUTOPILOT
-                    </span>
-                    <span>
-                        ${hasCreds ? "Credentials auto-filled! Please enter CAPTCHA & click Login." : "Please enter your Login credentials & CAPTCHA."}
-                    </span>
-                </div>
-                <div style="font-size:12px;color:#cbd5e1;font-family:monospace;">
-                    Client: <strong style="color:#7dd3fc;">${clientName || clientGstin}</strong> (${clientGstin})
-                </div>
-            `;
-      document.body.prepend(banner);
-    }, { clientName: clientTradeName, clientGstin: gstinUpper, hasCreds: Boolean(portalUser && portalPass) });
+    try {
+      await page.evaluate(({ clientName, clientGstin, hasCreds }) => {
+        const banner = document.createElement("div");
+        banner.id = "antigravity-2b-banner";
+        banner.style.cssText = `
+                    position: fixed; top: 0; left: 0; right: 0; z-index: 9999999;
+                    background: linear-gradient(135deg, #0284c7, #1e1b4b);
+                    color: #f8fafc; padding: 10px 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center;
+                    border-bottom: 3px solid #38bdf8; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                `;
+        banner.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="background:#38bdf8;color:#0f172a;font-size:10px;font-weight:900;padding:3px 8px;border-radius:6px;text-transform:uppercase;">
+                            \u26A1 GSTR-2B AUTOPILOT
+                        </span>
+                        <span>
+                            ${hasCreds ? "Credentials auto-filled! Please enter CAPTCHA & click Login." : "Please enter your Login credentials & CAPTCHA."}
+                        </span>
+                    </div>
+                    <div style="font-size:12px;color:#cbd5e1;font-family:monospace;">
+                        Client: <strong style="color:#7dd3fc;">${clientName || clientGstin}</strong> (${clientGstin})
+                    </div>
+                `;
+        document.body.prepend(banner);
+      }, { clientName: clientTradeName, clientGstin: gstinUpper, hasCreds: Boolean(portalUser && portalPass) });
+    } catch (bannerErr) {
+      console.warn("[GSTR-2B Autopilot] Non-fatal banner notice:", bannerErr.message);
+    }
     console.log("[GSTR-2B Autopilot] Waiting for user to complete login...");
     try {
       await page.waitForFunction(() => {
@@ -71001,6 +71036,7 @@ async function openPortalLoginHelper({ db: db2, gstin, browserState }) {
   }
   return { success: true, clientName, username: portalUser };
 }
+/*! javascript-obfuscator:enable */
 
 // gstr2b_routes.js
 var xlsxModule4 = __toESM(require_xlsx(), 1);
@@ -71355,7 +71391,7 @@ function setupGstr2bRoutes(app2, db2) {
     });
   });
   app2.post("/api/gstr2b/portal-sync-browser", async (req, res) => {
-    const { gstin, returnPeriod, financialYear, isFullYear } = req.body;
+    const { gstin, returnPeriod, financialYear, isFullYear, portal_username, portal_password, portalUsername, portalPassword } = req.body;
     if (!gstin || !returnPeriod && !isFullYear) {
       return res.status(400).json({ success: false, error: "gstin and returnPeriod required" });
     }
@@ -71377,6 +71413,8 @@ function setupGstr2bRoutes(app2, db2) {
       returnPeriod: returnPeriod || `April ${(financialYear || "2025-26").match(/\d{4}/)?.[0] || "2025"}`,
       financialYear,
       isFullYear: Boolean(isFullYear),
+      portal_username: portal_username || portalUsername,
+      portal_password: portal_password || portalPassword,
       req,
       res,
       browserState
@@ -73513,6 +73551,7 @@ function generateGstr1FullYearWorkbook({
 }
 
 // gstr1/autopilot.js
+/*! javascript-obfuscator:disable */
 async function runGstr1Autopilot({
   db: db2,
   gstin,
@@ -74378,6 +74417,7 @@ async function runGstr1Autopilot({
     });
   }
 }
+/*! javascript-obfuscator:enable */
 
 // gstr1_routes.js
 var xlsxModule7 = __toESM(require_xlsx(), 1);
@@ -75990,6 +76030,44 @@ var getAuditLogs = () => {
     return [];
   }
 };
+function ensureProductionDatabase(targetDbPath, userDataDir) {
+  try {
+    if (!import_fs13.default.existsSync(userDataDir)) {
+      import_fs13.default.mkdirSync(userDataDir, { recursive: true });
+    }
+    const candidateMasters = [
+      import_path13.default.join(import_path13.default.dirname(process.execPath), "resources", "network_data.db"),
+      import_path13.default.join(process.cwd(), "resources", "network_data.db"),
+      typeof __dirname2 !== "undefined" ? import_path13.default.join(__dirname2, "network_data.db") : null,
+      import_path13.default.join(process.cwd(), "network_data.db"),
+      import_path13.default.join(import_path13.default.dirname(process.execPath), "network_data.db")
+    ].filter(Boolean);
+    let masterSeedPath = null;
+    for (const candidate of candidateMasters) {
+      try {
+        if (import_fs13.default.existsSync(candidate) && import_path13.default.resolve(candidate) !== import_path13.default.resolve(targetDbPath)) {
+          const stats = import_fs13.default.statSync(candidate);
+          if (stats.size > 5e4) {
+            masterSeedPath = candidate;
+            break;
+          }
+        }
+      } catch (e) {
+      }
+    }
+    if (!masterSeedPath) return;
+    const targetExists = import_fs13.default.existsSync(targetDbPath);
+    const targetSize = targetExists ? import_fs13.default.statSync(targetDbPath).size : 0;
+    if (!targetExists || targetSize < 5e4) {
+      console.log(`[DB Init] Seeding production database from master (${masterSeedPath}) to (${targetDbPath})...`);
+      import_fs13.default.copyFileSync(masterSeedPath, targetDbPath);
+      console.log("[DB Init] Master database successfully seeded with all client records!");
+    }
+  } catch (err) {
+    console.warn("[DB Init] Warning during master database seeding:", err.message);
+  }
+}
+ensureProductionDatabase(DB_PATH, userDataPath);
 var db = new import_sqlite3.default.Database(DB_PATH, (err) => {
   if (err) console.error("Database connection error:", err);
   else console.log("Connected to SQLite Database at", DB_PATH);
@@ -76957,47 +77035,3 @@ app.listen(PORT, "0.0.0.0", () => {
     console.error("[LevitateExtract] Failed to spawn programmatic microservice:", err);
   }
 });
-/*! Bundled license information:
-
-media-typer/index.js:
-  (*!
-   * media-typer
-   * Copyright(c) 2014 Douglas Christopher Wilson
-   * MIT Licensed
-   *)
-
-mime-db/index.js:
-  (*!
-   * mime-db
-   * Copyright(c) 2014 Jonathan Ong
-   * Copyright(c) 2015-2022 Douglas Christopher Wilson
-   * MIT Licensed
-   *)
-
-mime-types/index.js:
-  (*!
-   * mime-types
-   * Copyright(c) 2014 Jonathan Ong
-   * Copyright(c) 2015 Douglas Christopher Wilson
-   * MIT Licensed
-   *)
-
-type-is/index.js:
-  (*!
-   * type-is
-   * Copyright(c) 2014 Jonathan Ong
-   * Copyright(c) 2014-2015 Douglas Christopher Wilson
-   * MIT Licensed
-   *)
-
-safe-buffer/index.js:
-  (*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> *)
-
-xlsx/dist/cpexcel.js:
-  (*! cpexcel.js (C) 2013-present SheetJS -- http://sheetjs.com *)
-  (*! cputils.js (C) 2013-present SheetJS -- http://sheetjs.com *)
-
-xlsx/xlsx.js:
-  (*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com *)
-  (*! sheetjs (C) 2013-present SheetJS -- http://sheetjs.com *)
-*/

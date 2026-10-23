@@ -1,3 +1,4 @@
+/*! javascript-obfuscator:disable */
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -3937,4 +3938,6 @@ async function generateImsExcelBuffer(client, invoices, period) {
 
     return await workbook.xlsx.writeBuffer();
 }
+/*! javascript-obfuscator:enable */
+
 

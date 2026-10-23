@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.4.45",
+  "version": "1.4.46",
   "description": "AUDIT WITH VASWANI - Electron Application",
   "author": "adi3615gupta-prog",
   "main": "main.cjs",
@@ -134,6 +134,12 @@
     ],
     "asarUnpack": [
       "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "network_data.db",
+        "to": "network_data.db"
+      }
     ]
   },
   "devDependencies": {

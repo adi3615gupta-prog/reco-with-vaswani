@@ -13,6 +13,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules. (completed 2026-10-22)
 - [x] **Phase 6: Core Compliance Modules UI/UX Overhaul & Financial Cockpit Elevation** - Modernize high-traffic modules (Returns Dashboard, Party-Wise Dispute Hub, Tally Direct Bridge, TDS, Income Tax Sandbox, Dropzone & KPI Cockpit) with Obsidian Glass styling, interactive charts, and high-density tables. (completed 2026-10-22)
 - [x] **Phase 7: Browser Autopilot Chrome-First Architecture & Windows Client Hardening** - Prioritize Google Chrome over Microsoft Edge in Playwright automation cascades across GSTR-2B, GSTR-1, IMS, and GSTIN Search modules. (completed 2026-10-23)
+- [ ] **Phase 8: Autopilot Runtime Execution & Production Database Hardening** - Shield browser evaluation code from obfuscator scrambling and auto-seed master clients database in packaged Windows builds.
 
 ## Phase Details
 
@@ -135,6 +136,22 @@ Plans:
 Plans:
 - [x] 07-01: Centralized Chrome-first browser launcher, multi-module refactoring (GSTR-2B, GSTR-1, IMS, GSTIN Lookup), and launch verification
 
+### Phase 8: Autopilot Runtime Execution & Production Database Hardening
+
+**Goal**: Resolve the two production execution bugs in packaged `.exe` builds: (1) prevent `ReferenceError: _0x... is not defined` inside Chrome by shielding browser evaluations from `javascript-obfuscator`, and (2) auto-seed `network_data.db` with master clients & credentials in `app.getPath('userData')`.
+**Depends on**: Phase 7
+**Requirements**: AUTOPILOT-PROD-01
+**Success Criteria** (what must be TRUE):
+  1. `server.obfuscated.cjs` leaves `page.evaluate` and `page.waitForFunction` code clean without Node scope lookup tokens (`_0x...`), preventing browser runtime exceptions.
+  2. Assistive banner and DOM injections in `gstr2b/autopilot.js` are wrapped in try/catch to ensure UI decoration errors never halt the autopilot loop.
+  3. Fresh installations in packaged mode automatically seed `network_data.db` from the bundled master database in `resources/` so all 400+ clients and credentials are fully loaded.
+  4. GSTR-2B autopilot successfully autofills `#username` and `#user_pass` and advances to portal period selection.
+
+**Plans**: 1/1 plan pending execution
+
+Plans:
+- [ ] 08-01: Shield Playwright automation from obfuscation, bundle and auto-seed `network_data.db`, and verify end-to-end execution
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-23 after Phase 7 planning*
+*Last updated: 2026-10-23 after Phase 8 planning*

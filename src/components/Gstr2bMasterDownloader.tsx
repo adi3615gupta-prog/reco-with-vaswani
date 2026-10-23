@@ -328,7 +328,8 @@ export default function Gstr2bMasterDownloader({
           gstin: client.gstin,
           returnPeriod: activePeriod,
           financialYear,
-          isFullYear: viewMode === 'FULL_YEAR'
+          isFullYear: viewMode === 'FULL_YEAR',
+          portal_username: client.portalUsername || (client as any).portal_username
         })
       });
       const data = await res.json();

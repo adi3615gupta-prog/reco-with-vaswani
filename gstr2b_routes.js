@@ -376,7 +376,7 @@ export function setupGstr2bRoutes(app, db) {
 
     // ─── 3. PLAYWRIGHT AUTOPILOT 2B & GSTR-1 DOWNLOADER ────────────────────────
     app.post('/api/gstr2b/portal-sync-browser', async (req, res) => {
-        const { gstin, returnPeriod, financialYear, isFullYear } = req.body;
+        const { gstin, returnPeriod, financialYear, isFullYear, portal_username, portal_password, portalUsername, portalPassword } = req.body;
         if (!gstin || (!returnPeriod && !isFullYear)) {
             return res.status(400).json({ success: false, error: 'gstin and returnPeriod required' });
         }
@@ -399,6 +399,8 @@ export function setupGstr2bRoutes(app, db) {
             returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
             financialYear,
             isFullYear: Boolean(isFullYear),
+            portal_username: portal_username || portalUsername,
+            portal_password: portal_password || portalPassword,
             req,
             res,
             browserState

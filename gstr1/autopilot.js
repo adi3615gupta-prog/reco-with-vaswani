@@ -1,3 +1,4 @@
+/*! javascript-obfuscator:disable */
 // Playwright dynamically imported inside runGstr1Autopilot to prevent startup crashes
 import path from 'path';
 import fs from 'fs';
@@ -984,3 +985,5 @@ export async function runGstr1Autopilot({
         });
     }
 }
+/*! javascript-obfuscator:enable */
+
