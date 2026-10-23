@@ -78,11 +78,14 @@
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "localtunnel": "^2.0.2",
+    "lottie-react": "^3.1.2",
     "lucide-react": "^0.462.0",
+    "motion": "^14.6.0",
     "multer": "^2.2.0",
     "next-themes": "^0.3.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^10.1.0",
+    "playwright": "^1.60.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -98,8 +101,7 @@
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0",
-    "zod": "^3.25.76",
-    "playwright": "^1.60.0"
+    "zod": "^3.25.76"
   },
   "build": {
     "appId": "com.vite.react.shadcn.ts",
