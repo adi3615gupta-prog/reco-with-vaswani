@@ -363,14 +363,32 @@ export function setupGstr2bRoutes(app, db) {
         db.all(query, queryParams, (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
 
-            res.json({
-                success: true,
-                gstin: gstin.toUpperCase(),
-                period: isFullYear ? 'FULL_YEAR' : period,
-                financialYear: fy || null,
-                count: rows ? rows.length : 0,
-                invoices: rows || []
-            });
+            if (!isFullYear && period) {
+                db.get(
+                    `SELECT * FROM gstr2b_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ?)`,
+                    [gstin.toUpperCase(), period, `%${period}%`],
+                    (bErr, batchRow) => {
+                        res.json({
+                            success: true,
+                            gstin: gstin.toUpperCase(),
+                            period: period,
+                            financialYear: fy || null,
+                            count: rows ? rows.length : 0,
+                            batch: batchRow || null,
+                            invoices: rows || []
+                        });
+                    }
+                );
+            } else {
+                res.json({
+                    success: true,
+                    gstin: gstin.toUpperCase(),
+                    period: isFullYear ? 'FULL_YEAR' : period,
+                    financialYear: fy || null,
+                    count: rows ? rows.length : 0,
+                    invoices: rows || []
+                });
+            }
         });
     });
 

@@ -965,7 +965,15 @@ export async function parseAnyReturnsFile(file: File): Promise<IngestResult> {
       if (jsonEntryName) {
         const contentStr = await zip.files[jsonEntryName].async('text');
         const parsed = JSON.parse(contentStr);
-        if (jsonEntryName.toLowerCase().includes('2b') || nameLower.includes('2b')) {
+        const is2B = Boolean(
+          parsed.data?.docdata?.b2b ||
+          parsed.docdata?.b2b ||
+          parsed.data?.itcsumm ||
+          parsed.itcsumm ||
+          jsonEntryName.toLowerCase().includes('2b') ||
+          nameLower.includes('2b')
+        );
+        if (is2B) {
           const gstr2b = await parseGstr2bJsonContent(parsed, file.name);
           return { gstr2b };
         } else {

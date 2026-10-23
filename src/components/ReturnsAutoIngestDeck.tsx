@@ -3,7 +3,7 @@ import {
   Zap, UploadCloud, DownloadCloud, Sparkles, CheckCircle2,
   AlertCircle, FileJson, FileSpreadsheet, Eye, RotateCcw,
   RefreshCw, Check, ArrowRight, Layers, FileArchive, ChevronDown,
-  Info, ShieldCheck, X, Save
+  Info, ShieldCheck, X, Save, ArrowDownRight, ArrowUpRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBase } from '@/lib/api';
@@ -35,6 +35,12 @@ interface ReturnsAutoIngestDeckProps {
 
 const AVAILABLE_FYS = ['2025-26', '2026-27'];
 
+// Helper to format currency
+const fmt = (val: number | undefined | null) => {
+  if (val === undefined || val === null || isNaN(val)) return '₹ 0.00';
+  return `₹ ${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 export default function ReturnsAutoIngestDeck({
   selectedMonth,
   financialYear,
@@ -48,29 +54,44 @@ export default function ReturnsAutoIngestDeck({
   onSaveWorking,
   isSavingWorking = false
 }: ReturnsAutoIngestDeckProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
-  const [isAutopilotRunning, setIsAutopilotRunning] = useState(false);
-  const [autopilotStep, setAutopilotStep] = useState<string>('');
-  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
-
-  // Month-specific cached summaries
+  // GSTR-1 State
   const [activeGstr1, setActiveGstr1] = useState<Gstr1IngestSummary | null>(null);
+  const [isGstr1Dragging, setIsGstr1Dragging] = useState(false);
+  const [isProcessingGstr1, setIsProcessingGstr1] = useState(false);
+  const [isGstr1AutopilotRunning, setIsGstr1AutopilotRunning] = useState(false);
+  const [gstr1AutopilotStep, setGstr1AutopilotStep] = useState<string>('');
+  const gstr1FileInputRef = useRef<HTMLInputElement>(null);
+
+  // GSTR-2B State
   const [activeGstr2b, setActiveGstr2b] = useState<Gstr2bIngestSummary | null>(null);
+  const [isGstr2bDragging, setIsGstr2bDragging] = useState(false);
+  const [isProcessingGstr2b, setIsProcessingGstr2b] = useState(false);
+  const [isGstr2bAutopilotRunning, setIsGstr2bAutopilotRunning] = useState(false);
+  const [gstr2bAutopilotStep, setGstr2bAutopilotStep] = useState<string>('');
+  const gstr2bFileInputRef = useRef<HTMLInputElement>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Combined Autopilot State
+  const [isCombinedAutopilotRunning, setIsCombinedAutopilotRunning] = useState(false);
 
-  // Format currency helper
-  const fmt = (val: number | undefined | null) => {
-    if (!val) return '₹ 0.00';
-    return `₹ ${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  // Modals
+  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    mode: 'GSTR1' | 'GSTR2B' | 'BOTH';
+    gstr1?: Gstr1IngestSummary | null;
+    gstr2b?: Gstr2bIngestSummary | null;
+  }>({
+    isOpen: false,
+    mode: 'GSTR1',
+    gstr1: null,
+    gstr2b: null
+  });
 
-  // Check if current month already has outward or inward data
+  // Check if current month already has outward or inward data in working sheet
   const hasOutwardData = (currentMonthData?.outward?.totalSaleWorking?.taxable || 0) > 0;
   const has2bData = (currentMonthData?.inward?.itc2b?.total || 0) > 0;
 
-  // Auto-hydrate saved 2B/returns data from SQLite on mount or when client/month changes
+  // ─── AUTO-HYDRATE BOTH RETURNS FROM DB ─────────────────────────────────────────
   useEffect(() => {
     setActiveGstr1(null);
     setActiveGstr2b(null);
@@ -78,39 +99,32 @@ export default function ReturnsAutoIngestDeck({
     if (!currentGstin || currentGstin === 'Not Specified' || currentGstin.length < 15) return;
     const targetPeriod = `${selectedMonth} ${currentMonthData?.year || '2025'}`;
 
-    const loadSyncedReturnsFromDb = async () => {
+    const hydrateFromDb = async () => {
+      // 1. Hydrate GSTR-2B from DB
       try {
-        const res = await fetch(`${getApiBase()}/api/gstr2b/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`);
-        const data = await res.json();
-        if (data.success) {
-          let found2bSummary: Gstr2bIngestSummary | null = null;
-          let foundG1Summary: Gstr1IngestSummary | null = null;
-
-          if (data.gstr1Summary) {
-            foundG1Summary = {
-              ...data.gstr1Summary,
-              monthKey: selectedMonth
-            };
-          }
-          setActiveGstr1(foundG1Summary);
-
-          if (data.batch || (data.count && data.count > 0)) {
-            const b = data.batch || {};
+        const res2b = await fetch(
+          `${getApiBase()}/api/gstr2b/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`
+        );
+        const data2b = await res2b.json();
+        if (data2b.success) {
+          if (data2b.batch || (data2b.count && data2b.count > 0)) {
+            const b = data2b.batch || {};
             const eligIgst = Number(b.eligible_itc_igst || 0);
             let eligCgst = Number(b.eligible_itc_cgst || 0);
             let eligSgst = Number(b.eligible_itc_sgst || 0);
             const eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
-            const totalInvs = Number(b.total_invoices || data.count || 0);
+            const totalInvs = Number(b.total_invoices || data2b.count || 0);
 
-            // Safeguard against doubled ITC (if total was mistakenly populated into both CGST and SGST)
+            // Safeguard against doubled ITC
             if (eligTotal > 0 && eligIgst === 0 && Math.abs(eligCgst - eligTotal) < 0.05 && Math.abs(eligSgst - eligTotal) < 0.05) {
               eligCgst = Math.round((eligTotal / 2) * 100) / 100;
               eligSgst = Math.round((eligTotal / 2) * 100) / 100;
             }
 
-            // Extract taxable values and breakdown from data.invoices if available
-            const invs = Array.isArray(data.invoices) ? data.invoices : [];
-            let calcEligTx = 0, calcRcmTx = 0, calcCdnrTx = 0, calcIneligTx = 0, calcIneligCgst = 0, calcIneligSgst = 0, calcIneligIgst = 0;
+            // Extract taxable values and breakdown from data2b.invoices if available
+            const invs = Array.isArray(data2b.invoices) ? data2b.invoices : [];
+            let calcEligTx = 0, calcRcmTx = 0, calcCdnrTx = 0, calcIneligTx = 0;
+            let calcIneligCgst = 0, calcIneligSgst = 0, calcIneligIgst = 0;
             invs.forEach((inv: any) => {
               const isRcm = String(inv.rchrg || 'N').toUpperCase() === 'Y';
               const itcAvl = String(inv.itc_available || 'Y').toUpperCase() === 'Y';
@@ -150,7 +164,7 @@ export default function ReturnsAutoIngestDeck({
             const ineligTotal = Number(b.ineligible_itc_total || (calcIneligCgst + calcIneligSgst + calcIneligIgst) || 0);
 
             if (eligTotal > 0 || totalInvs > 0) {
-              found2bSummary = {
+              const summary2b: Gstr2bIngestSummary = {
                 gstin: currentGstin,
                 period: targetPeriod,
                 monthKey: selectedMonth,
@@ -179,114 +193,289 @@ export default function ReturnsAutoIngestDeck({
                 ineligibleItc: { taxable: ineligTxval, igst: calcIneligIgst, cgst: calcIneligCgst, sgst: calcIneligSgst, total: ineligTotal },
                 netEligibleTotal: Math.round((eligTotal + rcmTotal + impgIgst + (isdIgst + isdCgst + isdSgst) - cdnrTotal - ineligTotal) * 100) / 100
               };
+              setActiveGstr2b(summary2b);
             }
-          }
-          setActiveGstr2b(found2bSummary);
-
-          // If current month Table 4 ITC or Table 3.1 is currently zero in the working sheet, auto-apply!
-          const needs2b = (currentMonthData?.inward?.itc2b?.total || 0) === 0 && found2bSummary && found2bSummary.netEligibleTotal > 0;
-          const needsG1 = (currentMonthData?.outward?.totalSaleWorking?.taxable || 0) === 0 && foundG1Summary && foundG1Summary.totalOutwardTaxable > 0;
-
-          if (needs2b || needsG1) {
-            onApplyIngestedReturns(needsG1 ? foundG1Summary : null, needs2b ? found2bSummary : null);
           }
         }
       } catch (e) {
-        console.error('[ReturnsAutoIngestDeck] DB auto-hydrate error:', e);
+        console.error('[ReturnsAutoIngestDeck] GSTR-2B DB hydrate error:', e);
+      }
+
+      // 2. Hydrate GSTR-1 from DB
+      try {
+        const resG1 = await fetch(
+          `${getApiBase()}/api/gstr1/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`
+        );
+        const dataG1 = await resG1.json();
+        if (dataG1.success) {
+          const invs = Array.isArray(dataG1.invoices) ? dataG1.invoices : [];
+          const b = dataG1.batch || {};
+
+          if (invs.length > 0 || (b && (b.total_taxable > 0 || b.total_invoices > 0))) {
+            const breakdowns = {
+              b2b: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              b2c: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              zeroRated: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              nilRated: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              exempt: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              creditNote: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              advanceReceived: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              advanceAdjusted: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+              rcmOutward: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 }
+            };
+            let b2bCount = 0, b2csCount = 0, cdnrCount = 0, expCount = 0;
+
+            for (const inv of invs) {
+              const sec = String(inv.section || 'B2B').toUpperCase();
+              const tx = Number(inv.txval || 0);
+              const cg = Number(inv.camt || 0);
+              const sg = Number(inv.samt || 0);
+              const ig = Number(inv.iamt || 0);
+              const tot = cg + sg + ig;
+
+              if (sec.includes('CDNR')) {
+                cdnrCount++;
+                breakdowns.creditNote.taxable += tx;
+                breakdowns.creditNote.cgst += cg;
+                breakdowns.creditNote.sgst += sg;
+                breakdowns.creditNote.igst += ig;
+                breakdowns.creditNote.total += tot;
+              } else if (sec.includes('B2CS') || sec.includes('B2C')) {
+                b2csCount++;
+                breakdowns.b2c.taxable += tx;
+                breakdowns.b2c.cgst += cg;
+                breakdowns.b2c.sgst += sg;
+                breakdowns.b2c.igst += ig;
+                breakdowns.b2c.total += tot;
+              } else if (sec.includes('EXP')) {
+                expCount++;
+                breakdowns.zeroRated.taxable += tx;
+                breakdowns.zeroRated.cgst += cg;
+                breakdowns.zeroRated.sgst += sg;
+                breakdowns.zeroRated.igst += ig;
+                breakdowns.zeroRated.total += tot;
+              } else if (sec.includes('NIL')) {
+                breakdowns.nilRated.taxable += tx;
+              } else if (sec.includes('EXEMP')) {
+                breakdowns.exempt.taxable += tx;
+              } else {
+                b2bCount++;
+                breakdowns.b2b.taxable += tx;
+                breakdowns.b2b.cgst += cg;
+                breakdowns.b2b.sgst += sg;
+                breakdowns.b2b.igst += ig;
+                breakdowns.b2b.total += tot;
+              }
+            }
+
+            const totalTaxable = b?.total_taxable != null && Number(b.total_taxable) > 0
+              ? Number(b.total_taxable)
+              : breakdowns.b2b.taxable + breakdowns.b2c.taxable + breakdowns.zeroRated.taxable - breakdowns.creditNote.taxable;
+
+            const totalTax = b?.total_tax != null && Number(b.total_tax) > 0
+              ? Number(b.total_tax)
+              : breakdowns.b2b.total + breakdowns.b2c.total + breakdowns.zeroRated.total - breakdowns.creditNote.total;
+
+            const summaryG1: Gstr1IngestSummary = {
+              gstin: currentGstin,
+              period: targetPeriod,
+              monthKey: selectedMonth,
+              fileType: 'JSON',
+              fileName: 'Saved_GSTR1_Batch',
+              counts: {
+                b2b: b?.b2b_count || b2bCount,
+                b2cl: b?.b2cl_count || 0,
+                b2cs: b?.b2cs_count || b2csCount,
+                exp: b?.exp_count || expCount,
+                nil: 0,
+                cdnr: b?.cdnr_count || cdnrCount,
+                at: 0,
+                totalDocs: (b?.total_invoices || invs.length)
+              },
+              breakdowns,
+              totalOutwardTaxable: Math.round(totalTaxable * 100) / 100,
+              totalOutwardTax: Math.round(totalTax * 100) / 100
+            };
+            setActiveGstr1(summaryG1);
+          }
+        }
+      } catch (e) {
+        console.error('[ReturnsAutoIngestDeck] GSTR-1 DB hydrate error:', e);
       }
     };
 
-    loadSyncedReturnsFromDb();
+    hydrateFromDb();
   }, [currentGstin, selectedMonth, currentMonthData?.year]);
 
-  // ─── 1. FILE DROP & PICKER HANDLER ──────────────────────────────────────────
-  const handleFilesChosen = async (files: FileList | File[]) => {
-    if (!files || files.length === 0) return;
-    setIsProcessingFiles(true);
-    const toastId = toast.loading(`Parsing ${files.length} returns file(s)...`);
-
-    let parsedGstr1: Gstr1IngestSummary | null = null;
-    let parsedGstr2b: Gstr2bIngestSummary | null = null;
-    const errors: string[] = [];
-
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const res = await parseAnyReturnsFile(file);
-        if (res.error) {
-          errors.push(res.error);
-        } else {
-          if (res.gstr1) parsedGstr1 = res.gstr1;
-          if (res.gstr2b) parsedGstr2b = res.gstr2b;
-        }
-      }
-
-      if (!parsedGstr1 && !parsedGstr2b) {
-        throw new Error(errors[0] || 'No recognizable GSTR-1 or GSTR-2B data found in uploaded files.');
-      }
-
-      if (parsedGstr1) setActiveGstr1(parsedGstr1);
-      if (parsedGstr2b) setActiveGstr2b(parsedGstr2b);
-
-      // Apply directly to working sheet
-      onApplyIngestedReturns(parsedGstr1, parsedGstr2b);
-
-      let successMsg = 'Auto-Ingest Successful!';
-      if (parsedGstr1 && parsedGstr2b) {
-        successMsg = `Ingested GSTR-1 (₹${parsedGstr1.totalOutwardTaxable.toLocaleString('en-IN')} Sales) & GSTR-2B (₹${parsedGstr2b.netEligibleTotal.toLocaleString('en-IN')} ITC)!`;
-      } else if (parsedGstr1) {
-        successMsg = `Ingested GSTR-1: ₹${parsedGstr1.totalOutwardTaxable.toLocaleString('en-IN')} Outward Sales populated to Table 3.1!`;
-      } else if (parsedGstr2b) {
-        successMsg = `Ingested GSTR-2B: ₹${parsedGstr2b.netEligibleTotal.toLocaleString('en-IN')} Eligible ITC populated to Table 4!`;
-      }
-
-      toast.success(successMsg, {
-        id: toastId,
-        description: `Applied to ${selectedMonth} ${currentMonthData.year}. Rule 88A tax cascade recalculated automatically.`
-      });
-    } catch (err: any) {
-      toast.error('File Ingestion Failed', {
-        id: toastId,
-        description: err?.message || 'Error parsing files.'
-      });
-    } finally {
-      setIsProcessingFiles(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFilesChosen(e.dataTransfer.files);
-    }
-  };
-
-  // ─── 2. AUTOPILOT PORTAL SYNC HANDLER ───────────────────────────────────────
-  const handleAutopilotSync = async () => {
+  // ─── GSTR-1 AUTOPILOT HANDLER ────────────────────────────────────────────────
+  const handleGstr1AutopilotSync = async () => {
     if (!currentGstin || currentGstin === 'Not Specified' || currentGstin.length < 15) {
       return toast.error('Valid GSTIN Required', {
-        description: 'Please specify the client GSTIN in the client card before running portal autopilot.'
+        description: 'Please specify the client GSTIN in the client card before running GSTR-1 autopilot.'
       });
     }
 
-    setIsAutopilotRunning(true);
-    setAutopilotStep('Connecting to GST Portal via Playwright...');
-    const toastId = toast.loading(`Starting Autopilot for ${selectedMonth} (${currentGstin})...`);
+    setIsGstr1AutopilotRunning(true);
+    setGstr1AutopilotStep('Connecting to GST Portal...');
+    const toastId = toast.loading(`Starting GSTR-1 Autopilot for ${selectedMonth} (${currentGstin})...`);
 
     try {
-      setAutopilotStep('Launching browser & auto-logging in...');
+      setGstr1AutopilotStep('Launching Chrome & navigating to GSTR-1...');
+      const targetPeriod = `${selectedMonth} ${currentMonthData.year}`;
+
+      const res = await fetch(`${getApiBase()}/api/gstr1/portal-sync-browser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gstin: currentGstin,
+          returnPeriod: targetPeriod,
+          financialYear
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'GSTR-1 Autopilot sync failed.');
+      }
+
+      setGstr1AutopilotStep('Parsing downloaded GSTR-1 data...');
+
+      // Re-hydrate GSTR-1 from DB
+      const resG1 = await fetch(
+        `${getApiBase()}/api/gstr1/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`
+      );
+      const dataG1 = await resG1.json();
+      let newlyFoundG1: Gstr1IngestSummary | null = null;
+
+      if (dataG1.success && Array.isArray(dataG1.invoices)) {
+        const invs = dataG1.invoices;
+        const b = dataG1.batch || {};
+        const breakdowns = {
+          b2b: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          b2c: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          zeroRated: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          nilRated: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          exempt: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          creditNote: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          advanceReceived: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          advanceAdjusted: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+          rcmOutward: { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 }
+        };
+        let b2bCount = 0, b2csCount = 0, cdnrCount = 0, expCount = 0;
+
+        for (const inv of invs) {
+          const sec = String(inv.section || 'B2B').toUpperCase();
+          const tx = Number(inv.txval || 0);
+          const cg = Number(inv.camt || 0);
+          const sg = Number(inv.samt || 0);
+          const ig = Number(inv.iamt || 0);
+          const tot = cg + sg + ig;
+
+          if (sec.includes('CDNR')) {
+            cdnrCount++;
+            breakdowns.creditNote.taxable += tx;
+            breakdowns.creditNote.cgst += cg;
+            breakdowns.creditNote.sgst += sg;
+            breakdowns.creditNote.igst += ig;
+            breakdowns.creditNote.total += tot;
+          } else if (sec.includes('B2CS') || sec.includes('B2C')) {
+            b2csCount++;
+            breakdowns.b2c.taxable += tx;
+            breakdowns.b2c.cgst += cg;
+            breakdowns.b2c.sgst += sg;
+            breakdowns.b2c.igst += ig;
+            breakdowns.b2c.total += tot;
+          } else if (sec.includes('EXP')) {
+            expCount++;
+            breakdowns.zeroRated.taxable += tx;
+            breakdowns.zeroRated.cgst += cg;
+            breakdowns.zeroRated.sgst += sg;
+            breakdowns.zeroRated.igst += ig;
+            breakdowns.zeroRated.total += tot;
+          } else {
+            b2bCount++;
+            breakdowns.b2b.taxable += tx;
+            breakdowns.b2b.cgst += cg;
+            breakdowns.b2b.sgst += sg;
+            breakdowns.b2b.igst += ig;
+            breakdowns.b2b.total += tot;
+          }
+        }
+
+        const totalTaxable = b?.total_taxable != null && Number(b.total_taxable) > 0
+          ? Number(b.total_taxable)
+          : breakdowns.b2b.taxable + breakdowns.b2c.taxable + breakdowns.zeroRated.taxable - breakdowns.creditNote.taxable;
+
+        const totalTax = b?.total_tax != null && Number(b.total_tax) > 0
+          ? Number(b.total_tax)
+          : breakdowns.b2b.total + breakdowns.b2c.total + breakdowns.zeroRated.total - breakdowns.creditNote.total;
+
+        newlyFoundG1 = {
+          gstin: currentGstin,
+          period: targetPeriod,
+          monthKey: selectedMonth,
+          fileType: 'JSON',
+          fileName: 'Portal_Autopilot_GSTR1',
+          counts: {
+            b2b: b?.b2b_count || b2bCount,
+            b2cl: b?.b2cl_count || 0,
+            b2cs: b?.b2cs_count || b2csCount,
+            exp: b?.exp_count || expCount,
+            nil: 0,
+            cdnr: b?.cdnr_count || cdnrCount,
+            at: 0,
+            totalDocs: (b?.total_invoices || invs.length)
+          },
+          breakdowns,
+          totalOutwardTaxable: Math.round(totalTaxable * 100) / 100,
+          totalOutwardTax: Math.round(totalTax * 100) / 100
+        };
+      }
+
+      if (newlyFoundG1) {
+        setActiveGstr1(newlyFoundG1);
+        toast.success(`GSTR-1 Autopilot Download Complete!`, {
+          id: toastId,
+          description: `Downloaded ${newlyFoundG1.counts.totalDocs} documents for ${selectedMonth} (${fmt(newlyFoundG1.totalOutwardTaxable)} Sales). Review and confirm injection.`
+        });
+        // Open confirmation modal
+        setConfirmModal({
+          isOpen: true,
+          mode: 'GSTR1',
+          gstr1: newlyFoundG1,
+          gstr2b: null
+        });
+      } else {
+        toast.info('GSTR-1 Sync Dispatched', {
+          id: toastId,
+          description: data.message || 'GSTR-1 sync completed.'
+        });
+      }
+    } catch (err: any) {
+      toast.error('GSTR-1 Autopilot Failed', {
+        id: toastId,
+        description: err?.message || 'Check portal credentials or connection.'
+      });
+    } finally {
+      setIsGstr1AutopilotRunning(false);
+      setGstr1AutopilotStep('');
+    }
+  };
+
+  // ─── GSTR-2B AUTOPILOT HANDLER ────────────────────────────────────────────────
+  const handleGstr2bAutopilotSync = async () => {
+    if (!currentGstin || currentGstin === 'Not Specified' || currentGstin.length < 15) {
+      return toast.error('Valid GSTIN Required', {
+        description: 'Please specify the client GSTIN in the client card before running GSTR-2B autopilot.'
+      });
+    }
+
+    setIsGstr2bAutopilotRunning(true);
+    setGstr2bAutopilotStep('Connecting to GST Portal...');
+    const toastId = toast.loading(`Starting GSTR-2B Autopilot for ${selectedMonth} (${currentGstin})...`);
+
+    try {
+      setGstr2bAutopilotStep('Launching Chrome & navigating to GSTR-2B...');
       const targetPeriod = `${selectedMonth} ${currentMonthData.year}`;
 
       const res = await fetch(`${getApiBase()}/api/gstr2b/portal-sync-browser`, {
@@ -301,68 +490,85 @@ export default function ReturnsAutoIngestDeck({
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Autopilot portal sync failed.');
+        throw new Error(data.error || 'GSTR-2B Autopilot sync failed.');
       }
 
-      setAutopilotStep('Parsing downloaded return files...');
+      setGstr2bAutopilotStep('Parsing downloaded GSTR-2B data...');
 
-      // Construct summaries for both GSTR-1 (Outward) and GSTR-2B (ITC)
-      const gstr1Data: Gstr1IngestSummary | null = data.gstr1Summary ? {
-        ...data.gstr1Summary,
-        monthKey: selectedMonth
-      } : null;
+      // Re-hydrate GSTR-2B from DB
+      const res2b = await fetch(
+        `${getApiBase()}/api/gstr2b/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`
+      );
+      const data2b = await res2b.json();
+      let newlyFound2b: Gstr2bIngestSummary | null = null;
 
-      let gstr2bSummary: Gstr2bIngestSummary | null = null;
-      if (data.metrics || (data.invoiceCount && data.invoiceCount > 0)) {
-        const m = data.metrics || {};
-        const elig = m.eligibleItc || m;
-        const eligIgst = Number(elig.igst ?? m.eligible_igst ?? m.eligible_itc_igst ?? 0);
-        let eligCgst = Number(elig.cgst ?? m.eligible_cgst ?? m.eligible_itc_cgst ?? 0);
-        let eligSgst = Number(elig.sgst ?? m.eligible_sgst ?? m.eligible_itc_sgst ?? 0);
-        const eligTotal = Number(elig.total ?? m.eligible_total ?? m.eligible_itc_total ?? (eligIgst + eligCgst + eligSgst));
+      if (data2b.success && (data2b.batch || (data2b.count && data2b.count > 0))) {
+        const b = data2b.batch || {};
+        const eligIgst = Number(b.eligible_itc_igst || 0);
+        let eligCgst = Number(b.eligible_itc_cgst || 0);
+        let eligSgst = Number(b.eligible_itc_sgst || 0);
+        const eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
+        const totalInvs = Number(b.total_invoices || data2b.count || 0);
 
-        // Safeguard against doubled ITC
         if (eligTotal > 0 && eligIgst === 0 && Math.abs(eligCgst - eligTotal) < 0.05 && Math.abs(eligSgst - eligTotal) < 0.05) {
           eligCgst = Math.round((eligTotal / 2) * 100) / 100;
           eligSgst = Math.round((eligTotal / 2) * 100) / 100;
         }
 
-        const eligTxval = Number(m.eligible_txval ?? m.eligible_itc_txval ?? elig.taxable ?? 0);
+        const invs = Array.isArray(data2b.invoices) ? data2b.invoices : [];
+        let calcEligTx = 0, calcRcmTx = 0, calcCdnrTx = 0, calcIneligTx = 0;
+        let calcIneligCgst = 0, calcIneligSgst = 0, calcIneligIgst = 0;
+        invs.forEach((inv: any) => {
+          const isRcm = String(inv.rchrg || 'N').toUpperCase() === 'Y';
+          const itcAvl = String(inv.itc_available || 'Y').toUpperCase() === 'Y';
+          const sec = String(inv.section || '').toUpperCase();
+          const isCdnr = sec.includes('CDNR');
+          const tx = Number(inv.txval || 0);
+          if (isRcm) calcRcmTx += tx;
+          else if (isCdnr) calcCdnrTx += tx;
+          else if (itcAvl) calcEligTx += tx;
+          else {
+            calcIneligTx += tx;
+            calcIneligCgst += Number(inv.cgst || 0);
+            calcIneligSgst += Number(inv.sgst || 0);
+            calcIneligIgst += Number(inv.igst || 0);
+          }
+        });
 
-        const rcm = m.rcmInward || m;
-        const rcmTxval = Number(m.rcm_txval ?? rcm.taxable ?? 0);
-        const rcmIgst = Number(rcm.igst ?? m.rcm_igst ?? 0);
-        const rcmCgst = Number(rcm.cgst ?? m.rcm_cgst ?? 0);
-        const rcmSgst = Number(rcm.sgst ?? m.rcm_sgst ?? 0);
-        const rcmTotal = Number(rcm.total ?? m.rcm_total ?? (rcmIgst + rcmCgst + rcmSgst));
+        const eligTxval = Number(b.eligible_itc_txval || calcEligTx || 0);
+        const rcmTxval = Number(b.rcm_txval || calcRcmTx || 0);
+        const cdnrTxval = Number(b.cdnr_txval || calcCdnrTx || 0);
+        const ineligTxval = Number(b.ineligible_itc_txval || calcIneligTx || 0);
 
-        const cdnr = m.creditNotes || m;
-        const cdnrTxval = Number(m.cdnr_txval ?? cdnr.taxable ?? 0);
-        const cdnrIgst = Number(cdnr.igst ?? m.cdnr_igst ?? 0);
-        const cdnrCgst = Number(cdnr.cgst ?? m.cdnr_cgst ?? 0);
-        const cdnrSgst = Number(cdnr.sgst ?? m.cdnr_sgst ?? 0);
-        const cdnrTotal = Number(cdnr.total ?? m.cdnr_total ?? (cdnrIgst + cdnrCgst + cdnrSgst));
+        const rcmIgst = Number(b.rcm_igst || 0);
+        const rcmCgst = Number(b.rcm_cgst || 0);
+        const rcmSgst = Number(b.rcm_sgst || 0);
+        const rcmTotal = Number(b.rcm_total || (rcmIgst + rcmCgst + rcmSgst));
 
-        const inelig = m.ineligibleItc || m;
-        const ineligTxval = Number(m.ineligible_txval ?? inelig.taxable ?? 0);
-        const ineligTotal = Number(m.ineligibleTotal ?? m.ineligible_total ?? m.ineligible_itc_total ?? inelig.total ?? 0);
+        const cdnrIgst = Number(b.cdnr_igst || 0);
+        const cdnrCgst = Number(b.cdnr_cgst || 0);
+        const cdnrSgst = Number(b.cdnr_sgst || 0);
+        const cdnrTotal = Number(b.cdnr_total || (cdnrIgst + cdnrCgst + cdnrSgst));
 
-        const b2bCount = Number(m.b2bCount ?? m.b2b_count ?? data.invoiceCount ?? 0);
-        const cdnrCount = Number(m.cdnrCount ?? m.cdnr_count ?? 0);
+        const impgIgst = Number(b.impg_igst || 0);
+        const isdIgst = Number(b.isd_igst || 0);
+        const isdCgst = Number(b.isd_cgst || 0);
+        const isdSgst = Number(b.isd_sgst || 0);
+        const ineligTotal = Number(b.ineligible_itc_total || (calcIneligCgst + calcIneligSgst + calcIneligIgst) || 0);
 
-        gstr2bSummary = {
+        newlyFound2b = {
           gstin: currentGstin,
           period: targetPeriod,
           monthKey: selectedMonth,
           fileType: 'JSON',
           fileName: 'Portal_Autopilot_2B',
           counts: {
-            b2b: b2bCount,
-            b2ba: Number(m.b2ba_count || 0),
-            cdnr: cdnrCount,
-            isd: Number(m.isd_count || 0),
-            impg: Number(m.impg_count || 0),
-            totalInvoices: data.invoiceCount || (b2bCount + cdnrCount)
+            b2b: b.b2b_count || totalInvs,
+            b2ba: b.b2ba_count || 0,
+            cdnr: b.cdnr_count || 0,
+            isd: b.isd_count || 0,
+            impg: b.impg_count || 0,
+            totalInvoices: totalInvs
           },
           eligibleItc: {
             taxable: eligTxval,
@@ -371,292 +577,248 @@ export default function ReturnsAutoIngestDeck({
             sgst: eligSgst,
             total: eligTotal
           },
-          rcmInward: {
-            taxable: rcmTxval,
-            igst: rcmIgst,
-            cgst: rcmCgst,
-            sgst: rcmSgst,
-            total: rcmTotal
-          },
-          creditNotes: {
-            taxable: cdnrTxval,
-            igst: cdnrIgst,
-            cgst: cdnrCgst,
-            sgst: cdnrSgst,
-            total: cdnrTotal
-          },
+          rcmInward: { taxable: rcmTxval, igst: rcmIgst, cgst: rcmCgst, sgst: rcmSgst, total: rcmTotal },
+          creditNotes: { taxable: cdnrTxval, igst: cdnrIgst, cgst: cdnrCgst, sgst: cdnrSgst, total: cdnrTotal },
           debitNotes: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
-          importGoods: { taxable: 0, igst: Number(m.impg_igst || 0), cgst: 0, sgst: 0, total: Number(m.impg_igst || 0) },
-          isd: { taxable: 0, igst: Number(m.isd_igst || 0), cgst: Number(m.isd_cgst || 0), sgst: Number(m.isd_sgst || 0), total: Number(m.isd_total || 0) },
-          ineligibleItc: {
-            taxable: ineligTxval,
-            igst: 0,
-            cgst: 0,
-            sgst: 0,
-            total: ineligTotal
-          },
-          netEligibleTotal: Math.round((eligTotal + rcmTotal - cdnrTotal - ineligTotal) * 100) / 100
+          importGoods: { taxable: 0, igst: impgIgst, cgst: 0, sgst: 0, total: impgIgst },
+          isd: { taxable: 0, igst: isdIgst, cgst: isdCgst, sgst: isdSgst, total: isdIgst + isdCgst + isdSgst },
+          ineligibleItc: { taxable: ineligTxval, igst: calcIneligIgst, cgst: calcIneligCgst, sgst: calcIneligSgst, total: ineligTotal },
+          netEligibleTotal: Math.round((eligTotal + rcmTotal + impgIgst + (isdIgst + isdCgst + isdSgst) - cdnrTotal - ineligTotal) * 100) / 100
         };
       }
 
-      if (gstr1Data) setActiveGstr1(gstr1Data);
-      if (gstr2bSummary) setActiveGstr2b(gstr2bSummary);
-
-      if (gstr1Data || gstr2bSummary) {
-        onApplyIngestedReturns(gstr1Data, gstr2bSummary);
-
-        if (gstr1Data && gstr2bSummary) {
-          toast.success(`Autopilot Synced GSTR-1 & GSTR-2B!`, {
-            id: toastId,
-            description: `Table 3.1: ₹${gstr1Data.totalOutwardTaxable.toLocaleString('en-IN')} Sales | Table 4: ₹${gstr2bSummary.netEligibleTotal.toLocaleString('en-IN')} ITC for ${selectedMonth}!`
-          });
-        } else if (gstr1Data) {
-          toast.success(`Autopilot Synced GSTR-1!`, {
-            id: toastId,
-            description: `Table 3.1 Outward: ₹${gstr1Data.totalOutwardTaxable.toLocaleString('en-IN')} Sales populated for ${selectedMonth}!`
-          });
-        } else if (gstr2bSummary) {
-          toast.success(`Autopilot Synced GSTR-2B!`, {
-            id: toastId,
-            description: `Table 4 ITC: ₹${gstr2bSummary.netEligibleTotal.toLocaleString('en-IN')} populated for ${selectedMonth}!`
-          });
-        }
-      } else {
-        toast.info('Generation Dispatched', {
+      if (newlyFound2b) {
+        setActiveGstr2b(newlyFound2b);
+        toast.success(`GSTR-2B Autopilot Download Complete!`, {
           id: toastId,
-          description: data.message || 'Portal compiling returns. Download when ready or drag & drop files.'
+          description: `Downloaded ${newlyFound2b.counts.totalInvoices} invoices for ${selectedMonth} (${fmt(newlyFound2b.netEligibleTotal)} Net ITC). Review and confirm injection.`
+        });
+        // Open confirmation modal
+        setConfirmModal({
+          isOpen: true,
+          mode: 'GSTR2B',
+          gstr1: null,
+          gstr2b: newlyFound2b
+        });
+      } else {
+        toast.info('GSTR-2B Sync Dispatched', {
+          id: toastId,
+          description: data.message || 'GSTR-2B sync completed.'
         });
       }
     } catch (err: any) {
-      toast.error('Autopilot Sync Interrupted', {
+      toast.error('GSTR-2B Autopilot Failed', {
         id: toastId,
         description: err?.message || 'Check portal credentials or connection.'
       });
     } finally {
-      setIsAutopilotRunning(false);
-      setAutopilotStep('');
+      setIsGstr2bAutopilotRunning(false);
+      setGstr2bAutopilotStep('');
     }
   };
 
+  // ─── SEQUENTIAL COMBINED AUTOPILOT ───────────────────────────────────────────
+  const handleSyncBothAutopilot = async () => {
+    setIsCombinedAutopilotRunning(true);
+    const toastId = toast.loading(`Starting Sequential Autopilot (GSTR-1 then GSTR-2B)...`);
+    try {
+      await handleGstr1AutopilotSync();
+      await handleGstr2bAutopilotSync();
+      toast.success('Sequential Autopilot Finished!', { id: toastId });
+    } catch (err: any) {
+      toast.error('Sequential Autopilot Interrupted', { id: toastId, description: err?.message });
+    } finally {
+      setIsCombinedAutopilotRunning(false);
+    }
+  };
+
+  // ─── FILE UPLOAD HANDLERS ───────────────────────────────────────────────────
+  const handleGstr1FilesChosen = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    setIsProcessingGstr1(true);
+    const toastId = toast.loading(`Parsing GSTR-1 file(s)...`);
+
+    try {
+      let parsedG1: Gstr1IngestSummary | null = null;
+      for (let i = 0; i < files.length; i++) {
+        const res = await parseAnyReturnsFile(files[i]);
+        if (res.error) throw new Error(res.error);
+        if (res.gstr1) parsedG1 = res.gstr1;
+        if (res.gstr2b && !res.gstr1) {
+          toast.warning(`Note: Uploaded file contains GSTR-2B data. Routed to 2B deck.`);
+          setActiveGstr2b(res.gstr2b);
+        }
+      }
+
+      if (!parsedG1) throw new Error('No valid GSTR-1 data found in uploaded file.');
+
+      setActiveGstr1(parsedG1);
+      toast.success(`GSTR-1 Parsed: ${fmt(parsedG1.totalOutwardTaxable)} Sales`, {
+        id: toastId,
+        description: 'Please review and confirm injection into Table 3.1.'
+      });
+
+      // Prompt confirmation modal (User Decision D-02)
+      setConfirmModal({
+        isOpen: true,
+        mode: 'GSTR1',
+        gstr1: parsedG1,
+        gstr2b: null
+      });
+    } catch (err: any) {
+      toast.error('GSTR-1 File Parse Error', { id: toastId, description: err?.message });
+    } finally {
+      setIsProcessingGstr1(false);
+      if (gstr1FileInputRef.current) gstr1FileInputRef.current.value = '';
+    }
+  };
+
+  const handleGstr2bFilesChosen = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    setIsProcessingGstr2b(true);
+    const toastId = toast.loading(`Parsing GSTR-2B file(s)...`);
+
+    try {
+      let parsed2b: Gstr2bIngestSummary | null = null;
+      for (let i = 0; i < files.length; i++) {
+        const res = await parseAnyReturnsFile(files[i]);
+        if (res.error) throw new Error(res.error);
+        if (res.gstr2b) parsed2b = res.gstr2b;
+        if (res.gstr1 && !res.gstr2b) {
+          toast.warning(`Note: Uploaded file contains GSTR-1 data. Routed to GSTR-1 deck.`);
+          setActiveGstr1(res.gstr1);
+        }
+      }
+
+      if (!parsed2b) throw new Error('No valid GSTR-2B data found in uploaded file.');
+
+      setActiveGstr2b(parsed2b);
+      toast.success(`GSTR-2B Parsed: ${fmt(parsed2b.netEligibleTotal)} Net ITC`, {
+        id: toastId,
+        description: 'Please review and confirm injection into Table 4.'
+      });
+
+      // Prompt confirmation modal (User Decision D-02)
+      setConfirmModal({
+        isOpen: true,
+        mode: 'GSTR2B',
+        gstr1: null,
+        gstr2b: parsed2b
+      });
+    } catch (err: any) {
+      toast.error('GSTR-2B File Parse Error', { id: toastId, description: err?.message });
+    } finally {
+      setIsProcessingGstr2b(false);
+      if (gstr2bFileInputRef.current) gstr2bFileInputRef.current.value = '';
+    }
+  };
+
+  // ─── CONFIRMATION MODAL INJECTION EXECUTION ─────────────────────────────────
+  const executeConfirmedInjection = () => {
+    const { mode, gstr1, gstr2b } = confirmModal;
+    const targetG1 = mode === 'GSTR1' || mode === 'BOTH' ? (gstr1 || activeGstr1) : null;
+    const target2b = mode === 'GSTR2B' || mode === 'BOTH' ? (gstr2b || activeGstr2b) : null;
+
+    onApplyIngestedReturns(targetG1, target2b);
+
+    if (mode === 'GSTR1' && targetG1) {
+      toast.success(`Table 3.1 Updated Successfully!`, {
+        description: `Injected GSTR-1 Outward Sales: ${fmt(targetG1.totalOutwardTaxable)} (Tax: ${fmt(targetG1.totalOutwardTax)}) into ${selectedMonth}.`
+      });
+    } else if (mode === 'GSTR2B' && target2b) {
+      toast.success(`Table 4 Updated Successfully!`, {
+        description: `Injected GSTR-2B Net Available ITC: ${fmt(target2b.netEligibleTotal)} into ${selectedMonth}.`
+      });
+    } else if (mode === 'BOTH') {
+      toast.success(`Table 3.1 & Table 4 Updated Successfully!`, {
+        description: `GSTR-1 Sales & GSTR-2B ITC populated for ${selectedMonth}. Rule 88A tax cascade recalculated.`
+      });
+    }
+
+    setConfirmModal({ isOpen: false, mode: 'GSTR1', gstr1: null, gstr2b: null });
+  };
+
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-2xl backdrop-blur-xl space-y-4">
-      {/* ─── TOP HEADER: FINANCIAL YEAR SELECTOR & AUTO-MODE BADGE ─── */}
+    <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 shadow-2xl backdrop-blur-xl space-y-5">
+      {/* ─── TOP MASTER BAR: TITLE, FY SELECTOR, COMBINED SHORTCUTS ─── */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800/80">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold shadow-lg shadow-emerald-950/40">
-            <Zap className="w-5 h-5 text-emerald-400" />
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500/20 via-blue-500/20 to-emerald-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold shadow-lg shadow-indigo-950/40">
+            <Layers className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
             <div className="flex items-center gap-2.5">
               <h3 className="text-base font-extrabold text-white tracking-wide flex items-center gap-2">
                 Returns Auto-Pilot & Ingestion Deck
               </h3>
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Full Auto-Mode Active
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Split Cockpits Active
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Auto-sync GSTR-1 (Outward) & GSTR-2B (ITC) from GST Portal via Autopilot or manual JSON/Excel drop.
+              Independent GSTR-1 Outward Sales & GSTR-2B Inward ITC Cockpits with Rule 88A Cash Cascade Recalculation.
             </p>
           </div>
         </div>
 
-        {/* ─── FINANCIAL YEAR SELECTOR PILLS & DROPDOWN ─── */}
-        <div className="flex flex-wrap items-center gap-2 bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 flex items-center gap-1">
-            Financial Year:
-          </span>
-          {AVAILABLE_FYS.map(fy => (
-            <button
-              key={fy}
-              onClick={() => onFinancialYearChange(fy)}
-              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-                financialYear === fy
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-950 ring-1 ring-blue-400/40 scale-105'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              {fy}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ─── TWO CORE ACTIONS: 1-CLICK AUTOPILOT & DRAG-AND-DROP DECK ─── */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        {/* Left: 1-Click Portal Autopilot */}
-        <div className="md:col-span-5 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/20 border border-emerald-500/20 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" /> Channel 1: Portal Autopilot
-              </span>
-              <span className="text-[10px] text-slate-500 font-mono">Playwright v1.60</span>
-            </div>
-            <p className="text-xs text-slate-300 font-medium mt-1.5">
-              Auto-login to GSTN, search returns for <strong className="text-emerald-300">{selectedMonth} ({financialYear})</strong>, and download GSTR-1 & GSTR-2B directly into 3B working.
-            </p>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between gap-3">
-            <div className="text-[11px] text-slate-400 font-mono truncate">
-              <div>
-                Target: <span className="text-white font-semibold">{currentGstin || 'No GSTIN'}</span>
-                {currentFirmName && currentFirmName !== 'No Company Selected' && (
-                  <span className="text-emerald-300 font-sans font-bold ml-1.5 truncate">({currentFirmName})</span>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-400 font-sans mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                <span>Portal Credentials linked from Vault</span>
-              </div>
-            </div>
-            <button
-              onClick={handleAutopilotSync}
-              disabled={isAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
-              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/60 transition-all flex items-center gap-2 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isAutopilotRunning ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>{autopilotStep || 'Running...'}</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3.5 h-3.5 text-amber-300" />
-                  <span>🚀 1-Click Autopilot Sync</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Right: Manual JSON / Excel / Zip Drag-and-Drop Zone */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`md:col-span-7 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all flex flex-col justify-between ${
-            isDragging
-              ? 'border-blue-400 bg-blue-500/10 scale-[1.01]'
-              : 'border-slate-700/80 bg-slate-950/50 hover:border-slate-600 hover:bg-slate-950/80'
-          }`}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={e => e.target.files && handleFilesChosen(e.target.files)}
-            multiple
-            accept=".json,.xlsx,.xls,.zip"
-            className="hidden"
-          />
-
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                <UploadCloud className={`w-5 h-5 ${isProcessingFiles ? 'animate-bounce' : ''}`} />
-              </div>
-              <div>
-                <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                  Channel 2: Drag & Drop Return Files
-                </span>
-                <p className="text-xs text-slate-300 font-medium mt-0.5">
-                  Drop <strong className="text-white">GSTR-1 JSON</strong> or <strong className="text-white">GSTR-2B JSON/Excel/Zip</strong> (or drop both at once!).
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="px-2 py-0.5 bg-slate-800 text-[10px] font-mono text-slate-300 rounded border border-slate-700">.JSON</span>
-              <span className="px-2 py-0.5 bg-slate-800 text-[10px] font-mono text-slate-300 rounded border border-slate-700">.XLSX</span>
-              <span className="px-2 py-0.5 bg-slate-800 text-[10px] font-mono text-slate-300 rounded border border-slate-700">.ZIP</span>
-            </div>
-          </div>
-
-          <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
-            <span>✨ Auto-detects GSTR-1 vs GSTR-2B schema instantly</span>
-            <span className="text-blue-400 font-bold hover:underline flex items-center gap-1">
-              Browse Files <ArrowRight className="w-3 h-3" />
+        {/* Global Toolbar: FY Selector & Quick Actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Financial Year Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1.5">
+              FY:
             </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── STATUS BAR: LOADED METRICS & QUICK AUDIT ACTIONS ─── */}
-      <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* GSTR-1 Status Pill */}
-          <div className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 ${
-            hasOutwardData || activeGstr1
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-slate-900 border-slate-800 text-slate-500'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${hasOutwardData || activeGstr1 ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-            <span>Table 3.1 (GSTR-1 Outward):</span>
-            <strong className="font-mono text-white">
-              {fmt(currentMonthData?.outward?.totalSaleWorking?.taxable || activeGstr1?.totalOutwardTaxable)}
-            </strong>
-            {activeGstr1 && (
-              <span className="text-[10px] text-emerald-400/80 font-mono">({activeGstr1.counts.totalDocs} docs)</span>
-            )}
+            {AVAILABLE_FYS.map(fy => (
+              <button
+                key={fy}
+                onClick={() => onFinancialYearChange(fy)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                  financialYear === fy
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-950 ring-1 ring-blue-400/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                {fy}
+              </button>
+            ))}
           </div>
 
-          {/* GSTR-2B Status Pill */}
-          <div className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 ${
-            has2bData || activeGstr2b
-              ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-              : 'bg-slate-900 border-slate-800 text-slate-500'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${has2bData || activeGstr2b ? 'bg-blue-400' : 'bg-slate-600'}`} />
-            <span>Table 4 (GSTR-2B Eligible ITC):</span>
-            <strong className="font-mono text-white">
-              {fmt(currentMonthData?.inward?.itc2b?.total || activeGstr2b?.netEligibleTotal)}
-            </strong>
-            {activeGstr2b && (
-              <span className="text-[10px] text-blue-400/80 font-mono">({activeGstr2b.counts.totalInvoices} invs)</span>
-            )}
-          </div>
-        </div>
+          {/* Sequential Both Autopilot Button */}
+          <button
+            onClick={handleSyncBothAutopilot}
+            disabled={isCombinedAutopilotRunning || isGstr1AutopilotRunning || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md border border-purple-400/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
+            title="Download GSTR-1 and GSTR-2B sequentially in one go"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Sync Both Autopilot</span>
+          </button>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          {(activeGstr2b || activeGstr1) && (
-            <button
-              onClick={() => {
-                onApplyIngestedReturns(activeGstr1, activeGstr2b);
-                toast.success(`Applied figures for ${selectedMonth}!`, {
-                  description: `Table 3.1: ${fmt(activeGstr1?.totalOutwardTaxable || 0)} | Table 4 ITC: ${fmt(activeGstr2b?.netEligibleTotal || 0)}`
-                });
-              }}
-              className="px-3 py-1.5 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 text-emerald-300 text-xs font-bold rounded-lg border border-emerald-500/40 flex items-center gap-1.5 shadow-sm transition-all"
-              title="Apply saved figures to Table 3.1 & Table 4"
-            >
-              <Zap className="w-3.5 h-3.5 text-emerald-400" /> Apply Synced Figures
-            </button>
-          )}
-
+          {/* Inspect Returns Ledger */}
           <button
             onClick={() => setShowBreakdownModal(true)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors"
           >
-            <Eye className="w-3.5 h-3.5 text-purple-400" /> Inspect Returns Ledger
+            <Eye className="w-3.5 h-3.5 text-purple-400" />
+            <span>Ledger</span>
           </button>
 
+          {/* Clear Active Month */}
           <button
             onClick={onClearMonthIngestion}
-            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-lg border border-rose-500/30 flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-colors"
             title="Reset figures for active month"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Clear Month
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Clear</span>
           </button>
 
-          {/* ─── SAVE 3B WORKING BUTTON ─── */}
+          {/* Save 3B Working */}
           <button
             type="button"
             onClick={onSaveWorking}
             disabled={isSavingWorking}
-            className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-extrabold rounded-lg shadow-md shadow-emerald-950/80 border border-emerald-400/50 flex items-center gap-2 transition-all hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50"
+            className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-extrabold rounded-xl shadow-md border border-emerald-400/50 flex items-center gap-2 transition-all disabled:opacity-50"
             title="Save 3B Working Sheet to Central Server & Local Storage"
           >
             {isSavingWorking ? (
@@ -673,6 +835,436 @@ export default function ReturnsAutoIngestDeck({
           </button>
         </div>
       </div>
+
+      {/* ─── TWO DISTINCT OPERATIONAL COCKPITS (SIDE-BY-SIDE 2-COLUMN GRID) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* ========================================================================= */}
+        {/* CARD 1: GSTR-1 OUTWARD SALES DECK (BLUE / INDIGO THEME)                    */}
+        {/* ========================================================================= */}
+        <div className="bg-gradient-to-b from-slate-950 via-slate-900 to-blue-950/20 border border-blue-500/30 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4">
+          <div>
+            {/* Header: Title & Status Badge */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold">
+                  <ArrowUpRight className="w-4 h-4 text-blue-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white tracking-wide">
+                    GSTR-1 Outward Sales
+                  </h4>
+                  <span className="text-[10px] text-blue-300 font-mono">Targets GSTR-3B Table 3.1</span>
+                </div>
+              </div>
+
+              {/* Status Pill */}
+              <div className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 ${
+                hasOutwardData || activeGstr1
+                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${hasOutwardData || activeGstr1 ? 'bg-blue-400' : 'bg-slate-600'}`} />
+                <span>{hasOutwardData ? 'Table 3.1 Filled' : activeGstr1 ? 'Data Ready' : 'Pending'}</span>
+              </div>
+            </div>
+
+            {/* Live Metrics Breakdown */}
+            <div className="mt-3.5 grid grid-cols-2 gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">B2B Registered Sales:</span>
+                <span className="text-xs font-mono font-bold text-blue-300">
+                  {fmt(activeGstr1?.breakdowns?.b2b?.taxable || currentMonthData?.outward?.b2b?.taxable)}
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  Tax: {fmt(activeGstr1?.breakdowns?.b2b?.total || currentMonthData?.outward?.b2b?.total)}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">B2C Consumer Sales:</span>
+                <span className="text-xs font-mono font-bold text-blue-300">
+                  {fmt(activeGstr1?.breakdowns?.b2c?.taxable || currentMonthData?.outward?.b2c?.taxable)}
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  Tax: {fmt(activeGstr1?.breakdowns?.b2c?.total || currentMonthData?.outward?.b2c?.total)}
+                </span>
+              </div>
+
+              <div className="col-span-2 pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Outward Taxable:</span>
+                  <span className="text-sm font-mono font-extrabold text-white">
+                    {fmt(activeGstr1?.totalOutwardTaxable || currentMonthData?.outward?.totalSaleWorking?.taxable)}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Outward Tax:</span>
+                  <span className="text-sm font-mono font-extrabold text-emerald-400">
+                    {fmt(activeGstr1?.totalOutwardTax || currentMonthData?.outward?.totalSaleWorking?.total)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Drag & Drop Dropzone for GSTR-1 */}
+            <div
+              onDragOver={e => { e.preventDefault(); setIsGstr1Dragging(true); }}
+              onDragLeave={e => { e.preventDefault(); setIsGstr1Dragging(false); }}
+              onDrop={e => {
+                e.preventDefault();
+                setIsGstr1Dragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleGstr1FilesChosen(e.dataTransfer.files);
+                }
+              }}
+              onClick={() => gstr1FileInputRef.current?.click()}
+              className={`mt-3 border-2 border-dashed rounded-xl p-3 cursor-pointer transition-all flex items-center justify-between ${
+                isGstr1Dragging
+                  ? 'border-blue-400 bg-blue-500/10 scale-[1.01]'
+                  : 'border-slate-800 bg-slate-950/40 hover:border-blue-500/50 hover:bg-slate-950/70'
+              }`}
+            >
+              <input
+                type="file"
+                ref={gstr1FileInputRef}
+                onChange={e => e.target.files && handleGstr1FilesChosen(e.target.files)}
+                accept=".json,.xlsx,.xls,.zip"
+                className="hidden"
+              />
+              <div className="flex items-center gap-2.5">
+                <UploadCloud className={`w-4 h-4 text-blue-400 ${isProcessingGstr1 ? 'animate-bounce' : ''}`} />
+                <div>
+                  <p className="text-xs text-slate-200 font-semibold">Drop GSTR-1 File (.json, .xlsx, .zip)</p>
+                  <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                Browse
+              </span>
+            </div>
+          </div>
+
+          {/* Action Deck: Autopilot & Table 3.1 Injection Trigger */}
+          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2.5">
+            <button
+              onClick={handleGstr1AutopilotSync}
+              disabled={isGstr1AutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 font-bold text-xs rounded-xl border border-blue-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGstr1AutopilotRunning ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                  <span>{gstr1AutopilotStep || 'Syncing...'}</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-blue-400" />
+                  <span>🚀 Sync GSTR-1 Autopilot</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                if (!activeGstr1) {
+                  return toast.error('No GSTR-1 Data Loaded', {
+                    description: 'Please run GSTR-1 Autopilot or drop a GSTR-1 file first.'
+                  });
+                }
+                setConfirmModal({
+                  isOpen: true,
+                  mode: 'GSTR1',
+                  gstr1: activeGstr1,
+                  gstr2b: null
+                });
+              }}
+              disabled={!activeGstr1}
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-blue-950/50 transition-all flex items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-blue-200" />
+              <span>Inject into Table 3.1</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* CARD 2: GSTR-2B INWARD ITC DECK (EMERALD / TEAL THEME)                     */}
+        {/* ========================================================================= */}
+        <div className="bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950/20 border border-emerald-500/30 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4">
+          <div>
+            {/* Header: Title & Status Badge */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
+                  <ArrowDownRight className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white tracking-wide">
+                    GSTR-2B Inward ITC
+                  </h4>
+                  <span className="text-[10px] text-emerald-300 font-mono">Targets GSTR-3B Table 4</span>
+                </div>
+              </div>
+
+              {/* Status Pill */}
+              <div className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 ${
+                has2bData || activeGstr2b
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${has2bData || activeGstr2b ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                <span>{has2bData ? 'Table 4 Filled' : activeGstr2b ? 'Data Ready' : 'Pending'}</span>
+              </div>
+            </div>
+
+            {/* Live Metrics Breakdown */}
+            <div className="mt-3.5 grid grid-cols-2 gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">4(A)(5) All Other ITC:</span>
+                <span className="text-xs font-mono font-bold text-emerald-300">
+                  {fmt(activeGstr2b?.eligibleItc?.total || currentMonthData?.inward?.itc2b?.total)}
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  CGST: {fmt(activeGstr2b?.eligibleItc?.cgst || currentMonthData?.inward?.itc2b?.cgst)} | SGST: {fmt(activeGstr2b?.eligibleItc?.sgst || currentMonthData?.inward?.itc2b?.sgst)}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Inward RCM Paid:</span>
+                <span className="text-xs font-mono font-bold text-teal-300">
+                  {fmt(activeGstr2b?.rcmInward?.total || currentMonthData?.inward?.rcmPaid?.total)}
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  Taxable: {fmt(activeGstr2b?.rcmInward?.taxable || currentMonthData?.inward?.rcmPaid?.taxable)}
+                </span>
+              </div>
+
+              <div className="col-span-2 pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Reversals & Notes:</span>
+                  <span className="text-xs font-mono text-rose-300">
+                    -{fmt(activeGstr2b?.creditNotes?.total || currentMonthData?.inward?.debitNotes?.total || 0)}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Net Available ITC (Row 41):</span>
+                  <span className="text-sm font-mono font-extrabold text-teal-400">
+                    {fmt(activeGstr2b?.netEligibleTotal || currentMonthData?.inward?.totalItcAvailable?.total)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Drag & Drop Dropzone for GSTR-2B */}
+            <div
+              onDragOver={e => { e.preventDefault(); setIsGstr2bDragging(true); }}
+              onDragLeave={e => { e.preventDefault(); setIsGstr2bDragging(false); }}
+              onDrop={e => {
+                e.preventDefault();
+                setIsGstr2bDragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleGstr2bFilesChosen(e.dataTransfer.files);
+                }
+              }}
+              onClick={() => gstr2bFileInputRef.current?.click()}
+              className={`mt-3 border-2 border-dashed rounded-xl p-3 cursor-pointer transition-all flex items-center justify-between ${
+                isGstr2bDragging
+                  ? 'border-emerald-400 bg-emerald-500/10 scale-[1.01]'
+                  : 'border-slate-800 bg-slate-950/40 hover:border-emerald-500/50 hover:bg-slate-950/70'
+              }`}
+            >
+              <input
+                type="file"
+                ref={gstr2bFileInputRef}
+                onChange={e => e.target.files && handleGstr2bFilesChosen(e.target.files)}
+                accept=".json,.xlsx,.xls,.zip"
+                className="hidden"
+              />
+              <div className="flex items-center gap-2.5">
+                <UploadCloud className={`w-4 h-4 text-emerald-400 ${isProcessingGstr2b ? 'animate-bounce' : ''}`} />
+                <div>
+                  <p className="text-xs text-slate-200 font-semibold">Drop GSTR-2B File (.json, .xlsx, .zip)</p>
+                  <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Browse
+              </span>
+            </div>
+          </div>
+
+          {/* Action Deck: Autopilot & Table 4 Injection Trigger */}
+          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2.5">
+            <button
+              onClick={handleGstr2bAutopilotSync}
+              disabled={isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs rounded-xl border border-emerald-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGstr2bAutopilotRunning ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  <span>{gstr2bAutopilotStep || 'Syncing...'}</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>🚀 Sync GSTR-2B Autopilot</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                if (!activeGstr2b) {
+                  return toast.error('No GSTR-2B Data Loaded', {
+                    description: 'Please run GSTR-2B Autopilot or drop a GSTR-2B file first.'
+                  });
+                }
+                setConfirmModal({
+                  isOpen: true,
+                  mode: 'GSTR2B',
+                  gstr1: null,
+                  gstr2b: activeGstr2b
+                });
+              }}
+              disabled={!activeGstr2b}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-950/50 transition-all flex items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Inject into Table 4</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── CONFIRMATION MODAL BEFORE INJECTION (USER DECISION D-02) ─── */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  confirmModal.mode === 'GSTR1' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-sm">
+                    {confirmModal.mode === 'GSTR1' && 'Confirm GSTR-1 Outward Sales Injection'}
+                    {confirmModal.mode === 'GSTR2B' && 'Confirm GSTR-2B Inward ITC Injection'}
+                    {confirmModal.mode === 'BOTH' && 'Confirm Combined GSTR-1 & GSTR-2B Injection'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Filing Period: <strong className="text-white">{selectedMonth} {currentMonthData.year}</strong> ({currentGstin})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConfirmModal({ isOpen: false, mode: 'GSTR1', gstr1: null, gstr2b: null })}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-200">
+                  This action will populate statutory figures into GSTR-3B for <strong className="text-white">{selectedMonth} {currentMonthData.year}</strong>. Existing values in the target table will be updated, and Rule 88A set-off cascade will recompute automatically.
+                </p>
+              </div>
+
+              {/* Data Breakdown Preview Table */}
+              <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-900/80 text-slate-400 font-bold border-b border-slate-800 text-[11px]">
+                    <tr>
+                      <th className="py-2 px-3">Target Table Head</th>
+                      <th className="py-2 px-3 text-right">Taxable</th>
+                      <th className="py-2 px-3 text-right">CGST</th>
+                      <th className="py-2 px-3 text-right">SGST</th>
+                      <th className="py-2 px-3 text-right">IGST</th>
+                      <th className="py-2 px-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                    {(confirmModal.mode === 'GSTR1' || confirmModal.mode === 'BOTH') && (
+                      <>
+                        <tr className="hover:bg-slate-900/40">
+                          <td className="py-1.5 px-3 font-sans text-blue-300">Table 3.1: Sales (B2B)</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.b2b?.taxable)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2b?.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2b?.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2b?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr1?.breakdowns?.b2b?.total)}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-900/40">
+                          <td className="py-1.5 px-3 font-sans text-blue-300">Table 3.1: Sales (B2C)</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.taxable)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.total)}</td>
+                        </tr>
+                        <tr className="bg-blue-950/30 font-bold border-t border-slate-700">
+                          <td className="py-2 px-3 font-sans text-blue-200">Total Outward Sales (Row 22)</td>
+                          <td className="py-2 px-3 text-right text-blue-200">{fmt(confirmModal.gstr1?.totalOutwardTaxable)}</td>
+                          <td className="py-2 px-3 text-right text-blue-200" colSpan={3}>—</td>
+                          <td className="py-2 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr1?.totalOutwardTax)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {(confirmModal.mode === 'GSTR2B' || confirmModal.mode === 'BOTH') && (
+                      <>
+                        <tr className="hover:bg-slate-900/40">
+                          <td className="py-1.5 px-3 font-sans text-emerald-300">Table 4: 4(A)(5) All Other ITC</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.eligibleItc?.taxable)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.eligibleItc?.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.eligibleItc?.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.eligibleItc?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr2b?.eligibleItc?.total)}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-900/40">
+                          <td className="py-1.5 px-3 font-sans text-emerald-300">Table 4: 4(A)(3) Inward RCM</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.rcmInward?.taxable)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.rcmInward?.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.rcmInward?.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.rcmInward?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr2b?.rcmInward?.total)}</td>
+                        </tr>
+                        <tr className="bg-emerald-950/30 font-bold border-t border-slate-700">
+                          <td className="py-2 px-3 font-sans text-emerald-200">Net Eligible ITC Available (Row 41)</td>
+                          <td className="py-2 px-3 text-right text-emerald-200">—</td>
+                          <td className="py-2 px-3 text-right text-emerald-200" colSpan={3}>—</td>
+                          <td className="py-2 px-3 text-right text-teal-300">{fmt(confirmModal.gstr2b?.netEligibleTotal)}</td>
+                        </tr>
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal({ isOpen: false, mode: 'GSTR1', gstr1: null, gstr2b: null })}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeConfirmedInjection}
+                className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-950/60 transition-all flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirm & Inject Data</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── AUDIT MODAL: INSPECT PARSED RETURN FIGURES ─── */}
       {showBreakdownModal && (
@@ -699,7 +1291,7 @@ export default function ReturnsAutoIngestDeck({
             <div className="p-6 overflow-y-auto space-y-6">
               {/* Table 3.1 Outward Breakdown */}
               <div>
-                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2.5 flex items-center gap-2">
+                <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2.5 flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Table 3.1: Outward Supplies (From GSTR-1)
                 </h4>
                 <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
@@ -727,9 +1319,9 @@ export default function ReturnsAutoIngestDeck({
                         <tr key={idx} className="hover:bg-slate-900/40">
                           <td className="py-1.5 px-3 font-sans text-slate-300">{label}</td>
                           <td className="py-1.5 px-3 text-right">{fmt(row.taxable)}</td>
-                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(row.cgst)}</td>
-                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(row.sgst)}</td>
-                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(row.igst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(row.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(row.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(row.igst)}</td>
                           <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(row.total)}</td>
                         </tr>
                       ))}
@@ -740,7 +1332,7 @@ export default function ReturnsAutoIngestDeck({
 
               {/* Table 4 Inward Breakdown */}
               <div>
-                <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2.5 flex items-center gap-2">
+                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2.5 flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Table 4: Eligible ITC & Reversals (From GSTR-2B)
                 </h4>
                 <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
@@ -757,16 +1349,16 @@ export default function ReturnsAutoIngestDeck({
                     <tbody className="divide-y divide-slate-800/60 font-mono">
                       <tr className="hover:bg-slate-900/40">
                         <td className="py-1.5 px-3 font-sans text-slate-300">4(A)(5) All Other ITC (2B B2B / B2BA Invoices)</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.itc2b.cgst)}</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.itc2b.sgst)}</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.itc2b.igst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.itc2b.cgst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.itc2b.sgst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.itc2b.igst)}</td>
                         <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(currentMonthData.inward.itc2b.total)}</td>
                       </tr>
                       <tr className="hover:bg-slate-900/40">
                         <td className="py-1.5 px-3 font-sans text-slate-300">4(A)(3) Inward Reverse Charge Supplies (RCM)</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.rcmPaid.cgst)}</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.rcmPaid.sgst)}</td>
-                        <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.rcmPaid.igst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.rcmPaid.cgst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.rcmPaid.sgst)}</td>
+                        <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.rcmPaid.igst)}</td>
                         <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(currentMonthData.inward.rcmPaid.total)}</td>
                       </tr>
                       {(currentMonthData.inward.debitNotes?.total > 0 || (activeGstr2b?.creditNotes?.total || 0) > 0) && (
@@ -790,9 +1382,9 @@ export default function ReturnsAutoIngestDeck({
                       {(currentMonthData.inward.importGoods?.total > 0 || (activeGstr2b?.importGoods?.total || 0) > 0) && (
                         <tr className="hover:bg-slate-900/40">
                           <td className="py-1.5 px-3 font-sans text-slate-300">4(A)(1) Import of Goods</td>
-                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(0)}</td>
-                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(0)}</td>
-                          <td className="py-1.5 px-3 text-right text-blue-400">{fmt(currentMonthData.inward.importGoods?.igst || activeGstr2b?.importGoods?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(0)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(0)}</td>
+                          <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.importGoods?.igst || activeGstr2b?.importGoods?.igst)}</td>
                           <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(currentMonthData.inward.importGoods?.total || activeGstr2b?.importGoods?.total)}</td>
                         </tr>
                       )}

@@ -358,12 +358,28 @@ export default function setupGstr1Routes(app, db) {
 
         db.all(query, params, (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
-            res.json({
-                success: true,
-                gstin: gstin.toUpperCase(),
-                count: rows ? rows.length : 0,
-                invoices: rows || []
-            });
+            if (period && period !== 'ALL') {
+                db.get(
+                    `SELECT * FROM gstr1_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ?)`,
+                    [gstin.toUpperCase(), period, `%${period}%`],
+                    (bErr, batchRow) => {
+                        res.json({
+                            success: true,
+                            gstin: gstin.toUpperCase(),
+                            count: rows ? rows.length : 0,
+                            batch: batchRow || null,
+                            invoices: rows || []
+                        });
+                    }
+                );
+            } else {
+                res.json({
+                    success: true,
+                    gstin: gstin.toUpperCase(),
+                    count: rows ? rows.length : 0,
+                    invoices: rows || []
+                });
+            }
         });
     });
 
