@@ -118,9 +118,27 @@ const mapFpToMonthKey = (fp: string): GSTR3BMonthKey | undefined => {
 // ─── GSTR-1 PARSER (JSON & EXCEL) ─────────────────────────────────────────────
 
 export async function parseGstr1JsonContent(rawJson: any, fileName: string = 'GSTR-1.json'): Promise<Gstr1IngestSummary> {
-  const gstin = cleanStr(rawJson.gstin || rawJson.data?.gstin || '');
-  const fp = cleanStr(rawJson.fp || rawJson.data?.fp || '');
-  const monthKey = mapFpToMonthKey(fp);
+  const gstin = cleanStr(
+    rawJson.gstin ||
+    rawJson.data?.gstin ||
+    fileName.match(/[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/i)?.[0] ||
+    ''
+  );
+  const fp = cleanStr(
+    rawJson.fp ||
+    rawJson.data?.fp ||
+    rawJson.rtnprd ||
+    rawJson.data?.rtnprd ||
+    fileName.match(/(?:^|_|R1_)(\d{6})(?:_|\.|$)/)?.[1] ||
+    fileName.match(/(?:^|_|R1_)(\d{2}\d{4})(?:_|\.|$)/)?.[1] ||
+    ''
+  );
+  const monthKey = mapFpToMonthKey(fp) || mapFpToMonthKey(fileName);
+  let period = fp;
+  if (monthKey) {
+    const yrMatch = fp.match(/\d{4}$/) || fileName.match(/20\d{2}/);
+    period = yrMatch ? `${monthKey} ${yrMatch[0]}` : monthKey;
+  }
 
   const root = rawJson.data || rawJson;
 
@@ -471,9 +489,27 @@ export async function parseGstr1ExcelContent(buffer: ArrayBuffer, fileName: stri
 // ─── GSTR-2B PARSER (JSON, EXCEL & ZIP) ────────────────────────────────────────
 
 export async function parseGstr2bJsonContent(rawJson: any, fileName: string = 'GSTR-2B.json'): Promise<Gstr2bIngestSummary> {
-  const gstin = cleanStr(rawJson.gstin || rawJson.data?.gstin || '');
-  const fp = cleanStr(rawJson.fp || rawJson.data?.fp || '');
-  const monthKey = mapFpToMonthKey(fp);
+  const gstin = cleanStr(
+    rawJson.gstin ||
+    rawJson.data?.gstin ||
+    fileName.match(/[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/i)?.[0] ||
+    ''
+  );
+  const fp = cleanStr(
+    rawJson.fp ||
+    rawJson.data?.fp ||
+    rawJson.rtnprd ||
+    rawJson.data?.rtnprd ||
+    fileName.match(/(?:^|_|R2B_)(\d{6})(?:_|\.|$)/)?.[1] ||
+    fileName.match(/(?:^|_|R2B_)(\d{2}\d{4})(?:_|\.|$)/)?.[1] ||
+    ''
+  );
+  const monthKey = mapFpToMonthKey(fp) || mapFpToMonthKey(fileName);
+  let period = fp;
+  if (monthKey) {
+    const yrMatch = fp.match(/\d{4}$/) || fileName.match(/20\d{2}/);
+    period = yrMatch ? `${monthKey} ${yrMatch[0]}` : monthKey;
+  }
 
   const docData = rawJson.data?.docdata || rawJson.docdata || rawJson.data || rawJson;
   const itcSumm = rawJson.data?.itcsumm || rawJson.itcsumm;
@@ -696,10 +732,41 @@ export async function parseGstr2bExcelContent(buffer: ArrayBuffer, fileName: str
   let cdnrCount = 0;
   let isdCount = 0;
   let impgCount = 0;
-  let detectedGstin = '';
+  let detectedGstin = fileName.match(/[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/i)?.[0] || '';
   let detectedPeriod = '';
 
-  // 1. Authoritative check: Sheet 'ITC Available'
+  // 1. Authoritative metadata from 'Read me' sheet
+  const wsReadMe = wb.Sheets['Read me'] || wb.Sheets['read me'] || wb.Sheets['README'] || wb.Sheets['Read Me'];
+  if (wsReadMe) {
+    const rRows = XLSX.utils.sheet_to_json<any[]>(wsReadMe, { header: 1 });
+    let rPeriod = '', rYear = '';
+    for (const r of rRows) {
+      if (!Array.isArray(r)) continue;
+      const k = cleanStr(r[0]).toLowerCase();
+      if (k.includes('gstin') && !detectedGstin) {
+        detectedGstin = cleanStr(r[2] || r[1]);
+      } else if (k.includes('tax period')) {
+        rPeriod = cleanStr(r[2] || r[1]);
+      } else if (k.includes('financial year')) {
+        rYear = cleanStr(r[2] || r[1]);
+      }
+    }
+    if (rPeriod) {
+      const yr = rYear ? rYear.match(/20\d{2}/)?.[0] : '';
+      detectedPeriod = yr ? `${rPeriod} ${yr}` : rPeriod;
+    }
+  }
+
+  // Fallback period from filename: e.g. 092026_27AAGCD4105L1ZO_GSTR2B_23102026.xlsx -> "September 2026"
+  if (!detectedPeriod) {
+    const fnMatch = fileName.match(/(?:^|_)(\d{2})(\d{4})(?:_|\.|$)/);
+    if (fnMatch) {
+      const mKey = mapFpToMonthKey(fnMatch[1]);
+      if (mKey) detectedPeriod = `${mKey} ${fnMatch[2]}`;
+    }
+  }
+
+  // 2. Authoritative check: Sheet 'ITC Available'
   const wsAvail = wb.Sheets['ITC Available'] || wb.Sheets['itc available'] || wb.Sheets['ITC_AVAILABLE'];
   if (wsAvail) {
     const rows = XLSX.utils.sheet_to_json<any[]>(wsAvail, { header: 1 });
@@ -742,7 +809,16 @@ export async function parseGstr2bExcelContent(buffer: ArrayBuffer, fileName: str
     }
   }
 
-  // 2. Scan line item sheets for metadata, counts, and taxable values
+  const hasAuthoritativeSummary = Boolean(
+    wsAvail && (eligibleItc.igst > 0 || eligibleItc.cgst > 0 || rcmInward.cgst > 0 || creditNotes.cgst > 0)
+  );
+  if (hasAuthoritativeSummary) {
+    eligibleItc.total = Math.round((eligibleItc.igst + eligibleItc.cgst + eligibleItc.sgst) * 100) / 100;
+    rcmInward.total = Math.round((rcmInward.igst + rcmInward.cgst + rcmInward.sgst) * 100) / 100;
+    creditNotes.total = Math.round((creditNotes.igst + creditNotes.cgst + creditNotes.sgst) * 100) / 100;
+  }
+
+  // 3. Scan line item sheets for metadata, counts, and taxable values
   for (const sName of wb.SheetNames) {
     const upper = sName.toUpperCase();
     if (
@@ -1031,7 +1107,9 @@ export function applyReturnsToAnnualWorking(
   gstr2b?: Gstr2bIngestSummary | null
 ): GSTR3BAnnualWorking {
   const cloned = JSON.parse(JSON.stringify(workingData)) as GSTR3BAnnualWorking;
-  const month = cloned.months[targetMonth];
+  // If return summary has an explicit monthKey detected from data/period, use that month
+  const effectiveMonth: GSTR3BMonthKey = gstr2b?.monthKey || gstr1?.monthKey || targetMonth;
+  const month = cloned.months[effectiveMonth];
 
   if (!month) return workingData;
 
@@ -1056,34 +1134,38 @@ export function applyReturnsToAnnualWorking(
   // 2. Apply GSTR-2B Inward Supplies & ITC
   if (gstr2b) {
     // Table 4(A)(5) All other ITC (strictly non-RCM)
-    month.inward.itc2b = { ...gstr2b.eligibleItc };
+    month.inward.itc2b = {
+      taxable: Number(gstr2b.eligibleItc.taxable || 0),
+      cgst: Number(gstr2b.eligibleItc.cgst || 0),
+      sgst: Number(gstr2b.eligibleItc.sgst || 0),
+      igst: Number(gstr2b.eligibleItc.igst || 0),
+      total: Number(gstr2b.eligibleItc.total || 0) || (Number(gstr2b.eligibleItc.cgst || 0) + Number(gstr2b.eligibleItc.sgst || 0) + Number(gstr2b.eligibleItc.igst || 0))
+    };
 
     // Inward RCM liability Table 3.1(d) & Table 4(A)(3) (kept strictly separate!)
-    if (gstr2b.rcmInward && gstr2b.rcmInward.total > 0) {
-      if (!month.outward.rcmTransport || month.outward.rcmTransport.total === 0) {
-        month.outward.rcmTransport = { ...gstr2b.rcmInward };
-      }
+    if (gstr2b.rcmInward && (gstr2b.rcmInward.total > 0 || gstr2b.rcmInward.taxable > 0 || gstr2b.rcmInward.cgst > 0)) {
+      month.outward.rcmTransport = { ...gstr2b.rcmInward };
       month.outward.rcmInward = { ...gstr2b.rcmInward };
       month.inward.rcmPaid = { ...gstr2b.rcmInward };
     }
 
     // 2B Supplier Credit Notes -> Row 38 `(-) Debit Notes` (reduces ITC)
-    if (gstr2b.creditNotes && gstr2b.creditNotes.total > 0) {
+    if (gstr2b.creditNotes && (gstr2b.creditNotes.total > 0 || gstr2b.creditNotes.taxable > 0 || gstr2b.creditNotes.cgst > 0)) {
       month.inward.debitNotes = { ...gstr2b.creditNotes };
     }
 
     // 2B Supplier Debit Notes -> Row 36 `(+) Credit Notes` (increases ITC)
-    if (gstr2b.debitNotes && gstr2b.debitNotes.total > 0) {
+    if (gstr2b.debitNotes && (gstr2b.debitNotes.total > 0 || gstr2b.debitNotes.taxable > 0 || gstr2b.debitNotes.cgst > 0)) {
       month.inward.creditNotes = { ...gstr2b.debitNotes };
     }
 
     // Table 4(A)(1) Import Purchase -> Row 34 `(+) Import Purchase`
-    if (gstr2b.importGoods && gstr2b.importGoods.total > 0) {
+    if (gstr2b.importGoods && (gstr2b.importGoods.total > 0 || gstr2b.importGoods.igst > 0)) {
       month.inward.importGoods = { ...gstr2b.importGoods };
     }
 
     // Ineligible ITC Table 4(B)
-    if (gstr2b.ineligibleItc && gstr2b.ineligibleItc.total > 0) {
+    if (gstr2b.ineligibleItc && (gstr2b.ineligibleItc.total > 0 || gstr2b.ineligibleItc.taxable > 0)) {
       month.inward.itcReversed = { ...gstr2b.ineligibleItc };
     }
 

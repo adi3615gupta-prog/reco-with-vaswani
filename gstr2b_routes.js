@@ -346,9 +346,14 @@ export function setupGstr2bRoutes(app, db) {
             `;
             queryParams = [gstin.toUpperCase(), ...months12, `%${startYear}%`, `%${endYear}%`];
         } else {
+            const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
             query = `
                 SELECT * FROM gstr2b_invoices
-                WHERE client_gstin = ? AND return_period = ?
+                WHERE UPPER(client_gstin) = ? AND (
+                    return_period = ? OR 
+                    return_period LIKE ? OR 
+                    return_period LIKE ?
+                )
                 ORDER BY 
                     CASE 
                         WHEN UPPER(section) LIKE '%B2B%' THEN 1 
@@ -357,16 +362,17 @@ export function setupGstr2bRoutes(app, db) {
                     END,
                     idt DESC, inum ASC
             `;
-            queryParams = [gstin.toUpperCase(), period];
+            queryParams = [gstin.toUpperCase(), period, `%${mMatch}%`, `%${period.replace(',', '')}%`];
         }
 
         db.all(query, queryParams, (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
 
             if (!isFullYear && period) {
+                const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
                 db.get(
-                    `SELECT * FROM gstr2b_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ?)`,
-                    [gstin.toUpperCase(), period, `%${period}%`],
+                    `SELECT * FROM gstr2b_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?) ORDER BY updated_at DESC LIMIT 1`,
+                    [gstin.toUpperCase(), period, `%${mMatch}%`, `%${period.replace(',', '')}%`],
                     (bErr, batchRow) => {
                         res.json({
                             success: true,

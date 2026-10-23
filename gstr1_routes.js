@@ -334,8 +334,9 @@ export default function setupGstr1Routes(app, db) {
         const params = [gstin.toUpperCase()];
 
         if (period && period !== 'ALL') {
-            query += ` AND return_period = ?`;
-            params.push(period);
+            const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
+            query += ` AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?)`;
+            params.push(period, `%${mMatch}%`, `%${period.replace(',', '')}%`);
         } else if (financialYear) {
             const startYr = parseInt(financialYear.match(/\d{4}/)?.[0] || '2025', 10);
             const endYr = startYr + 1;

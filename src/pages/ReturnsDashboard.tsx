@@ -760,8 +760,14 @@ export default function ReturnsDashboard({ onBack }: ReturnsDashboardProps) {
     gstr1?: Gstr1IngestSummary | null,
     gstr2b?: Gstr2bIngestSummary | null
   ) => {
+    const effectiveMonth: GSTR3BMonthKey = gstr2b?.monthKey || gstr1?.monthKey || selectedMonth;
+    if (effectiveMonth && effectiveMonth !== selectedMonth) {
+      setSelectedMonth(effectiveMonth);
+    }
     setWorkingData(prev => {
-      return applyReturnsToAnnualWorking(prev, selectedMonth, gstr1, gstr2b);
+      const updated = applyReturnsToAnnualWorking(prev, effectiveMonth, gstr1, gstr2b);
+      saveToServerStorage(updated).catch(() => {});
+      return updated;
     });
   };
 

@@ -109,10 +109,10 @@ export default function ReturnsAutoIngestDeck({
         if (data2b.success) {
           if (data2b.batch || (data2b.count && data2b.count > 0)) {
             const b = data2b.batch || {};
-            const eligIgst = Number(b.eligible_itc_igst || 0);
+            let eligIgst = Number(b.eligible_itc_igst || 0);
             let eligCgst = Number(b.eligible_itc_cgst || 0);
             let eligSgst = Number(b.eligible_itc_sgst || 0);
-            const eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
+            let eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
             const totalInvs = Number(b.total_invoices || data2b.count || 0);
 
             // Safeguard against doubled ITC
@@ -125,36 +125,63 @@ export default function ReturnsAutoIngestDeck({
             const invs = Array.isArray(data2b.invoices) ? data2b.invoices : [];
             let calcEligTx = 0, calcRcmTx = 0, calcCdnrTx = 0, calcIneligTx = 0;
             let calcIneligCgst = 0, calcIneligSgst = 0, calcIneligIgst = 0;
+            let calcEligCgst = 0, calcEligSgst = 0, calcEligIgst = 0;
+            let calcRcmCgst = 0, calcRcmSgst = 0, calcRcmIgst = 0;
+            let calcCdnrCgst = 0, calcCdnrSgst = 0, calcCdnrIgst = 0;
+
             invs.forEach((inv: any) => {
               const isRcm = String(inv.rchrg || 'N').toUpperCase() === 'Y';
               const itcAvl = String(inv.itc_available || 'Y').toUpperCase() === 'Y';
               const sec = String(inv.section || '').toUpperCase();
               const isCdnr = sec.includes('CDNR');
               const tx = Number(inv.txval || 0);
-              if (isRcm) calcRcmTx += tx;
-              else if (isCdnr) calcCdnrTx += tx;
-              else if (itcAvl) calcEligTx += tx;
-              else {
+              const cg = Number(inv.cgst || 0);
+              const sg = Number(inv.sgst || 0);
+              const ig = Number(inv.igst || 0);
+
+              if (isRcm) {
+                calcRcmTx += tx;
+                calcRcmCgst += cg;
+                calcRcmSgst += sg;
+                calcRcmIgst += ig;
+              } else if (isCdnr) {
+                calcCdnrTx += tx;
+                calcCdnrCgst += cg;
+                calcCdnrSgst += sg;
+                calcCdnrIgst += ig;
+              } else if (itcAvl) {
+                calcEligTx += tx;
+                calcEligCgst += cg;
+                calcEligSgst += sg;
+                calcEligIgst += ig;
+              } else {
                 calcIneligTx += tx;
-                calcIneligCgst += Number(inv.cgst || 0);
-                calcIneligSgst += Number(inv.sgst || 0);
-                calcIneligIgst += Number(inv.igst || 0);
+                calcIneligCgst += cg;
+                calcIneligSgst += sg;
+                calcIneligIgst += ig;
               }
             });
+
+            if (!eligCgst && !eligSgst && !eligIgst && (calcEligCgst > 0 || calcEligSgst > 0 || calcEligIgst > 0)) {
+              eligCgst = Math.round(calcEligCgst * 100) / 100;
+              eligSgst = Math.round(calcEligSgst * 100) / 100;
+              eligIgst = Math.round(calcEligIgst * 100) / 100;
+              eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
+            }
 
             const eligTxval = Number(b.eligible_itc_txval || calcEligTx || 0);
             const rcmTxval = Number(b.rcm_txval || calcRcmTx || 0);
             const cdnrTxval = Number(b.cdnr_txval || calcCdnrTx || 0);
             const ineligTxval = Number(b.ineligible_itc_txval || calcIneligTx || 0);
 
-            const rcmIgst = Number(b.rcm_igst || 0);
-            const rcmCgst = Number(b.rcm_cgst || 0);
-            const rcmSgst = Number(b.rcm_sgst || 0);
+            const rcmIgst = Number(b.rcm_igst || calcRcmIgst || 0);
+            const rcmCgst = Number(b.rcm_cgst || calcRcmCgst || 0);
+            const rcmSgst = Number(b.rcm_sgst || calcRcmSgst || 0);
             const rcmTotal = Number(b.rcm_total || (rcmIgst + rcmCgst + rcmSgst));
 
-            const cdnrIgst = Number(b.cdnr_igst || 0);
-            const cdnrCgst = Number(b.cdnr_cgst || 0);
-            const cdnrSgst = Number(b.cdnr_sgst || 0);
+            const cdnrIgst = Number(b.cdnr_igst || calcCdnrIgst || 0);
+            const cdnrCgst = Number(b.cdnr_cgst || calcCdnrCgst || 0);
+            const cdnrSgst = Number(b.cdnr_sgst || calcCdnrSgst || 0);
             const cdnrTotal = Number(b.cdnr_total || (cdnrIgst + cdnrCgst + cdnrSgst));
 
             const impgIgst = Number(b.impg_igst || 0);
@@ -504,10 +531,10 @@ export default function ReturnsAutoIngestDeck({
 
       if (data2b.success && (data2b.batch || (data2b.count && data2b.count > 0))) {
         const b = data2b.batch || {};
-        const eligIgst = Number(b.eligible_itc_igst || 0);
+        let eligIgst = Number(b.eligible_itc_igst || 0);
         let eligCgst = Number(b.eligible_itc_cgst || 0);
         let eligSgst = Number(b.eligible_itc_sgst || 0);
-        const eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
+        let eligTotal = Number(b.eligible_itc_total || (eligIgst + eligCgst + eligSgst));
         const totalInvs = Number(b.total_invoices || data2b.count || 0);
 
         if (eligTotal > 0 && eligIgst === 0 && Math.abs(eligCgst - eligTotal) < 0.05 && Math.abs(eligSgst - eligTotal) < 0.05) {
@@ -518,36 +545,63 @@ export default function ReturnsAutoIngestDeck({
         const invs = Array.isArray(data2b.invoices) ? data2b.invoices : [];
         let calcEligTx = 0, calcRcmTx = 0, calcCdnrTx = 0, calcIneligTx = 0;
         let calcIneligCgst = 0, calcIneligSgst = 0, calcIneligIgst = 0;
+        let calcEligCgst = 0, calcEligSgst = 0, calcEligIgst = 0;
+        let calcRcmCgst = 0, calcRcmSgst = 0, calcRcmIgst = 0;
+        let calcCdnrCgst = 0, calcCdnrSgst = 0, calcCdnrIgst = 0;
+
         invs.forEach((inv: any) => {
           const isRcm = String(inv.rchrg || 'N').toUpperCase() === 'Y';
           const itcAvl = String(inv.itc_available || 'Y').toUpperCase() === 'Y';
           const sec = String(inv.section || '').toUpperCase();
           const isCdnr = sec.includes('CDNR');
           const tx = Number(inv.txval || 0);
-          if (isRcm) calcRcmTx += tx;
-          else if (isCdnr) calcCdnrTx += tx;
-          else if (itcAvl) calcEligTx += tx;
-          else {
+          const cg = Number(inv.cgst || 0);
+          const sg = Number(inv.sgst || 0);
+          const ig = Number(inv.igst || 0);
+
+          if (isRcm) {
+            calcRcmTx += tx;
+            calcRcmCgst += cg;
+            calcRcmSgst += sg;
+            calcRcmIgst += ig;
+          } else if (isCdnr) {
+            calcCdnrTx += tx;
+            calcCdnrCgst += cg;
+            calcCdnrSgst += sg;
+            calcCdnrIgst += ig;
+          } else if (itcAvl) {
+            calcEligTx += tx;
+            calcEligCgst += cg;
+            calcEligSgst += sg;
+            calcEligIgst += ig;
+          } else {
             calcIneligTx += tx;
-            calcIneligCgst += Number(inv.cgst || 0);
-            calcIneligSgst += Number(inv.sgst || 0);
-            calcIneligIgst += Number(inv.igst || 0);
+            calcIneligCgst += cg;
+            calcIneligSgst += sg;
+            calcIneligIgst += ig;
           }
         });
+
+        if (!eligCgst && !eligSgst && !eligIgst && (calcEligCgst > 0 || calcEligSgst > 0 || calcEligIgst > 0)) {
+          eligCgst = Math.round(calcEligCgst * 100) / 100;
+          eligSgst = Math.round(calcEligSgst * 100) / 100;
+          eligIgst = Math.round(calcEligIgst * 100) / 100;
+          eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
+        }
 
         const eligTxval = Number(b.eligible_itc_txval || calcEligTx || 0);
         const rcmTxval = Number(b.rcm_txval || calcRcmTx || 0);
         const cdnrTxval = Number(b.cdnr_txval || calcCdnrTx || 0);
         const ineligTxval = Number(b.ineligible_itc_txval || calcIneligTx || 0);
 
-        const rcmIgst = Number(b.rcm_igst || 0);
-        const rcmCgst = Number(b.rcm_cgst || 0);
-        const rcmSgst = Number(b.rcm_sgst || 0);
+        const rcmIgst = Number(b.rcm_igst || calcRcmIgst || 0);
+        const rcmCgst = Number(b.rcm_cgst || calcRcmCgst || 0);
+        const rcmSgst = Number(b.rcm_sgst || calcRcmSgst || 0);
         const rcmTotal = Number(b.rcm_total || (rcmIgst + rcmCgst + rcmSgst));
 
-        const cdnrIgst = Number(b.cdnr_igst || 0);
-        const cdnrCgst = Number(b.cdnr_cgst || 0);
-        const cdnrSgst = Number(b.cdnr_sgst || 0);
+        const cdnrIgst = Number(b.cdnr_igst || calcCdnrIgst || 0);
+        const cdnrCgst = Number(b.cdnr_cgst || calcCdnrCgst || 0);
+        const cdnrSgst = Number(b.cdnr_sgst || calcCdnrSgst || 0);
         const cdnrTotal = Number(b.cdnr_total || (cdnrIgst + cdnrCgst + cdnrSgst));
 
         const impgIgst = Number(b.impg_igst || 0);
