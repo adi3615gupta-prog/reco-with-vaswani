@@ -2,7 +2,8 @@ import React from 'react';
 import {
   ArrowRight, FileSpreadsheet, CheckCircle2, ShieldCheck, Plus,
   RotateCcw, CloudDownload, ChevronRight, ChevronDown, GitCompare, Database,
-  Server, Settings, Activity, X, Star, Sparkles, Building2, Lightbulb
+  Server, Settings, Activity, X, Star, Sparkles, Building2, Lightbulb,
+  Cloud, History, UploadCloud, HardDrive, Receipt
 } from 'lucide-react';
 import { ModeSelector } from '../components/ModeSelector';
 import { FileUploadZone } from '../components/FileUploadZone';
@@ -14,6 +15,9 @@ import { GSTVerification } from '../components/GSTVerification';
 import { OutputDashboard } from '../components/OutputDashboard';
 import { SummaryCards } from '../components/SummaryCards';
 import { ResultsCategoryTabs } from '../components/ResultsCategoryTabs';
+import { GDriveConnectModal } from '../components/GDriveConnectModal';
+import { RecoHistoryModal } from '../components/RecoHistoryModal';
+import { uploadRecoSnapshotToDrive, checkGDriveStatus, saveLocalRecoSnapshot, type RecoSnapshotPayload } from '../lib/gdrive';
 import { getSummary } from '../lib/reconciliation';
 import { cn, safeSetItem } from '../lib/utils';
 import { toast } from 'sonner';
@@ -25,10 +29,12 @@ type Step = 'upload' | 'map' | 'review' | 'results';
 export default function Reconciliation(props: any) {
   const [showQuickGuide, setShowQuickGuide] = React.useState(false);
   const [auditLedgerCollapsed, setAuditLedgerCollapsed] = React.useState(false);
+  const [isGDriveConnectOpen, setIsGDriveConnectOpen] = React.useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const {
     setAppRoute, mode, setMode, step, setStep, companyName, setCompanyName,
     tolerance, setTolerance, fuzzyStrictness, setFuzzyStrictness,
-    processing, progressValue, results, setResults, summary, setSummary, parsedDebitNotes, gstr3bData,
+    processing, progressValue, results, setResults, summary, setSummary, parsedDebitNotes, setParsedDebitNotes, gstr3bData,
     handleFileUpload, handleProcess, handleExport, handleBack,
     gstr2bMapping, prMapping, gstr1Mapping, srMapping, b2bMapping, b2cMapping, b2clMapping, cnMapping, nilMapping,
     setGstr2bMapping, setPrMapping, setGstr1Mapping, setSrMapping, setB2bMapping, setB2cMapping, setB2clMapping, setCnMapping, setNilMapping,
@@ -61,7 +67,9 @@ export default function Reconciliation(props: any) {
     ignoreSpecialChars, setIgnoreSpecialChars,
     handleReconcile,
     handleExportMonthly,
+    handleExportMonthlyDiff,
     handleExportParty,
+    handleExportDebitNotes,
     handleReset,
     handlePreparePipeline,
     handleBooksDragOver,
@@ -72,6 +80,73 @@ export default function Reconciliation(props: any) {
     handlePortalDrop,
     twoBFile
   } = props;
+
+  const handleSaveToDrive = async () => {
+    if (!results || !summary) return;
+    try {
+      // Check if admin has configured GDrive on the backend
+      const status = await checkGDriveStatus();
+      if (!status.configured) {
+        setIsGDriveConnectOpen(true);
+        toast.info('Google Drive cloud backup not configured yet. Admin setup required.');
+        return;
+      }
+      toast.loading('Uploading snapshot to Google Drive...');
+      const meta = await uploadRecoSnapshotToDrive({
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        companyName: companyName || 'Company',
+        financialYear: 'FY 2024-25',
+        mode: mode || 'input',
+        results,
+        debitNotes: parsedDebitNotes,
+        summary,
+      });
+      toast.dismiss();
+      toast.success(`Saved snapshot '${meta.name}' to Google Drive!`);
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error(err.message || 'Failed to upload snapshot to Google Drive');
+    }
+  };
+
+  const handleSaveToLocal = async () => {
+    if (!results || !summary) return;
+    try {
+      toast.loading('Saving reconciliation snapshot to local PC...');
+      await saveLocalRecoSnapshot({
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        companyName: companyName || 'Company',
+        financialYear: 'FY 2024-25',
+        mode: mode || 'input',
+        moduleType: 'gst-reco',
+        moduleName: 'GST 2B Reco',
+        results,
+        debitNotes: parsedDebitNotes,
+        summary,
+      });
+      toast.dismiss();
+      toast.success(`Saved session '${companyName || 'Company'}' locally on PC!`);
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error(err.message || 'Failed to save snapshot locally');
+    }
+  };
+
+  const handleRestoreSession = (payload: RecoSnapshotPayload) => {
+    if (!payload.results) return;
+    setResults(payload.results);
+    if (payload.summary) setSummary(payload.summary);
+    if (payload.companyName) setCompanyName(payload.companyName);
+    if (payload.debitNotes && setParsedDebitNotes) setParsedDebitNotes(payload.debitNotes);
+    if (payload.mode) setMode(payload.mode);
+    setStep('results');
+    safeSetItem('np_reco_results', JSON.stringify(payload.results));
+    if (payload.summary) safeSetItem('np_reco_summary', JSON.stringify(payload.summary));
+    safeSetItem('np_reco_step', 'results');
+    safeSetItem('np_reco_company', payload.companyName || '');
+  };
 
   return (
     <div className="w-full silk-reveal">
@@ -152,6 +227,20 @@ export default function Reconciliation(props: any) {
                 })}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsHistoryOpen(true)}
+                  className="btn-np-outline !px-3 !py-1 text-[10px] uppercase tracking-wider flex items-center gap-1.5 hover:border-purple-400 hover:text-purple-300 transition-all"
+                  title="View & restore past reconciliation sessions from Google Drive"
+                >
+                  <History className="w-3 h-3 text-purple-400" /> Cloud History
+                </button>
+                <button
+                  onClick={() => setIsGDriveConnectOpen(true)}
+                  className="btn-np-outline !px-3 !py-1 text-[10px] uppercase tracking-wider flex items-center gap-1.5 hover:border-sky-400 hover:text-sky-300 transition-all"
+                  title="Configure Google Drive Cloud Storage Settings"
+                >
+                  <Cloud className="w-3 h-3 text-sky-400" /> Google Drive
+                </button>
                 <button onClick={() => handleReset(false)} className="btn-np-outline !px-3 !py-1 text-[10px] uppercase tracking-wider flex items-center gap-1.5">
                   <RotateCcw className="w-3 h-3" /> Reset
                 </button>
@@ -714,12 +803,39 @@ export default function Reconciliation(props: any) {
                   <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">MATCH REPORT GENERATED</p>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+                  <button
+                    onClick={handleSaveToLocal}
+                    className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95"
+                    title="Save current reconciliation session locally to PC hard drive"
+                  >
+                    <HardDrive className="w-3.5 h-3.5" /> Save to PC
+                  </button>
+                  <button
+                    onClick={handleSaveToDrive}
+                    className="px-3.5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 transition-all hover:scale-105 active:scale-95"
+                    title="Save current reconciliation snapshot directly to Google Drive"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" /> Save to Drive
+                  </button>
+                  <button
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="btn-np-outline flex-1 md:flex-none flex items-center justify-center gap-2 !py-2.5 !px-3.5 text-[10px] font-bold uppercase tracking-wider hover:border-purple-500 hover:text-purple-300 transition-all"
+                    title="View & restore past reconciliation snapshots (Local PC & Cloud)"
+                  >
+                    <History className="w-3.5 h-3.5 text-purple-400" /> History & Backups
+                  </button>
                   <button onClick={handleExportMonthly} className="btn-np-outline flex-1 md:flex-none flex items-center justify-center gap-2 !py-2.5 !px-4 text-[10px] font-bold uppercase tracking-wider hover:border-emerald-500 hover:text-emerald-400 transition-all">
                     <CloudDownload className="w-3.5 h-3.5" /> Monthly Export
                   </button>
+                  <button onClick={handleExportMonthlyDiff} className="btn-np-outline flex-1 md:flex-none flex items-center justify-center gap-2 !py-2.5 !px-4 text-[10px] font-bold uppercase tracking-wider hover:border-amber-500 hover:text-amber-400 transition-all">
+                    <CloudDownload className="w-3.5 h-3.5" /> Diff Sheets Export
+                  </button>
                   <button onClick={handleExportParty} className="btn-np-outline flex-1 md:flex-none flex items-center justify-center gap-2 !py-2.5 !px-4 text-[10px] font-bold uppercase tracking-wider hover:border-blue-500 hover:text-blue-400 transition-all">
                     <CloudDownload className="w-3.5 h-3.5" /> Party Export
+                  </button>
+                  <button onClick={handleExportDebitNotes} className="btn-np-outline flex-1 md:flex-none flex items-center justify-center gap-2 !py-2.5 !px-4 text-[10px] font-bold uppercase tracking-wider hover:border-orange-500 hover:text-orange-400 transition-all" title="Download 5-Sheet Reconciled Debit Notes (GSTR-2B vs Books) Report">
+                    <Receipt className="w-3.5 h-3.5 text-orange-400" /> Debit Notes Export
                   </button>
                 </div>
               </div>
@@ -806,6 +922,21 @@ export default function Reconciliation(props: any) {
 
         </div>
       )}
+
+      {/* Google Drive Connection & Settings Modal */}
+      <GDriveConnectModal
+        isOpen={isGDriveConnectOpen}
+        onClose={() => setIsGDriveConnectOpen(false)}
+        onConnected={() => setIsHistoryOpen(true)}
+      />
+
+      {/* Cloud History & Session Restorer Modal */}
+      <RecoHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onRestoreSession={handleRestoreSession}
+        onOpenConnectModal={() => setIsGDriveConnectOpen(true)}
+      />
 
     </div>
   );

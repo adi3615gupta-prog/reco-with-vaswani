@@ -11,7 +11,7 @@ export type ProgressCallback = (stage: string, percent: number) => void;
  */
 export async function parseFileAsync(
   file: File,
-  options?: { findHeader?: boolean; raw?: boolean },
+  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean },
   onProgress?: ProgressCallback
 ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   // If options was passed as second param callback (overload convenience)
@@ -28,14 +28,29 @@ export async function parseFileAsync(
 
         const worker = new Worker(new URL('../workers/fileParser.worker.ts', import.meta.url), { type: 'module' });
 
+        let isCompleted = false;
+        const workerTimeout = setTimeout(() => {
+          if (!isCompleted) {
+            isCompleted = true;
+            worker.terminate();
+            console.warn(`[FileParser] Web Worker timed out for ${file.name}, completing on main thread`);
+            fallbackParseFile(file, options, onProgress).then(resolve).catch(reject);
+          }
+        }, 120000);
+
         worker.onmessage = (e: MessageEvent<FileParserWorkerResponse>) => {
+          if (isCompleted) return;
           const msg = e.data;
           if (msg.type === 'PROGRESS') {
             onProgress?.(msg.stage, msg.percent);
           } else if (msg.type === 'SUCCESS') {
+            isCompleted = true;
+            clearTimeout(workerTimeout);
             worker.terminate();
             resolve(msg.data);
           } else if (msg.type === 'ERROR') {
+            isCompleted = true;
+            clearTimeout(workerTimeout);
             worker.terminate();
             console.warn('Web Worker parsing failed, falling back to main thread:', msg.error);
             fallbackParseFile(file, options, onProgress).then(resolve).catch(reject);
@@ -43,6 +58,9 @@ export async function parseFileAsync(
         };
 
         worker.onerror = (err) => {
+          if (isCompleted) return;
+          isCompleted = true;
+          clearTimeout(workerTimeout);
           worker.terminate();
           console.warn('Web Worker error, falling back to main thread:', err);
           fallbackParseFile(file, options, onProgress).then(resolve).catch(reject);
@@ -61,7 +79,7 @@ export async function parseFileAsync(
 
 async function fallbackParseFile(
   file: File,
-  options?: { findHeader?: boolean; raw?: boolean },
+  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean },
   onProgress?: ProgressCallback
 ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   onProgress?.(`Parsing ${file.name} on main thread...`, 50);
@@ -124,8 +142,13 @@ async function fallbackReconcile(
   options?: ReconciliationOptions,
   onProgress?: ProgressCallback
 ): Promise<ReconciliationResult[]> {
-  onProgress?.('Running reconciliation on main thread...', 50);
-  const results = reconcile(tallyRecords, twoBRecords, options);
+  onProgress?.('Running reconciliation on main thread…', 10);
+  // Wire the progress callback into the options so reconcile() emits updates
+  const optsWithProgress: ReconciliationOptions = {
+    ...(options || {}),
+    onProgress: (stage, pct) => onProgress?.(stage, pct),
+  };
+  const results = reconcile(tallyRecords, twoBRecords, optsWithProgress);
   onProgress?.('Reconciliation completed', 100);
   return results;
 }

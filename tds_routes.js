@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 export default function setupTdsRoutes(app, db) {
     // Initialize TDS Tables
@@ -77,6 +79,17 @@ export default function setupTdsRoutes(app, db) {
             sub_group_2 TEXT,
             mapped_section_code TEXT NOT NULL,
             created_at TEXT NOT NULL
+        )`);
+
+        // 7. Local PC Snapshots table
+        db.run(`CREATE TABLE IF NOT EXISTS Local_Snapshots (
+            id TEXT PRIMARY KEY,
+            company_name TEXT,
+            financial_year TEXT,
+            created_at TEXT,
+            machine_name TEXT,
+            summary_json TEXT,
+            payload_json TEXT
         )`);
 
         // Seed & Sync TDS_Rules with latest IT Act 2025 (V2 Corrected Rules Matrix)
@@ -1509,6 +1522,119 @@ export default function setupTdsRoutes(app, db) {
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({ success: true });
             });
+        });
+    });
+
+    // =========================================================================
+    // LOCAL PC RECONCILIATION SNAPSHOTS (Offline Local Disk & SQLite Storage)
+    // =========================================================================
+
+    // List all saved local sessions
+    app.get('/api/tds/local-snapshots', (req, res) => {
+        db.all('SELECT id, company_name, financial_year, created_at, machine_name, summary_json, payload_json FROM Local_Snapshots ORDER BY created_at DESC', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows.map(r => {
+                let summaryObj = null;
+                let payloadObj = null;
+                try { summaryObj = r.summary_json ? JSON.parse(r.summary_json) : null; } catch(e) {}
+                try { payloadObj = r.payload_json ? JSON.parse(r.payload_json) : null; } catch(e) {}
+                const modType = payloadObj?.moduleType || summaryObj?.moduleType || 'gst-reco';
+                const modName = payloadObj?.moduleName || summaryObj?.moduleName || (modType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+                return {
+                    id: r.id,
+                    name: `Snapshot_${(r.company_name || 'Company').replace(/\s+/g, '_')}_${r.financial_year || ''}_${r.created_at ? r.created_at.substring(0,10) : ''}.json`,
+                    companyName: r.company_name,
+                    financialYear: r.financial_year,
+                    createdAt: r.created_at,
+                    machineName: r.machine_name,
+                    moduleType: modType,
+                    moduleName: modName,
+                    summary: summaryObj
+                };
+            }));
+        });
+    });
+
+    // Save session snapshot locally to SQLite & disk
+    app.post('/api/tds/local-snapshots/save', (req, res) => {
+        try {
+            const { payload } = req.body;
+            if (!payload || !payload.companyName) {
+                return res.status(400).json({ error: "Invalid snapshot payload" });
+            }
+            const snapshotId = payload.id || `reco_snapshot_${Date.now()}`;
+            const companyName = payload.companyName || 'Company';
+            const fy = payload.financialYear || '2024-25';
+            const createdAt = payload.createdAt || new Date().toISOString();
+            const machineName = payload.machineName || os.hostname();
+            const summaryJson = JSON.stringify(payload.summary || {});
+            const payloadJson = JSON.stringify(payload);
+
+            db.run(
+                `INSERT OR REPLACE INTO Local_Snapshots (id, company_name, financial_year, created_at, machine_name, summary_json, payload_json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [snapshotId, companyName, fy, createdAt, machineName, summaryJson, payloadJson],
+                function (err) {
+                    if (err) {
+                        console.error('Save Local_Snapshot DB error:', err);
+                        return res.status(500).json({ error: err.message });
+                    }
+
+                    try {
+                        const historyDir = path.join(process.env.USER_DATA_PATH || '.', 'reco_history');
+                        if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
+                        const filePath = path.join(historyDir, `${snapshotId}.json`);
+                        fs.writeFileSync(filePath, payloadJson, 'utf8');
+                    } catch (fsErr) {
+                        console.error('Save Local_Snapshot file error:', fsErr.message);
+                    }
+
+                    res.json({
+                        id: snapshotId,
+                        name: `Reco_${companyName.replace(/\s+/g, '_')}_${fy}_${createdAt.substring(0,10)}.json`,
+                        companyName,
+                        financialYear: fy,
+                        createdAt,
+                        machineName
+                    });
+                }
+            );
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // Get full payload to restore local session
+    app.get('/api/tds/local-snapshots/:id', (req, res) => {
+        db.get('SELECT payload_json FROM Local_Snapshots WHERE id = ?', [req.params.id], (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (!row || !row.payload_json) {
+                try {
+                    const filePath = path.join(process.env.USER_DATA_PATH || '.', 'reco_history', `${req.params.id}.json`);
+                    if (fs.existsSync(filePath)) {
+                        const fileContent = fs.readFileSync(filePath, 'utf8');
+                        return res.json(JSON.parse(fileContent));
+                    }
+                } catch (fErr) {}
+                return res.status(404).json({ error: "Snapshot not found" });
+            }
+            try {
+                res.json(JSON.parse(row.payload_json));
+            } catch (pErr) {
+                res.status(500).json({ error: "Corrupted snapshot payload" });
+            }
+        });
+    });
+
+    // Delete local snapshot
+    app.delete('/api/tds/local-snapshots/:id', (req, res) => {
+        db.run('DELETE FROM Local_Snapshots WHERE id = ?', [req.params.id], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            try {
+                const filePath = path.join(process.env.USER_DATA_PATH || '.', 'reco_history', `${req.params.id}.json`);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (fErr) {}
+            res.json({ success: true });
         });
     });
 }

@@ -159,9 +159,14 @@ function waitForBackend(port, timeoutMs = 45000) {
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
           logMain(`waitForBackend received status ${res.statusCode} from attempt #${attempt}`);
+          if (res.statusCode === 200) {
+            logMain(`waitForBackend connection successful on attempt #${attempt} (status 200)!`);
+            resolve();
+            return;
+          }
           try {
             const json = JSON.parse(data);
-            if (json.success) {
+            if (json.success || json.status === 'ok') {
               logMain(`waitForBackend connection successful on attempt #${attempt}!`);
               resolve();
               return;

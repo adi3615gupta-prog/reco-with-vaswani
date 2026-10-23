@@ -16,7 +16,7 @@ interface Props {
 type WizardType = 'existing' | 'greenfield' | null;
 
 // Tally Aggregator for CMA Ingestion Pipeline (rupees to rupees, we divide by 100,000 in handleTallySync)
-export function aggregateTallyToCMAPayload(entries: any[]) {
+function aggregateTallyToCMAPayload(entries: any[]) {
   let shareCapital = 0;
   let reservesSurplus = 0;
   let longTermDebt = 0;

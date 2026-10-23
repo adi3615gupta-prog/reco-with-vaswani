@@ -4,12 +4,25 @@ import path from 'path';
 import { execSync } from 'child_process';
 import multer from 'multer';
 
-// Dynamically bundle the TypeScript tax engine to ESM for backend use
-try {
-  console.log('[Tax Engine] Compiling incomeTaxEngine.ts for backend execution...');
-  execSync('npx esbuild src/lib/incomeTaxEngine.ts --bundle --platform=node --format=esm --outfile=src/server_lib/incomeTaxEngine.js');
-} catch (err) {
-  console.warn('[Tax Engine] Warning: Failed to bundle incomeTaxEngine.ts. Make sure esbuild is installed. Proceeding with existing compiled version if available.', err.message);
+// Bundle TypeScript tax engine to ESM if missing or source modified
+const srcTaxEngine = path.resolve('src/lib/incomeTaxEngine.ts');
+const outTaxEngine = path.resolve('src/server_lib/incomeTaxEngine.js');
+let shouldBundle = !fs.existsSync(outTaxEngine);
+
+if (!shouldBundle && fs.existsSync(srcTaxEngine)) {
+  try {
+    const srcMtime = fs.statSync(srcTaxEngine).mtimeMs;
+    const outMtime = fs.statSync(outTaxEngine).mtimeMs;
+    if (srcMtime > outMtime) shouldBundle = true;
+  } catch (_) {}
+}
+
+if (shouldBundle && fs.existsSync(srcTaxEngine)) {
+  try {
+    execSync('npx esbuild src/lib/incomeTaxEngine.ts --bundle --platform=node --format=esm --outfile=src/server_lib/incomeTaxEngine.js --log-level=error', { stdio: 'ignore' });
+  } catch (err) {
+    console.warn('[Tax Engine] Warning: Failed to bundle incomeTaxEngine.ts. Proceeding with existing compiled version if available.', err.message);
+  }
 }
 
 // We use dynamic import because the file was just generated

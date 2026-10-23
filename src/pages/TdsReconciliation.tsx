@@ -10,6 +10,7 @@ import { parseFile } from '@/lib/fileParser';
 import { exportTdsReport, computeAdvanceTdsAudit, computeMultiLedgerPans, exportMultiLedgerPanWorkbook, type AdvanceTdsResult, type MultiLedgerPanInfo } from '@/lib/tdsEngine';
 import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo } from '@/lib/tallyApi';
 import { getApiBase, getAuthToken } from '@/lib/api';
+import { saveLocalRecoSnapshot } from '@/lib/gdrive';
 
 // Phase 1: Statutory TDS Master Data
 export interface TdsSection {
@@ -1250,6 +1251,19 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             setActiveStep(splitPans.length > 0 ? 3 : 4);
             setExpandedRows(new Set());
             toast.success("TDS Reconciliation engine executed successfully!");
+
+            // Auto-save session snapshot locally to PC hard drive
+            saveLocalRecoSnapshot({
+                version: '1.0',
+                timestamp: new Date().toISOString(),
+                companyName: companyInfo?.name || 'Company',
+                financialYear: selectedFY,
+                mode: 'input',
+                moduleType: 'tds-reco',
+                moduleName: 'TDS Audit & Reconciliation',
+                results: mappedResults,
+                summary: data.summary,
+            }).catch(err => console.error('Auto-save local snapshot error:', err));
         } catch (err: any) { toast.error("Reconciliation failed", { description: err.message }); }
         finally { setIsProcessing(false); }
     };

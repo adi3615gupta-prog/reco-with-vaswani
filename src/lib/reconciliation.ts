@@ -1,5 +1,23 @@
 import Fuse from 'fuse.js';
 
+/**
+ * Options for the reconcile() engine.
+ * All fields are optional — sensible defaults are used if omitted.
+ */
+export interface ReconciliationOptions {
+  mode?: 'input' | 'output';
+  /** Invoice-level GST value tolerance in ₹ (default: 2) */
+  tolerance?: number;
+  /** Party net-balance tolerance in ₹ (default: 5) */
+  partyTolerance?: number;
+  /** UI alias for tolerance */
+  dateTolerance?: number;
+  /** UI alias for partyTolerance */
+  toleranceDays?: number;
+  /** Called during processing with (stage, percent 0-100) */
+  onProgress?: (stage: string, percent: number) => void;
+}
+
 export interface InvoiceRecord {
   supplierName: string;
   gstin: string;
@@ -11,6 +29,7 @@ export interface InvoiceRecord {
   source: 'PR' | '2B';
   sourceLabel?: string;
   cleanedInvoice?: string;
+  coreInvoice?: string;
   normalizedDate?: Date;
   financialYear?: string;
   // Optional compliance fields (for audit columns only)
@@ -37,7 +56,24 @@ export type MatchStatus =
   | 'Possible Match'
   | 'Name Matched (No GSTIN)'
   | 'Wrong GSTIN'
-  | 'Name Mismatch';
+  | 'Name Mismatch'
+  | 'Debit Note (Books)'
+  | 'Debit Note (Portal)'
+  | 'Reconciled (Exact Match)'
+  | 'Reconciled (Rounding Diff)'
+  | 'Reconciled (Consolidated Batch)'
+  | 'Reconciled (Value Match - DN)'
+  | 'Reconciled (Exempt / Zero Tax)'
+  | 'Matched - Value Missing in Books'
+  | 'Partially Matched (Value Diff)'
+  | 'In GSTR-2B Only (Not in Books)'
+  | 'In Books Only (Not in GSTR-2B)'
+  | 'In Books Only (Zero-Value Seed Entry)'
+  | 'Reconciled (Exempt Seed Match)'
+  | 'In 2B Credit Notes Only (Not in Books)'
+  | 'In 2B Supplier Debit Notes (ITC Claimable)'
+  | 'In Books Only - Taxable (Not in 2B)'
+  | 'In Books Only - Nil-Rated Seed (Exempt)';
 
 export interface ReconciliationResult {
   prRecord?: InvoiceRecord;
@@ -137,19 +173,41 @@ export function normalizeGstin(gstin: string): string {
 export function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const s = String(dateStr).trim();
-  const dmy = s.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/);
-  if (dmy) return new Date(+dmy[3], +dmy[2] - 1, +dmy[1]);
-  const ymd = s.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
+  const dmy = s.match(/^(\d{1,2})[\s\-\/\.]+(\d{1,2})[\s\-\/\.]+(\d{2,4})(?:[\sT].*)?$/);
+  if (dmy) {
+    let yy = +dmy[3];
+    if (yy < 100) yy += 2000;
+    const n1 = +dmy[1];
+    const n2 = +dmy[2];
+    if (n2 > 12 && n1 <= 12) {
+      return new Date(yy, n1 - 1, n2);
+    }
+    // Default strictly Indian GST DD/MM/YYYY: n1 = Day, n2 = Month
+    return new Date(yy, n2 - 1, n1);
+  }
+  const ymd = s.match(/^(\d{4})[\s\-\/\.]+(\d{1,2})[\s\-\/\.]+(\d{1,2})(?:[\sT].*)?$/);
   if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
 
-  const dmyText = s.match(/^(\d{1,2})[\-\/\s]([A-Za-z]{3})[\-\/\s](\d{2,4})$/);
+  const dmyText = s.match(/^(\d{1,2})[\s\-\/\.\s]+([A-Za-z]{3,9})[\s\-\/\.\s]+(\d{2,4})(?:[\sT].*)?$/);
   if (dmyText) {
     const dd = +dmyText[1];
-    const monthStr = dmyText[2].toLowerCase();
+    const monthStr = dmyText[2].toLowerCase().slice(0, 3);
     const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     const mm = months.indexOf(monthStr);
     if (mm !== -1) {
       let yy = +dmyText[3]; if (yy < 100) yy += 2000;
+      return new Date(yy, mm, dd);
+    }
+  }
+
+  const mdyText = s.match(/^([A-Za-z]{3,9})[\s\-\/\.\s]+(\d{1,2})[\s\-\/\.\s]+(\d{2,4})(?:[\sT].*)?$/);
+  if (mdyText) {
+    const dd = +mdyText[2];
+    const monthStr = mdyText[1].toLowerCase().slice(0, 3);
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const mm = months.indexOf(monthStr);
+    if (mm !== -1) {
+      let yy = +mdyText[3]; if (yy < 100) yy += 2000;
       return new Date(yy, mm, dd);
     }
   }
@@ -177,6 +235,7 @@ function prepareRecord(rec: InvoiceRecord): InvoiceRecord {
   const r = { ...rec };
   r.gstin = normalizeGstin(r.gstin);
   r.cleanedInvoice = cleanInvoiceNumber(r.invoiceNo);
+  r.coreInvoice = extractCoreInvoiceNumber(r.invoiceNo);
   r.normalizedDate = parseDate(r.invoiceDate) || undefined;
   r.financialYear = getFinancialYear(r.normalizedDate || null);
   // Round off all values to the nearest rupee per Section 170 of CGST Act
@@ -199,15 +258,88 @@ export function normalizePartyName(name: string): string {
   return n;
 }
 
+// --- Trigram index helpers for O(T) substring lookup ---
+
+/** Build an inverted trigram index over a unique-vendor list. */
+function buildTrigramIndex(vendors: { normName: string; indices: number[] }[]): Map<string, Set<number>> {
+  const idx = new Map<string, Set<number>>();
+  for (let v = 0; v < vendors.length; v++) {
+    const name = vendors[v].normName;
+    if (name.length < 3) continue;
+    for (let i = 0; i <= name.length - 3; i++) {
+      const tg = name.slice(i, i + 3);
+      let s = idx.get(tg);
+      if (!s) { s = new Set<number>(); idx.set(tg, s); }
+      s.add(v);
+    }
+  }
+  return idx;
+}
+
+/**
+ * Return 2B record indices whose vendor name has a substring relationship
+ * with `query`, using the trigram index for a fast pre-filter.
+ */
+function findSubstringCandidates(
+  query: string,
+  trigramIndex: Map<string, Set<number>>,
+  vendors: { normName: string; indices: number[] }[]
+): number[] {
+  if (query.length < 5) return [];
+  const scores = new Map<number, number>();
+  let tgCount = 0;
+  for (let i = 0; i <= query.length - 3; i++) {
+    const tg = query.slice(i, i + 3);
+    tgCount++;
+    const vSet = trigramIndex.get(tg);
+    if (!vSet) continue;
+    for (const vIdx of vSet) scores.set(vIdx, (scores.get(vIdx) || 0) + 1);
+  }
+  const threshold = Math.max(2, Math.floor(tgCount * 0.5));
+  const result: number[] = [];
+  for (const [vIdx, score] of scores) {
+    if (score >= threshold) {
+      const v = vendors[vIdx];
+      if (v.normName.length >= 5 && (query.includes(v.normName) || v.normName.includes(query))) {
+        for (const j of v.indices) result.push(j);
+      }
+    }
+  }
+  return result;
+}
+
 // --- Hierarchical reconciliation engine ---
 
 export function reconcile(
   prRecords: InvoiceRecord[],
   twoBRecords: InvoiceRecord[],
-  mode: 'input' | 'output' = 'input',
-  tolerance: number = 2,
-  partyTolerance: number = 5
+  modeOrOptions?: 'input' | 'output' | ReconciliationOptions,
+  toleranceArg: number = 2,
+  partyToleranceArg: number = 5,
+  onProgressArg?: (stage: string, percent: number) => void
 ): ReconciliationResult[] {
+  // --- Resolve overloaded parameters ---
+  let mode: 'input' | 'output' = 'input';
+  let tolerance = toleranceArg;
+  let partyTolerance = partyToleranceArg;
+  let onProgress = onProgressArg;
+
+  if (typeof modeOrOptions === 'string') {
+    mode = modeOrOptions;
+  } else if (modeOrOptions && typeof modeOrOptions === 'object') {
+    mode = modeOrOptions.mode || 'input';
+    tolerance = modeOrOptions.tolerance ?? modeOrOptions.dateTolerance ?? toleranceArg;
+    partyTolerance = modeOrOptions.partyTolerance ?? modeOrOptions.toleranceDays ?? partyToleranceArg;
+    onProgress = modeOrOptions.onProgress ?? onProgressArg;
+  }
+
+  const totalPR = prRecords.length;
+  const PROGRESS_CHUNK = 500; // emit progress every N records
+  let lastProgressEmit = 0;
+  const emitProgress = (stage: string, percent: number) => {
+    onProgress?.(stage, Math.min(99, percent));
+  };
+  emitProgress('Preparing records…', 5);
   const pr = prRecords.map(prepareRecord);
 
   // Determine current FY from PR records to identify the active reconciliation period
@@ -273,25 +405,34 @@ export function reconcile(
     }
   }
 
-  // Build a unique vendor index (by normalized name) for fuzzy fallback (Step-3)
-  const vendorIndex: { name: string; normName: string; indices: number[] }[] = [];
-  const vendorMap = new Map<string, number>();
+  // Build a unique normalized vendor list (for Fuse fallback and trigram index)
+  const uniqueVendorsList: { normName: string; indices: number[] }[] = [];
+  const uniqueVendorsNormMap = new Map<string, number[]>();
+
   for (let j = 0; j < twoB.length; j++) {
     const norm = normalizePartyName(twoB[j].supplierName);
     if (!norm) continue;
-    let pos = vendorMap.get(norm);
-    if (pos === undefined) {
-      pos = vendorIndex.length;
-      vendorMap.set(norm, pos);
-      vendorIndex.push({ name: twoB[j].supplierName, normName: norm, indices: [] });
+    let idxs = uniqueVendorsNormMap.get(norm);
+    if (!idxs) {
+      idxs = [];
+      uniqueVendorsNormMap.set(norm, idxs);
+      uniqueVendorsList.push({ normName: norm, indices: idxs });
     }
-    vendorIndex[pos].indices.push(j);
+    idxs.push(j);
   }
-  const fuse = new Fuse(vendorIndex, {
-    keys: ['normName'],
-    threshold: 0.4,
-    includeScore: true,
-  });
+
+  // Build trigram inverted index for fast O(T) substring candidate lookup
+  const trigramIdx = buildTrigramIndex(uniqueVendorsList);
+
+  // Build Fuse index — only when unique-vendor count is manageable (≤ 3000)
+  // to avoid O(N × U) scan on very large datasets
+  const USE_FUSE = uniqueVendorsList.length <= 3000;
+  const vendorIndex: { name: string; normName: string; indices: number[] }[] = USE_FUSE
+    ? uniqueVendorsList.map((v, i) => ({ name: twoB[v.indices[0]]?.supplierName || '', normName: v.normName, indices: v.indices }))
+    : [];
+  const fuse = USE_FUSE
+    ? new Fuse(vendorIndex, { keys: ['normName'], threshold: 0.4, includeScore: true })
+    : null;
 
   const results: ReconciliationResult[] = [];
   const matched2B = new Set<number>();
@@ -304,6 +445,10 @@ export function reconcile(
     matchMethod?: 'GSTIN' | 'PAN' | 'Name (Exact)' | 'Name (Fuzzy)';
     vendorRemark?: string;
   };
+
+  const fuseSearchCache = new Map<string, number[]>();
+
+  emitProgress('Building match indexes…', 15);
 
   const pendingPR: MatchCandidate[] = [];
 
@@ -337,29 +482,36 @@ export function reconcile(
     } else {
       let foundSubstring = false;
       if (pNorm && pNorm.length >= 5) {
-        const tempCandidates: number[] = [];
-        for (let j = 0; j < twoB.length; j++) {
-          const tNorm = normalizePartyName(twoB[j].supplierName);
-          if (tNorm && tNorm.length >= 5 && (pNorm.includes(tNorm) || tNorm.includes(pNorm))) {
-            tempCandidates.push(j);
-            foundSubstring = true;
-          }
-        }
-        if (foundSubstring && tempCandidates.length > 0) {
-          candidateIdxs = Array.from(new Set(tempCandidates));
+        // O(T) trigram-based substring lookup instead of O(U) linear scan
+        const substringHits = findSubstringCandidates(pNorm, trigramIdx, uniqueVendorsList);
+        if (substringHits.length > 0) {
+          candidateIdxs = substringHits;
           matchMethod = 'Name (Fuzzy)';
           vendorRemark = `${partyType} matched by name substring fallback (GSTIN missing/mismatch). ${bookName} GSTIN: "${p.gstin || '—'}"`;
+          foundSubstring = true;
         }
       }
 
-      if (!foundSubstring && pNorm && pNorm.length >= 4) {
-        const hits = fuse.search(pNorm).filter((h) => (h.score ?? 1) <= 0.25);
-        if (hits.length > 0) {
-          candidateIdxs = hits.flatMap((h) => h.item.indices);
+      if (!foundSubstring && pNorm && pNorm.length >= 4 && USE_FUSE && fuse) {
+        let cachedCandidates = fuseSearchCache.get(pNorm);
+        if (!cachedCandidates) {
+          const hits = fuse.search(pNorm).filter((h) => (h.score ?? 1) <= 0.25);
+          cachedCandidates = hits.flatMap((h) => h.item.indices);
+          fuseSearchCache.set(pNorm, cachedCandidates);
+        }
+        if (cachedCandidates.length > 0) {
+          candidateIdxs = cachedCandidates;
           matchMethod = 'Name (Fuzzy)';
           vendorRemark = `${partyType} matched by fuzzy name (GSTIN missing/mismatch). ${bookName} GSTIN: "${p.gstin || '—'}"`;
         }
       }
+    }
+
+    // Emit fine-grained progress during Pass 1
+    if (i - lastProgressEmit >= PROGRESS_CHUNK || i === totalPR - 1) {
+      lastProgressEmit = i;
+      const pct = 15 + Math.round((i / Math.max(totalPR, 1)) * 55);
+      emitProgress(`Pass 1: Matching PR record ${i + 1} of ${totalPR}…`, pct);
     }
 
     if (!candidateIdxs || candidateIdxs.length === 0) {
@@ -374,21 +526,29 @@ export function reconcile(
     }
 
     const availableCandidates = candidateIdxs.filter((j) => !matched2B.has(j));
-    let invoiceMatchIdx = availableCandidates.find(
-      (j) => twoB[j].cleanedInvoice === p.cleanedInvoice && p.cleanedInvoice !== ''
-    );
+    if (availableCandidates.length === 0) {
+      results.push({
+        prRecord: p,
+        status: 'Not in 2B',
+        cgstDiff: p.cgst, sgstDiff: p.sgst, igstDiff: p.igst, gstDiff: p.cgst + p.sgst + p.igst,
+        taxableDiff: p.taxableValue,
+        remark: `${partyType} "${p.supplierName}" not found in ${govtName}`,
+      });
+      continue;
+    }
 
-    if (invoiceMatchIdx === undefined && p.invoiceNo) {
-      const pCore = extractCoreInvoiceNumber(p.invoiceNo);
-      if (pCore) {
-        const coreMatchIdx = availableCandidates.find((j) => {
-          const tCore = extractCoreInvoiceNumber(twoB[j].invoiceNo);
-          return tCore !== '' && tCore === pCore;
-        });
-        if (coreMatchIdx !== undefined) {
-          invoiceMatchIdx = coreMatchIdx;
-          vendorRemark = vendorRemark ? `${vendorRemark} | Matched by core invoice number` : 'Matched by core invoice number';
-        }
+    // 1. Exact cleaned invoice match
+    let invoiceMatchIdx = p.cleanedInvoice ? availableCandidates.find(
+      (j) => twoB[j].cleanedInvoice === p.cleanedInvoice
+    ) : undefined;
+
+    // 2. Pre-computed core invoice match (avoids repeating regex in loop)
+    if (invoiceMatchIdx === undefined && p.coreInvoice) {
+      const pCore = p.coreInvoice;
+      const coreMatchIdx = availableCandidates.find((j) => twoB[j].coreInvoice !== '' && twoB[j].coreInvoice === pCore);
+      if (coreMatchIdx !== undefined) {
+        invoiceMatchIdx = coreMatchIdx;
+        vendorRemark = vendorRemark ? `${vendorRemark} | Matched by core invoice number` : 'Matched by core invoice number';
       }
     }
 

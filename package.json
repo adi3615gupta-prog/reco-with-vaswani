@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.4.39",
+  "version": "1.4.45",
   "description": "AUDIT WITH VASWANI - Electron Application",
   "author": "adi3615gupta-prog",
   "main": "main.cjs",
@@ -52,6 +52,7 @@
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.83.0",
+    "@types/nodemailer": "^8.0.2",
     "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
@@ -79,6 +80,7 @@
     "multer": "^2.2.0",
     "next-themes": "^0.3.0",
     "node-cron": "^4.2.1",
+    "nodemailer": "^10.1.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -94,7 +96,8 @@
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "playwright": "^1.60.0"
   },
   "build": {
     "appId": "com.vite.react.shadcn.ts",
@@ -126,6 +129,9 @@
         "repo": "reco-with-vaswani",
         "releaseType": "release"
       }
+    ],
+    "asarUnpack": [
+      "dist/**/*"
     ]
   },
   "devDependencies": {
@@ -149,7 +155,6 @@
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
     "lovable-tagger": "^1.1.13",
-    "playwright": "^1.60.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",

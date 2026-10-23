@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, BookOpen, Search, Download, ChevronRight, Users, Database, ShieldCheck, 
-  FileCode2, Server, Send, ImageIcon, FileSpreadsheet, Info, Lightbulb, Zap, Sparkles 
+  FileCode2, Server, Send, ImageIcon, FileSpreadsheet, Info, Lightbulb, Zap, Sparkles, Landmark 
 } from 'lucide-react';
 import { downloadUserGuide } from '../lib/userGuide';
 
@@ -223,6 +223,68 @@ const guides: GuideContent[] = [
     ],
     tips: [
       'Make sure "Enable ODBC/XML server" is turned on in TallyPrime configuration (F12 → Advanced Configuration).'
+    ]
+  },
+  {
+    id: 'ledger-import',
+    title: 'Tally Ledger Voucher Import',
+    icon: BookOpen,
+    accentClass: 'text-purple-400 border-purple-500/20 bg-purple-500/10',
+    glowClass: 'shadow-purple-500/10',
+    bgClass: 'from-purple-500/10 to-indigo-500/5',
+    tag: 'Tally Voucher API',
+    overview: 'Connect directly to TallyPrime via XML HTTP API, search and select specific ledgers (or filter by parent group), fetch all vouchers/transactions with full line details (Party, Date, Voucher Type, Debit, Credit, Narration), and export styled Excel reports.',
+    inputs: [
+      'Tally XML Port number (default 9000)',
+      'Active company in TallyPrime',
+      'Selected Ledger names or Parent Groups',
+      'Optional Financial Year / Date Range filter'
+    ],
+    steps: [
+      'Ensure TallyPrime is open with the active company loaded and XML server enabled.',
+      'Test connection and verify the active Tally company name.',
+      'Search or select ledgers from the Tally master list.',
+      'Click "Fetch Ledger Vouchers" to download full transaction line items.',
+      'Review, search, sort, and export formatted Excel sheets.'
+    ],
+    outputs: [
+      'Detailed ledger voucher transaction tables',
+      'Styled Excel report workbook (.xlsx)'
+    ],
+    tips: [
+      'You can select multiple ledgers or filter by parent groups like Sundry Debtors, Bank Accounts, Indirect Expenses, etc.'
+    ]
+  },
+  {
+    id: 'bank-cma',
+    title: 'Bank Ratio Analysis & CMA Credit Suite',
+    icon: Landmark,
+    accentClass: 'text-cyan-400 border-cyan-500/20 bg-cyan-500/10',
+    glowClass: 'shadow-cyan-500/10',
+    bgClass: 'from-cyan-500/10 to-blue-500/5',
+    tag: 'Credit Underwriting',
+    overview: 'Extract raw accounting Trial Balance from TallyPrime XML API, normalize into banking credit standards, compute underwriter-grade financial ratios (TOL/TNW, Gross DSCR, FACR, Tandon Committee Method II MPBF), and generate qualitative risk warnings.',
+    inputs: [
+      'Live Tally XML API connection (Port 9000)',
+      'Debtors aging list (>180 days cutoff)',
+      'Promoter unsecured loan subordination toggles',
+      'Intangible asset deductions'
+    ],
+    steps: [
+      'Connect to TallyPrime XML API or click "Load CA Case Study" for instant offline evaluation.',
+      'Review and adjust underwriter reclassification rules (Promoter Quasi-Equity, Aged Debtors threshold, Sister Concern advances).',
+      'Examine the Ratio Scorecard Grid (Solvency, Liquidity, Turnover, Coverage) with bank rejection risk badges.',
+      'Check the Diagnostic Risk Alerts feed for Diversion of Funds, DP Squeeze, Window Dressing, and High Leverage alerts.',
+      'Export the complete underwriter credit appraisal report to styled Excel (.xlsx).'
+    ],
+    outputs: [
+      'Underwriter Ratio Scorecard with bank benchmark status',
+      'Qualitative Risk Warnings & Sanctioning Officer Recommendations',
+      'Tandon Committee Method II MPBF Calculation Base',
+      'Styled Excel Credit Appraisal Report'
+    ],
+    tips: [
+      'Subordinating promoter unsecured loans to Quasi-Equity improves Tangible Net Worth and lowers TOL/TNW leverage to satisfy bank credit ceilings.'
     ]
   },
   {

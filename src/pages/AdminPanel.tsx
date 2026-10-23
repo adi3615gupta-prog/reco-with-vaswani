@@ -50,14 +50,14 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
   };
 
   const fetchDynamicData = () => {
-    fetch(`${getApiBase()}/sessions`)
+    fetch(`${getApiBase()}/sessions`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
       .then(res => res.json())
       .then(data => {
         setActiveSessionsList(data.sessions || []);
         setBannedUsers(data.banned || {});
       }).catch(() => {});
 
-    fetch(`${getApiBase()}/audit`)
+    fetch(`${getApiBase()}/audit`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
       .then(res => res.json())
       .then(data => setAuditLogs(Array.isArray(data) ? data : [])).catch(() => {});
 

@@ -53,8 +53,8 @@ const firebaseApp = initializeApp(firebaseConfig);
 const firestore = getFirestore(firebaseApp);
 setLogLevel("silent");
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = typeof __filename !== 'undefined' ? __filename : (typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '');
+const __dirname = typeof __dirname !== 'undefined' ? __dirname : (path && __filename ? path.dirname(__filename) : process.cwd());
 
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -88,7 +88,35 @@ if (!JWT_SECRET) {
 // Serve the updates folder statically so Electron can download the .yml and .exe files
 app.use('/updates', express.static(path.join(__dirname, 'updates')));
 // Serve the React frontend app statically with no-cache headers to prevent browser caching of code updates
-app.use(express.static(path.join(__dirname, 'dist'), {
+// Function to reliably find the 'dist' directory whether in dev, production asar, or unpacked
+function findDistPath() {
+    const candidates = [
+        path.join(path.dirname(process.execPath), 'resources', 'app.asar.unpacked', 'dist'),
+        path.join(path.dirname(process.execPath), 'resources', 'app.asar', 'dist'),
+        path.join(path.dirname(process.execPath), 'resources', 'app', 'dist'),
+        path.join(process.cwd(), 'resources', 'app.asar.unpacked', 'dist'),
+        path.join(process.cwd(), 'resources', 'app.asar', 'dist'),
+        typeof __dirname !== 'undefined' ? path.join(__dirname, 'dist') : null,
+        path.join(process.cwd(), 'dist'),
+        path.join(path.dirname(process.execPath), 'dist')
+    ].filter(Boolean);
+
+    for (const p of candidates) {
+        try {
+            if (fs.existsSync(path.join(p, 'index.html'))) {
+                console.log(`[Frontend Path] Located valid dist folder at: ${p}`);
+                return p;
+            }
+        } catch (e) {}
+    }
+    const fallback = typeof __dirname !== 'undefined' ? path.join(__dirname, 'dist') : path.join(process.cwd(), 'dist');
+    console.warn(`[Frontend Path] Warning: could not locate index.html. Defaulting to: ${fallback}`);
+    return fallback;
+}
+
+const DIST_PATH = findDistPath();
+
+app.use(express.static(DIST_PATH, {
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -109,7 +137,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Health & Ping Endpoints (fast, unauthenticated for latency diagnostics)
-app.get('/api/ping', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
+app.get('/api/ping', (req, res) => res.json({ success: true, status: 'ok', isServer: true, pcName: os.hostname(), timestamp: Date.now() }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
 
 // userDataPath defined above
@@ -1188,7 +1216,7 @@ app.get(/(.*)/, (req, res) => {
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ success: false, error: `API route not found: ${req.path}` });
     }
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    res.sendFile(path.join(DIST_PATH, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -1217,8 +1245,9 @@ app.listen(PORT, '0.0.0.0', () => {
         env.NUMEXPR_NUM_THREADS = '1';
         env.PYTHONDONTWRITEBYTECODE = '1';
 
-        const outLog = fs.openSync(path.join(__dirname, 'LevitateExtract', 'programmatic_out.log'), 'a');
-        const errLog = fs.openSync(path.join(__dirname, 'LevitateExtract', 'programmatic_err.log'), 'a');
+        const logBaseDir = userDataPath || process.cwd();
+        const outLog = fs.openSync(path.join(logBaseDir, 'programmatic_out.log'), 'a');
+        const errLog = fs.openSync(path.join(logBaseDir, 'programmatic_err.log'), 'a');
 
         const pythonProcess = spawn(pythonExe, [pythonScriptPath], {
             cwd: path.join(__dirname, 'LevitateExtract'),

@@ -17,6 +17,10 @@ export const safeGetItem = (key: string, isLocal = false) => {
 
 export const safeSetItem = (key: string, value: string, isLocal = false) => {
   try {
+    if (value && value.length > 2 * 1024 * 1024) {
+      console.warn(`Storage payload for "${key}" exceeds 2MB (${(value.length / 1024 / 1024).toFixed(1)}MB). Skipping storage write.`);
+      return;
+    }
     const storage = isLocal ? window.localStorage : window.sessionStorage;
     storage.setItem(key, value);
   } catch (e) {

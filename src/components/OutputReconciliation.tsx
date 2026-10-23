@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { parseMultipleGSTR1Files, parseFile, detectColumnMapping, mapToRecords, type ColumnMapping } from '../lib/fileParser';
+import { parseMultipleGSTR1Files, detectColumnMapping, mapToRecords, type ColumnMapping } from '../lib/fileParser';
+import { parseFileAsync } from '../lib/asyncWorkerService';
 import { reconcile, getSummary, type ReconciliationResult, type ReconciliationSummary } from '../lib/reconciliation';
 import { cn } from '../lib/utils';
 import { ColumnMapper, isMappingComplete } from './ColumnMapper';
@@ -35,7 +36,7 @@ export default function OutputReconciliation() {
 
     if (file) {
       try {
-        const { headers, rows } = await parseFile(file);
+        const { headers, rows } = await parseFileAsync(file);
         setSalesHeaders(headers);
         setSalesRawRows(rows);
         setSalesMapping(detectColumnMapping(headers));
@@ -103,7 +104,7 @@ export default function OutputReconciliation() {
       const portalNil: any[] = [];
 
       for (const pf of portalFiles) {
-        const raw = await parseFile(pf.file);
+        const raw = await parseFileAsync(pf.file);
         
         if (pf.type === 'b2b') portalB2B.push(...raw.rows);
         else if (pf.type === 'b2c') portalB2C.push(...raw.rows);

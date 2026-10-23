@@ -19,19 +19,31 @@ export const getApiHost = (): string => {
     return import.meta.env.VITE_PROD_API_URL;
   }
 
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  // 1. If currently accessing from localhost or loopback, ALWAYS use localhost (prevents stale network IP)
+  if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+    return 'localhost';
+  }
+
+  // 2. Server mode explicitly configured
   try {
     const mode = localStorage.getItem('np_app_mode');
     if (mode === 'server') return 'localhost';
   } catch (e) { /* localStorage may be unavailable */ }
 
+  // 3. For LAN browser clients: use the exact hostname/IP they connected through in browser
+  if (currentHost && currentHost !== '' && currentHost !== '0.0.0.0') {
+    return currentHost;
+  }
+
+  // 4. Saved server IP (only for desktop apps or Electron file:// where window.location.hostname is empty)
   try {
     const saved = localStorage.getItem('np_server_ip');
-    if (saved) return saved;
+    if (saved && saved !== '127.0.0.1' && saved !== 'localhost') return saved;
   } catch (e) { /* localStorage may be unavailable */ }
 
-  // For browser clients: use the hostname they connected through
-  const host = window.location.hostname;
-  return (host && host !== '') ? host : '127.0.0.1';
+  return 'localhost';
 };
 
 /**
@@ -50,11 +62,44 @@ export const getApiBase = (): string => {
 };
 
 /**
- * Get the stored JWT token from sessionStorage.
+ * Safe fetch wrapper that attempts getApiBase() and falls back to relative path (Vite proxy) or direct localhost if needed.
+ */
+export const safeApiFetch = async (urlOrPath: string, options?: RequestInit): Promise<Response> => {
+  const isFullPath = urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://');
+  const primaryUrl = isFullPath ? urlOrPath : `${getApiBase()}${urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`}`;
+
+  try {
+    const res = await fetch(primaryUrl, options);
+    return res;
+  } catch (primaryErr) {
+    if (!isFullPath && typeof window !== 'undefined') {
+      const relPath = urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
+      try {
+        // Fallback 1: Vite proxy relative path
+        const res = await fetch(relPath, options);
+        return res;
+      } catch {
+        // Fallback 2: Direct localhost:3001
+        try {
+          const res = await fetch(`http://localhost:3001${relPath}`, options);
+          return res;
+        } catch {
+          throw primaryErr;
+        }
+      }
+    }
+    throw primaryErr;
+  }
+};
+
+/**
+ * Get the stored JWT token from sessionStorage or localStorage.
  */
 export const getToken = (): string | null => {
   try {
-    return sessionStorage.getItem('np_token');
+    const token = sessionStorage.getItem('np_token') || localStorage.getItem('np_token');
+    if (!token || token === 'null' || token === 'undefined') return null;
+    return token;
   } catch (e) {
     return null;
   }
@@ -68,7 +113,7 @@ export const authHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (token) {
+  if (token && token !== 'null' && token !== 'undefined') {
     headers['Authorization'] = `Bearer ${token}`;
   }
   // Bypass localtunnel warning page

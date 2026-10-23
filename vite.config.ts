@@ -5,12 +5,24 @@ import path from "path";
 const silenceProxyErrors = (target: string, isTally = false) => ({
   target,
   changeOrigin: true,
+  // Tally can take 2-3 minutes for large voucher queries; default proxy timeout is ~30s
+  ...(isTally ? { timeout: 180000, proxyTimeout: 180000 } : {}),
   rewrite: isTally ? (p: string) => p.replace(/^\/tally-api/, '') : undefined,
   configure: (proxy: any) => {
-    proxy.on('error', (err: any) => {
-      // Silence connection reset errors from localtunnel/client disconnects
+    // Remove Vite's default error listener to prevent noisy terminal stacktraces
+    proxy.removeAllListeners('error');
+    proxy.on('error', (err: any, req: any, res: any) => {
       if (err.code === 'ECONNRESET' || err.message?.includes('ECONNRESET')) return;
-      console.warn(`[Proxy Warning] ${isTally ? 'Tally' : 'API'} connection error:`, err.message);
+      if (isTally && (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED'))) {
+        if (res && !res.headersSent && typeof res.writeHead === 'function') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Tally is offline or not running on port 9000' }));
+        }
+        return;
+      }
+      if (!isTally) {
+        console.warn('[Proxy Warning] API connection error:', err.message);
+      }
     });
   }
 });
@@ -22,7 +34,18 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     watch: {
-      ignored: ["**/dist-electron/**", "**/dist/**", "**/*.tmp"],
+      ignored: [
+        "**/dist-electron/**", 
+        "**/dist/**", 
+        "**/*.tmp", 
+        "**/scratch/**", 
+        "**/downloads/**", 
+        "**/*.db", 
+        "**/*.db-journal",
+        "**/*.json",
+        "**/*.xlsx",
+        "**/*.zip"
+      ],
     },
     hmr: {
       overlay: false,

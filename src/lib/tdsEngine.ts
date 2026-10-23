@@ -1192,12 +1192,6 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    // Apply Merges & Column Widths
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
-    ];
-
     ws['!cols'] = [
         { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
         { wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 16 },
@@ -1375,11 +1369,6 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
-    ];
-
     ws['!cols'] = [
         { wch: 32 }, // Col A: Party Name
         { wch: 16 }, // Col B: PAN
@@ -1510,6 +1499,11 @@ export function exportTdsReport(
         XLSX.utils.book_append_sheet(wb, wsAdv, 'Advance TDS (Payment > Expense)');
     }
 
+    if (wb && wb.SheetNames && wb.Sheets) {
+        for (const name of wb.SheetNames) {
+            if (wb.Sheets[name]) delete wb.Sheets[name]['!merges'];
+        }
+    }
     XLSX.writeFile(wb, `TDS_Reconciliation_${new Date().getTime()}.xlsx`);
 }
 
@@ -1699,6 +1693,11 @@ export function exportMultiLedgerPanWorkbook(
 
         XLSX.utils.book_append_sheet(wb, ws, 'Multi-Ledger PAN Audit');
         const filename = `Multi_Ledger_PAN_Audit_Report_${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_FY25-26.xlsx`;
+        if (wb && wb.SheetNames && wb.Sheets) {
+            for (const name of wb.SheetNames) {
+                if (wb.Sheets[name]) delete wb.Sheets[name]['!merges'];
+            }
+        }
         XLSX.writeFile(wb, filename);
         toast.success(`Exported ${multiLedgerPans.length} Multi-Ledger PANs to Excel!`);
     } catch (err: any) {

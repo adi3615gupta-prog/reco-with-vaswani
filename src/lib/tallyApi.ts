@@ -347,7 +347,7 @@ function parseXml(xmlStr: string): Document {
   return doc;
 }
 
-function unescapeXml(safe: string): string {
+export function unescapeXml(safe: string): string {
   if (!safe) return '';
   return safe
     .replace(/&quot;/g, '"')
@@ -359,7 +359,7 @@ function unescapeXml(safe: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-function escapeXml(unsafe: string): string {
+export function escapeXml(unsafe: string): string {
   if (!unsafe) return '';
   return unsafe
     .replace(/&/g, '&amp;')
@@ -409,7 +409,7 @@ function safeNum(val: string | undefined | null): number {
 
 // ─── Core API Functions ──────────────────────────────────────
 
-const DEFAULT_CONFIG: TallyConnectionConfig = {
+export const DEFAULT_CONFIG: TallyConnectionConfig = {
   host: 'localhost',
   port: 9000,
 };
@@ -440,13 +440,8 @@ export async function sendTallyRequest(
   if (!isElectron) {
     const isBrowser = typeof window !== 'undefined' && typeof process === 'undefined';
     if (isBrowser) {
-      if (isDev) {
-        // Use Vite proxy in development
-        url = '/tally-api';
-      } else {
-        // Use Express backend proxy in production
-        url = `${getApiBase()}/api/tally-proxy`;
-      }
+      // Route through Express backend proxy (/api/tally-proxy) which gracefully handles offline Tally without noisy Vite proxy errors
+      url = `${getApiBase()}/api/tally-proxy`;
     }
   }
 
@@ -2445,42 +2440,85 @@ export async function fetchClause44Data(
   try { companyInfo = await fetchCompanyInfo(config); } catch { /* non-fatal */ }
 
   const [groupResp, ledgerResp] = await Promise.all([
-    sendTallyRequest(groupsXml, config, 15000),
-    sendTallyRequest(ledgerMasterXml, config, 30000),
+    sendTallyRequest(groupsXml, config, 60000),
+    sendTallyRequest(ledgerMasterXml, config, 60000),
   ]);
 
   console.log('[Clause44] RAW TALLY RESPONSE (Groups, first 400 chars):', groupResp.substring(0, 400));
   console.log('[Clause44] RAW TALLY RESPONSE (Ledgers, first 400 chars):', ledgerResp.substring(0, 400));
 
+  // Reserved Tally Primary Root Groups (must always have parent = "")
+  const RESERVED_PRIMARY_NAMES = new Set([
+    'DIRECT EXPENSES', 'EXPENSES (DIRECT)', 'DIRECT EXPENSE', 'EXPENSES DIRECT', 'DIRECT COSTS', 'DIRECT COST',
+    'INDIRECT EXPENSES', 'EXPENSES (INDIRECT)', 'INDIRECT EXPENSE', 'EXPENSES INDIRECT', 'INDIRECT COSTS', 'INDIRECT COST',
+    'PURCHASE ACCOUNTS', 'PURCHASE ACCOUNT', 'PURCHASES', 'PURCHASE', 'COST OF GOODS SOLD', 'COST OF SALES', 'MATERIAL CONSUMED',
+    'MANUFACTURING EXPENSES', 'MANUFACTURING EXPENSE', 'ADMINISTRATIVE EXPENSES', 'ADMINISTRATIVE EXPENSE',
+    'SELLING & DISTRIBUTION EXPENSES', 'SELLING EXPENSES', 'FINANCIAL EXPENSES', 'FINANCE COSTS', 'OVERHEADS', 'OPERATING EXPENSES',
+    'FIXED ASSETS', 'FIXED ASSET', 'CAPITAL WORK IN PROGRESS', 'CWIP',
+    'CURRENT LIABILITIES', 'CURRENT ASSETS', 'SUNDRY CREDITORS', 'SUNDRY DEBTORS',
+    'DUTIES & TAXES', 'PROVISIONS', 'LOANS (LIABILITY)', 'LOANS & ADVANCES (ASSET)',
+    'CAPITAL ACCOUNT', 'RESERVES & SURPLUS', 'SALES ACCOUNTS', 'SALES', 'BRANCH / DIVISIONS',
+    'MISC. EXPENSES (ASSET)', 'SUSPENSE ACCOUNT', 'INCOME (DIRECT)', 'DIRECT INCOMES',
+    'INCOME (INDIRECT)', 'INDIRECT INCOMES', 'PRIMARY'
+  ]);
+
   // ── Step C: Build group → parent map via parseXml (FIX 3) ────────────────
   const groupParentMap = new Map<string, string>();
+  // Pre-seed known Tally reserved primary root groups as top-level (parent = "")
+  for (const root of RESERVED_PRIMARY_NAMES) {
+    groupParentMap.set(root, '');
+  }
+
   try {
     const groupDoc = parseXml(groupResp);
     const groupNodes = getAllElements(groupDoc, 'GROUP');
     for (const node of groupNodes) {
       const name = cleanName(node.getAttribute('NAME') || getTextContent(node, 'NAME') || '');
       const parent = cleanName(getTextContent(node, 'PARENT'));
-      if (name) groupParentMap.set(name, parent);
+      if (name && !RESERVED_PRIMARY_NAMES.has(name)) {
+        if (parent && parent.toUpperCase() !== 'PRIMARY') {
+          groupParentMap.set(name, parent);
+        } else {
+          groupParentMap.set(name, '');
+        }
+      }
     }
   } catch {
-    const groupBlockRegex = /<GROUP([^>]*)>([\s\S]*?)<\/GROUP>/g;
-    let gMatch: RegExpExecArray | null;
-    while ((gMatch = groupBlockRegex.exec(groupResp)) !== null) {
-      const block = gMatch[1] + gMatch[2];
-      let rawName = '';
-      const nameAttrMatch = gMatch[0].match(/<GROUP\s+NAME="([^"]*)"/i);
-      if (nameAttrMatch) rawName = nameAttrMatch[1];
-      else { const nt = block.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i); if (nt) rawName = nt[1]; }
-      const name = cleanName(rawName);
-      const pm = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
-      const parent = pm ? cleanName(pm[1]) : '';
-      if (name) groupParentMap.set(name, parent);
+    const groupMatches = groupResp.match(/<GROUP\b[\s\S]*?<\/GROUP>/gi) || [];
+    for (const block of groupMatches) {
+      const nameMatch = block.match(/<GROUP\s+NAME="([^"]*)"/i) || block.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i);
+      const parentMatch = block.match(/<PARENT\b[^>]*>([^<]+)<\/PARENT>/i);
+      if (nameMatch) {
+        const name = cleanName(nameMatch[1]);
+        const parent = parentMatch ? cleanName(parentMatch[1]) : '';
+        if (name && !RESERVED_PRIMARY_NAMES.has(name)) {
+          if (parent && parent.toUpperCase() !== 'PRIMARY') {
+            groupParentMap.set(name, parent);
+          } else {
+            groupParentMap.set(name, '');
+          }
+        }
+      }
     }
   }
 
   console.log('[Clause44] Groups loaded:', groupParentMap.size);
 
-  // Helper: walk parent chain to see if a group is under a target root
+  // Helper: walk parent chain to find the top-level primary root group of any group or ledger
+  const getRootGroup = (groupName: string): string => {
+    let current = cleanName(groupName);
+    const visited = new Set<string>();
+    let root = current;
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      root = current;
+      const parent = groupParentMap.get(current);
+      if (!parent || parent === 'PRIMARY') break;
+      current = parent;
+    }
+    return root;
+  };
+
   const isUnder = (groupName: string, target: string): boolean => {
     let current = cleanName(groupName);
     const targetClean = cleanName(target);
@@ -2493,63 +2531,128 @@ export async function fetchClause44Data(
     return false;
   };
 
-  // ── Step D: Collect all expense groups recursively ────────────────────────
-  const EXPENSE_ROOTS = new Set(['DIRECT EXPENSES', 'INDIRECT EXPENSES', 'PURCHASE ACCOUNTS', 'FIXED ASSETS']);
-  const expenseGroups = new Set<string>(EXPENSE_ROOTS);
+  // ── Step D: Collect all expense & fixed asset groups recursively ─────────
+  const ALLOWED_PNL_EXPENSE_ROOTS = new Set([
+    'DIRECT EXPENSES', 'EXPENSES (DIRECT)', 'DIRECT EXPENSE', 'EXPENSES DIRECT', 'DIRECT COSTS', 'DIRECT COST',
+    'INDIRECT EXPENSES', 'EXPENSES (INDIRECT)', 'INDIRECT EXPENSE', 'EXPENSES INDIRECT', 'INDIRECT COSTS', 'INDIRECT COST',
+    'PURCHASE ACCOUNTS', 'PURCHASE ACCOUNT', 'PURCHASES', 'PURCHASE', 'COST OF GOODS SOLD', 'COST OF SALES', 'MATERIAL CONSUMED',
+    'MANUFACTURING EXPENSES', 'MANUFACTURING EXPENSE', 'ADMINISTRATIVE EXPENSES', 'ADMINISTRATIVE EXPENSE',
+    'SELLING & DISTRIBUTION EXPENSES', 'SELLING EXPENSES', 'FINANCIAL EXPENSES', 'FINANCE COSTS', 'OVERHEADS', 'OPERATING EXPENSES'
+  ]);
+  const ALLOWED_FIXED_ASSET_ROOTS = new Set([
+    'FIXED ASSETS', 'FIXED ASSET', 'CAPITAL WORK IN PROGRESS', 'CWIP'
+  ]);
+
+  const pnlExpenseGroups = new Set<string>();
+  const fixedAssetGroups = new Set<string>();
+
   for (const [grp] of groupParentMap.entries()) {
-    for (const root of EXPENSE_ROOTS) {
-      if (isUnder(grp, root)) { expenseGroups.add(grp); break; }
+    const root = getRootGroup(grp);
+    if (ALLOWED_PNL_EXPENSE_ROOTS.has(root)) {
+      pnlExpenseGroups.add(grp);
+    } else if (ALLOWED_FIXED_ASSET_ROOTS.has(root)) {
+      fixedAssetGroups.add(grp);
     }
   }
-  console.log('[Clause44] Expense groups (total incl sub-groups):', expenseGroups.size);
+  for (const root of ALLOWED_PNL_EXPENSE_ROOTS) pnlExpenseGroups.add(root);
+  for (const root of ALLOWED_FIXED_ASSET_ROOTS) fixedAssetGroups.add(root);
 
-  // ── Step E: Build expense ledger set via parseXml (FIX 3) ────────────────
-  const expenseLedgerSet = new Set<string>();
-  const ledgerParentMap = new Map<string, string>();
+  const expenseGroups = new Set<string>([...pnlExpenseGroups, ...fixedAssetGroups]);
+  console.log('[Clause44] Groups loaded — P&L Expense groups:', pnlExpenseGroups.size, '| Fixed Asset groups:', fixedAssetGroups.size);
+
+  // ── Step E: Build expense & fixed asset ledger sets ─────────────────────
+  const pnlExpenseLedgerSet = new Set<string>();
+  const fixedAssetLedgerSet = new Set<string>();
+  const expenseLedgerSet    = new Set<string>();
+  const ledgerParentMap     = new Map<string, string>();
+
+  const categorizeLedger = (rawLedgerName: string, rawParent: string) => {
+    if (!rawLedgerName || !rawParent) return;
+    const name   = cleanName(rawLedgerName);
+    const parent = cleanName(rawParent);
+    if (!name || !parent) return;
+
+    const rootGroup = getRootGroup(parent);
+
+    const isPnl = ALLOWED_PNL_EXPENSE_ROOTS.has(rootGroup);
+    const isFa  = ALLOWED_FIXED_ASSET_ROOTS.has(rootGroup);
+
+    if (isPnl) {
+      pnlExpenseLedgerSet.add(name);
+      expenseLedgerSet.add(name);
+      ledgerParentMap.set(name, parent);
+    } else if (isFa) {
+      fixedAssetLedgerSet.add(name);
+      expenseLedgerSet.add(name);
+      ledgerParentMap.set(name, parent);
+    }
+  };
+
   try {
     const ledgerDoc = parseXml(ledgerResp);
     const ledgerNodes = getAllElements(ledgerDoc, 'LEDGER');
     for (const node of ledgerNodes) {
-      const name = cleanName(node.getAttribute('NAME') || getTextContent(node, 'NAME') || '');
-      const parent = cleanName(getTextContent(node, 'PARENT'));
-      if (name && (expenseGroups.has(parent) || isUnder(parent, 'DIRECT EXPENSES') || isUnder(parent, 'INDIRECT EXPENSES') || isUnder(parent, 'PURCHASE ACCOUNTS') || isUnder(parent, 'FIXED ASSETS'))) {
-        expenseLedgerSet.add(name);
-        ledgerParentMap.set(name, parent);
-      }
+      const name   = node.getAttribute('NAME') || getTextContent(node, 'NAME') || '';
+      const parent = getTextContent(node, 'PARENT');
+      categorizeLedger(name, parent);
     }
   } catch {
     const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
     let lMatch: RegExpExecArray | null;
     while ((lMatch = ledgerBlockRegex.exec(ledgerResp)) !== null) {
-      const ledgerName = extractLedgerNameFromBlock(lMatch[1], lMatch[2]);
+      let rawName = '';
+      const nameAttrMatch = lMatch[0].match(/<LEDGER\s+NAME="([^"]*)"/i);
+      if (nameAttrMatch) rawName = nameAttrMatch[1];
+      else { const nt = lMatch[2].match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i); if (nt) rawName = nt[1]; }
       const pm = lMatch[2].match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
-      if (ledgerName && pm) {
-        const n = cleanName(ledgerName);
-        const p = cleanName(pm[1]);
-        if (expenseGroups.has(p) || isUnder(p, 'DIRECT EXPENSES') || isUnder(p, 'INDIRECT EXPENSES') || isUnder(p, 'PURCHASE ACCOUNTS') || isUnder(p, 'FIXED ASSETS')) {
-          expenseLedgerSet.add(n);
-          ledgerParentMap.set(n, p);
-        }
+      if (rawName && pm) {
+        categorizeLedger(rawName, pm[1]);
       }
     }
   }
-  console.log('[Clause44] Expense ledgers identified:', expenseLedgerSet.size, '— first 10:', [...expenseLedgerSet].slice(0, 10));
+  console.log('[Clause44] Ledgers identified — P&L Expenses:', pnlExpenseLedgerSet.size, '| Fixed Assets (Additions):', fixedAssetLedgerSet.size);
 
-  // ── Step F: Fetch all voucher line-items via WALK on AllLedgerEntries ──────
-  // FIX 4: Use YYYYMMDD date (via toTallyDate), correct collection ID,
-  //         remove VchGuid COMPUTE (unreliable in WALK), use VoucherNumber as key.
+  // ── Step F: Optimized two-phase approach for large datasets ──────────────
   const from = toTallyDate(fromDate);
   const to   = toTallyDate(toDate);
 
   console.log('[Clause44] Date range sent to Tally:', from, '->', to);
   console.log('[Clause44] Tax ledgers to match:', [...userTaxLedgers]);
 
-  const voucherXml = `<ENVELOPE>
+  // ── Phase 1: Get expense & fixed asset ledger closing balances & debit totals ──
+  //    Uses Tally's native $$IsChildOf:$Parent:"ROOT_GROUP" for ultra-fast execution
+  const escapeXmlForTdl = (str: string) =>
+    str.replace(/&/g, '&amp;')
+       .replace(/</g, '&lt;')
+       .replace(/>/g, '&gt;')
+       .replace(/"/g, '&quot;')
+       .replace(/'/g, '&apos;');
+
+  const primaryRootsForTdl = new Set<string>();
+  for (const r of ALLOWED_PNL_EXPENSE_ROOTS) primaryRootsForTdl.add(r);
+  for (const r of ALLOWED_FIXED_ASSET_ROOTS) primaryRootsForTdl.add(r);
+  for (const [grp, parent] of groupParentMap.entries()) {
+    if (!parent || parent === 'PRIMARY') {
+      const root = getRootGroup(grp);
+      if (ALLOWED_PNL_EXPENSE_ROOTS.has(root) || ALLOWED_FIXED_ASSET_ROOTS.has(root)) {
+        primaryRootsForTdl.add(grp);
+      }
+    }
+  }
+
+  const childOfConditions = Array.from(primaryRootsForTdl)
+    .filter(Boolean)
+    .map(g => `$$IsChildOf:$Parent:"${escapeXmlForTdl(g)}"`);
+
+  const balanceFilterXml = childOfConditions.length > 0 ? `<FILTER>Clause44ExpenseFilter</FILTER>` : ``;
+  const balanceFormulaXml = childOfConditions.length > 0 ? `<SYSTEM TYPE="FORMULAS" NAME="Clause44ExpenseFilter">${childOfConditions.join(' OR ')}</SYSTEM>` : ``;
+
+  const balanceXml = `<ENVELOPE>
   <HEADER>
     <VERSION>1</VERSION>
     <TALLYREQUEST>Export</TALLYREQUEST>
     <TYPE>Collection</TYPE>
-    <ID>Clause44LedgerEntries</ID>
+    <ID>Clause44LedgerBalances</ID>
   </HEADER>
   <BODY>
     <DESC>
@@ -2560,14 +2663,172 @@ export async function fetchClause44Data(
       </STATICVARIABLES>
       <TDL>
         <TDLMESSAGE>
-          <COLLECTION NAME="Clause44Vouchers">
-            <TYPE>Voucher</TYPE>
-            <FILTER>IsClause44Vch</FILTER>
+          <COLLECTION NAME="Clause44LedgerBalances">
+            <TYPE>Ledger</TYPE>
+            <FETCH>Name, Parent, ClosingBalance, OpeningBalance, DebitTotals, CreditTotals</FETCH>
+            ${balanceFilterXml}
           </COLLECTION>
-          <SYSTEM TYPE="FORMULAS" NAME="IsClause44Vch">NOT $IsCancelled AND NOT $IsOptional</SYSTEM>
+          ${balanceFormulaXml}
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
 
-          <COLLECTION NAME="Clause44LedgerEntries">
-            <SOURCECOLLECTION>Clause44Vouchers</SOURCECOLLECTION>
+  console.log('[Clause44] Phase 1: Fetching filtered expense ledger balances (', childOfConditions.length, 'conditions)...');
+  let balanceResp: string;
+  try {
+    balanceResp = await sendTallyRequest(balanceXml, config, 30000);
+  } catch (balErr: any) {
+    if (balErr?.message?.includes('timed out')) {
+      console.warn('[Clause44] Phase 1: Balance query timed out (30s). Retrying with 60s timeout...');
+      balanceResp = await sendTallyRequest(balanceXml, config, 60000);
+    } else {
+      throw balErr;
+    }
+  }
+  console.log('[Clause44] Phase 1: Ledger balances received. Length:', balanceResp.length);
+
+  // Helper to parse Tally Dr/Cr or numerical balance values accurately
+  const parseTallyBalance = (str: string): number => {
+    if (!str) return 0;
+    const cleanStr = str.replace(/[₹,\s]/g, '').trim();
+    const isDr = cleanStr.toUpperCase().includes('DR') || cleanStr.startsWith('-');
+    const isCr = cleanStr.toUpperCase().includes('CR');
+    const num = Math.abs(parseFloat(cleanStr.replace(/[^0-9.-]/g, '')) || 0);
+    if (isDr) return num;
+    if (isCr) return -num;
+    return parseFloat(cleanStr) < 0 ? num : -num;
+  };
+
+  const parseTallyPositiveAmount = (str: string): number => {
+    if (!str) return 0;
+    const cleanStr = str.replace(/[₹,\s]/g, '').trim();
+    return Math.abs(parseFloat(cleanStr.replace(/[^0-9.-]/g, '')) || 0);
+  };
+
+  // Parse ledger balances — compute net expense for P&L and additions for Fixed Assets
+  // Also recovers any ledgers missed by Step E categorization
+  const expenseLedgerTotals = new Map<string, number>();
+  let recoveredCount = 0;
+
+  const processLedgerBalance = (name: string, parentName: string, closingStr: string, openingStr: string, debitTotalsStr: string) => {
+    if (!name) return;
+    if (name.includes('ROUND OFF') || name.includes('ROUNDING')) return;
+
+    // If not already categorized as expense, try to recover using parent from balance response
+    if (!expenseLedgerSet.has(name) && parentName) {
+      const rootGroup = getRootGroup(parentName);
+      if (ALLOWED_PNL_EXPENSE_ROOTS.has(rootGroup)) {
+        pnlExpenseLedgerSet.add(name);
+        expenseLedgerSet.add(name);
+        ledgerParentMap.set(name, parentName);
+        recoveredCount++;
+        console.log('[Clause44] Phase 1 RECOVERY: Added expense ledger:', name, '| parent:', parentName, '| root:', rootGroup);
+      } else if (ALLOWED_FIXED_ASSET_ROOTS.has(rootGroup)) {
+        fixedAssetLedgerSet.add(name);
+        expenseLedgerSet.add(name);
+        ledgerParentMap.set(name, parentName);
+        recoveredCount++;
+        console.log('[Clause44] Phase 1 RECOVERY: Added fixed asset ledger:', name, '| parent:', parentName, '| root:', rootGroup);
+      }
+    }
+
+    // Skip non-expense ledgers
+    if (!expenseLedgerSet.has(name)) return;
+
+    let netExpense = 0;
+    if (fixedAssetLedgerSet.has(name)) {
+      // Fixed Assets: Fetch ONLY addition of fixed assets (DebitTotals)
+      netExpense = parseTallyPositiveAmount(debitTotalsStr);
+    } else {
+      // P&L Expenses: Fetch net expense incurred in FY (Closing - Opening)
+      const closing = parseTallyBalance(closingStr);
+      const opening = parseTallyBalance(openingStr);
+      netExpense = closing - opening;
+    }
+
+    if (Math.abs(netExpense) > 0.01) {
+      expenseLedgerTotals.set(name, netExpense);
+    }
+  };
+
+  try {
+    const balDoc = parseXml(balanceResp);
+    const balNodes = getAllElements(balDoc, 'LEDGER');
+    console.log('[Clause44] Phase 1: Total LEDGER nodes parsed:', balNodes.length);
+    for (const node of balNodes) {
+      const name = cleanName(node.getAttribute('NAME') || getTextContent(node, 'NAME') || '');
+      const parentName = cleanName(getTextContent(node, 'PARENT'));
+      const closingStr = getTextContent(node, 'CLOSINGBALANCE');
+      const openingStr = getTextContent(node, 'OPENINGBALANCE');
+      const debitTotalsStr = getTextContent(node, 'DEBITTOTALS');
+      processLedgerBalance(name, parentName, closingStr, openingStr, debitTotalsStr);
+    }
+  } catch (balErr) {
+    // Fallback: regex-based parsing
+    const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
+    let lMatch: RegExpExecArray | null;
+    while ((lMatch = ledgerBlockRegex.exec(balanceResp)) !== null) {
+      const rawName = extractLedgerNameFromBlock(lMatch[1], lMatch[2]);
+      if (!rawName) continue;
+      const name = cleanName(rawName);
+      const parentMatch = lMatch[2].match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
+      const parentName = parentMatch ? cleanName(parentMatch[1]) : '';
+      const closingMatch = lMatch[2].match(/<CLOSINGBALANCE[^>]*>([^<]*)<\/CLOSINGBALANCE>/i);
+      const openingMatch = lMatch[2].match(/<OPENINGBALANCE[^>]*>([^<]*)<\/OPENINGBALANCE>/i);
+      const debitMatch = lMatch[2].match(/<DEBITTOTALS[^>]*>([^<]*)<\/DEBITTOTALS>/i);
+      processLedgerBalance(name, parentName, closingMatch?.[1] || '', openingMatch?.[1] || '', debitMatch?.[1] || '');
+    }
+  }
+
+  // ── Diagnostic: Show totals by primary group for P&L verification ─────────
+  const groupTotalsDebug = new Map<string, number>();
+  for (const [ledgerName, amount] of expenseLedgerTotals.entries()) {
+    const parent = ledgerParentMap.get(ledgerName) || '';
+    const root = parent ? getRootGroup(parent) : 'UNKNOWN';
+    groupTotalsDebug.set(root, (groupTotalsDebug.get(root) || 0) + amount);
+  }
+  console.log('[Clause44] Phase 1 complete. Expense ledgers:', expenseLedgerTotals.size,
+    '| Recovered:', recoveredCount,
+    '| TOTALS BY PRIMARY GROUP:');
+  for (const [group, total] of groupTotalsDebug.entries()) {
+    console.log(`  [Clause44]   ${group}: Rs. ${total.toFixed(2)}`);
+  }
+
+  // ── Phase 2: Fetch ONLY vouchers containing tax ledgers (GST vouchers) ────
+  //    Uses $$FilterCount TDL to filter at Tally-server level.
+  //    This returns only ~10-30% of all vouchers (those with GST).
+  const taxLedgerNames = [...userTaxLedgers];
+  const taxLedgerCondition = taxLedgerNames
+    .map(name => `$LedgerName = "${name}"`)
+    .join(' OR ');
+
+  const buildGSTVoucherXml = (chunkFrom: string, chunkTo: string) => `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>GSTVoucherEntries</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${chunkFrom}</SVFROMDATE>
+        <SVTODATE>${chunkTo}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="GSTVouchers">
+            <TYPE>Voucher</TYPE>
+            <FILTER>IsGSTVoucher</FILTER>
+          </COLLECTION>
+          <SYSTEM TYPE="FORMULAS" NAME="IsGSTVoucher">NOT $IsCancelled AND NOT $IsOptional AND $$FilterCount:AllLedgerEntries:IsTaxEntry > 0</SYSTEM>
+          <SYSTEM TYPE="FORMULAS" NAME="IsTaxEntry">${taxLedgerCondition}</SYSTEM>
+
+          <COLLECTION NAME="GSTVoucherEntries">
+            <SOURCECOLLECTION>GSTVouchers</SOURCECOLLECTION>
             <WALK>AllLedgerEntries</WALK>
             <COMPUTE>VchGuid    : $..GUID</COMPUTE>
             <COMPUTE>VchDate    : $..Date</COMPUTE>
@@ -2583,13 +2844,80 @@ export async function fetchClause44Data(
   </BODY>
 </ENVELOPE>`;
 
-  console.log('[Clause44] SENDING XML TO TALLY:', voucherXml);
+  // Helper: generate quarterly date chunks for fallback
+  const generateQuarterlyChunks = (startYMD: string, endYMD: string): { from: string; to: string; label: string }[] => {
+    const chunks: { from: string; to: string; label: string }[] = [];
+    const startYear = parseInt(startYMD.substring(0, 4), 10);
+    const startMonth = parseInt(startYMD.substring(4, 6), 10);
 
-  const voucherResp = await sendTallyRequest(voucherXml, config, 90000);
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let y = startYear, m = startMonth;
 
-  console.log('[Clause44] RAW TALLY RESPONSE (Vouchers, first 1000 chars):', voucherResp.substring(0, 1000));
+    while (true) {
+      const chunkFrom = `${y}${String(m).padStart(2, '0')}01`;
+      let endM = m + 2;
+      let endY = y;
+      if (endM > 12) { endM -= 12; endY++; }
+      const lastDay = new Date(endY, endM, 0).getDate();
+      let chunkTo = `${endY}${String(endM).padStart(2, '0')}${String(lastDay).padStart(2, '0')}`;
+      if (chunkTo > endYMD) chunkTo = endYMD;
 
-  // ── Step G: Parse LEDGERENTRY nodes ──────────────────────────────────────
+      chunks.push({ from: chunkFrom, to: chunkTo, label: `${monthNames[m]}-${monthNames[endM]} ${endY}` });
+
+      m = endM + 1;
+      if (m > 12) { m -= 12; y = endY + 1; } else { y = endY; }
+      if (`${y}${String(m).padStart(2, '0')}01` > endYMD) break;
+    }
+    return chunks;
+  };
+
+  console.log('[Clause44] Phase 2: Fetching GST-filtered vouchers (targeted query)...');
+
+  let gstVoucherResp: string;
+  const gstFullYearXml = buildGSTVoucherXml(from, to);
+
+  try {
+    gstVoucherResp = await sendTallyRequest(gstFullYearXml, config, 180000);
+    console.log('[Clause44] Phase 2: GST voucher fetch succeeded (full-year).');
+  } catch (gstErr: any) {
+    if (gstErr?.message?.includes('timed out')) {
+      console.warn('[Clause44] Phase 2: Full-year GST fetch timed out. Falling back to quarterly chunks...');
+      const quarters = generateQuarterlyChunks(from, to);
+      const quarterlyResponses: string[] = [];
+
+      for (let i = 0; i < quarters.length; i++) {
+        const q = quarters[i];
+        console.log(`[Clause44] Phase 2: Fetching quarter ${i + 1}/${quarters.length}: ${q.label} (${q.from} -> ${q.to})`);
+        try {
+          const qXml = buildGSTVoucherXml(q.from, q.to);
+          const qResp = await sendTallyRequest(qXml, config, 120000);
+          quarterlyResponses.push(qResp);
+          console.log(`[Clause44] Phase 2: Quarter ${q.label} fetched successfully.`);
+        } catch (qErr: any) {
+          console.error(`[Clause44] Phase 2: Quarter ${q.label} failed:`, qErr?.message);
+        }
+      }
+
+      if (quarterlyResponses.length === 0) {
+        console.warn('[Clause44] Phase 2 failed entirely. All expenses will be classified as Non-GST.');
+        gstVoucherResp = '<ENVELOPE><BODY><DATA><COLLECTION></COLLECTION></DATA></BODY></ENVELOPE>';
+      } else {
+        const allEntries: string[] = [];
+        for (const resp of quarterlyResponses) {
+          const entryMatches = resp.match(/<LEDGERENTRY>[\s\S]*?<\/LEDGERENTRY>/gi);
+          if (entryMatches) allEntries.push(...entryMatches);
+        }
+        gstVoucherResp = `<ENVELOPE><BODY><DATA><COLLECTION>${allEntries.join('\n')}</COLLECTION></DATA></BODY></ENVELOPE>`;
+        console.log(`[Clause44] Phase 2: Quarterly fallback complete. Merged ${allEntries.length} LEDGERENTRY nodes.`);
+      }
+    } else {
+      throw gstErr;
+    }
+  }
+
+  console.log('[Clause44] Phase 2 response (first 1000 chars):', gstVoucherResp.substring(0, 1000));
+
+  // ── Step G: Parse GST voucher LEDGERENTRY nodes ─────────────────────────────
   type VchEntry = { ledgerName: string; amount: number; isDebit: boolean };
   type VchRecord = {
     key: string;
@@ -2599,13 +2927,12 @@ export async function fetchClause44Data(
     entries: VchEntry[];
   };
 
-  const voucherMap = new Map<string, VchRecord>();
+  const gstVoucherMap = new Map<string, VchRecord>();
 
-  const vchDoc = parseXml(voucherResp);
-  // FIX: Tally WALK returns <LEDGERENTRY> elements
+  const vchDoc = parseXml(gstVoucherResp);
   const entryNodes = getAllElements(vchDoc, 'LEDGERENTRY');
 
-  console.log('[Clause44] LEDGERENTRY nodes found in response:', entryNodes.length);
+  console.log('[Clause44] GST LEDGERENTRY nodes found:', entryNodes.length);
 
   for (const node of entryNodes) {
     const vchGuid    = getTextContent(node, 'VCHGUID').trim();
@@ -2615,90 +2942,92 @@ export async function fetchClause44Data(
     const ledgerName = unescapeXml(getTextContent(node, 'LEDGERNAME')).replace(/\s+/g, ' ').trim().toUpperCase();
     const amtStr     = getTextContent(node, 'AMOUNT').replace(/[₹,\s]/g, '').trim();
     const amount     = Math.abs(parseFloat(amtStr) || 0);
-    // FIX 5: Exact same isDebit logic
     const isDebit    = getTextContent(node, 'ISDEEMEDPOSITIVE').toUpperCase() === 'YES' || parseFloat(amtStr) < 0;
 
     if (!ledgerName || amount === 0) continue;
 
-    // Group by GUID (or fallback to VoucherNumber+Date if GUID is somehow missing)
     const key = vchGuid || `${vchNumber}||${vchDate}`;
-    if (!voucherMap.has(key)) {
-      voucherMap.set(key, { key, date: vchDate, voucherNumber: vchNumber, voucherType: vchType, entries: [] });
+    if (!gstVoucherMap.has(key)) {
+      gstVoucherMap.set(key, { key, date: vchDate, voucherNumber: vchNumber, voucherType: vchType, entries: [] });
     }
-    voucherMap.get(key)!.entries.push({ ledgerName, amount, isDebit });
+    gstVoucherMap.get(key)!.entries.push({ ledgerName, amount, isDebit });
   }
 
-  console.log('[Clause44] Distinct vouchers assembled:', voucherMap.size);
+  console.log('[Clause44] GST vouchers assembled:', gstVoucherMap.size);
 
-  // ── Step H: Bifurcate into Table A, B, C ─────────────────────────────────
+  // ── Step H: Bifurcate into Table A (GST), Table B (Non-GST), Table C (Review) ──
   const gstMap    = new Map<string, number>();
   const nonGstMap = new Map<string, number>();
   const manualReview: Clause44ManualReview[] = [];
-  // Per-voucher detail for each ledger
-  const gstVoucherMap    = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
-  const nonGstVoucherMap = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
+  const gstVoucherDetailMap    = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
+  const nonGstVoucherDetailMap = new Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>();
 
-  let vouchersWithExpenses = 0;
-
-  for (const [, vch] of voucherMap.entries()) {
-    // Include both DR and CR entries so credits are correctly subtracted
-    const expenseEntries = vch.entries.filter(e => 
-      expenseLedgerSet.has(e.ledgerName) && 
+  // Step H1: Process GST vouchers — extract expense amounts in GST-containing vouchers
+  for (const [, vch] of gstVoucherMap.entries()) {
+    const expenseEntries = vch.entries.filter(e =>
+      expenseLedgerSet.has(e.ledgerName) &&
       e.amount > 0 &&
       !e.ledgerName.includes('ROUND OFF') &&
       !e.ledgerName.includes('ROUNDING')
     );
     if (expenseEntries.length === 0) continue;
-    vouchersWithExpenses++;
 
     const foundTaxLedgers = vch.entries
       .filter(e => userTaxLedgers.has(e.ledgerName))
       .map(e => e.ledgerName);
 
-    const hasTax = foundTaxLedgers.length > 0;
-
     const uniqueLedgers = Array.from(new Set(expenseEntries.map(e => e.ledgerName)));
 
-    if (!hasTax) {
-      for (const entry of expenseEntries) {
-        const netAmt = entry.isDebit ? entry.amount : -entry.amount;
-        nonGstMap.set(entry.ledgerName, (nonGstMap.get(entry.ledgerName) || 0) + netAmt);
-        if (!nonGstVoucherMap.has(entry.ledgerName)) nonGstVoucherMap.set(entry.ledgerName, []);
-        nonGstVoucherMap.get(entry.ledgerName)!.push({
-          voucherNumber: vch.voucherNumber,
-          date: vch.date,
-          voucherType: vch.voucherType,
-          amount: netAmt,
-          taxLedgersFound: [],
-        });
-      }
-    } else {
-      // GST-Applicable (both single and composite)
-      for (const entry of expenseEntries) {
-        const netAmt = entry.isDebit ? entry.amount : -entry.amount;
-        gstMap.set(entry.ledgerName, (gstMap.get(entry.ledgerName) || 0) + netAmt);
-        if (!gstVoucherMap.has(entry.ledgerName)) gstVoucherMap.set(entry.ledgerName, []);
-        gstVoucherMap.get(entry.ledgerName)!.push({
-          voucherNumber: vch.voucherNumber,
-          date: vch.date,
-          voucherType: vch.voucherType,
-          amount: netAmt,
-          taxLedgersFound: foundTaxLedgers,
-        });
-      }
+    for (const entry of expenseEntries) {
+      const netAmt = entry.isDebit ? entry.amount : -entry.amount;
+      gstMap.set(entry.ledgerName, (gstMap.get(entry.ledgerName) || 0) + netAmt);
+      if (!gstVoucherDetailMap.has(entry.ledgerName)) gstVoucherDetailMap.set(entry.ledgerName, []);
+      gstVoucherDetailMap.get(entry.ledgerName)!.push({
+        voucherNumber: vch.voucherNumber,
+        date: vch.date,
+        voucherType: vch.voucherType,
+        amount: netAmt,
+        taxLedgersFound: foundTaxLedgers,
+      });
+    }
 
-      if (uniqueLedgers.length > 1) {
-        manualReview.push({
-          voucherNumber: vch.voucherNumber,
-          date: vch.date,
-          voucherType: vch.voucherType,
-          expenseLedgers: expenseEntries.map(e => ({ name: e.ledgerName, amount: e.isDebit ? e.amount : -e.amount })),
-          taxLedgersFound: foundTaxLedgers,
-          reason: `Composite voucher: ${uniqueLedgers.length} unique expense ledgers. All expense lines have been automatically aggregated into Table A, but are listed here for audit reference.`,
-        });
-      }
+    if (uniqueLedgers.length > 1) {
+      manualReview.push({
+        voucherNumber: vch.voucherNumber,
+        date: vch.date,
+        voucherType: vch.voucherType,
+        expenseLedgers: expenseEntries.map(e => ({ name: e.ledgerName, amount: e.isDebit ? e.amount : -e.amount })),
+        taxLedgersFound: foundTaxLedgers,
+        reason: `Composite voucher: ${uniqueLedgers.length} unique expense ledgers. All expense lines have been automatically aggregated into Table A, but are listed here for audit reference.`,
+      });
     }
   }
+
+  // Step H2: Cap GST amounts to Phase 1 ledger total and derive Non-GST amounts
+  for (const [ledgerName, totalAmount] of expenseLedgerTotals.entries()) {
+    const rawGstAmount = gstMap.get(ledgerName) || 0;
+    // Cap GST amount to not exceed actual Tally Net Closing Balance
+    const gstAmount = Math.min(rawGstAmount, totalAmount);
+    if (gstAmount > 0) {
+      gstMap.set(ledgerName, gstAmount);
+    } else {
+      gstMap.delete(ledgerName);
+    }
+
+    const nonGstAmount = totalAmount - gstAmount;
+    if (Math.abs(nonGstAmount) > 0.50) {
+      nonGstMap.set(ledgerName, nonGstAmount);
+      nonGstVoucherDetailMap.set(ledgerName, [{
+        voucherNumber: '(Balance-derived)',
+        date: fromDate,
+        voucherType: 'Aggregate',
+        amount: nonGstAmount,
+        taxLedgersFound: [],
+      }]);
+    }
+  }
+
+  console.log('[Clause44] GST ledgers:', gstMap.size, '| Non-GST ledgers:', nonGstMap.size, '| Manual review:', manualReview.length);
 
   const getGroupLevels = (groupName: string): { primary: string; sub1: string; sub2: string } => {
     let current = cleanName(groupName);
@@ -2713,13 +3042,14 @@ export async function fetchClause44Data(
     }
     return {
       primary: path[0] || '',
-      sub1: path[1] || '',
+      sub1: path.length > 1 ? path[1] : '',
       sub2: path.length > 2 ? path[path.length - 1] : ''
     };
   };
 
   const toRows = (m: Map<string, number>, vMap: Map<string, { voucherNumber: string; date: string; voucherType: string; amount: number; taxLedgersFound: string[] }[]>): Clause44Row[] =>
     Array.from(m.entries())
+      .filter(([ledgerName]) => expenseLedgerSet.has(ledgerName))
       .map(([ledgerName, amount]) => {
         const parent = ledgerParentMap.get(ledgerName) || '';
         const lvls = parent ? getGroupLevels(parent) : { primary: '', sub1: '', sub2: '' };
@@ -2732,12 +3062,220 @@ export async function fetchClause44Data(
           voucherBreakdown: (vMap.get(ledgerName) || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
         };
       })
+      .filter(row => ALLOWED_PNL_EXPENSE_ROOTS.has(row.primaryGroup) || ALLOWED_FIXED_ASSET_ROOTS.has(row.primaryGroup))
       .sort((a, b) => b.amount - a.amount);
 
   return {
-    gstApplicable: toRows(gstMap, gstVoucherMap),
-    nonGst: toRows(nonGstMap, nonGstVoucherMap),
+    gstApplicable: toRows(gstMap, gstVoucherDetailMap),
+    nonGst: toRows(nonGstMap, nonGstVoucherDetailMap),
     manualReview: manualReview.sort((a, b) => b.expenseLedgers.reduce((s, e) => s + e.amount, 0) - a.expenseLedgers.reduce((s, e) => s + e.amount, 0)),
     companyName: companyInfo.name,
   };
+}
+
+// ─── MODULE 3.3: Ledger Voucher Import ────────────────────────
+
+export interface TallyLedgerListItem {
+  name: string;
+  parent: string;
+  closingBalance: number;
+}
+
+/** Fetch all ledger names from Tally for the user to search/select */
+export async function fetchAllLedgerNames(
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<TallyLedgerListItem[]> {
+  const xml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>AllLedgerList</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="AllLedgerList">
+            <TYPE>Ledger</TYPE>
+            <FETCH>Name, Parent, ClosingBalance</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+  const resp = await sendTallyRequest(xml, config, 20000);
+  const results: TallyLedgerListItem[] = [];
+
+  const blockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRegex.exec(resp)) !== null) {
+    const name = extractLedgerNameFromBlock(m[1], m[2]);
+    if (!name) continue;
+
+    const parentMatch = m[2].match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
+    const parent = parentMatch ? unescapeXml(parentMatch[1]).trim() : '';
+
+    const cbMatch = m[2].match(/<CLOSINGBALANCE[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
+    const closingBalance = cbMatch ? safeNum(cbMatch[1]) : 0;
+
+    results.push({ name, parent, closingBalance });
+  }
+
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface LedgerVoucherEntry {
+  date: string;
+  voucherNumber: string;
+  voucherType: string;
+  partyName: string;
+  debit: number;
+  credit: number;
+  narration: string;
+  ledgerName: string;
+}
+
+/** Fetch all vouchers/transactions for specified ledger names */
+/** Fetch all vouchers/transactions for specified ledger names */
+export async function fetchLedgerVouchers(
+  ledgerNames: string[],
+  fromDate: string,
+  toDate: string,
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<LedgerVoucherEntry[]> {
+  if (!ledgerNames || ledgerNames.length === 0) return [];
+
+  const from = formatToTallyDate(fromDate);
+  const to = formatToTallyDate(toDate);
+  const allEntries: LedgerVoucherEntry[] = [];
+  const targetSet = new Set(ledgerNames.map(l => l.trim().toUpperCase()));
+
+  // Process selected ledgers in chunks of 15 to keep query XML clean & fast
+  const CHUNK_SIZE = 15;
+  for (let i = 0; i < ledgerNames.length; i += CHUNK_SIZE) {
+    const chunk = ledgerNames.slice(i, i + CHUNK_SIZE);
+    const safeConditions = chunk.map(l => `$LedgerName = "${escapeXml(l)}"`).join(' OR ');
+
+    const collName = `LedgerVchChunk_${i}`;
+
+    const xml = `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>${collName}</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        ${from ? `<SVFROMDATE>${from}</SVFROMDATE>` : ''}
+        ${to ? `<SVTODATE>${to}</SVTODATE>` : ''}
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="${collName}">
+            <TYPE>Voucher</TYPE>
+            <FILTER>HasTargetLedger</FILTER>
+            <FETCH>Date, VoucherNumber, VoucherTypeName, PartyLedgerName, Narration, ALLLEDGERENTRIES.LIST.*, LEDGERENTRIES.LIST.*</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="FORMULAS" NAME="HasTargetLedger">
+            ($$FilterCount:AllLedgerEntries:IsTargetLedger > 0 OR $$FilterCount:LedgerEntries:IsTargetLedger > 0) AND NOT $IsCancelled AND NOT $IsOptional
+          </SYSTEM>
+          <SYSTEM TYPE="FORMULAS" NAME="IsTargetLedger">
+            ${safeConditions}
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const resp = await sendTallyRequest(xml, config, 45000);
+      
+      // Parse voucher blocks
+      const voucherRegex = /<VOUCHER([^>]*)>([\s\S]*?)<\/VOUCHER>/gi;
+      let vm: RegExpExecArray | null;
+      while ((vm = voucherRegex.exec(resp)) !== null) {
+        const block = vm[2];
+
+        const dateMatch = block.match(/<DATE[^>]*>([^<]+)<\/DATE>/i);
+        const rawDate = dateMatch ? dateMatch[1].trim() : '';
+        const date = rawDate ? tallyDateToISO(rawDate) : '';
+
+        const vnMatch = block.match(/<VOUCHERNUMBER[^>]*>([^<]+)<\/VOUCHERNUMBER>/i);
+        const voucherNumber = vnMatch ? unescapeXml(vnMatch[1]).trim() : '';
+
+        const vtMatch = block.match(/<VOUCHERTYPENAME[^>]*>([^<]+)<\/VOUCHERTYPENAME>/i);
+        const voucherType = vtMatch ? unescapeXml(vtMatch[1]).trim() : '';
+
+        const partyMatch = block.match(/<PARTYLEDGERNAME[^>]*>([^<]+)<\/PARTYLEDGERNAME>/i);
+        const partyName = partyMatch ? unescapeXml(partyMatch[1]).trim() : '';
+
+        const narrationMatch = block.match(/<NARRATION[^>]*>([^<]+)<\/NARRATION>/i);
+        const narration = narrationMatch ? unescapeXml(narrationMatch[1]).trim() : '';
+
+        // Extract all ledger entries (both ALLLEDGERENTRIES and LEDGERENTRIES)
+        const entryRegex = /<(ALLLEDGERENTRIES|LEDGERENTRIES)\.LIST>([\s\S]*?)<\/\1\.LIST>/gi;
+        let em: RegExpExecArray | null;
+        const voucherEntries: { ledgerName: string; rawAmt: number; isDebit: boolean }[] = [];
+
+        while ((em = entryRegex.exec(block)) !== null) {
+          const eBlock = em[2];
+          const lnMatch = eBlock.match(/<LEDGERNAME[^>]*>([^<]+)<\/LEDGERNAME>/i);
+          const lName = lnMatch ? unescapeXml(lnMatch[1]).trim() : '';
+          if (!lName) continue;
+
+          const amtMatch = eBlock.match(/<AMOUNT[^>]*>([^<]+)<\/AMOUNT>/i);
+          const rawAmt = amtMatch ? parseFloat(amtMatch[1].replace(/[₹,\s]/g, '').replace(/Dr|Cr/gi, '').trim()) : 0;
+
+          const isDeemedPosMatch = eBlock.match(/<ISDEEMEDPOSITIVE[^>]*>([^<]+)<\/ISDEEMEDPOSITIVE>/i);
+          const isDeemedPos = isDeemedPosMatch ? isDeemedPosMatch[1].trim().toLowerCase() : '';
+
+          let isDebit = false;
+          if (isDeemedPos === 'yes') isDebit = true;
+          else if (isDeemedPos === 'no') isDebit = false;
+          else isDebit = rawAmt < 0;
+
+          voucherEntries.push({ ledgerName: lName, rawAmt, isDebit });
+        }
+
+        // Push entry for any ledger in this voucher that matches our target list
+        for (const ve of voucherEntries) {
+          if (targetSet.has(ve.ledgerName.toUpperCase())) {
+            // Find counter party (if partyName is missing or same as ledger)
+            let counterParty = partyName;
+            if (!counterParty || counterParty.toUpperCase() === ve.ledgerName.toUpperCase()) {
+              const counter = voucherEntries.find(x => x.ledgerName.toUpperCase() !== ve.ledgerName.toUpperCase());
+              if (counter) counterParty = counter.ledgerName;
+            }
+
+            allEntries.push({
+              date,
+              voucherNumber,
+              voucherType,
+              partyName: counterParty,
+              debit: ve.isDebit ? Math.abs(ve.rawAmt) : 0,
+              credit: !ve.isDebit ? Math.abs(ve.rawAmt) : 0,
+              narration,
+              ledgerName: ve.ledgerName,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[TallyAPI] Error fetching vouchers for chunk [${chunk.join(', ')}]:`, err);
+    }
+  }
+
+  // Sort by date ascending
+  allEntries.sort((a, b) => a.date.localeCompare(b.date));
+  return allEntries;
 }

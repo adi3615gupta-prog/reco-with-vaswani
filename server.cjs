@@ -70019,21 +70019,16 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
     };
     const dismissPopups = async () => {
       try {
-        const remindLater = page.locator('button:has-text("Remind Me Later"), a:has-text("Remind Me Later"), button:has-text("Remind me later")').first();
-        if (await remindLater.isVisible({ timeout: 1500 })) {
-          await remindLater.click().catch(() => {
+        await page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button, a"));
+          const remind = btns.find((b) => {
+            const t = (b.innerText || b.textContent || "").trim().toLowerCase();
+            return t === "remind me later" || t.includes("remind me later");
           });
-          console.log('[GSTR-2B Autopilot] Dismissed "Remind Me Later" popup');
-        }
-      } catch (e) {
-      }
-      try {
-        const closeBtn = page.locator('.modal-header .close, button:has-text("Close"), button[aria-label="Close"]').first();
-        if (await closeBtn.isVisible({ timeout: 1500 })) {
-          await closeBtn.click().catch(() => {
-          });
-          console.log("[GSTR-2B Autopilot] Dismissed modal popup");
-        }
+          if (remind) remind.click();
+          const closeBtn = document.querySelector('.modal-header .close, button.close, button[aria-label="Close"], .modal-dialog button[data-dismiss="modal"]');
+          if (closeBtn) closeBtn.click();
+        });
       } catch (e) {
       }
     };
@@ -70050,144 +70045,92 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
     if (!targetFy) targetFy = "2025-26";
     console.log(`[GSTR-2B Autopilot] Target Filing Period: Month=${targetMonth}, FY=${targetFy}`);
     await updateBanner(`Navigating to Returns Dashboard for ${targetMonth} ${targetFy}...`);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
     await dismissPopups();
-    const fastPushToReturnDashboard = async () => {
-      console.log("[GSTR-2B Autopilot] \u26A1 Fast redirect to https://return.gst.gov.in/returns/auth/dashboard ...");
+    const clickReturnsDashboardInPage = async () => {
+      console.log("[GSTR-2B Autopilot] \u26A1 Navigating from Quick Links to Returns Dashboard via native click...");
       try {
-        const inPageClicked = await page.evaluate(() => {
-          const links = Array.from(document.querySelectorAll("a, button, div.card, div.panel, [ng-click]"));
-          const match = links.find((el) => {
-            const t = (el.innerText || el.textContent || "").trim().toUpperCase();
-            const h = (el.getAttribute("href") || "").toLowerCase();
-            return h.includes("returns/auth/dashboard") || t === "RETURNS DASHBOARD" || t === "RETURN DASHBOARD" || t === "FILE RETURNS";
+        const dashTile = page.locator('div.card, div.panel, div.box, a, button, div[class*="card"], div[class*="box"]').filter({ hasText: /returns dashboard|file returns/i }).first();
+        if (await dashTile.isVisible({ timeout: 1200 }).catch(() => false)) {
+          await dashTile.scrollIntoViewIfNeeded().catch(() => {
           });
-          if (match) {
-            match.scrollIntoView({ block: "center" });
-            match.click();
-            if (window.angular) {
-              try {
-                window.angular.element(match).triggerHandler("click");
-                window.angular.element(match).scope()?.$apply();
-              } catch (e) {
-              }
-            }
+          await dashTile.click({ force: true }).catch(() => {
+          });
+          console.log("[GSTR-2B Autopilot] \u2713 Clicked Returns Dashboard tile natively with Playwright");
+        } else {
+          const dashLink = page.locator('a[href*="returns/auth/dashboard"], a[href*="returns.gst.gov.in"]').first();
+          if (await dashLink.isVisible({ timeout: 800 }).catch(() => false)) {
+            await dashLink.click({ force: true }).catch(() => {
+            });
+            console.log("[GSTR-2B Autopilot] \u2713 Clicked Returns Dashboard anchor link");
+          }
+        }
+      } catch (e) {
+      }
+      const waitSearchStart = Date.now();
+      while (Date.now() - waitSearchStart < 12e3) {
+        if (page.isClosed()) return false;
+        try {
+          const count = await page.locator("select").count();
+          if (count >= 2) {
+            console.log("[GSTR-2B Autopilot] \u2713 Landed on Returns Dashboard with select dropdowns ready!");
             return true;
           }
-          return false;
-        });
-        if (inPageClicked) {
-          console.log("[GSTR-2B Autopilot] \u26A1 Clicked in-page Returns Dashboard tile instantly!");
+        } catch (e) {
         }
-      } catch (e) {
-      }
-      try {
-        await page.goto("https://return.gst.gov.in/returns/auth/dashboard", { waitUntil: "commit", timeout: 7e3 }).catch(async () => {
-          await page.evaluate(() => {
-            window.location.href = "https://return.gst.gov.in/returns/auth/dashboard";
-          }).catch(() => {
-          });
-        });
-      } catch (e) {
-      }
-      try {
-        await page.waitForSelector("select", { timeout: 6e3 });
-        await dismissPopups();
-        if (await page.locator("select").count() >= 2) {
-          console.log("[GSTR-2B Autopilot] \u2713 Returns Dashboard search dropdowns ready!");
-          return true;
-        }
-      } catch (e) {
+        await page.waitForTimeout(150);
       }
       return false;
     };
-    const ensureReturnsSearchScreen = async (timeoutMs = 2e4) => {
+    const ensureReturnsSearchScreen = async (timeoutMs = 25e3) => {
       const startWait = Date.now();
       while (Date.now() - startWait < timeoutMs) {
         if (page.isClosed()) return false;
         await dismissPopups();
         const curUrl = page.url();
-        if (curUrl.includes("return.gst.gov.in/returns/auth/dashboard")) {
-          try {
-            const selectCount = await page.locator("select").count();
-            if (selectCount >= 2) {
-              return true;
-            }
-          } catch (e) {
+        try {
+          const selectCount = await page.locator("select").count();
+          if (selectCount >= 2) {
+            return true;
           }
+        } catch (e) {
         }
-        if (curUrl.includes("/download") || curUrl.includes("/inward/")) {
-          console.log("[GSTR-2B Autopilot] On download page, strictly clicking on-screen BACK button to return to search dashboard...");
-          let backClicked = false;
-          try {
-            backClicked = await page.evaluate(() => {
-              const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-              const backEl = btns.reverse().find((el) => {
-                const t = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
-                return t === "BACK" || t.startsWith("BACK");
-              });
-              if (backEl) {
-                backEl.scrollIntoView({ block: "center" });
-                backEl.click();
-                if (window.angular) {
-                  try {
-                    window.angular.element(backEl).triggerHandler("click");
-                    window.angular.element(backEl).scope()?.$apply();
-                  } catch (e) {
-                  }
-                }
+        try {
+          const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn').filter({ hasText: /^back$/i }).filter({ hasNot: page.locator(".navbar, .breadcrumb, nav, header") }).first();
+          if (await backBtn.isVisible({ timeout: 800 }).catch(() => false)) {
+            console.log("[GSTR-2B Autopilot] Found on-screen BACK button. Clicking natively with Playwright...");
+            await backBtn.scrollIntoViewIfNeeded().catch(() => {
+            });
+            await backBtn.click({ force: true }).catch(() => {
+            });
+            try {
+              await page.waitForSelector("select", { timeout: 8e3 });
+              await dismissPopups();
+              if (await page.locator("select").count() >= 2) {
+                console.log("[GSTR-2B Autopilot] \u2713 Clicked BACK: Returns Dashboard search dropdowns ready!");
                 return true;
               }
-              return false;
-            });
-            if (backClicked) {
-              console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via DOM");
-            }
-          } catch (e) {
-          }
-          if (!backClicked) {
-            try {
-              const backBtn = page.locator('button, a, input[type="button"], input[type="submit"]').filter({ hasText: /^back$/i }).last();
-              if (await backBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
-                await backBtn.scrollIntoViewIfNeeded().catch(() => {
-                });
-                await backBtn.click({ timeout: 2e3 }).catch(() => {
-                });
-                backClicked = true;
-                console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via locator");
-              }
             } catch (e) {
             }
+            continue;
           }
-          await page.waitForTimeout(200);
-          const postClickUrl = page.url();
-          if (!postClickUrl.includes("return.gst.gov.in/returns/auth/dashboard") && !postClickUrl.includes("/download") && !postClickUrl.includes("/inward/")) {
-            console.log(`[GSTR-2B Autopilot] Post-BACK URL is not Return Dashboard (${postClickUrl}). Fast pushing to dashboard...`);
-            if (await fastPushToReturnDashboard()) return true;
-          }
-          try {
-            await page.waitForSelector("select", { timeout: 12e3 });
-            await dismissPopups();
-            if (await page.locator("select").count() >= 2) {
-              return true;
-            }
-          } catch (e) {
-          }
-          continue;
+        } catch (e) {
         }
-        if (!curUrl.includes("return.gst.gov.in/returns/auth/dashboard")) {
-          console.log(`[GSTR-2B Autopilot] Detected non-dashboard URL: ${curUrl}. Fast pushing directly to https://return.gst.gov.in/returns/auth/dashboard ...`);
-          if (await fastPushToReturnDashboard()) return true;
+        if (curUrl.includes("quicklinks/returns") || curUrl.includes("/quicklinks")) {
+          console.log("[GSTR-2B Autopilot] Detected Returns Quick Links screen. Clicking Returns Dashboard tile natively...");
+          if (await clickReturnsDashboardInPage()) {
+            return true;
+          }
           continue;
         }
         try {
-          const retDashBtn = page.locator('button:has-text("RETURN DASHBOARD"), a:has-text("RETURN DASHBOARD"), button:has-text("File Returns"), a:has-text("File Returns")').first();
-          if (await retDashBtn.isVisible({ timeout: 1e3 }).catch(() => false)) {
+          const retDashBtn = page.locator('button:has-text("RETURN DASHBOARD"), button:has-text("File Returns"), a:has-text("RETURN DASHBOARD"), a:has-text("File Returns")').first();
+          if (await retDashBtn.isVisible({ timeout: 500 }).catch(() => false)) {
             console.log("[GSTR-2B Autopilot] Clicking RETURN DASHBOARD button on dashboard...");
-            await retDashBtn.click().catch(() => {
+            await retDashBtn.click({ force: true }).catch(() => {
             });
             try {
-              await page.waitForSelector("select", { timeout: 12e3 });
+              await page.waitForSelector("select", { timeout: 1e4 });
               await dismissPopups();
               if (await page.locator("select").count() >= 2) return true;
             } catch (e) {
@@ -70197,13 +70140,13 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
         } catch (e) {
         }
         try {
-          const breadcrumb = page.locator('a:has-text("Return Dashboard"), a:has-text("Returns Dashboard"), .breadcrumb a:has-text("Return")').first();
-          if (await breadcrumb.isVisible({ timeout: 600 }).catch(() => false)) {
+          const breadcrumb = page.locator('.breadcrumb a:has-text("Return"), a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').first();
+          if (await breadcrumb.isVisible({ timeout: 400 }).catch(() => false)) {
             console.log("[GSTR-2B Autopilot] Clicking Return Dashboard breadcrumb...");
-            await breadcrumb.click().catch(() => {
+            await breadcrumb.click({ force: true }).catch(() => {
             });
             try {
-              await page.waitForSelector("select", { timeout: 12e3 });
+              await page.waitForSelector("select", { timeout: 1e4 });
               await dismissPopups();
               if (await page.locator("select").count() >= 2) return true;
             } catch (e) {
@@ -70212,31 +70155,7 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
           }
         } catch (e) {
         }
-        let navClicked = false;
-        try {
-          navClicked = await page.evaluate(() => {
-            const links = Array.from(document.querySelectorAll("a"));
-            const rLink = links.find((el) => {
-              const href = (el.getAttribute("href") || "").toLowerCase();
-              const t = (el.innerText || el.textContent || "").trim().toUpperCase();
-              return href.includes("quicklinks/returns") || t === "RETURNS DASHBOARD" || t === "RETURN DASHBOARD";
-            });
-            if (rLink) {
-              rLink.click();
-              return true;
-            }
-            return false;
-          });
-        } catch (e) {
-        }
-        if (navClicked) {
-          try {
-            await page.waitForSelector("select", { timeout: 12e3 });
-            if (await page.locator("select").count() >= 2) return true;
-          } catch (e) {
-          }
-        }
-        await page.waitForTimeout(600);
+        await page.waitForTimeout(200);
       }
       return false;
     };
@@ -70688,17 +70607,54 @@ async function runGstr2bAutopilot({ db: db2, gstin, returnPeriod, financialYear,
         if (curParsedInvoices) break;
         await page.waitForTimeout(250);
       }
+      const clickBackImmediately = async () => {
+        try {
+          console.log("[GSTR-2B Autopilot] Clicking on-screen BACK button to return to search dashboard...");
+          const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn').filter({ hasText: /^back$/i }).filter({ hasNot: page.locator(".navbar, .breadcrumb, nav, header") }).first();
+          if (await backBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
+            await backBtn.scrollIntoViewIfNeeded().catch(() => {
+            });
+            await backBtn.click({ force: true }).catch(() => {
+            });
+            console.log("[GSTR-2B Autopilot] \u2713 Clicked on-screen BACK button via Playwright native click");
+          } else {
+            await page.evaluate(() => {
+              const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+              const b = btns.find((el) => {
+                if (el.closest(".navbar, .breadcrumb, nav, header")) return false;
+                const t = (el.innerText || el.value || "").trim().toUpperCase();
+                return t === "BACK";
+              });
+              if (b) {
+                b.scrollIntoView({ block: "center" });
+                b.click();
+                if (window.angular) {
+                  try {
+                    window.angular.element(b).triggerHandler("click");
+                    window.angular.element(b).scope()?.$apply();
+                  } catch (e) {
+                  }
+                }
+              }
+            });
+          }
+        } catch (e) {
+        }
+      };
       if (curParsedInvoices && curParsedInvoices.length > 0) {
         console.log(`[GSTR-2B Autopilot] Persisting ${curParsedInvoices.length} invoices for ${currentPeriodStr}...`);
         const saveRes = await bulkSaveGstr2bInvoices(db2, gstinUpper, currentPeriodStr, curParsedInvoices, curExcelPath, curJsonPath);
+        await clickBackImmediately();
         return { count: curParsedInvoices.length, status: "SYNCED", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: saveRes.metrics };
       }
       if (isPortalConfirmedNil || curParsedInvoices && curParsedInvoices.length === 0 && (curExcelPath || curJsonPath)) {
         console.log(`[GSTR-2B Autopilot] Confirmed Nil Return for ${currentPeriodStr} (0 invoices). Recording NIL_SYNCED.`);
         await markGstr2bMonthNilSynced(db2, gstinUpper, currentPeriodStr, curExcelPath, curJsonPath);
+        await clickBackImmediately();
         return { count: 0, status: "NIL_SYNCED", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null };
       }
       console.log(`[GSTR-2B Autopilot] Download timed out or unconfirmed for ${currentPeriodStr}. Preserving existing database records.`);
+      await clickBackImmediately();
       return { count: 0, status: "PENDING", excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null };
     };
     if (isFullYear) {
@@ -72561,7 +72517,6 @@ async function parseGstr1Zip(zipPath, fallbackGstin = "", fallbackPeriod = "") {
 }
 
 // gstr1/autopilot.js
-var import_playwright = require("playwright");
 var import_path9 = __toESM(require("path"), 1);
 var import_fs9 = __toESM(require("fs"), 1);
 var import_os8 = __toESM(require("os"), 1);
@@ -73557,7 +73512,14 @@ async function runGstr1Autopilot({
     if (import_fs9.default.existsSync(bundledChrome)) {
       launchOptions.executablePath = bundledChrome;
     }
-    browser = await import_playwright.chromium.launch(launchOptions);
+    let chromiumModule;
+    try {
+      chromiumModule = await import("playwright");
+    } catch (e) {
+      return res.status(500).json({ success: false, error: "Playwright is not installed or available." });
+    }
+    const chromium = chromiumModule.chromium || chromiumModule.default?.chromium || chromiumModule;
+    browser = await chromium.launch(launchOptions);
     if (browserState) browserState.current = browser;
     context = await browser.newContext({
       viewport: null,
@@ -75870,8 +75832,8 @@ var firebaseConfig = {
 var firebaseApp = (0, import_app.initializeApp)(firebaseConfig);
 var firestore = (0, import_firestore.getFirestore)(firebaseApp);
 (0, import_firestore.setLogLevel)("silent");
-var __filename2 = (0, import_url2.fileURLToPath)(import_meta2.url);
-var __dirname2 = import_path12.default.dirname(__filename2);
+var __filename2 = typeof __filename !== 'undefined' ? __filename : '';
+var __dirname2 = typeof __dirname !== 'undefined' ? __dirname : '';
 var app = (0, import_express.default)();
 app.use((0, import_helmet.default)({ contentSecurityPolicy: false }));
 var PORT = 3001;
@@ -75899,7 +75861,32 @@ if (!JWT_SECRET) {
   }
 }
 app.use("/updates", import_express.default.static(import_path12.default.join(__dirname2, "updates")));
-app.use(import_express.default.static(import_path12.default.join(__dirname2, "dist"), {
+function findDistPath() {
+  const candidates = [
+    import_path12.default.join(import_path12.default.dirname(process.execPath), "resources", "app.asar.unpacked", "dist"),
+    import_path12.default.join(import_path12.default.dirname(process.execPath), "resources", "app.asar", "dist"),
+    import_path12.default.join(import_path12.default.dirname(process.execPath), "resources", "app", "dist"),
+    import_path12.default.join(process.cwd(), "resources", "app.asar.unpacked", "dist"),
+    import_path12.default.join(process.cwd(), "resources", "app.asar", "dist"),
+    typeof __dirname2 !== "undefined" ? import_path12.default.join(__dirname2, "dist") : null,
+    import_path12.default.join(process.cwd(), "dist"),
+    import_path12.default.join(import_path12.default.dirname(process.execPath), "dist")
+  ].filter(Boolean);
+  for (const p of candidates) {
+    try {
+      if (import_fs12.default.existsSync(import_path12.default.join(p, "index.html"))) {
+        console.log(`[Frontend Path] Located valid dist folder at: ${p}`);
+        return p;
+      }
+    } catch (e) {
+    }
+  }
+  const fallback = typeof __dirname2 !== "undefined" ? import_path12.default.join(__dirname2, "dist") : import_path12.default.join(process.cwd(), "dist");
+  console.warn(`[Frontend Path] Warning: could not locate index.html. Defaulting to: ${fallback}`);
+  return fallback;
+}
+var DIST_PATH = findDistPath();
+app.use(import_express.default.static(DIST_PATH, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith(".html")) {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -75917,7 +75904,7 @@ app.use((0, import_cors.default)({
 }));
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
-app.get("/api/ping", (req, res) => res.json({ status: "ok", timestamp: Date.now() }));
+app.get("/api/ping", (req, res) => res.json({ success: true, status: "ok", isServer: true, pcName: import_os11.default.hostname(), timestamp: Date.now() }));
 app.get("/api/health", (req, res) => res.json({ status: "ok", timestamp: Date.now() }));
 var BANNED_PATH = import_path12.default.join(userDataPath, "banned_users.json");
 var AUDIT_PATH = import_path12.default.join(userDataPath, "audit_logs.json");
@@ -76864,7 +76851,7 @@ app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api/")) {
     return res.status(404).json({ success: false, error: `API route not found: ${req.path}` });
   }
-  res.sendFile(import_path12.default.join(__dirname2, "dist", "index.html"));
+  res.sendFile(import_path12.default.join(DIST_PATH, "index.html"));
 });
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Network Server API running on port ${PORT}`);
@@ -76887,8 +76874,9 @@ app.listen(PORT, "0.0.0.0", () => {
     env.OMP_NUM_THREADS = "1";
     env.NUMEXPR_NUM_THREADS = "1";
     env.PYTHONDONTWRITEBYTECODE = "1";
-    const outLog = import_fs12.default.openSync(import_path12.default.join(__dirname2, "LevitateExtract", "programmatic_out.log"), "a");
-    const errLog = import_fs12.default.openSync(import_path12.default.join(__dirname2, "LevitateExtract", "programmatic_err.log"), "a");
+    const logBaseDir = userDataPath || process.cwd();
+    const outLog = import_fs12.default.openSync(import_path12.default.join(logBaseDir, "programmatic_out.log"), "a");
+    const errLog = import_fs12.default.openSync(import_path12.default.join(logBaseDir, "programmatic_err.log"), "a");
     const pythonProcess = (0, import_child_process6.spawn)(pythonExe, [pythonScriptPath], {
       cwd: import_path12.default.join(__dirname2, "LevitateExtract"),
       env,
