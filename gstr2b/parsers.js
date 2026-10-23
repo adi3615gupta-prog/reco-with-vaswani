@@ -101,11 +101,11 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
                     else if (colMap.idt === undefined && (c.includes('invoice date') || c.includes('note date') || c.includes('doc date'))) colMap.idt = idx;
                     else if (colMap.total_val === undefined && (c.includes('invoice value') || c.includes('note value') || c.includes('doc value'))) colMap.total_val = idx;
                     else if (colMap.txval === undefined && c.includes('taxable value')) colMap.txval = idx;
-                    else if (colMap.rate === undefined && (c.includes('tax rate') || c.includes('rate') || c.includes('applicable %'))) colMap.rate = idx;
-                    else if (colMap.igst === undefined && (c === 'igst' || c.includes('integrated tax'))) colMap.igst = idx;
+                    else if (colMap.igst === undefined && (c === 'igst' || c.includes('integrated tax') || c.includes('integrated'))) colMap.igst = idx;
                     else if (colMap.cgst === undefined && (c === 'cgst' || c.includes('central tax'))) colMap.cgst = idx;
                     else if (colMap.sgst === undefined && (c === 'sgst' || c.includes('state/ut tax') || c.includes('state tax'))) colMap.sgst = idx;
                     else if (colMap.cess === undefined && c.includes('cess')) colMap.cess = idx;
+                    else if (colMap.rate === undefined && (c.includes('tax rate') || /\brate\b/i.test(c) || c.includes('applicable %'))) colMap.rate = idx;
                     else if (colMap.period === undefined && (c.trim() === 'period' || c.startsWith('period') || c.includes('return period'))) colMap.period = idx;
                     else if (colMap.source_period === undefined && (c.includes('filling period') || c.includes('filing period'))) colMap.source_period = idx;
                     else if (colMap.filing_date === undefined && (c.includes('filling date') || c.includes('filing date'))) colMap.filing_date = idx;
@@ -277,7 +277,7 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
                     section: isAmendment ? 'CDNRA' : 'CDNR',
                     ctin,
                     supplier_name: supplierName,
-                    inum: nt.nt_num || nt.inum || '',
+                    inum: nt.ntnum || nt.nt_num || nt.inum || nt.doc_num || '',
                     idt: nt.nt_dt || nt.dt || nt.idt || '',
                     inv_typ: nt.ntty || nt.typ || 'Credit',
                     pos: nt.pos || '',

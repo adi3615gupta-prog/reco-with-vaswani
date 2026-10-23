@@ -162,17 +162,19 @@ export default function ReturnsAutoIngestDeck({
               }
             });
 
-            if (!eligCgst && !eligSgst && !eligIgst && (calcEligCgst > 0 || calcEligSgst > 0 || calcEligIgst > 0)) {
-              eligCgst = Math.round(calcEligCgst * 100) / 100;
-              eligSgst = Math.round(calcEligSgst * 100) / 100;
-              eligIgst = Math.round(calcEligIgst * 100) / 100;
-              eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
-            }
+            if (calcEligIgst > 0 && !eligIgst) eligIgst = Math.round(calcEligIgst * 100) / 100;
+            if (calcEligCgst > 0 && !eligCgst) eligCgst = Math.round(calcEligCgst * 100) / 100;
+            if (calcEligSgst > 0 && !eligSgst) eligSgst = Math.round(calcEligSgst * 100) / 100;
+            eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
 
             const eligTxval = Number(b.eligible_itc_txval || calcEligTx || 0);
             const rcmTxval = Number(b.rcm_txval || calcRcmTx || 0);
             const cdnrTxval = Number(b.cdnr_txval || calcCdnrTx || 0);
             const ineligTxval = Number(b.ineligible_itc_txval || calcIneligTx || 0);
+            const ineligIgst = Number(b.ineligible_itc_igst || calcIneligIgst || 0);
+            const ineligCgst = Number(b.ineligible_itc_cgst || calcIneligCgst || 0);
+            const ineligSgst = Number(b.ineligible_itc_sgst || calcIneligSgst || 0);
+            const ineligTotal = Number(b.ineligible_itc_total || (ineligIgst + ineligCgst + ineligSgst) || 0);
 
             const rcmIgst = Number(b.rcm_igst || calcRcmIgst || 0);
             const rcmCgst = Number(b.rcm_cgst || calcRcmCgst || 0);
@@ -188,7 +190,6 @@ export default function ReturnsAutoIngestDeck({
             const isdIgst = Number(b.isd_igst || 0);
             const isdCgst = Number(b.isd_cgst || 0);
             const isdSgst = Number(b.isd_sgst || 0);
-            const ineligTotal = Number(b.ineligible_itc_total || (calcIneligCgst + calcIneligSgst + calcIneligIgst) || 0);
 
             if (eligTotal > 0 || totalInvs > 0) {
               const summary2b: Gstr2bIngestSummary = {
@@ -217,7 +218,7 @@ export default function ReturnsAutoIngestDeck({
                 debitNotes: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
                 importGoods: { taxable: 0, igst: impgIgst, cgst: 0, sgst: 0, total: impgIgst },
                 isd: { taxable: 0, igst: isdIgst, cgst: isdCgst, sgst: isdSgst, total: isdIgst + isdCgst + isdSgst },
-                ineligibleItc: { taxable: ineligTxval, igst: calcIneligIgst, cgst: calcIneligCgst, sgst: calcIneligSgst, total: ineligTotal },
+                ineligibleItc: { taxable: ineligTxval, igst: ineligIgst, cgst: ineligCgst, sgst: ineligSgst, total: ineligTotal },
                 netEligibleTotal: Math.round((eligTotal + rcmTotal + impgIgst + (isdIgst + isdCgst + isdSgst) - cdnrTotal - ineligTotal) * 100) / 100
               };
               setActiveGstr2b(summary2b);
@@ -582,17 +583,19 @@ export default function ReturnsAutoIngestDeck({
           }
         });
 
-        if (!eligCgst && !eligSgst && !eligIgst && (calcEligCgst > 0 || calcEligSgst > 0 || calcEligIgst > 0)) {
-          eligCgst = Math.round(calcEligCgst * 100) / 100;
-          eligSgst = Math.round(calcEligSgst * 100) / 100;
-          eligIgst = Math.round(calcEligIgst * 100) / 100;
-          eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
-        }
+        if (calcEligIgst > 0 && !eligIgst) eligIgst = Math.round(calcEligIgst * 100) / 100;
+        if (calcEligCgst > 0 && !eligCgst) eligCgst = Math.round(calcEligCgst * 100) / 100;
+        if (calcEligSgst > 0 && !eligSgst) eligSgst = Math.round(calcEligSgst * 100) / 100;
+        eligTotal = Math.round((eligCgst + eligSgst + eligIgst) * 100) / 100;
 
         const eligTxval = Number(b.eligible_itc_txval || calcEligTx || 0);
         const rcmTxval = Number(b.rcm_txval || calcRcmTx || 0);
         const cdnrTxval = Number(b.cdnr_txval || calcCdnrTx || 0);
         const ineligTxval = Number(b.ineligible_itc_txval || calcIneligTx || 0);
+        const ineligIgst = Number(b.ineligible_itc_igst || calcIneligIgst || 0);
+        const ineligCgst = Number(b.ineligible_itc_cgst || calcIneligCgst || 0);
+        const ineligSgst = Number(b.ineligible_itc_sgst || calcIneligSgst || 0);
+        const ineligTotal = Number(b.ineligible_itc_total || (ineligIgst + ineligCgst + ineligSgst) || 0);
 
         const rcmIgst = Number(b.rcm_igst || calcRcmIgst || 0);
         const rcmCgst = Number(b.rcm_cgst || calcRcmCgst || 0);
@@ -608,7 +611,6 @@ export default function ReturnsAutoIngestDeck({
         const isdIgst = Number(b.isd_igst || 0);
         const isdCgst = Number(b.isd_cgst || 0);
         const isdSgst = Number(b.isd_sgst || 0);
-        const ineligTotal = Number(b.ineligible_itc_total || (calcIneligCgst + calcIneligSgst + calcIneligIgst) || 0);
 
         newlyFound2b = {
           gstin: currentGstin,
@@ -636,7 +638,7 @@ export default function ReturnsAutoIngestDeck({
           debitNotes: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
           importGoods: { taxable: 0, igst: impgIgst, cgst: 0, sgst: 0, total: impgIgst },
           isd: { taxable: 0, igst: isdIgst, cgst: isdCgst, sgst: isdSgst, total: isdIgst + isdCgst + isdSgst },
-          ineligibleItc: { taxable: ineligTxval, igst: calcIneligIgst, cgst: calcIneligCgst, sgst: calcIneligSgst, total: ineligTotal },
+          ineligibleItc: { taxable: ineligTxval, igst: ineligIgst, cgst: ineligCgst, sgst: ineligSgst, total: ineligTotal },
           netEligibleTotal: Math.round((eligTotal + rcmTotal + impgIgst + (isdIgst + isdCgst + isdSgst) - cdnrTotal - ineligTotal) * 100) / 100
         };
       }

@@ -89,6 +89,14 @@ export function initGstr2bDatabase(db) {
         addCol('cdnr_total REAL DEFAULT 0');
         addCol('impg_igst REAL DEFAULT 0');
         addCol('isd_total REAL DEFAULT 0');
+        addCol('eligible_itc_txval REAL DEFAULT 0');
+        addCol('rcm_txval REAL DEFAULT 0');
+        addCol('cdnr_txval REAL DEFAULT 0');
+        addCol('ineligible_itc_txval REAL DEFAULT 0');
+        addCol('ineligible_itc_igst REAL DEFAULT 0');
+        addCol('ineligible_itc_cgst REAL DEFAULT 0');
+        addCol('ineligible_itc_sgst REAL DEFAULT 0');
+        addCol('ineligible_itc_cess REAL DEFAULT 0');
     });
 }
 
@@ -141,6 +149,10 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                 SUM(CASE WHEN itc_available = 'Y' AND UPPER(section) LIKE '%ISD%' THEN (igst + cgst + sgst) ELSE 0 END) as isd_total,
                 -- 6. Ineligible ITC Table 4(B)
                 SUM(CASE WHEN itc_available = 'N' THEN txval ELSE 0 END) as inelig_txval,
+                SUM(CASE WHEN itc_available = 'N' THEN igst ELSE 0 END) as inelig_igst,
+                SUM(CASE WHEN itc_available = 'N' THEN cgst ELSE 0 END) as inelig_cgst,
+                SUM(CASE WHEN itc_available = 'N' THEN sgst ELSE 0 END) as inelig_sgst,
+                SUM(CASE WHEN itc_available = 'N' THEN cess ELSE 0 END) as inelig_cess,
                 SUM(CASE 
                     WHEN itc_available = 'N' THEN (igst + cgst + sgst + cess)
                     ELSE 0 END
@@ -175,7 +187,11 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
             const impgIgst = Math.round((row?.impg_igst || 0) * 100) / 100;
             const isdTotal = Math.round((row?.isd_total || 0) * 100) / 100;
             const ineligTxval = Math.round((row?.inelig_txval || 0) * 100) / 100;
-            const ineligTotal = Math.round((row?.ineligible_total || 0) * 100) / 100;
+            const ineligIgst = Math.round((row?.inelig_igst || 0) * 100) / 100;
+            const ineligCgst = Math.round((row?.inelig_cgst || 0) * 100) / 100;
+            const ineligSgst = Math.round((row?.inelig_sgst || 0) * 100) / 100;
+            const ineligCess = Math.round((row?.inelig_cess || 0) * 100) / 100;
+            const ineligTotal = Math.round((row?.ineligible_total || (ineligIgst + ineligCgst + ineligSgst + ineligCess)) * 100) / 100;
 
             const batchId = randomUUID();
             const now = Date.now();
@@ -195,8 +211,10 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess,
                         eligible_itc_total, rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
                         cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total, impg_igst, isd_total,
-                        ineligible_itc_total, downloaded_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ineligible_itc_total, eligible_itc_txval, rcm_txval, cdnr_txval,
+                        ineligible_itc_txval, ineligible_itc_igst, ineligible_itc_cgst, ineligible_itc_sgst, ineligible_itc_cess,
+                        downloaded_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(client_gstin, return_period) DO UPDATE SET
                         status = excluded.status,
                         total_invoices = excluded.total_invoices,
@@ -222,6 +240,14 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         impg_igst = excluded.impg_igst,
                         isd_total = excluded.isd_total,
                         ineligible_itc_total = excluded.ineligible_itc_total,
+                        eligible_itc_txval = excluded.eligible_itc_txval,
+                        rcm_txval = excluded.rcm_txval,
+                        cdnr_txval = excluded.cdnr_txval,
+                        ineligible_itc_txval = excluded.ineligible_itc_txval,
+                        ineligible_itc_igst = excluded.ineligible_itc_igst,
+                        ineligible_itc_cgst = excluded.ineligible_itc_cgst,
+                        ineligible_itc_sgst = excluded.ineligible_itc_sgst,
+                        ineligible_itc_cess = excluded.ineligible_itc_cess,
                         downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
                         updated_at = excluded.updated_at
                 `;
@@ -234,6 +260,8 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                     rcmIgst, rcmCgst, rcmSgst, rcmTotal,
                     cdnrIgst, cdnrCgst, cdnrSgst, cdnrTotal,
                     impgIgst, isdTotal, ineligTotal,
+                    eligTxval, rcmTxval, cdnrTxval,
+                    ineligTxval, ineligIgst, ineligCgst, ineligSgst, ineligCess,
                     now, now, now
                 ], (uErr) => {
                     if (uErr) return reject(uErr);
@@ -274,8 +302,17 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         impg_igst: impgIgst,
                         isd_total: isdTotal,
                         ineligible_txval: ineligTxval,
+                        ineligible_igst: ineligIgst,
+                        ineligible_cgst: ineligCgst,
+                        ineligible_sgst: ineligSgst,
+                        ineligible_cess: ineligCess,
                         ineligible_total: ineligTotal,
                         ineligible_itc_total: ineligTotal,
+                        ineligible_itc_txval: ineligTxval,
+                        ineligible_itc_igst: ineligIgst,
+                        ineligible_itc_cgst: ineligCgst,
+                        ineligible_itc_sgst: ineligSgst,
+                        ineligible_itc_cess: ineligCess,
                         eligibleItc: {
                             taxable: eligTxval,
                             igst: eligIgst,
@@ -300,9 +337,10 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         },
                         ineligibleItc: {
                             taxable: ineligTxval,
-                            igst: 0,
-                            cgst: 0,
-                            sgst: 0,
+                            igst: ineligIgst,
+                            cgst: ineligCgst,
+                            sgst: ineligSgst,
+                            cess: ineligCess,
                             total: ineligTotal
                         },
                         ineligibleTotal: ineligTotal
@@ -320,6 +358,21 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
 
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
+
+            const now = Date.now();
+            const affectedPeriods = new Set();
+            if (returnPeriod) affectedPeriods.add(returnPeriod);
+            for (const inv of invoices) {
+                const rowPeriod = (inv.return_period && String(inv.return_period).trim().length >= 4)
+                    ? String(inv.return_period).trim()
+                    : returnPeriod;
+                if (rowPeriod) affectedPeriods.add(rowPeriod);
+            }
+
+            // Clean out stale invoices for affected periods so duplicate/corrupted records are cleanly replaced
+            for (const p of affectedPeriods) {
+                db.run('DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?', [clientGstin, p]);
+            }
 
             const stmt = db.prepare(`
                 INSERT INTO gstr2b_invoices (
@@ -345,10 +398,6 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                     source_period = excluded.source_period,
                     filing_date = excluded.filing_date
             `);
-
-            const now = Date.now();
-            const affectedPeriods = new Set();
-            if (returnPeriod) affectedPeriods.add(returnPeriod);
 
             for (const inv of invoices) {
                 const id = randomUUID();
