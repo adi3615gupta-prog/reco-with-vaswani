@@ -41,6 +41,23 @@ const fmt = (val: number | undefined | null) => {
   return `₹ ${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+// Compact cell formatter (renders 0 as '—' so non-zero amounts pop out cleanly)
+const fmtCell = (val: number | undefined | null, isNeg: boolean = false) => {
+  if (val === undefined || val === null || isNaN(val) || Math.abs(val) < 0.005) {
+    return '—';
+  }
+  const prefix = isNeg ? '-' : '';
+  return `${prefix}₹ ${Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+// Dedicated summary total formatter
+const fmtTotalCell = (val: number | undefined | null) => {
+  if (val === undefined || val === null || isNaN(val) || Math.abs(val) < 0.005) {
+    return '₹ 0.00';
+  }
+  return `₹ ${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 export default function ReturnsAutoIngestDeck({
   selectedMonth,
   financialYear,
@@ -769,6 +786,44 @@ export default function ReturnsAutoIngestDeck({
     setConfirmModal({ isOpen: false, mode: 'GSTR1', gstr1: null, gstr2b: null });
   };
 
+  // ─── GSTR-1 BIFURCATED MATRIX DATA ───
+  const g1B2b = activeGstr1?.breakdowns?.b2b || currentMonthData?.outward?.b2b;
+  const g1B2c = activeGstr1?.breakdowns?.b2c || currentMonthData?.outward?.b2c;
+  const g1Zero = activeGstr1?.breakdowns?.zeroRated || currentMonthData?.outward?.zeroRated;
+  const g1Cdnr = activeGstr1?.breakdowns?.creditNote || currentMonthData?.outward?.creditNote;
+  const g1NilTaxable = ((activeGstr1?.breakdowns?.nilRated?.taxable || 0) + (activeGstr1?.breakdowns?.exempt?.taxable || 0)) ||
+    ((currentMonthData?.outward?.nilRated?.taxable || 0) + (currentMonthData?.outward?.exempt?.taxable || 0));
+  const g1Rcm = activeGstr1?.breakdowns?.rcmOutward || currentMonthData?.outward?.rcmInward;
+
+  // GSTR-1 Totals
+  const g1TotalTaxable = activeGstr1?.totalOutwardTaxable || currentMonthData?.outward?.totalSaleWorking?.taxable || 0;
+  const g1TotalCgst = currentMonthData?.outward?.totalSaleWorking?.cgst ??
+    Math.round(((g1B2b?.cgst || 0) + (g1B2c?.cgst || 0) + (g1Zero?.cgst || 0) - (g1Cdnr?.cgst || 0)) * 100) / 100;
+  const g1TotalSgst = currentMonthData?.outward?.totalSaleWorking?.sgst ??
+    Math.round(((g1B2b?.sgst || 0) + (g1B2c?.sgst || 0) + (g1Zero?.sgst || 0) - (g1Cdnr?.sgst || 0)) * 100) / 100;
+  const g1TotalIgst = currentMonthData?.outward?.totalSaleWorking?.igst ??
+    Math.round(((g1B2b?.igst || 0) + (g1B2c?.igst || 0) + (g1Zero?.igst || 0) - (g1Cdnr?.igst || 0)) * 100) / 100;
+  const g1TotalTax = activeGstr1?.totalOutwardTax || currentMonthData?.outward?.totalSaleWorking?.total ||
+    Math.round((g1TotalCgst + g1TotalSgst + g1TotalIgst) * 100) / 100;
+
+  // ─── GSTR-2B BIFURCATED MATRIX DATA ───
+  const g2bItc2b = activeGstr2b?.eligibleItc || currentMonthData?.inward?.itc2b;
+  const g2bRcm = activeGstr2b?.rcmInward || currentMonthData?.inward?.rcmPaid;
+  const g2bImpg = activeGstr2b?.importGoods || currentMonthData?.inward?.importGoods;
+  const g2bDebitNotes = activeGstr2b?.debitNotes || currentMonthData?.inward?.creditNotes; // (+) Row 36
+  const g2bCreditNotes = activeGstr2b?.creditNotes || currentMonthData?.inward?.debitNotes; // (-) Row 38
+  const g2bInelig = activeGstr2b?.ineligibleItc || currentMonthData?.inward?.itcReversed;   // (-) Row 39 / 4(B)
+
+  // GSTR-2B Net Available Totals (Row 41 / Table 4(C))
+  const g2bNetCgst = currentMonthData?.inward?.totalItcAvailable?.cgst ??
+    Math.round(((g2bItc2b?.cgst || 0) + (g2bRcm?.cgst || 0) + (g2bDebitNotes?.cgst || 0) - (g2bCreditNotes?.cgst || 0) - (g2bInelig?.cgst || 0)) * 100) / 100;
+  const g2bNetSgst = currentMonthData?.inward?.totalItcAvailable?.sgst ??
+    Math.round(((g2bItc2b?.sgst || 0) + (g2bRcm?.sgst || 0) + (g2bDebitNotes?.sgst || 0) - (g2bCreditNotes?.sgst || 0) - (g2bInelig?.sgst || 0)) * 100) / 100;
+  const g2bNetIgst = currentMonthData?.inward?.totalItcAvailable?.igst ??
+    Math.round(((g2bItc2b?.igst || 0) + (g2bRcm?.igst || 0) + (g2bImpg?.igst || 0) + (g2bDebitNotes?.igst || 0) - (g2bCreditNotes?.igst || 0) - (g2bInelig?.igst || 0)) * 100) / 100;
+  const g2bNetTotal = activeGstr2b?.netEligibleTotal || currentMonthData?.inward?.totalItcAvailable?.total ||
+    Math.round((g2bNetCgst + g2bNetSgst + g2bNetIgst) * 100) / 100;
+
   return (
     <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 shadow-2xl backdrop-blur-xl space-y-5">
       {/* ─── TOP MASTER BAR: TITLE, FY SELECTOR, COMBINED SHORTCUTS ─── */}
@@ -899,43 +954,119 @@ export default function ReturnsAutoIngestDeck({
               </div>
             </div>
 
-            {/* Live Metrics Breakdown */}
-            <div className="mt-3.5 grid grid-cols-2 gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">B2B Registered Sales:</span>
-                <span className="text-xs font-mono font-bold text-blue-300">
-                  {fmt(activeGstr1?.breakdowns?.b2b?.taxable || currentMonthData?.outward?.b2b?.taxable)}
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  Tax: {fmt(activeGstr1?.breakdowns?.b2b?.total || currentMonthData?.outward?.b2b?.total)}
-                </span>
-              </div>
+            {/* Live Metrics Bifurcation Matrix (Table 3.1) */}
+            <div className="mt-3 bg-slate-950/80 rounded-xl border border-blue-500/20 overflow-hidden shadow-inner">
+              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
+                <table className="w-full text-left text-xs min-w-[480px]">
+                  <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 text-[10px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2 px-2.5 text-left">Head / Particulars</th>
+                      <th className="py-2 px-2 text-right">Taxable</th>
+                      <th className="py-2 px-2 text-right">CGST</th>
+                      <th className="py-2 px-2 text-right">SGST</th>
+                      <th className="py-2 px-2 text-right">IGST</th>
+                      <th className="py-2 px-2.5 text-right">Total Tax</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50 font-mono text-[11px]">
+                    {/* B2B Registered Sales */}
+                    <tr className="hover:bg-blue-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        B2B Registered (3.1a)
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g1B2b?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2b?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2b?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2b?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g1B2b?.total)}</td>
+                    </tr>
 
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">B2C Consumer Sales:</span>
-                <span className="text-xs font-mono font-bold text-blue-300">
-                  {fmt(activeGstr1?.breakdowns?.b2c?.taxable || currentMonthData?.outward?.b2c?.taxable)}
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  Tax: {fmt(activeGstr1?.breakdowns?.b2c?.total || currentMonthData?.outward?.b2c?.total)}
-                </span>
-              </div>
+                    {/* B2C Consumer Sales */}
+                    <tr className="hover:bg-blue-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        B2C Consumer (3.1a)
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g1B2c?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2c?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2c?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1B2c?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g1B2c?.total)}</td>
+                    </tr>
 
-              <div className="col-span-2 pt-2 border-t border-slate-800/60 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Outward Taxable:</span>
-                  <span className="text-sm font-mono font-extrabold text-white">
-                    {fmt(activeGstr1?.totalOutwardTaxable || currentMonthData?.outward?.totalSaleWorking?.taxable)}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Outward Tax:</span>
-                  <span className="text-sm font-mono font-extrabold text-emerald-400">
-                    {fmt(activeGstr1?.totalOutwardTax || currentMonthData?.outward?.totalSaleWorking?.total)}
-                  </span>
-                </div>
+                    {/* Zero-Rated / Exports */}
+                    <tr className="hover:bg-blue-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        Zero-Rated / Exp (3.1b)
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g1Zero?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1Zero?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1Zero?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-blue-400">{fmtCell(g1Zero?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g1Zero?.total)}</td>
+                    </tr>
+
+                    {/* (-) Credit Notes / CDNR */}
+                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                      <td className="py-1 px-2.5 font-sans font-medium text-rose-400 flex items-center gap-1">
+                        <span>(-) Credit Notes (CDNR)</span>
+                      </td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g1Cdnr?.taxable, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g1Cdnr?.cgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g1Cdnr?.sgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g1Cdnr?.igst, true)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold">{fmtCell(g1Cdnr?.total, true)}</td>
+                    </tr>
+
+                    {/* Nil Rated / Exempt */}
+                    <tr className="hover:bg-blue-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-400">
+                        Nil / Exempt (3.1c)
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-400">{fmtCell(g1NilTaxable)}</td>
+                      <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      <td className="py-1 px-2.5 text-right text-slate-600">—</td>
+                    </tr>
+
+                    {/* Inward RCM Liability */}
+                    <tr className="hover:bg-purple-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-purple-300">
+                        Inward RCM (3.1d)
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g1Rcm?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-purple-400">{fmtCell(g1Rcm?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-purple-400">{fmtCell(g1Rcm?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-purple-400">{fmtCell(g1Rcm?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-purple-200">{fmtCell(g1Rcm?.total)}</td>
+                    </tr>
+                  </tbody>
+                  {/* Summary Footer Row */}
+                  <tfoot className="bg-blue-950/40 border-t-2 border-blue-500/40 font-mono text-[11px] font-bold">
+                    <tr>
+                      <td className="py-1.5 px-2.5 font-sans text-blue-200 uppercase tracking-wide">
+                        Total Outward (3.1)
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-white font-extrabold">{fmtTotalCell(g1TotalTaxable)}</td>
+                      <td className="py-1.5 px-2 text-right text-blue-300">{fmtTotalCell(g1TotalCgst)}</td>
+                      <td className="py-1.5 px-2 text-right text-blue-300">{fmtTotalCell(g1TotalSgst)}</td>
+                      <td className="py-1.5 px-2 text-right text-blue-300">{fmtTotalCell(g1TotalIgst)}</td>
+                      <td className="py-1.5 px-2.5 text-right text-emerald-400 font-extrabold text-xs">{fmtTotalCell(g1TotalTax)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
+
+            {/* Quick GSTR-1 Doc Stats Badges */}
+            {(activeGstr1?.counts?.totalDocs || 0) > 0 && (
+              <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
+                <span>Docs: <strong className="text-blue-300">{activeGstr1?.counts?.totalDocs}</strong></span>
+                <span>• B2B: <strong className="text-slate-300">{activeGstr1?.counts?.b2b}</strong></span>
+                <span>• B2C: <strong className="text-slate-300">{(activeGstr1?.counts?.b2cs || 0) + (activeGstr1?.counts?.b2cl || 0)}</strong></span>
+                <span>• CDNR: <strong className="text-rose-300">{activeGstr1?.counts?.cdnr}</strong></span>
+              </div>
+            )}
 
             {/* Drag & Drop Dropzone for GSTR-1 */}
             <div
@@ -1046,43 +1177,119 @@ export default function ReturnsAutoIngestDeck({
               </div>
             </div>
 
-            {/* Live Metrics Breakdown */}
-            <div className="mt-3.5 grid grid-cols-2 gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">4(A)(5) All Other ITC:</span>
-                <span className="text-xs font-mono font-bold text-emerald-300">
-                  {fmt(activeGstr2b?.eligibleItc?.total || currentMonthData?.inward?.itc2b?.total)}
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  CGST: {fmt(activeGstr2b?.eligibleItc?.cgst || currentMonthData?.inward?.itc2b?.cgst)} | SGST: {fmt(activeGstr2b?.eligibleItc?.sgst || currentMonthData?.inward?.itc2b?.sgst)}
-                </span>
-              </div>
+            {/* Live Metrics Bifurcation Matrix (Table 4) */}
+            <div className="mt-3 bg-slate-950/80 rounded-xl border border-emerald-500/20 overflow-hidden shadow-inner">
+              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
+                <table className="w-full text-left text-xs min-w-[480px]">
+                  <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 text-[10px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2 px-2.5 text-left">ITC Head / Particulars</th>
+                      <th className="py-2 px-2 text-right">Taxable</th>
+                      <th className="py-2 px-2 text-right">CGST</th>
+                      <th className="py-2 px-2 text-right">SGST</th>
+                      <th className="py-2 px-2 text-right">IGST</th>
+                      <th className="py-2 px-2.5 text-right">Total ITC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50 font-mono text-[11px]">
+                    {/* Table 4(A)(5) All Other ITC */}
+                    <tr className="hover:bg-emerald-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        4(A)(5) All Other ITC
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g2bItc2b?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bItc2b?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bItc2b?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bItc2b?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g2bItc2b?.total)}</td>
+                    </tr>
 
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Inward RCM Paid:</span>
-                <span className="text-xs font-mono font-bold text-teal-300">
-                  {fmt(activeGstr2b?.rcmInward?.total || currentMonthData?.inward?.rcmPaid?.total)}
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  Taxable: {fmt(activeGstr2b?.rcmInward?.taxable || currentMonthData?.inward?.rcmPaid?.taxable)}
-                </span>
-              </div>
+                    {/* Table 4(A)(3) Inward Reverse Charge Supplies */}
+                    <tr className="hover:bg-emerald-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        4(A)(3) Inward RCM ITC
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g2bRcm?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bRcm?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bRcm?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bRcm?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g2bRcm?.total)}</td>
+                    </tr>
 
-              <div className="col-span-2 pt-2 border-t border-slate-800/60 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Reversals & Notes:</span>
-                  <span className="text-xs font-mono text-rose-300">
-                    -{fmt(activeGstr2b?.creditNotes?.total || currentMonthData?.inward?.debitNotes?.total || 0)}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Net Available ITC (Row 41):</span>
-                  <span className="text-sm font-mono font-extrabold text-teal-400">
-                    {fmt(activeGstr2b?.netEligibleTotal || currentMonthData?.inward?.totalItcAvailable?.total)}
-                  </span>
-                </div>
+                    {/* Table 4(A)(1) Import of Goods */}
+                    <tr className="hover:bg-emerald-950/20 transition-colors">
+                      <td className="py-1 px-2.5 font-sans font-medium text-slate-200">
+                        4(A)(1) Import of Goods
+                      </td>
+                      <td className="py-1 px-2 text-right text-slate-300">{fmtCell(g2bImpg?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bImpg?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-white">{fmtCell(g2bImpg?.total)}</td>
+                    </tr>
+
+                    {/* (+) 2B Supplier Debit Notes (Row 36) */}
+                    <tr className="hover:bg-emerald-950/30 bg-emerald-950/10 transition-colors text-emerald-300">
+                      <td className="py-1 px-2.5 font-sans font-medium text-emerald-400">
+                        (+) Debit Notes (Row 36)
+                      </td>
+                      <td className="py-1 px-2 text-right text-emerald-300">{fmtCell(g2bDebitNotes?.taxable)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bDebitNotes?.cgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bDebitNotes?.sgst)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{fmtCell(g2bDebitNotes?.igst)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold text-emerald-300">{fmtCell(g2bDebitNotes?.total)}</td>
+                    </tr>
+
+                    {/* (-) 2B Supplier Credit Notes (Row 38) */}
+                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                      <td className="py-1 px-2.5 font-sans font-medium text-rose-400">
+                        (-) Credit Notes (Row 38)
+                      </td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bCreditNotes?.taxable, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bCreditNotes?.cgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bCreditNotes?.sgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bCreditNotes?.igst, true)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold">{fmtCell(g2bCreditNotes?.total, true)}</td>
+                    </tr>
+
+                    {/* (-) Table 4(B) ITC Reversals / Ineligible (Row 39) */}
+                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                      <td className="py-1 px-2.5 font-sans font-medium text-rose-400">
+                        (-) 4(B) Reversals (Row 39)
+                      </td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bInelig?.taxable, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bInelig?.cgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bInelig?.sgst, true)}</td>
+                      <td className="py-1 px-2 text-right">{fmtCell(g2bInelig?.igst, true)}</td>
+                      <td className="py-1 px-2.5 text-right font-bold">{fmtCell(g2bInelig?.total, true)}</td>
+                    </tr>
+                  </tbody>
+                  {/* Summary Footer Row */}
+                  <tfoot className="bg-emerald-950/40 border-t-2 border-emerald-500/40 font-mono text-[11px] font-bold">
+                    <tr>
+                      <td className="py-1.5 px-2.5 font-sans text-emerald-200 uppercase tracking-wide">
+                        Net Available ITC (4C)
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-slate-500">—</td>
+                      <td className="py-1.5 px-2 text-right text-emerald-300">{fmtTotalCell(g2bNetCgst)}</td>
+                      <td className="py-1.5 px-2 text-right text-emerald-300">{fmtTotalCell(g2bNetSgst)}</td>
+                      <td className="py-1.5 px-2 text-right text-emerald-300">{fmtTotalCell(g2bNetIgst)}</td>
+                      <td className="py-1.5 px-2.5 text-right text-teal-300 font-extrabold text-xs">{fmtTotalCell(g2bNetTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
+
+            {/* Quick GSTR-2B Invoice Stats Badges */}
+            {(activeGstr2b?.counts?.totalInvoices || 0) > 0 && (
+              <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
+                <span>Invoices: <strong className="text-emerald-300">{activeGstr2b?.counts?.totalInvoices}</strong></span>
+                <span>• B2B: <strong className="text-slate-300">{activeGstr2b?.counts?.b2b}</strong></span>
+                <span>• CDNR: <strong className="text-rose-300">{activeGstr2b?.counts?.cdnr}</strong></span>
+                <span>• ISD/Imp: <strong className="text-slate-300">{(activeGstr2b?.counts?.isd || 0) + (activeGstr2b?.counts?.impg || 0)}</strong></span>
+              </div>
+            )}
 
             {/* Drag & Drop Dropzone for GSTR-2B */}
             <div
@@ -1234,6 +1441,26 @@ export default function ReturnsAutoIngestDeck({
                           <td className="py-1.5 px-3 text-right text-blue-400">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.igst)}</td>
                           <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr1?.breakdowns?.b2c?.total)}</td>
                         </tr>
+                        {((confirmModal.gstr1?.breakdowns?.creditNote?.total || 0) > 0 || (confirmModal.gstr1?.breakdowns?.creditNote?.taxable || 0) > 0) && (
+                          <tr className="hover:bg-rose-950/20 text-rose-300">
+                            <td className="py-1.5 px-3 font-sans text-rose-400">(-) Table 3.1: Credit Notes (CDNR)</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr1?.breakdowns?.creditNote?.taxable)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr1?.breakdowns?.creditNote?.cgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr1?.breakdowns?.creditNote?.sgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr1?.breakdowns?.creditNote?.igst)}</td>
+                            <td className="py-1.5 px-3 text-right font-bold">-{fmt(confirmModal.gstr1?.breakdowns?.creditNote?.total)}</td>
+                          </tr>
+                        )}
+                        {((confirmModal.gstr1?.breakdowns?.rcmOutward?.total || 0) > 0 || (confirmModal.gstr1?.breakdowns?.rcmOutward?.taxable || 0) > 0) && (
+                          <tr className="hover:bg-purple-950/20 text-purple-300">
+                            <td className="py-1.5 px-3 font-sans text-purple-400">Inward RCM Liability (3.1(d))</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.rcmOutward?.taxable)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.rcmOutward?.cgst)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.rcmOutward?.sgst)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr1?.breakdowns?.rcmOutward?.igst)}</td>
+                            <td className="py-1.5 px-3 text-right font-bold">{fmt(confirmModal.gstr1?.breakdowns?.rcmOutward?.total)}</td>
+                          </tr>
+                        )}
                         <tr className="bg-blue-950/30 font-bold border-t border-slate-700">
                           <td className="py-2 px-3 font-sans text-blue-200">Total Outward Sales (Row 22)</td>
                           <td className="py-2 px-3 text-right text-blue-200">{fmt(confirmModal.gstr1?.totalOutwardTaxable)}</td>
@@ -1261,6 +1488,36 @@ export default function ReturnsAutoIngestDeck({
                           <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(confirmModal.gstr2b?.rcmInward?.igst)}</td>
                           <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(confirmModal.gstr2b?.rcmInward?.total)}</td>
                         </tr>
+                        {((confirmModal.gstr2b?.debitNotes?.total || 0) > 0 || (confirmModal.gstr2b?.debitNotes?.taxable || 0) > 0) && (
+                          <tr className="hover:bg-emerald-950/20 text-emerald-300">
+                            <td className="py-1.5 px-3 font-sans text-emerald-400">(+) 2B Supplier Debit Notes (Row 36)</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.debitNotes?.taxable)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.debitNotes?.cgst)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.debitNotes?.sgst)}</td>
+                            <td className="py-1.5 px-3 text-right">{fmt(confirmModal.gstr2b?.debitNotes?.igst)}</td>
+                            <td className="py-1.5 px-3 text-right font-bold">{fmt(confirmModal.gstr2b?.debitNotes?.total)}</td>
+                          </tr>
+                        )}
+                        {((confirmModal.gstr2b?.creditNotes?.total || 0) > 0 || (confirmModal.gstr2b?.creditNotes?.taxable || 0) > 0) && (
+                          <tr className="hover:bg-rose-950/20 text-rose-300">
+                            <td className="py-1.5 px-3 font-sans text-rose-400">(-) 2B Supplier Credit Notes (Row 38)</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.creditNotes?.taxable)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.creditNotes?.cgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.creditNotes?.sgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.creditNotes?.igst)}</td>
+                            <td className="py-1.5 px-3 text-right font-bold">-{fmt(confirmModal.gstr2b?.creditNotes?.total)}</td>
+                          </tr>
+                        )}
+                        {((confirmModal.gstr2b?.ineligibleItc?.total || 0) > 0 || (confirmModal.gstr2b?.ineligibleItc?.taxable || 0) > 0) && (
+                          <tr className="hover:bg-rose-950/20 text-rose-300">
+                            <td className="py-1.5 px-3 font-sans text-rose-400">(-) Table 4(B) ITC Reversals (Row 39)</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.ineligibleItc?.taxable)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.ineligibleItc?.cgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.ineligibleItc?.sgst)}</td>
+                            <td className="py-1.5 px-3 text-right">-{fmt(confirmModal.gstr2b?.ineligibleItc?.igst)}</td>
+                            <td className="py-1.5 px-3 text-right font-bold">-{fmt(confirmModal.gstr2b?.ineligibleItc?.total)}</td>
+                          </tr>
+                        )}
                         <tr className="bg-emerald-950/30 font-bold border-t border-slate-700">
                           <td className="py-2 px-3 font-sans text-emerald-200">Net Eligible ITC Available (Row 41)</td>
                           <td className="py-2 px-3 text-right text-emerald-200">—</td>
@@ -1413,6 +1670,15 @@ export default function ReturnsAutoIngestDeck({
                           <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(0)}</td>
                           <td className="py-1.5 px-3 text-right text-emerald-400">{fmt(currentMonthData.inward.importGoods?.igst || activeGstr2b?.importGoods?.igst)}</td>
                           <td className="py-1.5 px-3 text-right font-bold text-white">{fmt(currentMonthData.inward.importGoods?.total || activeGstr2b?.importGoods?.total)}</td>
+                        </tr>
+                      )}
+                      {(currentMonthData.inward.itcReversed?.total > 0 || (activeGstr2b?.ineligibleItc?.total || 0) > 0) && (
+                        <tr className="hover:bg-slate-900/40 text-rose-300">
+                          <td className="py-1.5 px-3 font-sans text-rose-400">(-) Table 4(B) ITC Reversals / Ineligible (Row 39)</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(currentMonthData.inward.itcReversed?.cgst || activeGstr2b?.ineligibleItc?.cgst)}</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(currentMonthData.inward.itcReversed?.sgst || activeGstr2b?.ineligibleItc?.sgst)}</td>
+                          <td className="py-1.5 px-3 text-right">{fmt(currentMonthData.inward.itcReversed?.igst || activeGstr2b?.ineligibleItc?.igst)}</td>
+                          <td className="py-1.5 px-3 text-right font-bold">-{fmt(currentMonthData.inward.itcReversed?.total || activeGstr2b?.ineligibleItc?.total)}</td>
                         </tr>
                       )}
                       <tr className="hover:bg-slate-900/40">
