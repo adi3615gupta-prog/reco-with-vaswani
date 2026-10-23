@@ -462,16 +462,10 @@ export default function ReturnsAutoIngestDeck({
 
       if (newlyFoundG1) {
         setActiveGstr1(newlyFoundG1);
-        toast.success(`GSTR-1 Autopilot Download Complete!`, {
+        onApplyIngestedReturns(newlyFoundG1, null);
+        toast.success(`GSTR-1 Autopilot Download Complete & Injected!`, {
           id: toastId,
-          description: `Downloaded ${newlyFoundG1.counts.totalDocs} documents for ${selectedMonth} (${fmt(newlyFoundG1.totalOutwardTaxable)} Sales). Review and confirm injection.`
-        });
-        // Open confirmation modal
-        setConfirmModal({
-          isOpen: true,
-          mode: 'GSTR1',
-          gstr1: newlyFoundG1,
-          gstr2b: null
+          description: `Downloaded & applied ${newlyFoundG1.counts.totalDocs} documents for ${newlyFoundG1.monthKey || selectedMonth} (${fmt(newlyFoundG1.totalOutwardTaxable)} Sales) into Table 3.1.`
         });
       } else {
         toast.info('GSTR-1 Sync Dispatched', {
@@ -645,16 +639,10 @@ export default function ReturnsAutoIngestDeck({
 
       if (newlyFound2b) {
         setActiveGstr2b(newlyFound2b);
-        toast.success(`GSTR-2B Autopilot Download Complete!`, {
+        onApplyIngestedReturns(null, newlyFound2b);
+        toast.success(`GSTR-2B Autopilot Download Complete & Injected!`, {
           id: toastId,
-          description: `Downloaded ${newlyFound2b.counts.totalInvoices} invoices for ${selectedMonth} (${fmt(newlyFound2b.netEligibleTotal)} Net ITC). Review and confirm injection.`
-        });
-        // Open confirmation modal
-        setConfirmModal({
-          isOpen: true,
-          mode: 'GSTR2B',
-          gstr1: null,
-          gstr2b: newlyFound2b
+          description: `Downloaded & applied ${newlyFound2b.counts.totalInvoices} invoices for ${newlyFound2b.monthKey || selectedMonth} (${fmt(newlyFound2b.netEligibleTotal)} Net ITC) into Table 4.`
         });
       } else {
         toast.info('GSTR-2B Sync Dispatched', {
@@ -709,17 +697,10 @@ export default function ReturnsAutoIngestDeck({
       if (!parsedG1) throw new Error('No valid GSTR-1 data found in uploaded file.');
 
       setActiveGstr1(parsedG1);
-      toast.success(`GSTR-1 Parsed: ${fmt(parsedG1.totalOutwardTaxable)} Sales`, {
+      onApplyIngestedReturns(parsedG1, null);
+      toast.success(`GSTR-1 Parsed & Injected!`, {
         id: toastId,
-        description: 'Please review and confirm injection into Table 3.1.'
-      });
-
-      // Prompt confirmation modal (User Decision D-02)
-      setConfirmModal({
-        isOpen: true,
-        mode: 'GSTR1',
-        gstr1: parsedG1,
-        gstr2b: null
+        description: `Applied ${fmt(parsedG1.totalOutwardTaxable)} Sales into Table 3.1 for ${parsedG1.monthKey || selectedMonth}.`
       });
     } catch (err: any) {
       toast.error('GSTR-1 File Parse Error', { id: toastId, description: err?.message });
@@ -743,23 +724,17 @@ export default function ReturnsAutoIngestDeck({
         if (res.gstr1 && !res.gstr2b) {
           toast.warning(`Note: Uploaded file contains GSTR-1 data. Routed to GSTR-1 deck.`);
           setActiveGstr1(res.gstr1);
+          onApplyIngestedReturns(res.gstr1, null);
         }
       }
 
       if (!parsed2b) throw new Error('No valid GSTR-2B data found in uploaded file.');
 
       setActiveGstr2b(parsed2b);
-      toast.success(`GSTR-2B Parsed: ${fmt(parsed2b.netEligibleTotal)} Net ITC`, {
+      onApplyIngestedReturns(null, parsed2b);
+      toast.success(`GSTR-2B Parsed & Injected!`, {
         id: toastId,
-        description: 'Please review and confirm injection into Table 4.'
-      });
-
-      // Prompt confirmation modal (User Decision D-02)
-      setConfirmModal({
-        isOpen: true,
-        mode: 'GSTR2B',
-        gstr1: null,
-        gstr2b: parsed2b
+        description: `Applied ${fmt(parsed2b.netEligibleTotal)} Net ITC into Table 4 for ${parsed2b.monthKey || selectedMonth}.`
       });
     } catch (err: any) {
       toast.error('GSTR-2B File Parse Error', { id: toastId, description: err?.message });
@@ -1027,11 +1002,9 @@ export default function ReturnsAutoIngestDeck({
                     description: 'Please run GSTR-1 Autopilot or drop a GSTR-1 file first.'
                   });
                 }
-                setConfirmModal({
-                  isOpen: true,
-                  mode: 'GSTR1',
-                  gstr1: activeGstr1,
-                  gstr2b: null
+                onApplyIngestedReturns(activeGstr1, null);
+                toast.success(`Injected into Table 3.1!`, {
+                  description: `Applied ${fmt(activeGstr1.totalOutwardTaxable)} Sales to ${activeGstr1.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
                 });
               }}
               disabled={!activeGstr1}
@@ -1176,11 +1149,9 @@ export default function ReturnsAutoIngestDeck({
                     description: 'Please run GSTR-2B Autopilot or drop a GSTR-2B file first.'
                   });
                 }
-                setConfirmModal({
-                  isOpen: true,
-                  mode: 'GSTR2B',
-                  gstr1: null,
-                  gstr2b: activeGstr2b
+                onApplyIngestedReturns(null, activeGstr2b);
+                toast.success(`Injected into Table 4!`, {
+                  description: `Applied ${fmt(activeGstr2b.netEligibleTotal)} Net ITC to ${activeGstr2b.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
                 });
               }}
               disabled={!activeGstr2b}

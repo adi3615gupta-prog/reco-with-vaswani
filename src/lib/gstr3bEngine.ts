@@ -397,10 +397,7 @@ export function recalculateMonthData(
   let adjSgst = 0;
   let adjIgst = 0;
 
-  const isManual = Boolean(
-    setoff.isManualAdjustment ||
-    (setoff.adjustment && (setoff.adjustment.cgst !== 0 || setoff.adjustment.sgst !== 0 || setoff.adjustment.igst !== 0))
-  );
+  const isManual = Boolean(setoff.isManualAdjustment);
 
   if (isManual && setoff.adjustment) {
     adjCgst = round2(setoff.adjustment.cgst || 0);
@@ -423,61 +420,27 @@ export function recalculateMonthData(
     let rem_ITC_cgst = ITC_cgst;
     let rem_ITC_sgst = ITC_sgst;
 
-    // STEP 2: Allocate Surplus IGST ITC (Rule 88A Optimization)
+    // STEP 2: Allocate Surplus IGST ITC (Rule 88A CA Practice Standard: CGST shortfall first, then SGST shortfall, remainder to CGST)
     if (surplus_ITC_igst > 0) {
       const shortfall_cgst = Math.max(0, round2(rem_L_cgst - rem_ITC_cgst));
       const shortfall_sgst = Math.max(0, round2(rem_L_sgst - rem_ITC_sgst));
-      const totalShortfall = round2(shortfall_cgst + shortfall_sgst);
 
-      if (surplus_ITC_igst <= totalShortfall) {
-        if (shortfall_cgst > shortfall_sgst) {
-          const diff = round2(shortfall_cgst - shortfall_sgst);
-          const giveCgst = Math.min(surplus_ITC_igst, diff);
-          u_igst_cgst = round2(u_igst_cgst + giveCgst);
-          surplus_ITC_igst = round2(surplus_ITC_igst - giveCgst);
+      // 1. Allocate to CGST shortfall first
+      const takeCgst = Math.min(surplus_ITC_igst, shortfall_cgst);
+      u_igst_cgst = round2(u_igst_cgst + takeCgst);
+      surplus_ITC_igst = round2(surplus_ITC_igst - takeCgst);
 
-          if (surplus_ITC_igst > 0) {
-            const half = round2(surplus_ITC_igst / 2);
-            const otherHalf = round2(surplus_ITC_igst - half);
-            u_igst_cgst = round2(u_igst_cgst + half);
-            u_igst_sgst = round2(u_igst_sgst + otherHalf);
-            surplus_ITC_igst = 0;
-          }
-        } else if (shortfall_sgst > shortfall_cgst) {
-          const diff = round2(shortfall_sgst - shortfall_cgst);
-          const giveSgst = Math.min(surplus_ITC_igst, diff);
-          u_igst_sgst = round2(u_igst_sgst + giveSgst);
-          surplus_ITC_igst = round2(surplus_ITC_igst - giveSgst);
+      // 2. If surplus IGST still remains, allocate to SGST shortfall
+      if (surplus_ITC_igst > 0) {
+        const takeSgst = Math.min(surplus_ITC_igst, shortfall_sgst);
+        u_igst_sgst = round2(u_igst_sgst + takeSgst);
+        surplus_ITC_igst = round2(surplus_ITC_igst - takeSgst);
+      }
 
-          if (surplus_ITC_igst > 0) {
-            const half = round2(surplus_ITC_igst / 2);
-            const otherHalf = round2(surplus_ITC_igst - half);
-            u_igst_sgst = round2(u_igst_sgst + half);
-            u_igst_cgst = round2(u_igst_cgst + otherHalf);
-            surplus_ITC_igst = 0;
-          }
-        } else {
-          const half = round2(surplus_ITC_igst / 2);
-          const otherHalf = round2(surplus_ITC_igst - half);
-          u_igst_cgst = round2(u_igst_cgst + half);
-          u_igst_sgst = round2(u_igst_sgst + otherHalf);
-          surplus_ITC_igst = 0;
-        }
-      } else {
-        u_igst_cgst = shortfall_cgst;
-        u_igst_sgst = shortfall_sgst;
-        surplus_ITC_igst = round2(surplus_ITC_igst - totalShortfall);
-
-        const cap_cgst = round2(rem_L_cgst - u_igst_cgst);
-        const cap_sgst = round2(rem_L_sgst - u_igst_sgst);
-        const maxPossibleExtra = round2(cap_cgst + cap_sgst);
-        const extraToAllocate = Math.min(surplus_ITC_igst, maxPossibleExtra);
-
-        if (extraToAllocate > 0) {
-          const half = Math.min(round2(extraToAllocate / 2), cap_cgst);
-          u_igst_cgst = round2(u_igst_cgst + half);
-          u_igst_sgst = round2(u_igst_sgst + Math.min(extraToAllocate - half, cap_sgst));
-        }
+      // 3. If surplus IGST still remains (both shortfalls met/zero), park in CGST as per CA working sheet standard (e.g. April-26)
+      if (surplus_ITC_igst > 0) {
+        u_igst_cgst = round2(u_igst_cgst + surplus_ITC_igst);
+        surplus_ITC_igst = 0;
       }
     }
 

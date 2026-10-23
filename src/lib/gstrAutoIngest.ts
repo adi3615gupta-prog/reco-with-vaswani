@@ -1113,6 +1113,9 @@ export function applyReturnsToAnnualWorking(
 
   if (!month) return workingData;
 
+  // Reset manual adjustment flag so newly ingested returns trigger fresh automatic statutory set-off
+  month.setoff.isManualAdjustment = false;
+
   // 1. Apply GSTR-1 Outward Supplies
   if (gstr1) {
     const { breakdowns } = gstr1;
