@@ -12,6 +12,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 4: GSTR-2B Downloader (Autopilot) Deep Audit & Hardening** - Harden 1-login 12-month autonomous loop, zero data loss protection, 8-sheet consolidated Zero-Merge Excel generation, and comprehensive scrutiny tests. (completed 2026-10-22)
 - [x] **Phase 5: Enterprise UI/UX Aesthetic Overhaul & Unified Persistent App Shell** - Implement a persistent collapsible sidebar navigation, top command bar with status HUD & module switcher, centralized obsidian theme tokens, and high-density financial table standards across all modules. (completed 2026-10-22)
 - [x] **Phase 6: Core Compliance Modules UI/UX Overhaul & Financial Cockpit Elevation** - Modernize high-traffic modules (Returns Dashboard, Party-Wise Dispute Hub, Tally Direct Bridge, TDS, Income Tax Sandbox, Dropzone & KPI Cockpit) with Obsidian Glass styling, interactive charts, and high-density tables. (completed 2026-10-22)
+- [x] **Phase 7: Browser Autopilot Chrome-First Architecture & Windows Client Hardening** - Prioritize Google Chrome over Microsoft Edge in Playwright automation cascades across GSTR-2B, GSTR-1, IMS, and GSTIN Search modules. (completed 2026-10-23)
 
 ## Phase Details
 
@@ -118,6 +119,22 @@ Plans:
 - [x] 06-05: Scroll Architecture Polish & Shimmer Loading Skeletons
 - [x] 06-06: Returns Preparation & Filing (`ReturnsDashboard.tsx`) Header & Layout Re-architecture
 
+### Phase 7: Browser Autopilot Chrome-First Architecture & Windows Client Hardening
+
+**Goal**: Ensure all Playwright portal automation tasks (GSTR-2B, GSTR-1, IMS, GSTIN Lookup) prioritize Google Chrome (`channel: 'chrome'`) above all other browsers on client PCs, eliminating unexpected Microsoft Edge launches while maintaining robust fallbacks.
+**Depends on**: Phase 4
+**Requirements**: AUTOPILOT-CHROME-01
+**Success Criteria** (what must be TRUE):
+  1. Google Chrome visibly launches for GSTR-2B, GSTR-1, IMS, and GSTIN search whenever Google Chrome is present on the client Windows PC.
+  2. If Google Chrome is missing, the automation safely falls back to bundled Chromium or Microsoft Edge without throwing unhandled exceptions.
+  3. All stealth anti-detection flags (`--disable-blink-features=AutomationControlled`, `--start-maximized`, `--no-sandbox`) and window management remain intact.
+  4. Process cancellation hooks (`req.on('close')`, `browserState.current = null`) cleanly terminate the browser process on Windows.
+
+**Plans**: 1/1 plan complete
+
+Plans:
+- [x] 07-01: Centralized Chrome-first browser launcher, multi-module refactoring (GSTR-2B, GSTR-1, IMS, GSTIN Lookup), and launch verification
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-22 after Phase 6 registration*
+*Last updated: 2026-10-23 after Phase 7 planning*

@@ -8,6 +8,7 @@ const XLSX = xlsxModule.default || xlsxModule;
 import { bulkSaveGstr1Invoices, saveGstr1Summary, markGstr1MonthRequested, markGstr1MonthSyncedEmpty } from './db.js';
 import { parseGstr1Json, parseGstr1Excel, parseGstr1Zip } from './parsers.js';
 import { generateGstr1FullYearWorkbook } from './fullYearExcel.js';
+import { launchAutopilotBrowser } from '../gstr2b/browserLauncher.js';
 
 /**
  * runGstr1Autopilot — Autonomous Playwright engine for GSTR-1:
@@ -82,26 +83,6 @@ export async function runGstr1Autopilot({
             browserState.current = null;
         }
 
-        // Launch Chromium browser
-        const bundledChrome = path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright', 'chromium-1155', 'chrome-win', 'chrome.exe');
-        const launchOptions = {
-            headless: false,
-            slowMo: 50,
-            downloadsPath: downloadDir,
-            viewport: { width: 1366, height: 768 },
-            args: [
-                '--start-maximized',
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-                '--disable-infobars',
-                '--disable-extensions'
-            ]
-        };
-
-        if (fs.existsSync(bundledChrome)) {
-            launchOptions.executablePath = bundledChrome;
-        }
-
         let chromiumModule;
         try {
             chromiumModule = await import('playwright');
@@ -109,7 +90,14 @@ export async function runGstr1Autopilot({
             return res.status(500).json({ success: false, error: 'Playwright is not installed or available.' });
         }
         const chromium = chromiumModule.chromium || chromiumModule.default?.chromium || chromiumModule;
-        browser = await chromium.launch(launchOptions);
+
+        const launchRes = await launchAutopilotBrowser(chromium, {
+            headless: false,
+            slowMo: 50,
+            downloadsPath: downloadDir,
+            viewport: { width: 1366, height: 768 }
+        });
+        browser = launchRes.browser;
         if (browserState) browserState.current = browser;
 
         context = await browser.newContext({

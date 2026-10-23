@@ -12,6 +12,7 @@ import {
     parseGstr1ZipHelper
 } from './parsers.js';
 import { generateGstr2bFullYearWorkbook } from './fullYearExcel.js';
+import { launchAutopilotBrowser } from './browserLauncher.js';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 
@@ -95,18 +96,8 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             ]
         };
 
-        try {
-            browser = await chromiumModule.chromium.launch(browserLaunchOptions);
-            console.log('[GSTR-2B Autopilot] Launched dedicated bundled Chromium');
-        } catch (e) {
-            try {
-                browser = await chromiumModule.chromium.launch({ ...browserLaunchOptions, channel: 'msedge' });
-                console.log('[GSTR-2B Autopilot] Launched system Microsoft Edge');
-            } catch (edgeErr) {
-                browser = await chromiumModule.chromium.launch({ ...browserLaunchOptions, channel: 'chrome' });
-                console.log('[GSTR-2B Autopilot] Launched system Google Chrome');
-            }
-        }
+        const launchRes = await launchAutopilotBrowser(chromiumModule.chromium, browserLaunchOptions);
+        browser = launchRes.browser;
         if (browserState) browserState.current = browser;
 
         context = await browser.newContext({
@@ -1347,12 +1338,8 @@ export async function openPortalLoginHelper({ db, gstin, browserState }) {
         ]
     };
 
-    let browser = null;
-    try {
-        browser = await chromiumModule.chromium.launch(browserLaunchOptions);
-    } catch(e) {
-        browser = await chromiumModule.chromium.launch({ ...browserLaunchOptions, channel: 'msedge' });
-    }
+    const launchRes = await launchAutopilotBrowser(chromiumModule.chromium, browserLaunchOptions);
+    let browser = launchRes.browser;
 
     if (browserState) {
         browserState.current = browser;

@@ -90,6 +90,11 @@
 | UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 5 | Complete |
+| AUTOPILOT-CHROME-01 | Phase 7 | Complete |
+
+### Browser Autopilot & Client Automation (Phase 7)
+
+- [x] **AUTOPILOT-CHROME-01**: Prioritize Google Chrome over Microsoft Edge in Playwright browser launch cascades across all portal automation tasks (GSTR-2B, GSTR-1, IMS, GSTIN Lookup).
 
 **Coverage:**
 - v1 requirements: 8 total
@@ -98,4 +103,4 @@
 
 ---
 *Requirements defined: 2026-10-22*
-*Last updated: 2026-10-22 after doc ingest*
+*Last updated: 2026-10-23 after Phase 7 registration*

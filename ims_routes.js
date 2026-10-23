@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 import nodemailer from 'nodemailer';
+import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
 /**
  * Standardizes invoice dates (ISO YYYY-MM-DD or DD/MM/YYYY) to standard DD-MM-YYYY
@@ -1518,19 +1519,9 @@ export default function setupImsRoutes(app, db) {
                 ]
             };
 
-            // Strategy: Directly launch dedicated visible browser (bundled Chromium pops up independently of user's personal Chrome session)
-            try {
-                browser = await playwright.chromium.launch(browserLaunchOptions);
-                console.log('[IMS Automation] Launched dedicated bundled Chromium');
-            } catch (e) {
-                try {
-                    browser = await playwright.chromium.launch({ ...browserLaunchOptions, channel: 'msedge' });
-                    console.log('[IMS Automation] Launched system Microsoft Edge');
-                } catch (edgeErr) {
-                    browser = await playwright.chromium.launch({ ...browserLaunchOptions, channel: 'chrome' });
-                    console.log('[IMS Automation] Launched system Google Chrome');
-                }
-            }
+            // Strategy: Directly launch dedicated visible browser (Chrome first, Chromium, then Edge fallback)
+            const launchRes = await launchAutopilotBrowser(playwright.chromium, browserLaunchOptions);
+            browser = launchRes.browser;
 
             const context = await browser.newContext({ viewport: null, acceptDownloads: true });
             const page = await context.newPage();

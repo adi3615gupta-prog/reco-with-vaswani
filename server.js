@@ -36,6 +36,7 @@ import setupGstr2bRoutes from './gstr2b_routes.js';
 import setupGstr1Routes from './gstr1_routes.js';
 import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
+import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
 import helmet from 'helmet';
 import { initializeApp } from "firebase/app";
@@ -1007,7 +1008,8 @@ app.post('/api/portal/import-client', authenticateToken, async (req, res) => {
         }
 
         // Launch visible browser for CAPTCHA solving
-        browser = await playwright.chromium.launch({ headless: false });
+        const launchRes = await launchAutopilotBrowser(playwright.chromium, { headless: false });
+        browser = launchRes.browser;
         const context = await browser.newContext();
         const page = await context.newPage();
 
