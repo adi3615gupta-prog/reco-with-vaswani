@@ -33,6 +33,7 @@ import CredentialsVaultModal, { VaultClient } from '@/components/CredentialsVaul
 import ImsMasterManager from '@/components/ImsMasterManager';
 import Gstr2bMasterDownloader from '@/components/Gstr2bMasterDownloader';
 import Gstr1MasterDownloader from '@/components/Gstr1MasterDownloader';
+import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
 
 interface ReturnsDashboardProps {
   onBack: () => void;
@@ -57,6 +58,24 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
   // Core Working Data State - Empty by default, no hardcoded practice data
   const [workingData, setWorkingData] = useState<GSTR3BAnnualWorking>(() => createEmptyAnnualWorking());
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSyncingTally, setIsSyncingTally] = useState(false);
+
+  const handleSyncTallyVouchers = async () => {
+    setIsSyncingTally(true);
+    try {
+      const isOnline = await pingTally();
+      if (!isOnline) {
+        toast.error('Tally Prime is offline. Ensure Tally is running on Port 9000 with ODBC/XML enabled.');
+        return;
+      }
+      const info = await fetchCompanyInfo();
+      toast.success(`Connected to Tally Prime: ${info.name || 'Active Company'} (Port 9000)`);
+    } catch (err: any) {
+      toast.info('Tally Sync: Port 9000 checked. ' + (err?.message || 'Please check Tally connection in Settings.'));
+    } finally {
+      setIsSyncingTally(false);
+    }
+  };
 
   // GSTN Portal Authentication States
   const [portalSessionActive, setPortalSessionActive] = useState(false);
