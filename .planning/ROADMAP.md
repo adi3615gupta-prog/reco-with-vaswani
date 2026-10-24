@@ -242,9 +242,14 @@ Plans:
 **Plans**: 4 plans mapped
 
 Plans:
+**Wave 1**
 - [ ] 12-01: SQLite Schema & Backend API (`notices/db.js`, `notices_routes.js`, `server.js`)
 - [ ] 12-02: Playwright Portal Autopilot Scraper (`notices/autopilot.js`) across 3 notice destinations
+
+**Wave 3** *(blocked on Wave 1 completion)*
 - [ ] 12-03: Deterministic Discrepancy Cross-Reconciler & Zero-Merge Excel Annexure Engine (`src/lib/noticeReconciliation.ts`)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 12-04: AI / Template Legal Reply Drafter & Frontend Dashboard (`src/pages/GstNoticesDashboard.tsx`)
 
 ---
