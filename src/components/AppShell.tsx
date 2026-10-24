@@ -8,7 +8,7 @@ import {
   Layers, ArrowLeft, Settings, Pin, Bell, Calendar,
   Briefcase, Receipt, ArrowUpRight, Calculator, Table, Send
 } from 'lucide-react';
-import { SettingsModal } from '@/components/SettingsModal';
+import { SettingsModal, SettingsTabKey } from '@/components/SettingsModal';
 import { cn } from '@/lib/utils';
 import {
   CommandDialog,
@@ -189,6 +189,19 @@ export function AppShell({
 
   const [commandOpen, setCommandOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<SettingsTabKey>('storage');
+
+  // Listen to global open-settings events from any module
+  useEffect(() => {
+    const handleOpenSettings = (e: any) => {
+      if (e.detail?.tab) {
+        setSettingsActiveTab(e.detail.tab);
+      }
+      setIsSettingsOpen(true);
+    };
+    window.addEventListener('open-settings', handleOpenSettings);
+    return () => window.removeEventListener('open-settings', handleOpenSettings);
+  }, []);
 
   const togglePin = () => {
     setIsPinned(prev => {
@@ -566,6 +579,7 @@ export function AppShell({
       {/* 4. SETTINGS MODAL */}
       <SettingsModal
         isOpen={isSettingsOpen}
+        initialTab={settingsActiveTab}
         onClose={() => setIsSettingsOpen(false)}
       />
     </div>

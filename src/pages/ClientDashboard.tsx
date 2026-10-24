@@ -612,7 +612,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         
         <div className="flex flex-wrap gap-3">
           <button 
-            onClick={() => setShowSettings(true)}
+            onClick={() => window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'gateway' } }))}
             className="px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
           >
             <Settings className="w-4 h-4 text-purple-400" />
@@ -1573,60 +1573,6 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
                 <button onClick={handleGenerateCalendar} className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg font-bold text-xs shadow-lg shadow-blue-500/20 uppercase tracking-wider">Generate calendar</button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 4: GATEWAY & SMTP SETTINGS */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-pop-in" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-              <h3 className="text-white font-bold flex items-center gap-2"><Settings className="w-4 h-4 text-blue-400" /> Gateway Configurations</h3>
-              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
-            </div>
-            
-            <form onSubmit={handleSaveSettings} className="p-6 space-y-4">
-              <div>
-                <h4 className="text-xs font-black text-purple-400 uppercase tracking-widest mb-3">SMTP Mailer Settings</h4>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2">
-                      <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">SMTP Host</label>
-                      <input type="text" value={smtpSettings.host} onChange={(e) => setSmtpSettings({...smtpSettings, host: e.target.value})} className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-white" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Port</label>
-                      <input type="text" value={smtpSettings.port} onChange={(e) => setSmtpSettings({...smtpSettings, port: e.target.value})} className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-white" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Sender Address (Email)</label>
-                    <input type="email" value={smtpSettings.email} onChange={(e) => setSmtpSettings({...smtpSettings, email: e.target.value})} className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Sender Name (Branding Signature)</label>
-                    <input type="text" value={smtpSettings.senderName} onChange={(e) => setSmtpSettings({...smtpSettings, senderName: e.target.value})} className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800">
-                <h4 className="text-xs font-black text-pink-400 uppercase tracking-widest mb-3">SMS Gateway Gateway</h4>
-                <div className="space-y-2">
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Twilio API Key / Gateway Token</label>
-                    <input type="password" value="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" disabled className="w-full h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-slate-500" />
-                  </div>
-                  <p className="text-[8px] text-slate-500 italic">Twilio Sandbox SMS API verified. Standard Indian SMS header: "VASWNI"</p>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowSettings(false)} className="px-4 py-2 border border-slate-700 rounded-lg font-bold text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
-                <button type="submit" className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg font-bold text-xs shadow-lg shadow-blue-500/20 uppercase tracking-wider">Save Settings</button>
-              </div>
-            </form>
           </div>
         </div>
       )}

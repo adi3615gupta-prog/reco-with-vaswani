@@ -1,20 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Settings, Database, Server, RefreshCw, Check, Copy, FolderOpen,
-  X, CheckCircle2, AlertTriangle, HardDrive, Laptop, Sparkles, Sliders
+  X, CheckCircle2, AlertTriangle, HardDrive, Laptop, Sparkles, Sliders,
+  Key, Mail, ShieldAlert, Send, Eye, EyeOff, Building2, Search, Download,
+  FileSpreadsheet, ExternalLink, Trash2, ShieldCheck, CheckCheck, SlidersHorizontal
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
+import { safeApiFetch } from '@/lib/api';
+import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
+
+export interface VaultClient {
+  id: string;
+  gstin: string;
+  trade_name: string;
+  legal_name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  portal_username?: string;
+  portal_password?: string;
+}
+
+export type SettingsTabKey = 'storage' | 'tally' | 'credentials' | 'reco' | 'gateway' | 'appearance';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: SettingsTabKey;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'storage' | 'tally' | 'appearance'>('storage');
+export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab);
 
-  // Storage / Data Path State
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
+
+  // ─── 1. STORAGE / DATA PATH STATE ───
   const [currentDataPath, setCurrentDataPath] = useState<string>('');
   const [newPathInput, setNewPathInput] = useState<string>('');
   const [serverHost, setServerHost] = useState<string>('');
@@ -22,7 +47,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [isSavingStorage, setIsSavingStorage] = useState(false);
 
-  // Tally Bridge State
+  // ─── 2. TALLY BRIDGE STATE ───
   const [tallyHost, setTallyHost] = useState<string>('localhost');
   const [tallyPort, setTallyPort] = useState<number>(() => {
     const saved = localStorage.getItem('np_tally_port');
@@ -32,14 +57,57 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [tallyStatus, setTallyStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
   const [tallyCompany, setTallyCompany] = useState<string>('');
 
-  // Fetch current storage config on open
+  // ─── 3. CREDENTIALS VAULT STATE ───
+  const [vaultClients, setVaultClients] = useState<VaultClient[]>([]);
+  const [loadingVault, setLoadingVault] = useState(false);
+  const [vaultSearch, setVaultSearch] = useState('');
+  const [vaultFilter, setVaultFilter] = useState<'ALL' | 'CONFIGURED' | 'MISSING'>('ALL');
+  const [editedCredentials, setEditedCredentials] = useState<Record<string, Partial<VaultClient>>>({});
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [savingGstin, setSavingGstin] = useState<string | null>(null);
+  const [deletingGstin, setDeletingGstin] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ─── 4. RECO RULES & TOLERANCE STATE ───
+  const [tolerance, setTolerance] = useState<number>(() => {
+    const saved = localStorage.getItem('np_reco_tolerance');
+    return saved ? parseFloat(saved) : 2;
+  });
+  const [fuzzyStrictness, setFuzzyStrictness] = useState<'high' | 'medium' | 'low'>(() => {
+    const saved = localStorage.getItem('np_reco_fuzzy');
+    return (saved as any) || 'high';
+  });
+  const [section164Cutoff, setSection164Cutoff] = useState<boolean>(() => {
+    return localStorage.getItem('np_reco_sec164') !== 'false';
+  });
+  const [rule88aCascade, setRule88aCascade] = useState<boolean>(() => {
+    return localStorage.getItem('np_reco_rule88a') !== 'false';
+  });
+
+  // ─── 5. SMTP & SMS GATEWAY STATE ───
+  const [smtpSettings, setSmtpSettings] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem('np_smtp_settings') ||
+        '{"host":"smtp.mailgun.org","port":"587","email":"notifications@vaswanireturn.com","senderName":"Vaswani & Associates CA"}'
+      );
+    } catch {
+      return { host: "smtp.mailgun.org", port: "587", email: "notifications@vaswanireturn.com", senderName: "Vaswani & Associates CA" };
+    }
+  });
+  const [twilioToken, setTwilioToken] = useState<string>(() => {
+    return localStorage.getItem('np_twilio_token') || 'sk_live_twilio_sandbox_vaswani_token';
+  });
+
+  // Fetch configs on open
   useEffect(() => {
     if (!isOpen) return;
 
-    const fetchConfig = async () => {
+    // 1. Fetch storage config
+    const fetchStorageConfig = async () => {
       setIsLoadingStorage(true);
       try {
-        const res = await fetch('/api/returns/storage-config');
+        const res = await safeApiFetch('/api/returns/storage-config');
         if (res.ok) {
           const data = await res.json();
           if (data && data.success) {
@@ -56,7 +124,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       }
     };
 
-    fetchConfig();
+    // 2. Fetch credentials vault
+    const fetchVault = async () => {
+      setLoadingVault(true);
+      try {
+        const res = await safeApiFetch('/api/ims/credentials');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.clients)) {
+            setVaultClients(data.clients);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed fetching vault:', e);
+      } finally {
+        setLoadingVault(false);
+      }
+    };
+
+    fetchStorageConfig();
+    fetchVault();
   }, [isOpen]);
 
   // Handle saving new data path
@@ -67,7 +154,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
     setIsSavingStorage(true);
     try {
-      const res = await fetch('/api/returns/storage-config', {
+      const res = await safeApiFetch('/api/returns/storage-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataPath: newPathInput.trim() })
@@ -75,6 +162,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       const data = await res.json();
       if (data && data.success) {
         setCurrentDataPath(data.dataPath);
+        window.dispatchEvent(new CustomEvent('storage-config-updated', { detail: { dataPath: data.dataPath } }));
         toast.success('Data Storage Path Updated', {
           description: `All client returns and batches will be stored in: ${data.dataPath}`
         });
@@ -85,6 +173,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       toast.error('Failed to save data path', { description: e.message });
     } finally {
       setIsSavingStorage(false);
+    }
+  };
+
+  // Open directory in Windows File Explorer
+  const handleOpenStorageExplorer = async () => {
+    try {
+      await safeApiFetch('/api/returns/open-storage-folder', { method: 'POST' });
+      toast.success('Opened storage folder in File Explorer');
+    } catch (e: any) {
+      toast.error('Could not open folder', { description: e.message });
     }
   };
 
@@ -104,9 +202,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           if (info && info.name) {
             setTallyCompany(info.name);
           }
-        } catch {
-          // company fetch optional
-        }
+        } catch {}
         toast.success('TallyPrime Connected!', {
           description: `Tally XML Server active on ${tallyHost}:${tallyPort}`
         });
@@ -124,100 +220,263 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   };
 
+  // Save single client credential
+  const handleSaveVaultClient = async (gstin: string) => {
+    const update = editedCredentials[gstin];
+    if (!update) return;
+
+    setSavingGstin(gstin);
+    try {
+      const res = await safeApiFetch('/api/ims/credentials/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gstin,
+          portal_username: update.portal_username,
+          portal_password: update.portal_password,
+          phone: update.phone,
+          trade_name: update.trade_name
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed saving credentials');
+
+      setVaultClients(prev => prev.map(c => {
+        if (c.gstin === gstin) {
+          return {
+            ...c,
+            portal_username: update.portal_username !== undefined ? update.portal_username : c.portal_username,
+            portal_password: update.portal_password !== undefined ? update.portal_password : c.portal_password,
+            phone: update.phone !== undefined ? update.phone : c.phone
+          };
+        }
+        return c;
+      }));
+
+      setEditedCredentials(prev => {
+        const next = { ...prev };
+        delete next[gstin];
+        return next;
+      });
+
+      window.dispatchEvent(new CustomEvent('credentials-updated'));
+      toast.success(`Saved credentials for ${gstin}`);
+    } catch (err: any) {
+      toast.error('Save failed', { description: err?.message });
+    } finally {
+      setSavingGstin(null);
+    }
+  };
+
+  // Delete single client credential
+  const handleDeleteVaultClient = async (gstin: string, tradeName: string) => {
+    if (!window.confirm(`Delete credentials for "${tradeName || gstin}" (${gstin})?`)) return;
+
+    setDeletingGstin(gstin);
+    try {
+      const res = await safeApiFetch(`/api/ims/clients/${encodeURIComponent(gstin)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed deleting client');
+
+      setVaultClients(prev => prev.filter(c => c.gstin !== gstin));
+      toast.success(`Deleted credentials for ${gstin}`);
+    } catch (err: any) {
+      toast.error('Delete failed', { description: err?.message });
+    } finally {
+      setDeletingGstin(null);
+    }
+  };
+
+  // Download Excel template
+  const handleDownloadVaultTemplate = async () => {
+    try {
+      const blob = await generateCredentialsTemplateExcel(vaultClients);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `GST_Client_Credentials_Template_${new Date().getFullYear()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded Credentials Vault Template');
+    } catch (err: any) {
+      toast.error('Failed generating template', { description: err?.message });
+    }
+  };
+
+  // Import Excel sheet
+  const handleImportVaultExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const toastId = toast.loading('Reading & Synchronizing Credentials Excel...');
+    try {
+      const records = await parseCredentialsImportExcel(file);
+      if (!records || records.length === 0) {
+        toast.error('No valid client credential rows found in Excel.', { id: toastId });
+        return;
+      }
+
+      const res = await safeApiFetch('/api/ims/credentials/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clients: records, deleteMissing: false })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed synchronizing credentials');
+
+      // Refresh clients
+      const ref = await safeApiFetch('/api/ims/credentials');
+      const refData = await ref.json();
+      if (refData.success && Array.isArray(refData.clients)) {
+        setVaultClients(refData.clients);
+      }
+
+      toast.success(`Synchronized ${data.importedCount || records.length} clients!`, { id: toastId });
+    } catch (err: any) {
+      toast.error('Import failed', { id: toastId, description: err?.message });
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Filtered vault clients
+  const filteredVaultClients = vaultClients.filter(c => {
+    const q = vaultSearch.toLowerCase();
+    const matchesSearch =
+      (c.trade_name || '').toLowerCase().includes(q) ||
+      (c.legal_name || '').toLowerCase().includes(q) ||
+      c.gstin.toLowerCase().includes(q) ||
+      (c.portal_username || '').toLowerCase().includes(q);
+
+    if (!matchesSearch) return false;
+    const isConfigured = Boolean(c.portal_username && c.portal_password);
+    if (vaultFilter === 'CONFIGURED') return isConfigured;
+    if (vaultFilter === 'MISSING') return !isConfigured;
+    return true;
+  });
+
+  // Save Reco Rules
+  const handleSaveRecoRules = () => {
+    localStorage.setItem('np_reco_tolerance', String(tolerance));
+    localStorage.setItem('np_reco_fuzzy', fuzzyStrictness);
+    localStorage.setItem('np_reco_sec164', String(section164Cutoff));
+    localStorage.setItem('np_reco_rule88a', String(rule88aCascade));
+    toast.success('GST Reco Rules & Tolerance Saved', {
+      description: `Tolerance set to ₹${tolerance} | Fuzzy mode: ${fuzzyStrictness.toUpperCase()}`
+    });
+  };
+
+  // Save SMTP & Gateway
+  const handleSaveGateway = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    localStorage.setItem('np_smtp_settings', JSON.stringify(smtpSettings));
+    localStorage.setItem('np_twilio_token', twilioToken);
+    toast.success('Gateway & SMTP Settings Saved', {
+      description: `Sender: ${smtpSettings.senderName} (${smtpSettings.email})`
+    });
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
-      <div 
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all transform animate-scaleUp"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
+      <div
+        className="w-full max-w-4xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all transform animate-scaleUp"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+        {/* Master Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs">
               <Settings className="w-5 h-5 animate-spin-slow" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                System Settings &amp; Connectivity
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300">
-                  Global Hub
+              <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                Enterprise System Settings
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  Global Control
                 </span>
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Manage shared data storage paths, live TallyPrime XML port, and workspace controls.
+              <p className="text-xs text-slate-500">
+                Centralized storage, live TallyPrime bridge, portal credentials vault, and statutory reconciliation rules.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all"
+            className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-all"
             title="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-100 dark:border-slate-800 px-6 bg-slate-50/50 dark:bg-slate-950/40">
-          <button
-            onClick={() => setActiveTab('storage')}
-            className={`py-3 px-4 font-bold text-xs border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'storage'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            <span>Data Path &amp; LAN Storage</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('tally')}
-            className={`py-3 px-4 font-bold text-xs border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'tally'
-                ? 'border-pink-600 text-pink-600 dark:text-pink-400 dark:border-pink-400'
-                : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Server className="w-4 h-4" />
-            <span>TallyPrime Live Bridge</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('appearance')}
-            className={`py-3 px-4 font-bold text-xs border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'appearance'
-                ? 'border-amber-600 text-amber-600 dark:text-amber-400 dark:border-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Theme &amp; Preferences</span>
-          </button>
+        {/* Master Tab Strip (6 Consolidated Tabs) */}
+        <div className="flex border-b border-slate-100 px-6 bg-slate-50/60 overflow-x-auto scrollbar-none gap-1 pt-1">
+          {[
+            { id: 'storage', label: 'Storage & LAN Path', icon: Database, color: 'border-blue-600 text-blue-700 bg-white' },
+            { id: 'tally', label: 'Tally Port 9000', icon: Server, color: 'border-pink-600 text-pink-700 bg-white' },
+            { id: 'credentials', label: 'Credentials Vault', icon: Key, color: 'border-amber-600 text-amber-700 bg-white', badge: vaultClients.filter(c => c.portal_username && c.portal_password).length },
+            { id: 'reco', label: 'GST Reco Rules', icon: Sliders, color: 'border-emerald-600 text-emerald-700 bg-white' },
+            { id: 'gateway', label: 'SMTP & Gateway', icon: Mail, color: 'border-purple-600 text-purple-700 bg-white' },
+            { id: 'appearance', label: 'Theme & System', icon: Sparkles, color: 'border-slate-800 text-slate-900 bg-white' },
+          ].map(tab => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as SettingsTabKey)}
+                className={`py-2.5 px-3.5 font-bold text-xs border-b-2 flex items-center gap-2 rounded-t-xl transition-all whitespace-nowrap ${
+                  isActive
+                    ? `${tab.color} shadow-2xs`
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-white/60'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                {tab.badge !== undefined && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          {/* TAB 1: DATA STORAGE PATH */}
+        {/* Modal Body Area */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-white">
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 1: DATA STORAGE PATH & LAN
+          ══════════════════════════════════════════════════════════════════════ */}
           {activeTab === 'storage' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-500/5 border border-blue-200/60 dark:border-blue-500/20 text-xs text-slate-600 dark:text-slate-300 space-y-1">
-                <p className="font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200/60 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-blue-900 flex items-center gap-1.5">
                   <HardDrive className="w-4 h-4 text-blue-600" />
-                  Centralized Returns &amp; Client Database Storage
+                  Centralized Returns &amp; Client Database Storage Directory
                 </p>
-                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  All GSTR-2B batches, GSTR-1 matrices, IMS client actions, and reconciliation workbooks are saved in this folder. Set a shared LAN directory (e.g. <code className="font-mono bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-blue-200">\\SERVER\ReturnsData</code>) to allow multi-user office synchronization.
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  All GSTR-2B batches, GSTR-1 matrices, IMS client actions, and reconciliation workbooks are saved in this folder. Set a shared LAN network drive (e.g. <code className="font-mono bg-white px-1 py-0.5 rounded border border-blue-200">\\\\SERVER\\ReturnsData</code>) so all office PCs access identical client records in real time.
                 </p>
               </div>
 
               {/* Current Active Path */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Current Active Storage Path
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">
+                    Current Active Storage Path
+                  </label>
+                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                    Connected &amp; Writable
+                  </span>
+                </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-mono text-xs text-slate-800 dark:text-slate-200 truncate select-all">
+                  <div className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all">
                     {isLoadingStorage ? 'Loading server path...' : currentDataPath || 'Local application directory'}
                   </div>
                   <button
@@ -227,33 +486,41 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         toast.success('Path copied to clipboard');
                       }
                     }}
-                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
-                    title="Copy path"
+                    className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs"
+                    title="Copy Path"
                   >
                     <Copy className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleOpenStorageExplorer}
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                    title="Open Directory in Windows Explorer"
+                  >
+                    <FolderOpen className="w-4 h-4 text-emerald-600" />
+                    <span>Open in Explorer</span>
                   </button>
                 </div>
               </div>
 
               {/* Modify Path Input */}
-              <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Change Data Storage Directory
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="text-xs font-bold text-slate-700">
+                  Update Server Storage Directory (Local Drive or Network Path)
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={newPathInput}
                     onChange={(e) => setNewPathInput(e.target.value)}
-                    placeholder="e.g. D:\VaswaniReturnsData or \\SERVER\SharedReturns"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    placeholder="e.g. D:\\VaswaniReturnsData or \\\\SERVER\\SharedReturns"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                   <button
                     onClick={handleSaveDataPath}
                     disabled={isSavingStorage}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-blue-500/10 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
                   >
-                    {isSavingStorage ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    {isSavingStorage ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
                     <span>Save Path</span>
                   </button>
                 </div>
@@ -261,13 +528,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
               {/* Server Host & IPs */}
               {serverIps.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-                    <Laptop className="w-4 h-4 text-slate-400" /> Server LAN IP:
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium flex items-center gap-1.5">
+                    <Laptop className="w-4 h-4 text-slate-500" /> LAN Server IP Addresses:
                   </span>
-                  <div className="flex gap-1.5 font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                  <div className="flex gap-1.5 font-mono text-[11px] font-bold text-slate-800">
                     {serverIps.slice(0, 3).map((ip, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600">
+                      <span key={i} className="px-2 py-0.5 rounded bg-white border border-slate-200">
                         {ip}
                       </span>
                     ))}
@@ -277,56 +544,58 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           )}
 
-          {/* TAB 2: TALLYPRIME LIVE BRIDGE */}
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 2: TALLYPRIME LIVE BRIDGE (PORT 9000)
+          ══════════════════════════════════════════════════════════════════════ */}
           {activeTab === 'tally' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-pink-50/60 dark:bg-pink-500/5 border border-pink-200/60 dark:border-pink-500/20 text-xs text-slate-600 dark:text-slate-300 space-y-1">
-                <p className="font-bold text-pink-900 dark:text-pink-300 flex items-center gap-1.5">
+              <div className="p-4 rounded-2xl bg-pink-50/60 border border-pink-200/60 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-pink-900 flex items-center gap-1.5">
                   <Server className="w-4 h-4 text-pink-600" />
-                  Real-Time TallyPrime Direct XML Bridge (Port 9000)
+                  Real-Time TallyPrime Direct XML Integration (Port 9000)
                 </p>
-                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  Connects directly to the TallyPrime XML Server running on your workstation or LAN server to fetch Daybooks, Trial Balances, Purchase Vouchers, and TDS records without manual Excel export.
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Connects directly to the TallyPrime XML Server running on this machine or LAN server to fetch Daybooks, Trial Balances, Purchase Registers, and TDS vouchers without manual export.
                 </p>
               </div>
 
               {/* Host & Port Configuration */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2 space-y-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tally Host IP / Domain</label>
+                  <label className="text-xs font-bold text-slate-700">Tally Host IP / Domain</label>
                   <input
                     type="text"
                     value={tallyHost}
                     onChange={(e) => setTallyHost(e.target.value)}
                     placeholder="localhost or 192.168.1.50"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">XML Port</label>
+                  <label className="text-xs font-bold text-slate-700">XML Server Port</label>
                   <input
                     type="number"
                     value={tallyPort}
                     onChange={(e) => setTallyPort(Number(e.target.value))}
                     placeholder="9000"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
                   />
                 </div>
               </div>
 
               {/* Connection Status Box */}
-              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between">
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">Bridge Status</span>
                   <div className="flex items-center gap-2 mt-0.5">
                     {tallyStatus === 'online' && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        TallyPrime Online &amp; Ready
+                        TallyPrime XML Server Online &amp; Ready
                       </span>
                     )}
                     {tallyStatus === 'offline' && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700">
                         <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
                         Tally Server Unreachable
                       </span>
@@ -334,13 +603,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     {tallyStatus === 'unknown' && (
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
                         <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                        Status Unverified
+                        Status Unverified (Click Test Connection)
                       </span>
                     )}
                   </div>
                   {tallyCompany && (
-                    <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium block mt-1">
-                      Active Company: <strong className="text-slate-900 dark:text-white">{tallyCompany}</strong>
+                    <span className="text-[11px] text-slate-700 font-medium block mt-1">
+                      Active Company: <strong className="text-slate-900 font-bold">{tallyCompany}</strong>
                     </span>
                   )}
                 </div>
@@ -348,56 +617,420 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <button
                   onClick={handleTestTally}
                   disabled={isTestingTally}
-                  className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-md shadow-pink-500/10 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
                 >
-                  {isTestingTally ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  <span>Test Connection</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTestingTally ? 'animate-spin' : ''}`} />
+                  <span>Test Port {tallyPort}</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* TAB 3: THEME & PREFERENCES */}
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 3: CREDENTIALS VAULT (PORTAL PASSWORDS & USERNAMES)
+          ══════════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'credentials' && (
+            <div className="space-y-4 animate-fadeIn">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImportVaultExcel}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+
+              {/* Vault Actions Toolbar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={vaultSearch}
+                    onChange={(e) => setVaultSearch(e.target.value)}
+                    placeholder="Search client, GSTIN, username..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Filter Pills */}
+                  <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 text-xs">
+                    {(['ALL', 'CONFIGURED', 'MISSING'] as const).map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setVaultFilter(f)}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${
+                          vaultFilter === f ? 'bg-amber-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={handleDownloadVaultTemplate}
+                    className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                    title="Download Excel Template"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="hidden sm:inline">Template</span>
+                  </button>
+
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 shadow-xs"
+                    title="Import Client Credentials from Excel"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Import Excel</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Clients Credentials List */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto divide-y divide-slate-100">
+                {loadingVault ? (
+                  <div className="p-8 text-center text-xs text-slate-400">Loading credentials vault...</div>
+                ) : filteredVaultClients.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400">No client credentials found matching filter.</div>
+                ) : (
+                  filteredVaultClients.map(c => {
+                    const edit = editedCredentials[c.gstin] || {};
+                    const currentUsername = edit.portal_username !== undefined ? edit.portal_username : (c.portal_username || '');
+                    const currentPassword = edit.portal_password !== undefined ? edit.portal_password : (c.portal_password || '');
+                    const isSaving = savingGstin === c.gstin;
+                    const isDeleting = deletingGstin === c.gstin;
+                    const isVisible = Boolean(showPasswords[c.gstin]);
+
+                    return (
+                      <div key={c.gstin} className="p-3.5 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                        {/* Client Info */}
+                        <div className="min-w-0 md:w-1/3">
+                          <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                            {c.gstin}
+                          </div>
+                        </div>
+
+                        {/* Username & Password Inputs */}
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={currentUsername}
+                            placeholder="Portal Username"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditedCredentials(prev => ({
+                                ...prev,
+                                [c.gstin]: { ...prev[c.gstin], portal_username: val }
+                              }));
+                            }}
+                            className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
+                          />
+                          <div className="relative flex-1">
+                            <input
+                              type={isVisible ? 'text' : 'password'}
+                              value={currentPassword}
+                              placeholder="Portal Password"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditedCredentials(prev => ({
+                                  ...prev,
+                                  [c.gstin]: { ...prev[c.gstin], portal_password: val }
+                                }));
+                              }}
+                              className="w-full px-2.5 py-1.5 pr-8 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPasswords(prev => ({ ...prev, [c.gstin]: !prev[c.gstin] }))}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                            >
+                              {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1.5 shrink-0 justify-end">
+                          <button
+                            onClick={() => handleSaveVaultClient(c.gstin)}
+                            disabled={isSaving}
+                            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                          >
+                            {isSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-emerald-400" />}
+                            <span>Save</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteVaultClient(c.gstin, c.trade_name)}
+                            disabled={isDeleting}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                            title="Delete Client"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 4: GST RECO RULES & TOLERANCE
+          ══════════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'reco' && (
+            <div className="space-y-5 animate-fadeIn">
+              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-4 h-4 text-emerald-600" />
+                  Section 16(2)(aa) Multi-Tier Reconciliation Matching Rules
+                </p>
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Configure maximum tax variance tolerance, alphanumeric cleaning strictness, and Section 16(4) outward cut-off tagging for automated 2B vs Books reconciliation.
+                </p>
+              </div>
+
+              {/* Match Tolerance Settings */}
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Maximum Tax Difference Tolerance (₹)</span>
+                    <span className="text-[11px] text-slate-500">Matched as "Value Mismatch" if variance is within this threshold</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 5, 10].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setTolerance(val)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all border ${
+                          tolerance === val
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        ₹{val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Fuzzy Invoice Strictness */}
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                <div>
+                  <span className="text-xs font-bold text-slate-900 block">Fuzzy Invoice Matching Strictness</span>
+                  <span className="text-[11px] text-slate-500">Controls how aggressive the engine strips invoice serial numbers and prefixes</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'high', title: 'High (Standard)', desc: 'Strips FY prefix & leading zeroes. Exact serial.' },
+                    { id: 'medium', title: 'Medium (Balanced)', desc: 'Strips punctuation, hyphens, and legal suffixes (Pvt Ltd).' },
+                    { id: 'low', title: 'Low (Aggressive)', desc: 'Fuzzy token extraction and phonetic alphanumeric matching.' }
+                  ].map(lvl => (
+                    <button
+                      key={lvl.id}
+                      type="button"
+                      onClick={() => setFuzzyStrictness(lvl.id as any)}
+                      className={`p-3 rounded-xl text-left border transition-all ${
+                        fuzzyStrictness === lvl.id
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="font-bold text-xs block">{lvl.title}</span>
+                      <span className="text-[10px] text-slate-500 leading-tight block mt-1">{lvl.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Statutory Switches */}
+              <div className="space-y-2">
+                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Section 16(4) Inward Cut-off Tagging</span>
+                    <span className="text-[11px] text-slate-500">Automatically flags invoices filed past 30th November as ineligible</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={section164Cutoff}
+                    onChange={(e) => setSection164Cutoff(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded"
+                  />
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Rule 88A Tax Set-off Cascade Priority</span>
+                    <span className="text-[11px] text-slate-500">Exhausts IGST credit completely before utilizing CGST and SGST balances</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={rule88aCascade}
+                    onChange={(e) => setRule88aCascade(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveRecoRules}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Save Reco Rules</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 5: SMTP MAILER & NOTIFICATION GATEWAYS
+          ══════════════════════════════════════════════ */}
+          {activeTab === 'gateway' && (
+            <div className="space-y-5 animate-fadeIn">
+              <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200/60 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-purple-900 flex items-center gap-1.5">
+                  <Mail className="w-4 h-4 text-purple-600" />
+                  Client Dispute Communication Mailer &amp; Gateway Configurations
+                </p>
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Configure custom SMTP mail servers and SMS/WhatsApp gateway credentials for dispatching monthly vendor mismatch notices and 3B reminders.
+                </p>
+              </div>
+
+              {/* SMTP Configurations */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">SMTP Server Settings</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">SMTP Host</label>
+                    <input
+                      type="text"
+                      value={smtpSettings.host}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, host: e.target.value })}
+                      placeholder="e.g. smtp.mailgun.org or smtp.gmail.com"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">Port</label>
+                    <input
+                      type="text"
+                      value={smtpSettings.port}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, port: e.target.value })}
+                      placeholder="587"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">Sender Email Address</label>
+                    <input
+                      type="email"
+                      value={smtpSettings.email}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, email: e.target.value })}
+                      placeholder="accounts@vaswanireturn.com"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">Sender Name (Branding)</label>
+                    <input
+                      type="text"
+                      value={smtpSettings.senderName}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, senderName: e.target.value })}
+                      placeholder="Vaswani & Associates CA"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Twilio & WhatsApp Gateway */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">SMS / WhatsApp Gateway Token</h4>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-600">Twilio / SMS Gateway API Key</label>
+                  <input
+                    type="password"
+                    value={twilioToken}
+                    onChange={(e) => setTwilioToken(e.target.value)}
+                    placeholder="sk_live_..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono outline-none focus:border-purple-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Default Indian DLT header registered: <strong>VASWNI</strong></p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveGateway}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Save Gateway Settings</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 6: THEME & SYSTEM ARCHITECTURE
+          ══════════════════════════════════════════════ */}
           {activeTab === 'appearance' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-500/5 border border-amber-200/60 dark:border-amber-500/20 text-xs text-slate-600 dark:text-slate-300 space-y-1">
-                <p className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-amber-900 flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-amber-600" />
-                  Luminous Fluid Corporate Experience
+                  Luminous Fluid Corporate Architecture
                 </p>
-                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  Clean Apple &amp; Stripe-inspired visual hierarchy with responsive micro-animations, elevated frosted cards, and monospaced financial tables.
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Clean Light Theme Enterprise palette, tabular monospaced currency tables, and strict zero-merge Excel exports.
                 </p>
               </div>
 
               <div className="space-y-3">
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">Fluid Micro-Animations</span>
-                    <span className="text-[11px] text-slate-500">60 FPS spring transitions on cards, buttons, and drawers</span>
+                    <span className="text-xs font-bold text-slate-900 block">Zero-Merge Table Architecture</span>
+                    <span className="text-[11px] text-slate-500">Strips all &lt;mergeCell&gt; tags from exports to ensure 100% sortable &amp; XLOOKUP safe workbooks</span>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
-                    Enabled
+                  <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs">
+                    Strict Active
                   </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">Zero-Merge Table Architecture</span>
-                    <span className="text-[11px] text-slate-500">Ensures all Excel exports remain 100% sortable &amp; XLOOKUP safe</span>
+                    <span className="text-xs font-bold text-slate-900 block">Tabular Figures (JetBrains Mono)</span>
+                    <span className="text-[11px] text-slate-500">Guarantees razor-sharp column alignment across all multi-currency amounts</span>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold text-xs">
-                    Active
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs">
+                    Standard Locked
                   </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">Tabular Figures (JetBrains Mono)</span>
-                    <span className="text-[11px] text-slate-500">Guarantees razor-sharp vertical alignment for multi-currency values</span>
+                    <span className="text-xs font-bold text-slate-900 block">Fluid 60 FPS Spring Animations</span>
+                    <span className="text-[11px] text-slate-500">Smooth hover drawer expansion and floating modal transitions</span>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-bold text-xs">
-                    Locked
+                  <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs">
+                    Optimized
                   </span>
                 </div>
               </div>
@@ -405,14 +1038,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-between">
+        {/* Master Footer */}
+        <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between">
           <span className="text-[10px] font-mono text-slate-400">
-            VASWANI ENTERPRISE • ALL CONFIGURATIONS PERSISTED
+            VASWANI RETURN ENTERPRISE v4.8 • ALL SETTINGS CONSOLIDATED &amp; PERSISTED
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs hover:opacity-90 transition-all shadow-sm"
+            className="px-5 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-all shadow-xs"
           >
             Done
           </button>

@@ -109,9 +109,6 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
     exists: true
   });
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
-  const [showChangePathModal, setShowChangePathModal] = useState(false);
-  const [newPathInput, setNewPathInput] = useState('');
-  const [isSavingPath, setIsSavingPath] = useState(false);
   const [lastServerSyncTime, setLastServerSyncTime] = useState<number | null>(null);
   const [isSyncingToServer, setIsSyncingToServer] = useState(false);
 
@@ -596,42 +593,6 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
     }
   };
 
-  const handleSaveDataPath = async () => {
-    if (!newPathInput.trim()) {
-      toast.error('Please enter a valid directory path.');
-      return;
-    }
-    setIsSavingPath(true);
-    try {
-      const res = await safeApiFetch('/api/returns/storage-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataPath: newPathInput.trim() })
-      });
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Server returned non-JSON response. Please ensure backend is running.');
-      }
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to update storage path');
-      }
-      setServerDataPath(data.dataPath);
-      setShowChangePathModal(false);
-      toast.success('Server Data Path Updated!', {
-        description: `Now storing all client returns in: ${data.dataPath}`
-      });
-      fetchServerStorageConfig();
-      fetchClientsHub();
-    } catch (err: any) {
-      toast.error('Failed updating path', { description: err.message });
-    } finally {
-      setIsSavingPath(false);
-    }
-  };
-
   const handleOpenStorageFolder = async () => {
     try {
       const res = await safeApiFetch('/api/returns/open-folder', { method: 'POST' });
@@ -646,10 +607,25 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
     }
   };
 
-  // Fetch Server storage config & clients hub on mount
+  // Fetch Server storage config & clients hub on mount + listen to settings changes
   useEffect(() => {
     fetchServerStorageConfig();
     fetchClientsHub();
+
+    const handleStorageUpdated = () => {
+      fetchServerStorageConfig();
+      fetchClientsHub();
+    };
+    const handleCredentialsUpdated = () => {
+      fetchClientsHub();
+      fetchVaultClients();
+    };
+    window.addEventListener('storage-config-updated', handleStorageUpdated);
+    window.addEventListener('credentials-updated', handleCredentialsUpdated);
+    return () => {
+      window.removeEventListener('storage-config-updated', handleStorageUpdated);
+      window.removeEventListener('credentials-updated', handleCredentialsUpdated);
+    };
   }, []);
 
   const filteredClients = useMemo(() => {
@@ -1189,11 +1165,10 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               <button
                 type="button"
                 onClick={() => {
-                  setNewPathInput(serverDataPath);
-                  setShowChangePathModal(true);
+                  window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'storage' } }));
                 }}
                 className="p-0.5 hover:text-blue-600"
-                title="Configure Central Server Storage Path"
+                title="Configure Central Server Storage Path in Settings"
               >
                 <Edit3 className="w-3 h-3 text-blue-600" />
               </button>
@@ -1282,7 +1257,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                         type="button"
                         onClick={() => {
                           setIsClientDropdownOpen(false);
-                          setShowCredentialsModal(true);
+                          window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'credentials' } }));
                         }}
                         className="text-amber-600 hover:text-amber-700 font-bold transition-colors"
                       >
@@ -1317,9 +1292,11 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
 
             {/* Credentials Vault */}
             <button
-              onClick={() => setShowCredentialsModal(true)}
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'credentials' } }));
+              }}
               className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1 transition-all"
-              title="Manage Portal Usernames & Passwords"
+              title="Manage Portal Usernames & Passwords in Settings"
             >
               <Key className="w-3.5 h-3.5 text-amber-600" />
               <span className="hidden sm:inline">Vault</span>
@@ -3567,79 +3544,6 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                 className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all disabled:opacity-50 mt-2 text-xs uppercase tracking-wider"
               >
                 {isProcessing ? 'Verifying...' : 'Establish Secure Session'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CHANGE SERVER DATA STORAGE PATH MODAL */}
-      {showChangePathModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
-                  <HardDrive className="w-4 h-4 text-cyan-400" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Configure Server Data Storage Path</h3>
-                  <p className="text-[11px] text-slate-400">Office LAN centralized storage folder</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowChangePathModal(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Specify the shared directory on this server or network drive where all office workstations will read and write client return files:
-            </p>
-
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                Server Directory Path (Local or Network Path)
-              </label>
-              <input
-                type="text"
-                value={newPathInput}
-                onChange={e => setNewPathInput(e.target.value)}
-                placeholder="e.g. D:\GST_MASTER_DATA\Returns or \\SERVER\GST_DATA"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono outline-none focus:border-blue-500"
-              />
-              <p className="text-[11px] text-slate-500 mt-1 font-mono">
-                Current: {serverDataPath}
-              </p>
-            </div>
-
-            <div className="p-3 bg-blue-950/20 border border-blue-500/20 rounded-xl text-xs text-blue-300 space-y-1">
-              <p className="font-semibold flex items-center gap-1.5">
-                <Server className="w-3.5 h-3.5 text-blue-400" /> Multi-PC Office Sharing:
-              </p>
-              <p className="text-[11px] text-slate-400">
-                Any staff member opening software on this LAN network (e.g. <code>http://{serverIps[0] || 'localhost'}:8080</code>) will automatically save to and open client data from this exact folder.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowChangePathModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isSavingPath}
-                onClick={handleSaveDataPath}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 transition-all shadow-md shadow-blue-950 disabled:opacity-50"
-              >
-                {isSavingPath ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                <span>Save & Apply Path</span>
               </button>
             </div>
           </div>
