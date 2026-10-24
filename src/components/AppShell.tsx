@@ -5,7 +5,8 @@ import {
   CalendarClock, ArrowRightLeft, Search, Activity,
   Server, History, Cloud, BookOpen, LogOut,
   ChevronRight, ChevronDown, CheckCircle2,
-  Layers, ArrowLeft, Settings, Pin, Bell, Calendar
+  Layers, ArrowLeft, Settings, Pin, Bell, Calendar,
+  Briefcase, Receipt, ArrowUpRight, Calculator, Table, Send
 } from 'lucide-react';
 import { SettingsModal } from '@/components/SettingsModal';
 import { cn } from '@/lib/utils';
@@ -39,10 +40,14 @@ export type AppRoute =
   | 'clause44'
   | 'voucher-reclass';
 
+export type ReturnsTabKey = 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader';
+
 interface AppShellProps {
   children: React.ReactNode;
   appRoute: AppRoute;
   setAppRoute: (route: AppRoute) => void;
+  returnsTab?: ReturnsTabKey;
+  setReturnsTab?: (tab: ReturnsTabKey) => void;
   companyName?: string;
   financialYear?: string;
   loginUser?: string;
@@ -57,54 +62,109 @@ interface AppShellProps {
   onLogout?: () => void;
 }
 
-interface NavItem {
+export interface ConsolidatedSuite {
   id: AppRoute;
   label: string;
-  suite: string;
   icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  activeBg: string;
+  indicator: string;
   badge?: string;
   desc: string;
+  routes: AppRoute[];
 }
 
-const NAV_ITEMS: NavItem[] = [
-  // Overview
-  { id: 'hub', label: 'Command Hub', suite: 'Overview', icon: Sparkles, desc: 'Central workspace & compliance launcher' },
-  { id: 'dashboard', label: 'Client Dashboard', suite: 'Overview', icon: Users, desc: 'Client portfolio and filings overview' },
+const CONSOLIDATED_SUITES: ConsolidatedSuite[] = [
+  {
+    id: 'dashboard',
+    label: 'Practice & WIP',
+    icon: Briefcase,
+    color: 'text-amber-500 group-hover/item:text-amber-600',
+    activeBg: 'bg-amber-50 text-amber-800 border-amber-200/80',
+    indicator: 'bg-amber-500',
+    desc: 'Practice control, clients & WIP tracking',
+    routes: ['dashboard', 'tracker', 'fin-statements', 'cma', 'voucher-reclass']
+  },
+  {
+    id: 'reco',
+    label: 'GST & TDS Reco',
+    icon: Receipt,
+    color: 'text-emerald-600 group-hover/item:text-emerald-700',
+    activeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
+    indicator: 'bg-emerald-500',
+    badge: 'Core',
+    desc: '2B vs Books reconciliation & 12M Consolidation',
+    routes: ['reco', 'consolidation', 'gstin-scan', 'tds-reco']
+  },
+  {
+    id: 'tally-direct',
+    label: 'Tally Connectors',
+    icon: Database,
+    color: 'text-pink-600 group-hover/item:text-pink-700',
+    activeBg: 'bg-pink-50 text-pink-800 border-pink-200/80',
+    indicator: 'bg-pink-500',
+    badge: 'Live',
+    desc: 'Direct Port 9000 & XML integration',
+    routes: ['tally-direct', 'ledger-import', 'tally']
+  },
+  {
+    id: 'returns',
+    label: 'Returns & Filing',
+    icon: Send,
+    color: 'text-blue-600 group-hover/item:text-blue-700',
+    activeBg: 'bg-blue-50 text-blue-800 border-blue-200/80',
+    indicator: 'bg-blue-600',
+    badge: 'Auto',
+    desc: 'GSTR-3B Working, FY Matrix, IMS & Autopilot',
+    routes: ['returns']
+  },
+  {
+    id: 'audit',
+    label: 'Statutory Audit',
+    icon: ShieldCheck,
+    color: 'text-indigo-600 group-hover/item:text-indigo-700',
+    activeBg: 'bg-indigo-50 text-indigo-800 border-indigo-200/80',
+    indicator: 'bg-indigo-600',
+    desc: 'Sampling, checklists, Clause 44 & depreciation',
+    routes: ['audit', 'clause44', 'depreciation']
+  },
+  {
+    id: 'income-tax',
+    label: 'Income Tax',
+    icon: Landmark,
+    color: 'text-slate-800 group-hover/item:text-slate-900',
+    activeBg: 'bg-slate-100 text-slate-900 border-slate-300',
+    indicator: 'bg-slate-800',
+    badge: 'New',
+    desc: 'Old vs New regime computation sandbox',
+    routes: ['income-tax']
+  },
+  {
+    id: 'bank-cma',
+    label: 'CMA Bank Credit',
+    icon: Activity,
+    color: 'text-cyan-600 group-hover/item:text-cyan-700',
+    activeBg: 'bg-cyan-50 text-cyan-800 border-cyan-200/80',
+    indicator: 'bg-cyan-600',
+    desc: 'Bank appraisal, MPBF II & CMA projection',
+    routes: ['bank-cma']
+  }
+];
 
-  // Practice & WIP
-  { id: 'tracker', label: 'GSTR-2B Tracker', suite: 'Practice & WIP', icon: Activity, desc: 'Multi-month ITC availability & filing tracker' },
-  { id: 'fin-statements', label: 'Financial Statements', suite: 'Practice & WIP', icon: FileSpreadsheet, desc: 'Automated Balance Sheet & P&L generation' },
-  { id: 'cma', label: 'CMA Project Report', suite: 'Practice & WIP', icon: Landmark, desc: 'Term loan feasibility, CapEx & debt amortization' },
-  { id: 'voucher-reclass', label: 'Voucher Reclassifier', suite: 'Practice & WIP', icon: ArrowRightLeft, desc: 'Batch classify and adjust ledger allocations' },
-
-  // GST Inward & Reco
-  { id: 'reco', label: 'GST Reco Engine', suite: 'GST Inward & Reco', icon: Layers, badge: 'Core', desc: '6-pass 2B vs Books reconciliation with debit note solver' },
-  { id: 'consolidation', label: '12M Consolidation', suite: 'GST Inward & Reco', icon: FileSpreadsheet, desc: 'Full-year multi-file books consolidator' },
-  { id: 'gstin-scan', label: 'GSTIN Scanner', suite: 'GST Inward & Reco', icon: Search, desc: 'Multi-party GSTIN validation & status scanner' },
-
-  // Returns & Filing
-  { id: 'returns', label: 'Returns Mission Control', suite: 'Returns & Filing', icon: CloudDownload, badge: 'Auto', desc: 'GSTR-2B 12M Autopilot, GSTR-1, IMS & 3B Matrix' },
-
-  // Tally Connectors
-  { id: 'tally-direct', label: 'Tally Direct (Port 9000)', suite: 'Tally Connectors', icon: Database, badge: 'Live', desc: 'Zero-export direct XML sync from Tally Prime' },
-  { id: 'ledger-import', label: 'Tally Ledger Import', suite: 'Tally Connectors', icon: FileCode2, desc: 'Direct trial balance and ledger mapping' },
-  { id: 'tally', label: 'XML Converter', suite: 'Tally Connectors', icon: RotateCcw, desc: 'Convert offline Tally XML exports' },
-
-  // Statutory Audit
-  { id: 'audit', label: 'Statutory Audit', suite: 'Statutory Audit', icon: ShieldCheck, desc: 'Audit sampling, checklists & substantive testing' },
-  { id: 'clause44', label: 'Tax Audit Clause 44', suite: 'Statutory Audit', icon: ShieldAlert, desc: 'GST expenditure breakdown for Form 3CD' },
-  { id: 'depreciation', label: 'Depreciation Engine', suite: 'Statutory Audit', icon: CalendarClock, desc: 'Companies Act Schedule II vs IT Act WDV depreciation' },
-
-  // Income Tax Suite
-  { id: 'income-tax', label: 'Income Tax Sandbox', suite: 'Income Tax Suite', icon: Landmark, badge: 'New', desc: 'Old vs New regime computation & tax liability' },
-  { id: 'tds-reco', label: 'TDS Reco & TRACES', suite: 'Income Tax Suite', icon: ShieldCheck, desc: 'Form 26AS & TRACES vs Books TDS reconciliation' },
-  { id: 'bank-cma', label: 'Bank CMA Appraisal', suite: 'Income Tax Suite', icon: Landmark, desc: 'Tandon Committee MPBF, ratios & CMA projection' },
+const RETURNS_SUBMODULES: { id: ReturnsTabKey; num: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'working3b', num: '01', label: 'GSTR-3B Working', icon: Calculator },
+  { id: 'matrix', num: '02', label: '12M FY Matrix', icon: Table },
+  { id: 'ims2b', num: '03', label: 'Nexus IMS Hub', icon: Sparkles },
+  { id: 'gstr2b_downloader', num: '04', label: 'Inward 2B Autopilot', icon: CloudDownload },
+  { id: 'gstr1_downloader', num: '05', label: 'Outward GSTR-1', icon: ArrowUpRight }
 ];
 
 export function AppShell({
   children,
   appRoute,
   setAppRoute,
+  returnsTab = 'working3b',
+  setReturnsTab,
   companyName,
   financialYear = '2024-25',
   loginUser = 'Admin',
@@ -152,56 +212,6 @@ export function AppShell({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const currentItem = NAV_ITEMS.find(item => item.id === appRoute) || NAV_ITEMS[0];
-  const suites = Array.from(new Set(NAV_ITEMS.map(i => i.suite)));
-
-  const getSuiteAccent = (suite: string) => {
-    switch (suite) {
-      case 'Practice & WIP':
-        return {
-          iconColor: 'text-amber-500 group-hover/item:text-amber-600',
-          activeBg: 'bg-amber-50 text-amber-800 border-amber-200/70',
-          indicator: 'bg-amber-500'
-        };
-      case 'GST Inward & Reco':
-        return {
-          iconColor: 'text-emerald-600 group-hover/item:text-emerald-700',
-          activeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200/70',
-          indicator: 'bg-emerald-500'
-        };
-      case 'Tally Connectors':
-        return {
-          iconColor: 'text-pink-600 group-hover/item:text-pink-700',
-          activeBg: 'bg-pink-50 text-pink-800 border-pink-200/70',
-          indicator: 'bg-pink-500'
-        };
-      case 'Returns & Filing':
-        return {
-          iconColor: 'text-blue-600 group-hover/item:text-blue-700',
-          activeBg: 'bg-blue-50 text-blue-800 border-blue-200/70',
-          indicator: 'bg-blue-600'
-        };
-      case 'Statutory Audit':
-        return {
-          iconColor: 'text-indigo-600 group-hover/item:text-indigo-700',
-          activeBg: 'bg-indigo-50 text-indigo-800 border-indigo-200/70',
-          indicator: 'bg-indigo-600'
-        };
-      case 'Income Tax Suite':
-        return {
-          iconColor: 'text-slate-800 group-hover/item:text-slate-900',
-          activeBg: 'bg-slate-100 text-slate-900 border-slate-300',
-          indicator: 'bg-slate-800'
-        };
-      default:
-        return {
-          iconColor: 'text-slate-600 group-hover/item:text-slate-900',
-          activeBg: 'bg-slate-100 text-slate-900 border-slate-200',
-          indicator: 'bg-slate-900'
-        };
-    }
-  };
-
   const getInitials = (name?: string) => {
     if (!name) return 'CV';
     const parts = name.trim().split(/\s+/);
@@ -213,7 +223,7 @@ export function AppShell({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-slate-800 font-sans">
-      {/* 1. SMART COLLAPSIBLE INTERACTIVE SIDEBAR */}
+      {/* 1. SMART CONSOLIDATED COLLAPSIBLE INTERACTIVE SIDEBAR RAIL */}
       <aside
         id="smartSidebar"
         className={cn(
@@ -226,13 +236,14 @@ export function AppShell({
           <div
             onClick={() => setAppRoute('hub')}
             className="flex items-center gap-3 overflow-hidden cursor-pointer"
-            title="Vaswani Return Enterprise"
+            title="Vaswani Return Enterprise (Click to return to Central Hub)"
           >
-            <div className="w-9 h-9 flex items-center justify-center flex-shrink-0 rounded-lg p-0.5 bg-slate-50 border border-slate-100">
+            <div className="w-9 h-9 flex items-center justify-center flex-shrink-0 rounded-lg p-0.5 bg-slate-50 border border-slate-200/80 shadow-2xs">
               <img
-                src="./logo.png"
+                src="/favicon.png"
                 alt="Vaswani Logo"
                 className="h-7 w-auto object-contain transition-transform duration-300 group-hover/sidebar:scale-105"
+                onError={(e: any) => { e.target.src = "./logo.png"; }}
               />
             </div>
             <div className={cn("transition-opacity duration-200 whitespace-nowrap overflow-hidden", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}>
@@ -254,75 +265,119 @@ export function AppShell({
           </button>
         </div>
 
-        {/* Navigation Rail Items */}
-        <nav className="flex-1 px-2.5 py-3 space-y-3 overflow-y-auto overflow-x-hidden scrollbar-none">
-          {suites.map(suite => {
-            const items = NAV_ITEMS.filter(item => item.suite === suite);
-            const accent = getSuiteAccent(suite);
+        {/* Consolidated Primary Suites Navigation Rail */}
+        <nav className="flex-1 px-2.5 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-none">
+          {CONSOLIDATED_SUITES.map(suite => {
+            const Icon = suite.icon;
+            const isSuiteActive = suite.routes.includes(appRoute);
 
             return (
-              <div key={suite} className="space-y-1">
-                <div className={cn(
-                  "px-2.5 py-1 text-[9px] font-mono tracking-widest text-slate-400 uppercase font-bold transition-opacity duration-200 truncate",
-                  isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
-                )}>
-                  {suite}
-                </div>
+              <div key={suite.id} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setAppRoute(suite.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group/item relative border",
+                    isSuiteActive
+                      ? cn(suite.activeBg, "shadow-xs font-semibold")
+                      : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
+                  )}
+                  title={suite.desc}
+                >
+                  <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                    <Icon className={cn("w-4 h-4 transition-transform group-hover/item:scale-110", isSuiteActive ? suite.color : "text-slate-500")} />
+                  </div>
+                  <span className={cn(
+                    "whitespace-nowrap transition-opacity duration-200 truncate flex-1 text-left font-medium",
+                    isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+                  )}>
+                    {suite.label}
+                  </span>
+                  {suite.badge && (
+                    <span className={cn(
+                      "text-[9px] px-1.5 py-0.2 rounded-full font-mono uppercase tracking-wider font-bold shrink-0 transition-opacity duration-200",
+                      isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100",
+                      suite.badge === 'Live' ? 'bg-pink-50 text-pink-700 border border-pink-200' :
+                      suite.badge === 'Core' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                      'bg-blue-50 text-blue-700 border border-blue-200'
+                    )}>
+                      {suite.badge}
+                    </span>
+                  )}
+                  {isSuiteActive && (
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full shrink-0 transition-opacity duration-200",
+                      suite.indicator,
+                      isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+                    )}></span>
+                  )}
+                </button>
 
-                {items.map(item => {
-                  const Icon = item.icon;
-                  const isActive = appRoute === item.id;
-
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setAppRoute(item.id)}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-xs font-medium transition-all group/item relative",
-                        isActive
-                          ? cn(accent.activeBg, "shadow-xs font-semibold")
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
-                      )}
-                      title={item.label}
-                    >
-                      <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                        <Icon className={cn("w-4 h-4 transition-transform group-hover/item:scale-110", isActive ? accent.iconColor : "text-slate-500")} />
-                      </div>
-                      <span className={cn(
-                        "whitespace-nowrap transition-opacity duration-200 truncate flex-1 text-left",
-                        isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
-                      )}>
-                        {item.label}
-                      </span>
-                      {item.badge && (
-                        <span className={cn(
-                          "text-[9px] px-1.5 py-0.2 rounded-full font-mono uppercase tracking-wider font-bold shrink-0 transition-opacity duration-200",
-                          isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100",
-                          item.badge === 'Live' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                          item.badge === 'Core' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                          'bg-amber-50 text-amber-700 border border-amber-200'
-                        )}>
-                          {item.badge}
-                        </span>
-                      )}
-                      {isActive && (
-                        <span className={cn(
-                          "w-1.5 h-1.5 rounded-full shrink-0 transition-opacity duration-200",
-                          accent.indicator,
-                          isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
-                        )}></span>
-                      )}
-                    </button>
-                  );
-                })}
+                {/* If Returns & Filing is active, show the 5 standalone submodules */}
+                {suite.id === 'returns' && isSuiteActive && (
+                  <div className={cn(
+                    "pl-8 pr-1 space-y-1 transition-all duration-200",
+                    isPinned ? "block" : "hidden group-hover/sidebar:block"
+                  )}>
+                    {RETURNS_SUBMODULES.map(sub => {
+                      const SubIcon = sub.icon;
+                      const isSubActive = returnsTab === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (setReturnsTab) setReturnsTab(sub.id);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-all text-left truncate",
+                            isSubActive
+                              ? "bg-blue-100/80 text-blue-900 font-bold"
+                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                          )}
+                        >
+                          <SubIcon className={cn("w-3 h-3 shrink-0", isSubActive ? "text-blue-700" : "text-slate-400")} />
+                          <span className="truncate">{sub.num}. {sub.label}</span>
+                          {isSubActive && <span className="w-1 h-1 rounded-full bg-blue-600 ml-auto shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
+
+          <div className="pt-2">
+            <div className="border-t border-slate-100 mx-1" />
+          </div>
+
+          {/* Central Hub Quick Link */}
+          <button
+            type="button"
+            onClick={() => setAppRoute('hub')}
+            className={cn(
+              "w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all",
+              appRoute === 'hub' ? "bg-slate-100 text-slate-900 font-bold" : ""
+            )}
+            title="Return to Central Compliance Workspace"
+          >
+            <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-4 h-4 text-purple-500" />
+            </div>
+            <span className={cn(
+              "whitespace-nowrap transition-opacity duration-200 truncate flex-1 text-left",
+              isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+            )}>
+              Central Command Hub
+            </span>
+          </button>
         </nav>
 
-        {/* Sidebar Footer / Status & Profile Preview */}
+        {/* Sidebar Footer / Diagnostics & Settings */}
         <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2 flex-shrink-0">
-          {/* Bottom-Left Settings Tab Trigger */}
+          {/* Settings Trigger */}
           <button
             type="button"
             onClick={() => setIsSettingsOpen(true)}
@@ -355,7 +410,7 @@ export function AppShell({
             <span className="font-mono text-[10px]">Engine v4.8</span>
             <span className="flex items-center gap-1 text-emerald-600 font-medium text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Sync OK</span>
+              <span>Online</span>
             </span>
           </div>
         </div>
@@ -366,108 +421,116 @@ export function AppShell({
         "flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300",
         isPinned ? "pl-64" : "pl-16"
       )}>
-        {/* Standardized Top Header */}
-        <header className="sticky top-0 z-40 bg-[#F8FAFC]/85 backdrop-blur-md border-b border-slate-200/60 px-6 py-2.5 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Omni-search Bar */}
-            <div
-              onClick={() => setCommandOpen(true)}
-              className="relative flex items-center cursor-pointer group"
-            >
-              <Search className="absolute left-3 text-slate-400 group-hover:text-slate-600 w-4 h-4 transition-colors" />
-              <input
-                type="text"
-                readOnly
-                placeholder="Omni-search clients, GSTIN, vouchers..."
-                className="w-56 sm:w-72 md:w-80 pl-9 pr-14 py-1.5 rounded-full bg-white text-xs font-medium text-slate-700 placeholder:text-slate-400 border border-slate-200 focus:outline-none group-hover:border-blue-400 transition-all shadow-xs cursor-pointer"
-              />
-              <kbd className="absolute right-2.5 text-[10px] text-slate-400 bg-slate-100 font-mono px-1.5 py-0.5 rounded border border-slate-200 shadow-xs">
-                ⌘K
-              </kbd>
-            </div>
-
-            {/* Live Bridge Status Pill */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-[11px] font-medium text-emerald-700 shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Tally Port 9000 Connected</span>
-            </div>
-          </div>
-
-          {/* Right Header Controls */}
-          <div className="flex items-center gap-2.5">
-            {/* FY Badge Pill */}
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200/80 rounded-full text-xs font-medium text-slate-700 shadow-xs cursor-pointer hover:bg-slate-50 transition-colors">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span className="font-mono font-semibold">FY {financialYear || '2024-25'}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </div>
-
-            {/* Notifications Bell */}
-            <button
-              type="button"
-              className="relative w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors shadow-xs"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
-            </button>
-
-            {/* Client Quick Switcher */}
-            <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="text-right">
-                <div className="text-xs font-bold text-slate-900 truncate max-w-[160px]">
-                  {companyName || 'Reliance Digital Logistics'}
-                </div>
-                <div className="text-[10px] text-slate-400 font-mono">
-                  27AABCV96041Z25
-                </div>
+        {/* Standardized Top Header (Hidden on Returns to allow Elevated Floating Navbar) */}
+        {appRoute !== 'returns' && (
+          <header className="sticky top-0 z-40 bg-[#F8FAFC]/85 backdrop-blur-md border-b border-slate-200/60 px-6 py-2.5 flex items-center justify-between gap-4 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Omni-search Bar */}
+              <div
+                onClick={() => setCommandOpen(true)}
+                className="relative flex items-center cursor-pointer group"
+              >
+                <Search className="absolute left-3 text-slate-400 group-hover:text-slate-600 w-4 h-4 transition-colors" />
+                <input
+                  type="text"
+                  readOnly
+                  placeholder="Omni-search clients, GSTIN, vouchers..."
+                  className="w-56 sm:w-72 md:w-80 pl-9 pr-14 py-1.5 rounded-full bg-white text-xs font-medium text-slate-700 placeholder:text-slate-400 border border-slate-200 focus:outline-none group-hover:border-blue-400 transition-all shadow-xs cursor-pointer"
+                />
+                <kbd className="absolute right-2.5 text-[10px] text-slate-400 bg-slate-100 font-mono px-1.5 py-0.5 rounded border border-slate-200 shadow-xs">
+                  ⌘K
+                </kbd>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-                {getInitials(companyName || 'Reliance Digital Logistics')}
+
+              {/* Live Bridge Status Pill */}
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-[11px] font-medium text-emerald-700 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Tally Port 9000 Connected</span>
               </div>
             </div>
 
-            {/* Optional Utilities: Backups, Guide, Admin, Logout */}
-            <div className="flex items-center gap-1 pl-1">
-              {onOpenHistory && (
-                <button
-                  type="button"
-                  onClick={onOpenHistory}
-                  className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="History & Backups"
-                >
-                  <History className="w-4 h-4" />
-                </button>
-              )}
+            {/* Right Header Controls */}
+            <div className="flex items-center gap-2.5">
+              {/* FY Badge Pill */}
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200/80 rounded-full text-xs font-medium text-slate-700 shadow-xs cursor-pointer hover:bg-slate-50 transition-colors">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span className="font-mono font-semibold">FY {financialYear || '2024-25'}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </div>
 
-              {onOpenUserGuide && (
-                <button
-                  type="button"
-                  onClick={onOpenUserGuide}
-                  className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="User Guide"
-                >
-                  <BookOpen className="w-4 h-4" />
-                </button>
-              )}
+              {/* Notifications Bell */}
+              <button
+                type="button"
+                className="relative w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors shadow-xs"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
+              </button>
 
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
-                  title="Logout"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
+              {/* Client Quick Switcher */}
+              <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div className="text-right">
+                  <div className="text-xs font-bold text-slate-900 truncate max-w-[160px]">
+                    {companyName || 'DYP INFRAPROJECTS'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    27AAGCD4105L1ZO
+                  </div>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                  {getInitials(companyName || 'DYP INFRAPROJECTS')}
+                </div>
+              </div>
+
+              {/* Optional Utilities */}
+              <div className="flex items-center gap-1 pl-1">
+                {onOpenHistory && (
+                  <button
+                    type="button"
+                    onClick={onOpenHistory}
+                    className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                    title="History & Backups"
+                  >
+                    <History className="w-4 h-4" />
+                  </button>
+                )}
+
+                {onOpenUserGuide && (
+                  <button
+                    type="button"
+                    onClick={onOpenUserGuide}
+                    className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                    title="User Guide"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                  </button>
+                )}
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                    title="Logout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* Dynamic Module Content View */}
-        <main className="flex-1 overflow-y-auto relative px-4 py-2 sm:px-6 sm:py-3 bg-[#F8FAFC]">
-          <div className="max-w-[1720px] mx-auto w-full">
+        <main className={cn(
+          "flex-1 overflow-y-auto relative bg-[#F8FAFC]",
+          appRoute === 'returns' ? "p-0" : "px-4 py-2 sm:px-6 sm:py-3"
+        )}>
+          <div className={cn(
+            "w-full",
+            appRoute === 'returns' ? "" : "max-w-[1720px] mx-auto"
+          )}>
             {children}
           </div>
         </main>
@@ -478,34 +541,33 @@ export function AppShell({
         <CommandInput placeholder="Type a module name or action (e.g. Reco, 2B, Tally)..." />
         <CommandList className="max-h-[380px] overflow-y-auto">
           <CommandEmpty>No compliance module found.</CommandEmpty>
-          {suites.map(suite => (
-            <CommandGroup key={suite} heading={suite}>
-              {NAV_ITEMS.filter(i => i.suite === suite).map(item => {
-                const Icon = item.icon;
-                return (
-                  <CommandItem
-                    key={item.id}
-                    onSelect={() => {
-                      setAppRoute(item.id);
-                      setCommandOpen(false);
-                    }}
-                    className="flex items-center gap-3 px-3 py-2.5 cursor-pointer rounded-lg aria-selected:bg-blue-600/20 aria-selected:text-white"
-                  >
-                    <Icon className="w-4 h-4 text-blue-400 shrink-0" />
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-semibold text-xs text-white">{item.label}</span>
-                      <span className="text-[10px] text-slate-400 truncate">{item.desc}</span>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          ))}
+          <CommandGroup heading="Compliance Suites">
+            {CONSOLIDATED_SUITES.map(suite => {
+              const Icon = suite.icon;
+              return (
+                <CommandItem
+                  key={suite.id}
+                  onSelect={() => {
+                    setAppRoute(suite.id);
+                    setCommandOpen(false);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                >
+                  <Icon className={cn("w-4 h-4", suite.color)} />
+                  <span className="font-semibold">{suite.label}</span>
+                  <span className="text-xs text-slate-400 ml-auto">{suite.desc}</span>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
         </CommandList>
       </CommandDialog>
 
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      {/* 4. SETTINGS MODAL */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }
-export default AppShell;

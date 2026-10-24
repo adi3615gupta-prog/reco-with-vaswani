@@ -1769,6 +1769,8 @@ export default function Index() {
         <AppShell
           appRoute={appRoute}
           setAppRoute={setAppRoute}
+          returnsTab={returnsInitialTab}
+          setReturnsTab={setReturnsInitialTab}
           companyName={companyName}
           loginUser={loginUser}
           networkDiagnostics={networkDiagnostics}

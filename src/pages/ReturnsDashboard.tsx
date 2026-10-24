@@ -1122,279 +1122,180 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
         className="hidden"
       />
 
-      {/* ─── 1. TOP STRIP: BACK & SERVER STORAGE (LEFT) + MODULE TITLE (RIGHT) ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-        {/* Left: Back to Hub + Server Storage Pill + LAN Active */}
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <button
-            onClick={onBack}
-            className="text-slate-400 hover:text-white flex items-center gap-1 font-bold uppercase tracking-wider text-[10px] transition-colors bg-slate-900/90 hover:bg-slate-800 border border-slate-800 px-2 py-1 rounded-lg"
-            title="Back to Hub"
-          >
-            <ArrowLeft className="w-3 h-3" /> Hub
-          </button>
-
-          {/* Server Storage Pill */}
-          <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 px-2.5 py-1 rounded-lg text-slate-400">
-            <HardDrive className="w-3 h-3 text-cyan-400 shrink-0" />
-            <span className="font-semibold text-slate-300 text-[11px] hidden sm:inline">Server:</span>
-            <span
-              className="font-mono text-[10px] text-slate-300 truncate max-w-[130px] sm:max-w-[260px] select-all cursor-text"
-              title={serverDataPath || 'Loading server path...'}
-            >
-              {serverDataPath ? (serverDataPath.length > 32 ? '...' + serverDataPath.slice(-30) : serverDataPath) : 'Loading path...'}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (serverDataPath) {
-                  navigator.clipboard.writeText(serverDataPath);
-                  toast.success('Server path copied to clipboard!');
-                }
-              }}
-              className="p-0.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-              title="Copy Server Path"
-            >
-              <Copy className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenStorageFolder}
-              className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold transition-colors flex items-center gap-0.5"
-              title="Open Folder in File Explorer"
-            >
-              <FolderOpen className="w-3 h-3 text-emerald-400" /> Open
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setNewPathInput(serverDataPath);
-                setShowChangePathModal(true);
-              }}
-              className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold transition-colors flex items-center gap-0.5"
-              title="Change Server Data Path"
-            >
-              <Edit3 className="w-3 h-3 text-blue-400" /> Change
-            </button>
+            {/* ─── TOP ELEVATED FLOATING NAVBAR (1:1 with Stitch design) ─── */}
+      <header className="sticky top-0 z-40 px-4 sm:px-6 pt-3 pb-2 bg-[#F8FAFC]/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto min-h-16 bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-slate-200/80">
+          {/* Client Info (ALL CAPS, enlarged, prominent) */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col text-left min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight truncate">
+                  {workingData.profile.firmName || 'DYP INFRAPROJECTS PRIVATE LIMITED'}
+                </h1>
+                <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold uppercase tracking-wider shrink-0">
+                  {workingData.profile.gstnStatus || 'Active Taxpayer'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100 transition-colors shrink-0"
+                  title="Edit Taxpayer / Firm Details"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-mono flex-wrap">
+                <span>GST No. <strong className="text-slate-700">{workingData.profile.gstin || '27AAGCD4105L1ZO'}</strong></span>
+                <span className="text-slate-300 hidden sm:inline">•</span>
+                <span className="hidden sm:inline text-slate-600 truncate max-w-md">
+                  {workingData.profile.address || 'Plot No. 185 And 186, Office No. 112 & 113, Kohinoor Majestic Building, Pimpri Chinchwad, Pune 411019'}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* LAN diagnostics badge */}
-          <div className="hidden md:flex items-center gap-1.5 text-[10px] font-mono text-slate-400 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800">
-            <Server className="w-3 h-3 text-purple-400" />
-            <span>{serverHost || 'localhost'}</span>
-            <span>•</span>
-            <Database className="w-3 h-3 text-cyan-400" />
-            <span className="text-slate-300 font-semibold">{storageStats.totalClientsWithData} on Disk</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          </div>
-        </div>
-
-        {/* Right: Sleek Module Title */}
-        <div className="flex items-center gap-2 sm:ml-auto">
-          <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold shrink-0">
-            <Calculator className="w-3.5 h-3.5" />
-          </div>
-          <div className="text-right">
-            <h1 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-1.5 justify-end">
-              <span>04. Returns Preparation & Filing</span>
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-medium border border-purple-500/30">
-                GSTR-3B v2.0
+          {/* Switch Client, FY Selector, Vault & Action Controls */}
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {/* Server Storage Pill */}
+            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-mono">
+              <HardDrive className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+              <span className="truncate max-w-[110px]" title={serverDataPath || 'Server path'}>
+                {serverDataPath ? (serverDataPath.length > 16 ? '...' + serverDataPath.slice(-14) : serverDataPath) : 'Server'}
               </span>
-            </h1>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── 2. CLIENT COMMAND COCKPIT (COMPACT 2-ROW HIGH DENSITY DECK) ─── */}
-      <div className="relative z-30 bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-3.5 shadow-xs backdrop-blur-md space-y-2">
-        {/* Upper Row: Client Identity + Switcher + Vault Actions */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
-          {/* Left: Selected Client Firm & GSTIN + Switch Client */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-900/30 ring-1 ring-blue-500/20">
-              <Building2 className="w-4 h-4" />
+              <button
+                type="button"
+                onClick={() => {
+                  if (serverDataPath) {
+                    navigator.clipboard.writeText(serverDataPath);
+                    toast.success('Server path copied!');
+                  }
+                }}
+                className="p-0.5 hover:text-slate-900"
+                title="Copy Server Path"
+              >
+                <Copy className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenStorageFolder}
+                className="p-0.5 hover:text-emerald-600"
+                title="Open Folder in File Explorer"
+              >
+                <FolderOpen className="w-3 h-3 text-emerald-600" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewPathInput(serverDataPath);
+                  setShowChangePathModal(true);
+                }}
+                className="p-0.5 hover:text-blue-600"
+                title="Configure Central Server Storage Path"
+              >
+                <Edit3 className="w-3 h-3 text-blue-600" />
+              </button>
             </div>
 
-            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            {/* Switch Client Button & Popover */}
+            <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                className="group text-sm sm:text-base font-extrabold text-slate-900 tracking-tight hover:text-blue-600 transition-colors flex items-center gap-1.5 text-left truncate"
-                title="Click to Switch Client"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 shadow-2xs hover:shadow-xs transition-all text-xs font-semibold"
               >
-                <span className="truncate">{workingData.profile.firmName || 'Select a Client to Begin'}</span>
-                <ChevronDown className={`w-3.5 h-3.5 text-blue-400 shrink-0 transition-transform ${isClientDropdownOpen ? 'rotate-180' : ''}`} />
+                <Users className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">Switch Client</span>
+                <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded-full">
+                  {clientsHub.length || vaultClients.length}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isClientDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(true)}
-                className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100 transition-colors"
-                title="Edit client profile"
-              >
-                <Edit3 className="w-3 h-3" />
-              </button>
-
-              {/* GSTIN badge */}
-              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono text-[11px] text-slate-700 font-semibold">
-                <span className="text-[9px] text-slate-500 uppercase font-sans">GSTIN:</span>
-                <span>{workingData.profile.gstin || 'Not Specified'}</span>
-              </div>
-
-              {/* Client Switcher Dropdown Button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all"
-                >
-                  <Users className="w-3 h-3 text-blue-200" />
-                  <span>Switch ({clientsHub.length || vaultClients.length})</span>
-                </button>
-
-                {/* Client Picker Dropdown Popover */}
-                {isClientDropdownOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setIsClientDropdownOpen(false)}
-                    />
-
-                    <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
-                      {/* Search box inside dropdown */}
-                      <div className="relative mb-2">
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={clientSearchQuery}
-                          onChange={e => setClientSearchQuery(e.target.value)}
-                          placeholder="Search client name or GSTIN..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 transition-colors"
-                          autoFocus
-                        />
-                      </div>
-
-                      <div className="max-h-72 overflow-y-auto py-1 space-y-1 divide-y divide-slate-800/40 custom-scrollbar">
-                        {filteredClients.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-500">
-                            No clients match "{clientSearchQuery}".
-                          </div>
-                        ) : (
-                          filteredClients.map(c => {
-                            const isCurrent = workingData.profile.gstin === c.gstin;
-                            return (
-                              <button
-                                key={c.gstin}
-                                type="button"
-                                onClick={() => handleSelectClientFromHub(c)}
-                                className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
-                                  isCurrent
-                                    ? 'bg-blue-50 border border-blue-300 text-blue-900 font-semibold'
-                                    : 'hover:bg-slate-50 text-slate-700'
-                                }`}
-                              >
-                                <div className="truncate min-w-0 flex-1">
-                                  <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
-                                    <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                    <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
-                                  </div>
-                                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                                    {c.gstin}
-                                  </div>
-                                </div>
-
-                                <div className="shrink-0 flex items-center gap-1.5">
-                                  {c.hasSavedWorking && (
-                                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30" title="Working paper exists on server disk">
-                                      💾 Saved
-                                    </span>
-                                  )}
-                                  {c.hasCredentials && (
-                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30" title="Portal credentials configured">
-                                      🔑
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      <div className="pt-2 mt-1 border-t border-slate-200 text-[11px] flex items-center justify-between">
-                        <span className="text-slate-400">Total: {clientsHub.length || vaultClients.length} clients</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsClientDropdownOpen(false);
-                            setShowCredentialsModal(true);
-                          }}
-                          className="text-amber-400 hover:text-amber-300 font-bold transition-colors"
-                        >
-                          + Manage Credentials Vault
-                        </button>
-                      </div>
+              {isClientDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsClientDropdownOpen(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
+                    <div className="relative mb-2">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={clientSearchQuery}
+                        onChange={e => setClientSearchQuery(e.target.value)}
+                        placeholder="Search client name or GSTIN..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 transition-colors"
+                        autoFocus
+                      />
                     </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
 
-          {/* Right: Vault + Launch Login + Upload .xlsx + Sync status */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowCredentialsModal(true)}
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all"
-              title="Manage Portal Usernames & Passwords"
-            >
-              <Key className="w-3 h-3 text-amber-400" />
-              <span>Vault ({vaultClients.filter(c => c.portal_username && c.portal_password).length})</span>
-            </button>
+                    <div className="max-h-72 overflow-y-auto py-1 space-y-1 divide-y divide-slate-100 custom-scrollbar">
+                      {filteredClients.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500">
+                          No clients match "{clientSearchQuery}".
+                        </div>
+                      ) : (
+                        filteredClients.map(c => {
+                          const isCurrent = workingData.profile.gstin === c.gstin;
+                          return (
+                            <button
+                              key={c.gstin}
+                              type="button"
+                              onClick={() => handleSelectClientFromHub(c)}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
+                                isCurrent
+                                  ? 'bg-blue-50 border border-blue-200 text-blue-900 font-semibold'
+                                  : 'hover:bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <div className="truncate min-w-0 flex-1">
+                                <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                  <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                  <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
+                                </div>
+                                <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                                  {c.gstin}
+                                </div>
+                              </div>
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                {c.hasSavedWorking && (
+                                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                    Saved
+                                  </span>
+                                )}
+                                {c.hasCredentials && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200" title="Portal credentials configured">
+                                    🔑
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
 
-            <button
-              onClick={handleLaunchPortalLogin}
-              disabled={isLaunchingPortal}
-              className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50"
-              title="Launch visible Chrome & auto-fill GST Portal login credentials"
-            >
-              {isLaunchingPortal ? (
-                <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
-              ) : (
-                <Globe className="w-3 h-3 text-cyan-400" />
+                    <div className="pt-2 mt-1 border-t border-slate-100 text-[11px] flex items-center justify-between">
+                      <span className="text-slate-400">Total: {clientsHub.length || vaultClients.length} clients</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsClientDropdownOpen(false);
+                          setShowCredentialsModal(true);
+                        }}
+                        className="text-amber-600 hover:text-amber-700 font-bold transition-colors"
+                      >
+                        + Manage Credentials Vault
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
-              <span>Launch Login</span>
-            </button>
+            </div>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessing}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1 border border-slate-200 transition-all"
-              title="Upload external CA Excel working file"
-            >
-              <UploadCloud className="w-3 h-3 text-blue-400" /> Upload .xlsx
-            </button>
-
-            {/* Sync Status Pill */}
-            {isSyncingToServer ? (
-              <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[10px] font-semibold flex items-center gap-1 animate-pulse">
-                <RefreshCw className="w-2.5 h-2.5 animate-spin text-blue-400" /> Saving...
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold flex items-center gap-1" title="All office PCs can open this client's latest saved data">
-                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" /> Synced
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Lower Row: FY Selector + SAVE WORKING BUTTON (BESIDE IT) + Export Tools */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
-          {/* Left: FY Selector + Save Working Button */}
-          <div className="flex flex-wrap items-center gap-2">
             {/* FY Selector */}
-            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 p-0.5 rounded-lg">
-              <span className="text-[10px] text-slate-500 uppercase px-1.5 font-sans font-semibold">FY:</span>
+            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 p-0.5 rounded-xl">
               {['2025-26', '2026-27'].map(fy => {
                 const isSelected = normalizeFy(workingData.profile.financialYear || '2025-26') === fy;
                 return (
@@ -1402,134 +1303,141 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
                     key={fy}
                     type="button"
                     onClick={() => handleFinancialYearChange(fy)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
                       isSelected
-                        ? 'bg-blue-600 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
                     }`}
                   >
-                    {fy}
+                    FY {fy}
                   </button>
                 );
               })}
             </div>
 
-            {/* Save Working Button (Beside FY Selector) */}
+            {/* Credentials Vault */}
+            <button
+              onClick={() => setShowCredentialsModal(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1 transition-all"
+              title="Manage Portal Usernames & Passwords"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-600" />
+              <span className="hidden sm:inline">Vault</span>
+              <span className="text-[10px] font-mono font-bold bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded-full">
+                {vaultClients.filter(c => c.portal_username && c.portal_password).length}
+              </span>
+            </button>
+
+            {/* Launch Portal Login */}
+            <button
+              onClick={handleLaunchPortalLogin}
+              disabled={isLaunchingPortal}
+              className="px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold flex items-center gap-1 transition-all disabled:opacity-50"
+              title="Launch visible Chrome & auto-fill GST Portal login credentials"
+            >
+              {isLaunchingPortal ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+              ) : (
+                <Globe className="w-3.5 h-3.5 text-sky-600" />
+              )}
+              <span className="hidden sm:inline">Launch Login</span>
+            </button>
+
+            {/* Upload external CA Excel */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1 border border-slate-200 transition-all"
+              title="Upload external CA Excel working file"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-blue-500" />
+              <span className="hidden md:inline">Upload .xlsx</span>
+            </button>
+
+            {/* Save Working Data Button */}
             <button
               onClick={handleManualSave}
               disabled={isSyncingToServer}
-              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-slate-900"
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-all hover:scale-[1.02] disabled:opacity-50 ring-1 ring-slate-900"
               title="Save complete 3B Working Sheet to Server & Local Storage (Ctrl+S)"
             >
               {isSyncingToServer ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
               ) : (
-                <Save className="w-3.5 h-3.5" />
+                <Save className="w-3.5 h-3.5 text-emerald-400" />
               )}
               <span>{isSyncingToServer ? 'Saving...' : 'Save Working'}</span>
-              <kbd className="hidden sm:inline text-[9px] px-1 py-0.2 rounded bg-emerald-950/60 font-mono text-emerald-200 border border-emerald-500/30">
+              <kbd className="hidden lg:inline text-[9px] px-1 py-0.2 rounded bg-slate-800 font-mono text-slate-300 border border-slate-700">
                 Ctrl+S
               </kbd>
             </button>
           </div>
+        </div>
+      </header>
 
-          {/* Right: Export Excel, PDF, JSON, Reset */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={handleExportExcel}
-              className="px-3 py-1 bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow transition-all hover:scale-[1.02]"
-              title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
-            >
-              <FileSpreadsheet className="w-3 h-3" /> Export Excel
-            </button>
+      {/* ─── STANDALONE MODULES MAIN WORKSPACE CANVAS ─── */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 pb-28 space-y-5">
+        {/* Micro-Pill Standalone Module Bar (1:1 with Stitch design) */}
+        <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-slate-200/80">
+          <div className="flex items-center gap-1.5 p-1 bg-white/80 border border-slate-200/80 rounded-2xl shadow-2xs backdrop-blur-md min-w-max">
+            {[
+              { id: 'working3b', num: '01', label: 'GSTR-3B Working Sheet', icon: Calculator, color: 'text-purple-600' },
+              { id: 'matrix', num: '02', label: '12-Month FY Matrix', icon: Table, color: 'text-emerald-600' },
+              { id: 'ims2b', num: '03', label: 'Nexus IMS Decision Hub', icon: Sparkles, color: 'text-amber-500' },
+              { id: 'gstr2b_downloader', num: '04', label: 'Inward 2B Autopilot (12M)', icon: DownloadCloud, color: 'text-blue-500' },
+              { id: 'gstr1_downloader', num: '05', label: 'Outward GSTR-1 Autopilot (12M)', icon: ArrowUpRight, color: 'text-indigo-500' }
+            ].map(tab => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                    isActive
+                      ? 'bg-slate-900 text-white shadow-xs ring-1 ring-slate-900'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tab.color}`} />
+                  <span>{tab.num}. {tab.label}</span>
+                  {isActive && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping ml-0.5" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-            <button
-              onClick={handleExportPdf}
-              className="px-3 py-1 bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow transition-all hover:scale-[1.02]"
-              title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
-            >
-              <FileText className="w-3 h-3" /> Export PDF ({selectedMonth.slice(0, 3)})
-            </button>
-
+          {/* Quick Action Export Shortcuts on Right */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleDownloadJson}
-              className="px-3 py-1 bg-purple-600/90 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow transition-all hover:scale-[1.02]"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-all"
               title="Download GST Portal ready JSON file"
             >
-              <Download className="w-3 h-3" /> Portal JSON
+              <Download className="w-3.5 h-3.5 text-purple-300" />
+              <span className="hidden sm:inline">Export JSON</span>
             </button>
-
             <button
-              onClick={handleReset}
-              className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-[11px] font-bold rounded-lg border border-rose-500/30 flex items-center gap-1 transition-all hover:scale-[1.02]"
-              title="Clear all figures and reset sheet"
+              onClick={handleExportPdf}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 active:scale-95 rounded-xl text-xs font-semibold shadow-2xs transition-all"
+              title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
             >
-              <RotateCcw className="w-3 h-3" /> Reset
+              <Printer className="w-3.5 h-3.5 text-slate-600" />
+              <span className="hidden sm:inline">Print Sheet</span>
+            </button>
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-all"
+              title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Excel Sheet</span>
             </button>
           </div>
         </div>
-      </div>
-      {/* 3. SLEEK COMPACT ANIMATED SUITE TABS (Stitch Micro-Pill Design) */}
-      <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-slate-200/80">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 rounded-xl backdrop-blur-md min-w-max">
-          {[
-            { id: 'working3b', num: '01', label: 'GSTR-3B Working Sheet', icon: Calculator, color: 'text-purple-600' },
-            { id: 'matrix', num: '02', label: '12-Month FY Matrix', icon: Table, color: 'text-emerald-600' },
-            { id: 'ims2b', num: '03', label: 'GST IMS & 2B Manager', icon: Sparkles, color: 'text-amber-500' },
-            { id: 'gstr2b_downloader', num: '04', label: 'GSTR-2B Autopilot (12M)', icon: DownloadCloud, color: 'text-emerald-500' },
-            { id: 'gstr1_downloader', num: '05', label: 'GSTR-1 Autopilot (12M)', icon: ArrowUpRight, color: 'text-blue-500' }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-xs ring-1 ring-slate-900'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-                }`}
-              >
-                <tab.icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : tab.color}`} />
-                <span>{tab.num}. {tab.label}</span>
-                {isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping ml-0.5" />
-                )}
-              </button>
-            );
-          })}
-        </div>
 
-        {/* Quick Action Trigger Shortcuts on Right */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={handleDownloadJson}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all"
-            title="Download GST Portal ready JSON file"
-          >
-            <Download className="w-3.5 h-3.5 text-purple-300" />
-            <span>Export JSON</span>
-          </button>
-          <button
-            onClick={handleExportPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 active:scale-95 rounded-lg text-xs font-medium shadow-xs transition-all"
-            title={`Export ${selectedMonth} ${currentMonthData.year} GSTR-3B Working to PDF`}
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-600" />
-            <span>Print Sheet</span>
-          </button>
-          <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all"
-            title="Export complete 12-Month CA Working Sheet to Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Excel Sheet</span>
-          </button>
-        </div>
-      </div>
-
-      {/* TAB 1: GSTR-3B WORKING SHEET (THE CORE PRACTICE WORKSPACE) */}
 {/* TAB 1: GSTR-3B FORMAL WORKING SHEET (1:1 STITCH BLUEPRINT) */}
       {activeTab === 'working3b' && (() => {
         // Computed statutory summary for Table 3.1 & Computation Sheet
@@ -3481,6 +3389,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
           onApplyTo3B={handleApplyGstr1To3B}
         />
       )}
+      </main>
 
       {/* EDIT CLIENT PROFILE MODAL */}
       {isEditModalOpen && (
