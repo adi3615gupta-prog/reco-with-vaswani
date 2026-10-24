@@ -390,6 +390,16 @@
   white-space: nowrap;
 }
 
+@keyframes cascadeGlow {
+  0% { border-color: rgba(99, 102, 241, 0.2); }
+  50% { border-color: rgba(99, 102, 241, 0.7); box-shadow: 0 0 15px rgba(99, 102, 241, 0.15); }
+  100% { border-color: rgba(99, 102, 241, 0.2); }
+}
+.rule88a-waterfall {
+  animation: cascadeGlow 4s ease-in-out infinite;
+}
+
+
 .cell-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-variant-numeric: tabular-nums;
@@ -409,3 +419,13 @@
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
+
+@keyframes cascadeGlow {
+  0% { border-color: rgba(99, 102, 241, 0.2); }
+  50% { border-color: rgba(99, 102, 241, 0.7); box-shadow: 0 0 15px rgba(99, 102, 241, 0.15); }
+  100% { border-color: rgba(99, 102, 241, 0.2); }
+}
+.rule88a-waterfall {
+  animation: cascadeGlow 4s ease-in-out infinite;
+}
+
