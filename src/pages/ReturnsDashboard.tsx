@@ -1088,7 +1088,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-2 pt-0 pb-16 animate-fade-in">
+    <div className="w-full max-w-[1520px] mx-auto space-y-2 pt-0 pb-16 animate-fade-in">
       {/* Hidden file input for uploading CA Working .xlsx */}
       <input
         type="file"
@@ -1098,9 +1098,9 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
         className="hidden"
       />
 
-            {/* ─── TOP ELEVATED FLOATING NAVBAR (1:1 with Stitch design) ─── */}
+      {/* ─── TOP ELEVATED FLOATING NAVBAR (1:1 with Stitch design) ─── */}
       <header className="sticky top-0 z-40 px-4 sm:px-6 pt-3 pb-2 bg-[#F8FAFC]/90 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto min-h-16 bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-slate-200/80">
+        <div className="max-w-[1520px] mx-auto min-h-16 bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-slate-200/80">
           {/* Client Info (ALL CAPS, enlarged, prominent) */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
@@ -1353,7 +1353,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
       </header>
 
       {/* ─── STANDALONE MODULES MAIN WORKSPACE CANVAS ─── */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 pb-28 space-y-5">
+      <main className="max-w-[1520px] mx-auto px-4 sm:px-6 pb-28 space-y-5">
         {/* Micro-Pill Standalone Module Bar (1:1 with Stitch design) */}
         <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-slate-200/80">
           <div className="flex items-center gap-1.5 p-1 bg-white/80 border border-slate-200/80 rounded-2xl shadow-2xs backdrop-blur-md min-w-max">
@@ -1659,30 +1659,29 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
             </div>
 
             {/* MAIN GSTR-3B WORKING SHEET TABLE - EXACT MATCH WITH REFERENCE IMAGE */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-[0_4px_20px_rgba(0,0,0,0.03)] overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="material-symbols-outlined text-indigo-600 text-[20px]">table_chart</span>
-                  <div>
-                    <h3 className="font-headline-sm text-sm font-bold text-slate-900">Computation of Statutory Liability & Set-off (Form GSTR-3B)</h3>
-                    <p className="font-body-sm text-[11px] text-slate-500">Aligned with Table 3.1 Outward Taxable, Table 4 ITC claims & Rule 88A waterfall</p>
-                  </div>
-                </div>
+            <div className="bg-white rounded-2xl border border-slate-300 shadow-[0_4px_24px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between flex-wrap gap-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-amber-300 text-[20px]">table_view</span>
+                  <span className="font-bold text-sm tracking-wide uppercase">
+                    {workingData.profile.firmName || 'DYP INFRAPROJECTS PRIVATE LIMITED'} — GSTR-3B COMPUTATION SHEET
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono text-slate-300 font-medium">
+                    Month: {selectedMonth.toUpperCase()} {currentMonthData.year} | Currency: INR (₹)
+                  </span>
                   <button
                     onClick={() => setIsEditMode(!isEditMode)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                       isEditMode
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[16px]">{isEditMode ? 'lock' : 'edit_note'}</span>
-                    <span>{isEditMode ? 'Lock Table (Read-Only)' : 'Edit Sub-Accounts'}</span>
+                    <span className="material-symbols-outlined text-[15px]">{isEditMode ? 'lock' : 'edit_note'}</span>
+                    <span>{isEditMode ? 'Lock Table' : 'Edit Sub-Accounts'}</span>
                   </button>
-                  <span className="font-mono text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100% Balanced
-                  </span>
                 </div>
               </div>
 
@@ -2597,45 +2596,61 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
               </div>
             </div>
 
-            {/* Sticky Bottom Action Bar with Frosted Glass */}
+            {/* Sticky Bottom Action Bar with Frosted Glass (1:1 Stitch Blueprint) */}
             <div className="sticky bottom-4 mt-8 z-30">
-              <div className="max-w-7xl mx-auto bg-white/95 backdrop-blur-xl p-3 md:p-4 rounded-2xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
-                    <span className="material-symbols-outlined text-[18px]">verified_user</span>
+              <div className="max-w-[1520px] mx-auto frosted-glass px-5 py-3 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)] border border-slate-200/90 flex flex-wrap items-center justify-between gap-4">
+                {/* Left side summary meta */}
+                <div className="flex items-center gap-4 pl-1">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+                    </span>
+                    <span className="font-body-sm text-xs font-bold text-slate-900 uppercase">
+                      {selectedMonth} {currentMonthData.year}
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900 uppercase tracking-tight">{workingData.profile.firmName || 'CLIENT WORKING'}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{workingData.profile.gstin}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 font-mono">
-                      Period: {selectedMonth} {currentMonthData.year} • Net Tax: ₹ {formatCur(finalNetCashDeposit)}
-                    </p>
+                  <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-mono">
+                    <span>Client: <strong className="text-slate-800">{workingData.profile.firmName || 'DYP INFRAPROJECTS'}</strong></span>
+                    <span className="text-slate-300">•</span>
+                    <span>Net Payable: <strong className="text-indigo-600 font-bold">₹ {formatCur(finalNetCashDeposit)}</strong></span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* Right side actions */}
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <button
                     onClick={handleExportExcel}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-xs hover:shadow-emerald-950/20 transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 text-slate-700 hover:text-slate-900 transition-all shadow-2xs hover:shadow-xs active:scale-95 text-xs font-semibold cursor-pointer"
                   >
-                    <FileSpreadsheet className="w-4 h-4" />
-                    <span>Download Working Excel</span>
+                    <span className="material-symbols-outlined text-[18px] text-emerald-600">table_chart</span>
+                    <span>Download GSTR-3B Working Excel</span>
                   </button>
+
                   <button
                     onClick={handleExportPdf}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 active:scale-95 text-white text-xs font-bold shadow-xs transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 text-slate-700 hover:text-slate-900 transition-all shadow-2xs hover:shadow-xs active:scale-95 text-xs font-semibold cursor-pointer"
                   >
-                    <Printer className="w-4 h-4" />
+                    <span className="material-symbols-outlined text-[18px] text-slate-600">print</span>
                     <span>Print Official PDF</span>
                   </button>
+
+                  <button
+                    onClick={handleManualSave}
+                    disabled={isSyncingToServer}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs hover:shadow-[0_4px_16px_rgba(5,150,105,0.35)] active:scale-95 text-xs font-bold cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                    <span>{isSyncingToServer ? 'Saving...' : 'Save Working Sheet'}</span>
+                  </button>
+
                   <button
                     onClick={handleDownloadJson}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold shadow-xs hover:shadow-indigo-950/20 transition-all"
+                    className="relative group overflow-hidden flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white text-xs font-bold shadow-[0_4px_16px_rgba(79,70,229,0.35)] hover:shadow-[0_6px_22px_rgba(79,70,229,0.5)] transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer"
                   >
-                    <FileJson className="w-4 h-4" />
+                    <span className="material-symbols-outlined text-[18px]">download</span>
                     <span>Generate GSTN Portal JSON</span>
+                    <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/25 to-transparent"></div>
                   </button>
                 </div>
               </div>

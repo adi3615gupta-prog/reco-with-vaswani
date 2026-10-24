@@ -19,6 +19,20 @@ export default {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        // Luminous Fluid Enterprise Palette
+        "surface": "#FFFFFF",
+        "canvas": "#F8FAFC",
+        "emerald-gst": "#059669",
+        "amber-practice": "#D97706",
+        "pink-tally": "#DB2777",
+        "indigo-audit": "#4F46E5",
+        "on-surface": "#0F172A",
+        "on-surface-variant": "#475569",
+        "surface-container": "#F1F5F9",
+        "surface-container-high": "#E2E8F0",
+        "surface-container-low": "#F8FAFC",
+        "surface-variant": "#E0E3E5",
+        "outline-variant": "#C6C6CD",
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -69,6 +83,11 @@ export default {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+      },
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
       },
       borderRadius: {
         lg: "var(--radius)",

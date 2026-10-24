@@ -236,32 +236,35 @@ export function AppShell({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-slate-800 font-sans">
-      {/* 1. SMART CONSOLIDATED COLLAPSIBLE INTERACTIVE SIDEBAR RAIL */}
+      {/* 1. SMART CONSOLIDATED COLLAPSIBLE INTERACTIVE SIDEBAR RAIL (1:1 STITCH BLUEPRINT) */}
       <aside
         id="smartSidebar"
         className={cn(
-          "fixed left-0 top-0 h-full z-50 flex flex-col bg-white/95 backdrop-blur-xl border-r border-slate-200/80 shadow-[2px_0_20px_rgba(0,0,0,0.03)] transition-all duration-300 ease-in-out overflow-hidden",
-          isPinned ? "w-64" : "w-16 hover:w-64 group/sidebar"
+          "sidebar-rail fixed left-0 top-0 h-full z-50 flex flex-col bg-white border-r border-slate-200/90 py-5 group shadow-sm transition-all duration-300 overflow-hidden",
+          isPinned ? "!w-[17rem] shadow-xl" : ""
         )}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center justify-between px-3.5 border-b border-slate-100 flex-shrink-0 relative overflow-hidden">
+        <div className="px-3.5 mb-2 flex items-center justify-between min-h-12 flex-shrink-0">
           <div
             onClick={() => setAppRoute('hub')}
             className="flex items-center gap-3 overflow-hidden cursor-pointer"
             title="Vaswani Return Enterprise (Click to return to Central Hub)"
           >
-            <div className="w-9 h-9 flex items-center justify-center flex-shrink-0 rounded-lg p-0.5 bg-slate-50 border border-slate-200/80 shadow-2xs">
+            <div className="w-10 h-10 shrink-0 flex items-center justify-center p-0.5 rounded-lg bg-emerald-50/60 border border-emerald-100 shadow-2xs">
               <img
                 src="/favicon.png"
-                alt="Vaswani Logo"
-                className="h-7 w-auto object-contain transition-transform duration-300 group-hover/sidebar:scale-105"
+                alt="Vaswani Return Official Logo"
+                className="h-8 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
                 onError={(e: any) => { e.target.src = "./logo.png"; }}
               />
             </div>
-            <div className={cn("transition-opacity duration-200 whitespace-nowrap overflow-hidden", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}>
-              <h1 className="text-sm font-bold tracking-tight text-slate-900 leading-tight">Vaswani Return</h1>
-              <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">Enterprise Audit v4.8</p>
+            <div className={cn("expanded-content", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
+              <div className="font-bold text-slate-900 text-sm tracking-tight flex items-center gap-1.5 leading-none">
+                Vaswani Return
+                <span className="text-[9px] font-mono uppercase bg-slate-900 text-white px-1.5 py-0.5 rounded font-semibold tracking-wider">v4.8</span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium tracking-wide mt-1">Enterprise Audit Suite</p>
             </div>
           </div>
 
@@ -269,8 +272,8 @@ export function AppShell({
             type="button"
             onClick={togglePin}
             className={cn(
-              "p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all flex items-center justify-center",
-              isPinned ? "text-blue-600 bg-blue-50 opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+              "expanded-content p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all flex items-center justify-center",
+              isPinned ? "!opacity-100 !max-w-[220px] text-blue-600 bg-blue-50" : ""
             )}
             title={isPinned ? "Unpin Sidebar (Auto-collapse rail)" : "Pin Sidebar (Keep expanded)"}
           >
@@ -279,7 +282,7 @@ export function AppShell({
         </div>
 
         {/* Consolidated Primary Suites Navigation Rail */}
-        <nav className="flex-1 px-2.5 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-none">
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-none mt-4">
           {CONSOLIDATED_SUITES.map(suite => {
             const Icon = suite.icon;
             const isSuiteActive = suite.routes.includes(appRoute);
@@ -290,26 +293,26 @@ export function AppShell({
                   type="button"
                   onClick={() => setAppRoute(suite.id)}
                   className={cn(
-                    "w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group/item relative border",
+                    "w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all group/item relative border cursor-pointer",
                     isSuiteActive
-                      ? cn(suite.activeBg, "shadow-xs font-semibold")
+                      ? "bg-blue-50/80 text-blue-700 border-blue-100/70 shadow-xs"
                       : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
                   )}
                   title={suite.desc}
                 >
                   <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                    <Icon className={cn("w-4 h-4 transition-transform group-hover/item:scale-110", isSuiteActive ? suite.color : "text-slate-500")} />
+                    <Icon className={cn("w-5 h-5 transition-transform group-hover/item:scale-110", isSuiteActive ? "text-blue-600" : suite.color)} />
                   </div>
                   <span className={cn(
-                    "whitespace-nowrap transition-opacity duration-200 truncate flex-1 text-left font-medium",
-                    isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+                    "expanded-content text-xs font-semibold text-slate-700 group-hover/item:text-slate-900 truncate flex-1 text-left",
+                    isPinned && "!opacity-100 !max-w-[220px] !translate-x-0"
                   )}>
                     {suite.label}
                   </span>
                   {suite.badge && (
                     <span className={cn(
-                      "text-[9px] px-1.5 py-0.2 rounded-full font-mono uppercase tracking-wider font-bold shrink-0 transition-opacity duration-200",
-                      isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100",
+                      "expanded-content text-[9px] px-1.5 py-0.2 rounded-full font-mono uppercase tracking-wider font-bold shrink-0",
+                      isPinned && "!opacity-100 !max-w-[220px] !translate-x-0",
                       suite.badge === 'Live' ? 'bg-pink-50 text-pink-700 border border-pink-200' :
                       suite.badge === 'Core' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                       'bg-blue-50 text-blue-700 border border-blue-200'
@@ -319,9 +322,8 @@ export function AppShell({
                   )}
                   {isSuiteActive && (
                     <span className={cn(
-                      "w-1.5 h-1.5 rounded-full shrink-0 transition-opacity duration-200",
-                      suite.indicator,
-                      isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100"
+                      "expanded-content w-1.5 h-1.5 rounded-full shrink-0 bg-blue-600",
+                      isPinned && "!opacity-100 !max-w-[220px] !translate-x-0"
                     )}></span>
                   )}
                 </button>
@@ -329,8 +331,8 @@ export function AppShell({
                 {/* If Returns & Filing is active, show the 5 standalone submodules */}
                 {suite.id === 'returns' && isSuiteActive && (
                   <div className={cn(
-                    "pl-8 pr-1 space-y-1 transition-all duration-200",
-                    isPinned ? "block" : "hidden group-hover/sidebar:block"
+                    "expanded-content pl-8 pr-1 space-y-1 transition-all duration-200",
+                    isPinned && "!opacity-100 !max-w-[220px] !translate-x-0"
                   )}>
                     {RETURNS_SUBMODULES.map(sub => {
                       const SubIcon = sub.icon;
@@ -344,7 +346,7 @@ export function AppShell({
                             if (setReturnsTab) setReturnsTab(sub.id);
                           }}
                           className={cn(
-                            "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-all text-left truncate",
+                            "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-all text-left truncate cursor-pointer",
                             isSubActive
                               ? "bg-blue-100/80 text-blue-900 font-bold"
                               : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
@@ -394,32 +396,32 @@ export function AppShell({
           <button
             type="button"
             onClick={() => setIsSettingsOpen(true)}
-            className="w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400 hover:shadow-xs"
+            className="w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400 hover:shadow-xs cursor-pointer"
             title="System Settings (Data Path & Tally Bridge)"
           >
             <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 group-hover:rotate-45 transition-transform flex-shrink-0">
               <Settings className="w-3.5 h-3.5" />
             </div>
-            <div className={cn("flex flex-col text-left truncate transition-opacity duration-200", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}>
+            <div className={cn("expanded-content flex flex-col text-left truncate", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
               <span className="truncate leading-tight text-slate-900 font-bold">System Settings</span>
               <span className="text-[9px] text-slate-500 font-mono">Data Path &amp; Tally</span>
             </div>
-            <span className={cn("w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto shrink-0 transition-opacity duration-200", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}></span>
+            <span className={cn("expanded-content w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto shrink-0", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}></span>
           </button>
 
           {/* User Profile Info */}
-          <div className="flex items-center gap-3 min-w-[200px] pt-1">
+          <div className="flex items-center gap-3 min-w-[200px] pt-1 px-1">
             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-xs">
               {getInitials(companyName || loginUser)}
             </div>
-            <div className={cn("transition-opacity duration-200 overflow-hidden leading-tight", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}>
+            <div className={cn("expanded-content overflow-hidden leading-tight", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
               <div className="text-xs font-semibold text-slate-800 truncate">{loginUser || 'CA Vaswani'}</div>
               <div className="text-[10px] text-slate-400">Sr. Tax Partner</div>
             </div>
           </div>
 
           {/* Engine Sync Status */}
-          <div className={cn("pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-200/60 transition-opacity duration-200", isPinned ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100")}>
+          <div className={cn("expanded-content pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-200/60", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
             <span className="font-mono text-[10px]">Engine v4.8</span>
             <span className="flex items-center gap-1 text-emerald-600 font-medium text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -432,7 +434,7 @@ export function AppShell({
       {/* 2. MAIN APPLICATION WORKSPACE AREA */}
       <div className={cn(
         "flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300",
-        isPinned ? "pl-64" : "pl-16"
+        isPinned ? "pl-[17rem]" : "pl-[4.75rem]"
       )}>
         {/* Standardized Top Header (Hidden on Returns to allow Elevated Floating Navbar) */}
         {appRoute !== 'returns' && (
