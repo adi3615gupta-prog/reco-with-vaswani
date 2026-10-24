@@ -36,6 +36,7 @@ import setupGstr2bRoutes from './gstr2b_routes.js';
 import setupGstr1Routes from './gstr1_routes.js';
 import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
+import setupNoticesRoutes from './notices_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
 import helmet from 'helmet';
@@ -268,6 +269,7 @@ setupReturnsStorageRoutes(app, db, userDataPath);
 
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
 setupAuditTrailRoutes(app, db, userDataPath);
+setupNoticesRoutes(app, db);
 
 const saveUserToLocalDb = (user) => {
     db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id)

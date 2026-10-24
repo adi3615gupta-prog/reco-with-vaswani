@@ -38,6 +38,7 @@ export type AppRoute =
   | 'audit'
   | 'income-tax'
   | 'clause44'
+  | 'notices'
   | 'voucher-reclass';
 
 export type ReturnsTabKey = 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader';
@@ -148,6 +149,17 @@ const CONSOLIDATED_SUITES: ConsolidatedSuite[] = [
     indicator: 'bg-cyan-600',
     desc: 'Bank appraisal, MPBF II & CMA projection',
     routes: ['bank-cma']
+  },
+  {
+    id: 'notices',
+    label: 'GST Notices Hub',
+    icon: ShieldAlert,
+    color: 'text-amber-600 group-hover/item:text-amber-700',
+    activeBg: 'bg-amber-50 text-amber-800 border-amber-200/80',
+    indicator: 'bg-amber-600',
+    badge: 'Phase 12',
+    desc: 'Autonomous portal notices scanner & AI reply drafter',
+    routes: ['notices']
   }
 ];
 

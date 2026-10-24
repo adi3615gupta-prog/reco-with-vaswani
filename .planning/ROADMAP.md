@@ -239,18 +239,18 @@ Plans:
   4. Legal reply drafts populate correct statutory formats (ASMT-11 / DRC-06) with relevant statutory defenses and zero-merge reconciliation sheets.
   5. UI dashboard adheres to Obsidian Glass aesthetic and integrates into the persistent sidebar navigation.
 
-**Plans**: 4 plans mapped
+**Plans**: 4/4 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 12-01: SQLite Schema & Backend API (`notices/db.js`, `notices_routes.js`, `server.js`)
-- [ ] 12-02: Playwright Portal Autopilot Scraper (`notices/autopilot.js`) across 3 notice destinations
+- [x] 12-01: SQLite Schema & Backend API (`notices/db.js`, `notices_routes.js`, `server.js`)
+- [x] 12-02: Playwright Portal Autopilot Scraper (`notices/autopilot.js`) across 3 notice destinations
 
 **Wave 3** *(blocked on Wave 1 completion)*
-- [ ] 12-03: Deterministic Discrepancy Cross-Reconciler & Zero-Merge Excel Annexure Engine (`src/lib/noticeReconciliation.ts`)
+- [x] 12-03: Deterministic Discrepancy Cross-Reconciler & Zero-Merge Excel Annexure Engine (`src/lib/noticeReconciliation.ts`)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 12-04: AI / Template Legal Reply Drafter & Frontend Dashboard (`src/pages/GstNoticesDashboard.tsx`)
+- [x] 12-04: AI / Template Legal Reply Drafter & Frontend Dashboard (`src/pages/GstNoticesDashboard.tsx`)
 
 ---
 *Roadmap defined: 2026-10-22*

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)
-status: executing
-stopped_at: Phase 11 Complete
-last_updated: "2026-10-24T11:21:46.201Z"
+status: complete
+stopped_at: Phase 12 Complete
+last_updated: "2026-10-24T17:10:00.000Z"
 last_activity: 2026-10-24
-last_activity_desc: Completed all 5 plans for Phase 11 aligning all 5 tabs with the newly downloaded Stitch blueprints.
-state_head: d04ce1039979a39ab26916081c49525146886674
+last_activity_desc: Completed all 4 plans for Phase 12 delivering GST Notices & Orders Autonomous Suite.
+state_head: ""
 progress:
   total_phases: 12
-  completed_phases: 11
-  total_plans: 30
-  completed_plans: 32
-  percent: 0
+  completed_phases: 12
+  total_plans: 34
+  completed_plans: 34
+  percent: 100
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-10-22)
 
 **Core value:** Audit-grade, high-precision reconciliation and statutory tax computation that eliminates double-counting, strictly guarantees zero merged cells in analytical workbooks, and runs completely locally and securely.
-**Current focus:** Phase 11 Complete — Suite 04 Returns Complete Restructuring & Alignment with Newly Downloaded Stitch Assets
+**Current focus:** Phase 12 Complete — GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)
 
 ## Current Position
 
-Phase: 12 (GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)) — READY TO EXECUTE
-Plan: All Plans Complete (11-01 through 11-05)
-Status: Ready to execute
-Last activity: 2026-10-24 — Verified all 5 tabs and brand assets aligned 1:1 with Stitch assets. Production build verified clean.
+Phase: 12 (GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)) — COMPLETE
+Plan: All Plans Complete (12-01 through 12-04)
+Status: Complete
+Last activity: 2026-10-24 — Verified all 4 plans (SQLite schema & API, Playwright multi-destination scraper, deterministic cross-reconciler with Zero-Merge Excel export, and statutory legal reply drafter with Obsidian Glass dashboard). All 18 vitest tests pass and production build verified clean.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 Progress: [██████████] 100%
 
@@ -61,6 +61,12 @@ Progress: [██████████] 100%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [Phase 12]: Dedicated local SQLite tables (`gst_notices`, `gst_notice_attachments`, `gst_notice_replies`) with limitation calculation (+7d for DRC-01B/C, +30d for ASMT-10/DRC-01, +90d for appealable orders) and urgency status chips (`CRITICAL` <=3d, `URGENT` <=7d, `NORMAL`, `EXPIRED`).
+- [Phase 12]: Multi-destination Playwright scraper (`notices/autopilot.js`) visiting View Notices, Additional Notices, and Return Compliance without direct URL pushing (strictly DOM clicks and official `<button>` with exact text `'BACK'`), with Chrome-first browser launch and SSE progress streaming.
+- [Phase 12]: Deterministic cross-reconciler (`noticeReconciliation.ts`) identifying timing differences across subsequent periods, Section 16(5)/(6) retrospective ITC relief, and RCM/credit note adjustments with strict mathematical invariant $\text{Explained} + \text{Residual} = \text{Demanded}$.
+- [Phase 12]: Certified Zero-Merge analytical Excel export (`generateNoticeAnnexureExcel`) stripping all `<mergeCell>` entries with `removeAllMergesFromWorkbook(wb)`.
+- [Phase 12]: Dual statutory legal reply generator producing Form GST ASMT-11 (Rule 99(2)) and Form GST DRC-06 (Rule 142(4)) with Section 128A interest/penalty waiver prayer and judicial precedent citations.
+- [Phase 12]: Full Obsidian Glass UI (`GstNoticesDashboard.tsx`) integrated into persistent AppShell navigation with 4-card KPI strip, limitation countdown table, drawer inspector, reconcile modal, and reply drafter studio.
 - [Phase 04]: Non-blocking 12-month autonomous loop in `gstr2b/autopilot.js` with per-month `try/catch` isolation, amber warning banner (`#f59e0b`), and partial month sync reporting ("11/12 Synced").
 - [Phase 04]: Dropdown selection stability handles Angular digest cycle delays with retry checks and triggers `new Event('change')`.
 - [Phase 04]: Golden Rule strictly enforced in `gstr2b/db.js`: `bulkSaveGstr2bInvoices` guards empty arrays, never deleting or truncating existing client records on failed/timed-out downloads.

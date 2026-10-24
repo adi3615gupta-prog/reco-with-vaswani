@@ -58,6 +58,7 @@ import UserGuideCenter from '@/components/UserGuideCenter';
 import { GDriveConnectModal } from '@/components/GDriveConnectModal';
 import { RecoHistoryModal } from '@/components/RecoHistoryModal';
 import IncomeTaxDashboard from './IncomeTaxDashboard';
+import GstNoticesDashboard from './GstNoticesDashboard';
 import TaxAuditClause44 from './TaxAuditClause44';
 import VoucherReclassifier from './VoucherReclassifier';
 import BankCmaAppraisal from './BankCmaAppraisal';
@@ -2834,6 +2835,8 @@ export default function Index() {
             {appRoute === 'income-tax' && <IncomeTaxDashboard onBack={() => setAppRoute('hub')} />}
 
             {appRoute === 'clause44' && <TaxAuditClause44 onBack={() => setAppRoute('hub')} />}
+
+            {appRoute === 'notices' && <GstNoticesDashboard />}
 
             {appRoute === 'reco' && <Reconciliation
               setAppRoute={setAppRoute} mode={mode} setMode={setMode} step={step} setStep={setStep}

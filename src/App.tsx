@@ -11,6 +11,7 @@ import LivePreviewWindow from "./pages/LivePreviewWindow.tsx";
 import TBImportFullscreen from "./pages/TBImportFullscreen.tsx";
 import IncomeTaxDashboard from "./pages/IncomeTaxDashboard.tsx";
 import ClientImsReview from "./pages/ClientImsReview.tsx";
+import GstNoticesDashboard from "./pages/GstNoticesDashboard.tsx";
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ const App = () => (
                 <Route path="/live-preview" element={<LivePreviewWindow />} />
                 <Route path="/mapping-fullscreen" element={<TBImportFullscreen />} />
                 <Route path="/income-tax-calculator" element={<IncomeTaxDashboard />} />
+                <Route path="/gst-notices" element={<GstNoticesDashboard />} />
                 <Route path="/ims-review/:token" element={<ClientImsReview />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

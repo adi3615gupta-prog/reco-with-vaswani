@@ -19,6 +19,7 @@
 | **9** | **Income Tax Liability & Regime Engine** | `src/pages/IncomeTaxDashboard.tsx` | `src/lib/incomeTaxEngine.ts`, `src/server_lib/incomeTaxEngine.js` | `tax_routes.js` | SQLite: `Taxpayer_Profiles`, `Tax_Computations` |
 | **10**| **Bank CMA Appraisal & Financial Statements** | `src/pages/BankCmaAppraisal.tsx`, `src/pages/CmaReport.tsx` | `src/lib/cmaEngine.ts`, `src/lib/tallyCmaApi.ts` | `server.js` | Tally Balance Sheet / P&L XML |
 | **11**| **Statutory Audit & Tax Audit Clause 44** | `src/pages/AuditModule.tsx`, `src/pages/TaxAuditClause44.tsx` | `src/lib/auditEngine.ts` | `server.js` | Tally Daybook / Clause 44 Ledgers |
+| **12**| **GST Notices & Orders Autonomous Suite** | `src/pages/GstNoticesDashboard.tsx` | `src/lib/noticeReconciliation.ts`, `src/lib/noticeReplyGenerator.ts` | `notices_routes.js`, `notices/autopilot.js` | SQLite: `gst_notices`, `gst_notice_attachments`, `gst_notice_replies` |
 
 ---
 
@@ -351,7 +352,33 @@
 
 ---
 
-## 11. Quick Reference Development & Build Rules
+## 12. GST Notices & Orders Autonomous Suite (Autopilot Scraper, Tracker & AI Reply Drafter)
+
+### A. Purpose & Rationale
+- **Kya karta hai:** GST portal se scrutiny notices (`ASMT-10`), Show Cause Notices (`DRC-01`), automated mismatch notices (`DRC-01B`, `DRC-01C`), assessment orders, aur cancellation notices ko automatically download karta hai, limitation periods track karta hai, local return tables (`gstr2b_invoices`, `gstr1_invoices`, `gstr3b_returns`, PR) ke sath cross-reconciliation karke Zero-Merge Excel annexure generate karta hai, aur statutory legal reply drafts (Form GST ASMT-11, Form GST DRC-06) produce karta hai.
+- **Kyu karta hai:** Timely notice response failure leads to ex-parte orders under Section 62/73/74, bank account attachments (Section 79), and severe penalties. Legal replies require technical statutory grounding (e.g. Section 16(5)/(6) retrospective relief, Section 128A Amnesty interest/penalty waiver) paired with clean discrepancy reconciliation.
+- **Kaise karta hai:** 
+  1. Playwright Autopilot 3 portal destinations visit karta hai (View Notices, Additional Notices, Return Compliance) bina direct URL push kiye (SSO "Access Denied" prevention) aur official on-screen `<button>` containing exact text `'BACK'` use karta hai.
+  2. Local SQLite schema (`gst_notices`, `gst_notice_attachments`, `gst_notice_replies`) dates aur demanded amounts store karta hai with automatic statutory limitation calculation (+7d for DRC-01B/C, +30d for ASMT-10/DRC-01, +90d for appealable orders).
+  3. Deterministic cross-reconciler matching rules apply karta hai: timing differences across subsequent periods, Section 16(5)/(6) retrospective relief for FY 17-18 to 20-21, RCM/Credit note adjustments with mathematical invariant $\text{Explained} + \text{Residual} = \text{Demanded}$.
+  4. Zero-Merge Excel annexure generator strictly removes all `<mergeCell>` entries (`ws['!merges'] = []`).
+  5. Dual legal reply drafter outputs Form GST ASMT-11 (Rule 99(2)) or Form GST DRC-06 (Rule 142(4)) with XSS-safe HTML preview, Section 128A waiver prayer, and landmark High Court precedents (*Suncraft Energy*, *D.Y. Beathel*).
+
+### B. File Map & Exact Line Reference
+- **Core Libs:**
+  - Database & Limitation Engine: [`notices/db.js`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/notices/db.js) — SQLite schema initialization, `computeLimitationDueDate`, `getNoticeAlertStatus`, and query helpers.
+  - Autopilot Scraper: [`notices/autopilot.js`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/notices/autopilot.js) — 3-destination Playwright automation with Chrome-first hierarchy and SSE progress streaming.
+  - Cross-Reconciler & Zero-Merge Excel: [`src/lib/noticeReconciliation.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/lib/noticeReconciliation.ts) — `reconcileNoticeDiscrepancy` and `generateNoticeAnnexureExcel`.
+  - Statutory Legal Reply Drafter: [`src/lib/noticeReplyGenerator.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/lib/noticeReplyGenerator.ts) — `generateAsmt11Reply`, `generateDrc06Reply`, and `escapeHtml`.
+- **Backend API Routes:**
+  - [`notices_routes.js`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/notices_routes.js) — Endpoints for notices listing, details, summaries, attachment streaming, reply saving, reconciliation, and autopilot execution/cancellation. Mounted in [`server.js`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/server.js).
+- **Frontend Dashboard:**
+  - [`src/pages/GstNoticesDashboard.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/GstNoticesDashboard.tsx) — Obsidian Glass UI with 4-card KPI strip, filter pills, limitation countdown table, slide-over notice inspector, reconciliation modal, and reply drafter studio.
+  - Routing: [`src/App.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/App.tsx), [`src/components/AppShell.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/components/AppShell.tsx), [`src/pages/Index.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/Index.tsx).
+
+---
+
+## 13. Quick Reference Development & Build Rules
 
 1. **Backend Routing Synchronization:**
    - Development entry: `server.js`.
