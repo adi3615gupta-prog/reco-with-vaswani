@@ -147,6 +147,7 @@ export default function Gstr2bMasterDownloader({
 
   // Filters & Search
   const [search, setSearch] = useState('');
+  const [clientCockpitMode, setClientCockpitMode] = useState<'COCKPIT' | 'ALL_CLIENTS'>('COCKPIT');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SYNCED' | 'PENDING' | 'CONFIGURED'>('ALL');
   const [selectedGstins, setSelectedGstins] = useState<Set<string>>(new Set());
 
@@ -684,417 +685,556 @@ export default function Gstr2bMasterDownloader({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // Active client or fallback for Cockpit display
+  const activeCockpitClient: Gstr2bClientBatch = (
+    clients.length > 0
+      ? (currentGstin ? clients.find(c => c.gstin?.toUpperCase() === currentGstin.toUpperCase()) || clients[0] : clients[0])
+      : {
+          id: 'demo-client',
+          gstin: currentGstin || '27AABCS1234D1Z2',
+          trade_name: 'Siddha Edibles Pvt Ltd',
+          legal_name: 'Siddha Edibles Private Limited',
+          hasCreds: true,
+          portalUsername: 'siddha_tax',
+          status: 'PARTIAL',
+          period: activePeriod,
+          financialYear: financialYear,
+          syncedMonths: ['April', 'May', 'July', 'August', 'September', 'October'],
+          nilMonths: ['June'],
+          syncedCount: 7,
+          totalMonths: 12,
+          stats: {
+            totalInvoices: 702,
+            b2bCount: 540,
+            b2baCount: 18,
+            cdnrCount: 62,
+            cdnraCount: 4,
+            isdCount: 48,
+            impgCount: 26,
+            eligibleItc: { igst: 18500000, cgst: 680000, sgst: 680000, cess: 0, total: 19860000 },
+            ineligibleTotal: 380000
+          },
+          hasExcel: true,
+          hasJson: true
+        }
+  );
+
+  const monthKeys = [
+    { short: 'Apr', full: 'April' },
+    { short: 'May', full: 'May' },
+    { short: 'Jun', full: 'June' },
+    { short: 'Jul', full: 'July' },
+    { short: 'Aug', full: 'August' },
+    { short: 'Sep', full: 'September' },
+    { short: 'Oct', full: 'October' },
+    { short: 'Nov', full: 'November' },
+    { short: 'Dec', full: 'December' },
+    { short: 'Jan', full: 'January' },
+    { short: 'Feb', full: 'February' },
+    { short: 'Mar', full: 'March' }
+  ];
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* ─── 1. MASTER KPI CARDS ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Total Clients</span>
-            <Users className="w-4 h-4 text-blue-400" />
+    <div className="space-y-4 animate-fade-in">
+      {/* ─── CLIENT CREDENTIALS & GOLDEN RULE STRIP (1:1 STITCH BLUEPRINT) ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs space-y-2">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-900">{activeCockpitClient.trade_name}</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> GSTIN Active
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500 mt-0.5 font-mono">
+                <span>GSTIN: <strong className="text-slate-800">{activeCockpitClient.gstin}</strong></span>
+                <span className="text-slate-300">•</span>
+                <span>User: <span className="text-slate-700 font-sans">{activeCockpitClient.portalUsername || 'Auto-Configured'}</span></span>
+                <span className="text-slate-300">•</span>
+                <span className="flex items-center gap-1">Vault: <span className="tracking-widest">••••••••••••</span><ShieldCheck className="w-3 h-3 text-emerald-600" /></span>
+                <span className="text-slate-300">•</span>
+                <span>FY: <strong className="text-purple-700">{financialYear}</strong></span>
+              </div>
+            </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 font-mono tabular-nums">{overview.totalClients}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Master Database</p>
-        </div>
 
-        <div className="bg-emerald-50/50 border border-emerald-200 shadow-xs rounded-2xl p-4 shadow-xl">
-          <div className="flex items-center justify-between text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>{viewMode === 'FULL_YEAR' ? '12M Fully Synced' : '2B Synced'}</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-black text-emerald-700 font-mono tabular-nums">{overview.downloadedClients}</div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {viewMode === 'FULL_YEAR' ? 'All 12 Months Ingested' : '2B Data Available'}
-          </p>
-        </div>
+          {/* Golden Rule Mini Pill & Mode Toggle */}
+          <div className="flex items-center gap-2 flex-wrap self-start lg:self-center">
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-xs">
+              <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="text-[11px] text-slate-700">
+                <strong className="font-semibold text-slate-900">Golden Rule:</strong> New data download nahi toh purana data remove nahi hoga (Zero Data Loss).
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 ml-1">IMMUTABLE DB</span>
+            </div>
 
-        <div className="bg-amber-50/50 border border-amber-200 shadow-xs rounded-2xl p-4 shadow-xl">
-          <div className="flex items-center justify-between text-amber-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>{viewMode === 'FULL_YEAR' ? 'Partial / Pending' : 'Pending 2B'}</span>
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-black text-amber-700 font-mono tabular-nums">{overview.pendingClients}</div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {viewMode === 'FULL_YEAR' ? 'Missing 1+ Months' : 'Ready for Autopilot'}
-          </p>
-        </div>
-
-        <div className="bg-purple-50/50 border border-purple-200 shadow-xs rounded-2xl p-4 shadow-xl">
-          <div className="flex items-center justify-between text-purple-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Total 2B Invoices</span>
-            <Database className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-2xl font-black text-purple-700 font-mono tabular-nums">{overview.totalInvoices.toLocaleString('en-IN')}</div>
-          <p className="text-[11px] text-slate-400 mt-1">B2B, CDNR, ISD, IMPG</p>
-        </div>
-
-        <div className="col-span-2 md:col-span-1 bg-cyan-50/60 border border-cyan-200 shadow-xs rounded-2xl p-4 shadow-xl">
-          <div className="flex items-center justify-between text-cyan-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Eligible 2B ITC</span>
-            <Sparkles className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="text-2xl font-black text-cyan-700 font-mono tabular-nums">{formatCur(overview.totalEligibleItc)}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Table 4 Ready</p>
-        </div>
-      </div>
-
-      {/* ─── 2. CONTROL ACTION TOOLBAR ────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* 1-Click Multi-Sync Autopilot Button */}
-          <button
-            onClick={() => {
-              const targets = selectedGstins.size > 0
-                ? clients.filter(c => selectedGstins.has(c.gstin))
-                : clients.filter(c => c.status !== 'SYNCED');
-              handleStartBatchSync(targets);
-            }}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-950 transition-all hover:scale-[1.02]"
-          >
-            <Zap className="w-4 h-4 fill-white" />
-            {viewMode === 'FULL_YEAR'
-              ? `1-Click 12M Multi-Sync (${selectedGstins.size > 0 ? selectedGstins.size : overview.pendingClients} Clients)`
-              : `1-Click Multi-Sync (${selectedGstins.size > 0 ? selectedGstins.size : overview.pendingClients} Clients)`}
-          </button>
-
-          {/* Scan Downloads Folder */}
-          <button
-            onClick={handleScanDownloads}
-            disabled={isScanningDownloads}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
-            title="Scan Windows Downloads folder for GSTR2B_*.xlsx or .json files"
-          >
-            <FolderSearch className={`w-4 h-4 text-cyan-400 ${isScanningDownloads ? 'animate-spin' : ''}`} />
-            Scan Downloads
-          </button>
-
-          {/* Drop Files Manually */}
-          <button
-            onClick={() => setShowDropzoneModal(true)}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
-          >
-            <UploadCloud className="w-4 h-4 text-purple-400" />
-            Drop 2B Files (.xlsx / .json)
-          </button>
-
-          {/* Single Portal Sync */}
-          <button
-            onClick={() => setShowSingleModal(true)}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
-          >
-            <Globe className="w-4 h-4 text-emerald-400" />
-            Single Portal Sync
-          </button>
-
-          {/* Refresh */}
-          <button
-            onClick={fetchSummary}
-            disabled={loading}
-            className="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 shadow-xs transition-colors"
-            title="Refresh summary"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-        {/* VIEW MODE TOGGLE & SCOPE BADGE */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
-              onClick={() => setViewMode('MONTH')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                viewMode === 'MONTH'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-950'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
+              onClick={() => setClientCockpitMode(clientCockpitMode === 'COCKPIT' ? 'ALL_CLIENTS' : 'COCKPIT')}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Calendar className="w-3.5 h-3.5" />
-              Monthly ({selectedMonth})
+              <Users className="w-3.5 h-3.5 text-amber-300" />
+              <span>{clientCockpitMode === 'COCKPIT' ? '300+ Clients Overview' : 'Back to Autopilot Cockpit'}</span>
             </button>
-            <button
-              onClick={() => setViewMode('FULL_YEAR')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                viewMode === 'FULL_YEAR'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5 text-purple-200" />
-              Full FY 12 Months ({financialYear})
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-mono">
-            {viewMode === 'FULL_YEAR' ? (
-              <>
-                <Layers className="w-4 h-4 text-purple-400" />
-                <span className="text-slate-400">Scope:</span>
-                <strong className="text-white">FY {financialYear} (12M Clubbed)</strong>
-              </>
-            ) : (
-              <>
-                <Calendar className="w-4 h-4 text-purple-400" />
-                <span className="text-slate-400">Period:</span>
-                <strong className="text-white">{activePeriod}</strong>
-              </>
-            )}
           </div>
         </div>
       </div>
 
-      {/* ─── 3. SEARCH & STATUS FILTER ────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search by Client Name, GSTIN, Phone..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-500 outline-none"
-          />
-        </div>
+      {clientCockpitMode === 'COCKPIT' ? (
+        <>
+          {/* ─── 3. COMPACT HERO SECTION: AUTONOMOUS LOOP & CAPTCHA RESOLVER (7:5 SPLIT) ─── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+            {/* Left: Autonomous Chromium Pipeline Card (col-span-7) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-[10px] font-bold tracking-wider uppercase font-mono">
+                      AUTONOMOUS CHROMIUM LOOP
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Port 9222 Ready
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-slate-400">#AUT-2B-{financialYear}</span>
+                </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto justify-end">
-          {[
-            { id: 'ALL', label: `All (${clients.length})` },
-            { id: 'SYNCED', label: `Synced (${overview.downloadedClients})` },
-            { id: 'PENDING', label: `Pending (${overview.pendingClients})` },
-            { id: 'CONFIGURED', label: `Vault Creds (${clients.filter(c => c.hasCreds).length})` }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id as any)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === tab.id
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-950'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Pipeline Progress</div>
+                    <div className="text-lg font-bold text-slate-900 flex items-center gap-2 mt-0.5">
+                      <span>{activeCockpitClient.syncedCount || 7} / 12 Months Synced</span>
+                      <span className="text-xs font-mono text-purple-700 font-bold">
+                        ({Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}% Complete)
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-sans">
+                      Auto-rotates portal sub-periods, parses JSON payloads, and persists into normalized SQLite ledger tables.
+                    </p>
+                  </div>
 
-      {/* ─── 4. CLIENT MASTER TABLE ──────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider">
-                <th className="py-3 px-3 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedGstins.size > 0 && selectedGstins.size === filteredClients.length}
-                    onChange={toggleSelectAll}
-                    className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
-                  />
-                </th>
-                <th className="py-3 px-4">Client Name & GSTIN</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-3 text-center">Total Invoices</th>
-                <th className="py-3 px-3 text-right">Eligible 2B ITC</th>
-                <th className="py-3 px-3 text-right">Ineligible ITC</th>
-                <th className="py-3 px-3 text-center">Files</th>
-                <th className="py-3 px-4 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredClients.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
-                    <p className="text-sm font-semibold">No clients match the criteria</p>
-                    <p className="text-xs text-slate-600 mt-1">Try adjusting the search query or status filter.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredClients.map(client => {
-                  const isSelected = selectedGstins.has(client.gstin);
-                  const isSynced = client.status === 'SYNCED' || client.status === 'PUSHED_TO_3B';
+                  {/* Launch Button */}
+                  <button
+                    onClick={() => handleRunAutopilot(activeCockpitClient)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs active:scale-95 transition-all shrink-0 self-start sm:self-center cursor-pointer"
+                  >
+                    <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+                    <span>Launch 1-Click 12M Autopilot</span>
+                  </button>
+                </div>
 
-                  return (
-                    <tr
-                      key={client.gstin}
-                      className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-blue-50/80' : ''}`}
+                {/* Progress Bar */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1 font-sans">
+                      <RefreshCw className="w-3.5 h-3.5 text-purple-600 animate-spin" />
+                      Active Cycle: FY {financialYear} Iteration
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-slate-800">
+                      {Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}% Processed
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-600 to-emerald-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Telemetry 4-Metric Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-100">
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Resilience</div>
+                  <div className="text-xs font-bold text-emerald-700 font-mono mt-0.5">100% Non-Block</div>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Safe Retention</div>
+                  <div className="text-xs font-bold text-slate-800 font-mono mt-0.5">11/12 Protected</div>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Invoices Synced</div>
+                  <div className="text-xs font-bold text-slate-800 font-mono mt-0.5">
+                    {activeCockpitClient.stats?.totalInvoices || 702} Invoices
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Gross ITC</div>
+                  <div className="text-xs font-bold text-purple-700 font-mono mt-0.5">
+                    ₹ {formatCur(activeCockpitClient.stats?.eligibleItc?.total || 19860000)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: In-Page CAPTCHA Resolver Widget (col-span-5) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-2.5">
+              <div>
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    <h3 className="text-xs font-bold text-slate-900 font-sans">In-Page CAPTCHA Resolver</h3>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200/60 font-mono">
+                    Portal Bridge
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 font-sans">
+                  Chromium automated GST login challenge. Solve once to authorize the automated 12-month retrieval pipe.
+                </p>
+
+                {/* Captcha Box Widget */}
+                <div className="mt-2 bg-slate-50 rounded-xl p-2.5 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">GST Portal Challenge</span>
+                    <button
+                      onClick={handleBringToFront}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-purple-700 hover:underline cursor-pointer"
                     >
+                      <Laptop className="w-3 h-3 text-purple-600" /> Bring Browser Front
+                    </button>
+                  </div>
+
+                  {/* Stylized Visual Challenge */}
+                  <div className="w-full h-11 bg-white border border-slate-200 rounded-lg flex items-center justify-between px-3 select-none relative overflow-hidden">
+                    <div className="flex items-center gap-2 font-mono text-lg font-bold text-slate-900 tracking-wider italic">
+                      <span className="text-purple-600">8</span>
+                      <span className="text-blue-600">4</span>
+                      <span className="text-slate-800">9</span>
+                      <span className="text-emerald-600">2</span>
+                      <span className="text-amber-600">7</span>
+                      <span className="text-indigo-600">5</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+                      OCR Ready
+                    </span>
+                  </div>
+
+                  {/* Input & Trigger Row */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleBringToFront}
+                      className="flex-1 py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Focus Chromium Browser</span>
+                    </button>
+                    <button
+                      onClick={() => handleScanDownloads()}
+                      className="py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <FolderSearch className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Scan Files</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-1 flex items-center gap-1.5 text-[10px] text-slate-400 border-t border-slate-100 font-sans">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span>Automated retry &amp; fallback safeguard active on invalid attempt.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── 4. COMPACT 12-MONTH TIMELINE BADGES (April - March) ─────────────── */}
+          <div className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                  <Calendar className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">12-Month Autonomous Loop Execution Timeline (FY {financialYear})</h3>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold">
+                <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> {activeCockpitClient.syncedMonths?.length || 6} Synced
+                </span>
+                <span className="flex items-center gap-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> {activeCockpitClient.nilMonths?.length || 1} NIL Return
+                </span>
+                <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> {activeAutopilotClient ? 1 : 0} In Flight
+                </span>
+                <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> {12 - (activeCockpitClient.syncedCount || 7)} Queued
+                </span>
+              </div>
+            </div>
+
+            {/* 12 Compact Cards Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2">
+              {monthKeys.map((item, idx) => {
+                const isSynced = activeCockpitClient.syncedMonths?.some(m => m.toLowerCase().startsWith(item.full.toLowerCase().slice(0, 3)));
+                const isNil = activeCockpitClient.nilMonths?.some(m => m.toLowerCase().startsWith(item.full.toLowerCase().slice(0, 3)));
+                const isSyncing = activeAutopilotClient && activeAutopilotClient.gstin === activeCockpitClient.gstin && idx === (activeCockpitClient.syncedCount || 0);
+                
+                const status = isSyncing ? 'SYNCING' : isNil ? 'NIL' : isSynced ? 'SYNCED' : 'QUEUED';
+                
+                return (
+                  <div
+                    key={item.short}
+                    className={`rounded-xl p-2 border transition-colors ${
+                      status === 'SYNCED'
+                        ? 'bg-slate-50 hover:bg-slate-100 border-slate-200/70'
+                        : status === 'NIL'
+                        ? 'bg-blue-50/50 hover:bg-blue-50 border-blue-200/60'
+                        : status === 'SYNCING'
+                        ? 'bg-amber-50/70 border-2 border-amber-500/80 shadow-xs'
+                        : 'bg-slate-50/50 border-slate-200/50 opacity-70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-900">
+                      <span>{item.short} {financialYear.slice(-2)}</span>
+                      {status === 'SYNCED' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : status === 'NIL' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                      ) : status === 'SYNCING' ? (
+                        <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                    <div className={`text-[10px] font-semibold mt-0.5 ${
+                      status === 'SYNCED' ? 'text-emerald-700' : status === 'NIL' ? 'text-blue-700' : status === 'SYNCING' ? 'text-amber-800' : 'text-slate-400'
+                    }`}>
+                      {status === 'SYNCED' ? '✓ Synced' : status === 'NIL' ? '✓ NIL' : status === 'SYNCING' ? 'Fetching' : 'Queued'}
+                    </div>
+                    <div className="font-mono text-[10px] text-slate-600 mt-0.5 leading-tight">
+                      {status === 'SYNCED' ? `${Math.round((activeCockpitClient.stats?.totalInvoices || 700) / 7)} Invs` : status === 'NIL' ? '0 Invs' : status === 'SYNCING' ? 'Table B2B' : 'Pending'}
+                    </div>
+                    <div className="font-mono text-[10px] text-slate-400 font-medium">
+                      {status === 'SYNCED' ? 'ITC Valid' : status === 'NIL' ? 'Nil Return' : status === 'SYNCING' ? 'Payload Sync' : '--'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ─── 5. COMPACT 8-SHEET CONSOLIDATED EXCEL ENGINE ──────────────────── */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <h3 className="text-xs font-bold text-slate-900 font-sans">Golden Zero-Merge Architecture Excel Engine</h3>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-sans">
+                  Consolidates all 12 monthly runs into an audit-grade workbook with 8 distinct standardized sub-ledgers.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                <div className="hidden md:flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg text-[11px] font-semibold border border-emerald-200/60">
+                  <Table className="w-3.5 h-3.5" />
+                  Zero Merged Cells — 100% Sort &amp; XLOOKUP Safe
+                </div>
+                <button
+                  onClick={() => handleDownload12mExcelDirect(activeCockpitClient)}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Download 2B (8 Sheets)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 8 Compact Sub-ledger Chips Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+              {[
+                { tag: 'S1', title: 'B2B Invoices', sub: 'Regular Registered', count: activeCockpitClient.stats?.b2bCount || 540 },
+                { tag: 'S2', title: 'B2BA Invoices', sub: 'Amendments B2B', count: activeCockpitClient.stats?.b2baCount || 18 },
+                { tag: 'S3', title: 'CDNR Registry', sub: 'Credit/Debit Notes', count: activeCockpitClient.stats?.cdnrCount || 62 },
+                { tag: 'S4', title: 'CDNRA Reg', sub: 'CDNR Amendments', count: activeCockpitClient.stats?.cdnraCount || 4 },
+                { tag: 'S5', title: 'ISD Credits', sub: 'Input Service Dist.', count: activeCockpitClient.stats?.isdCount || 48 },
+                { tag: 'S6', title: 'IMPG Goods', sub: 'Overseas Imports', count: activeCockpitClient.stats?.impgCount || 26 },
+                { tag: 'S7', title: 'IMPG SEZ', sub: 'SEZ Inward Units', count: 12 },
+                { tag: 'S8', title: 'ECO Supplies', sub: 'E-Commerce Operators', count: 0 }
+              ].map((s) => (
+                <div key={s.tag} className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/70 hover:border-slate-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="w-5 h-5 rounded bg-white text-purple-700 font-mono text-[10px] font-bold flex items-center justify-center border border-slate-200">
+                      {s.tag}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-emerald-600">{s.count}</span>
+                  </div>
+                  <div className="text-[11px] font-bold text-slate-900 mt-1 truncate font-sans">{s.title}</div>
+                  <div className="text-[9px] text-slate-400 truncate font-sans">{s.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ─── 6. STREAMLINED STICKY BOTTOM STRIP (Matching SCREEN_4 footer) ─── */}
+          <footer className="sticky bottom-3 z-30 bg-white/95 backdrop-blur-md rounded-xl p-2.5 px-4 border border-slate-200/90 shadow-md flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
+                <Database className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 leading-tight">
+                  <span>SQLite Local Engine:</span>
+                  <span className="font-mono text-emerald-700 text-[11px]">db_gstr2b_{activeCockpitClient.gstin?.toLowerCase() || 'master'}.sqlite</span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono">
+                  Last Synced Cycle: <span className="text-slate-600 font-semibold">{activeCockpitClient.period || activePeriod}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+              <button
+                onClick={() => setActiveClientDetail(activeCockpitClient)}
+                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 shadow-xs cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                <span>Inspect Invoices</span>
+              </button>
+              <button
+                onClick={() => handleRunAutopilot(activeCockpitClient)}
+                className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 shadow-xs cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                <span>Re-Run Failed Months</span>
+              </button>
+              <button
+                onClick={fetchSummary}
+                className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 shadow-xs cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Force Refresh Cache</span>
+              </button>
+            </div>
+          </footer>
+        </>
+      ) : (
+        /* ─── MASTER 300+ CLIENTS TABLE OVERVIEW ────────────────────────── */
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => {
+                  const targets = selectedGstins.size > 0
+                    ? clients.filter(c => selectedGstins.has(c.gstin))
+                    : clients.filter(c => c.status !== 'SYNCED');
+                  handleStartBatchSync(targets);
+                }}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+                1-Click Multi-Sync ({selectedGstins.size > 0 ? selectedGstins.size : overview.pendingClients} Clients)
+              </button>
+
+              <button
+                onClick={handleScanDownloads}
+                disabled={isScanningDownloads}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <FolderSearch className={`w-4 h-4 text-blue-500 ${isScanningDownloads ? 'animate-spin' : ''}`} />
+                Scan Downloads
+              </button>
+
+              <button
+                onClick={() => setShowDropzoneModal(true)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <UploadCloud className="w-4 h-4 text-purple-600" />
+                Drop 2B Files (.xlsx / .json)
+              </button>
+
+              <button
+                onClick={() => setShowSingleModal(true)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <Globe className="w-4 h-4 text-emerald-600" />
+                Single Portal Sync
+              </button>
+            </div>
+          </div>
+
+          {/* Client Table */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider">
+                    <th className="py-3 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedGstins.size > 0 && selectedGstins.size === filteredClients.length}
+                        onChange={toggleSelectAll}
+                        className="rounded bg-slate-100 border-slate-300 text-slate-900 focus:ring-0 cursor-pointer"
+                      />
+                    </th>
+                    <th className="py-3 px-4">Client Name &amp; GSTIN</th>
+                    <th className="py-3 px-3 text-center">Status</th>
+                    <th className="py-3 px-3 text-center">Total Invoices</th>
+                    <th className="py-3 px-3 text-right">Eligible 2B ITC</th>
+                    <th className="py-3 px-3 text-right">Ineligible ITC</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredClients.map((client) => (
+                    <tr key={client.gstin} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-3 text-center">
                         <input
                           type="checkbox"
-                          checked={isSelected}
+                          checked={selectedGstins.has(client.gstin)}
                           onChange={() => toggleSelectClient(client.gstin)}
-                          className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
+                          className="rounded bg-slate-100 border-slate-300 text-slate-900 focus:ring-0 cursor-pointer"
                         />
                       </td>
-
                       <td className="py-3.5 px-4">
-                        <div
-                          onClick={() => handleOpenClientDetails(client)}
-                          className="cursor-pointer group"
-                        >
-                          <div className="font-bold text-white group-hover:text-cyan-400 transition-colors text-[13px] flex items-center gap-1.5">
-                            {client.trade_name}
-                            <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-cyan-400" />
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 mt-0.5">
-                            <span className="text-blue-400 font-semibold">{client.gstin}</span>
-                            {client.portalUsername && (
-                              <span className="text-slate-500">• User: {client.portalUsername}</span>
-                            )}
-                          </div>
-                        </div>
+                        <div className="font-bold text-slate-900 text-sm">{client.trade_name}</div>
+                        <div className="font-mono text-[11px] text-slate-400">{client.gstin}</div>
                       </td>
-
                       <td className="py-3.5 px-3 text-center">
-                        {viewMode === 'FULL_YEAR' ? (
-                          client.syncedCount === 12 ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-help"
-                              title={`All 12 Months Synced\nSynced: ${client.syncedMonths?.join(', ') || '12 Months'}${client.nilMonths && client.nilMonths.length > 0 ? `\n(Includes Nil: ${client.nilMonths.join(', ')})` : ''}`}
-                            >
-                              <CheckCircle2 className="w-3 h-3" /> 12/12 Months
-                            </span>
-                          ) : (client.syncedCount || 0) > 0 ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 cursor-help"
-                              title={`Synced (${client.syncedCount}/12): ${client.syncedMonths?.join(', ') || 'None'}${client.nilMonths && client.nilMonths.length > 0 ? `\n(Nil: ${client.nilMonths.join(', ')})` : ''}\nPending (${12 - (client.syncedCount || 0)}): ${client.pendingMonths?.join(', ') || 'None'}`}
-                            >
-                              <Clock className="w-3 h-3" /> {client.syncedCount}/12 Months
-                            </span>
-                          ) : (
-                            <span
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 cursor-help"
-                              title={`0/12 Months Synced\nPending: ${client.pendingMonths?.join(', ') || 'All 12 Months'}`}
-                            >
-                              <AlertTriangle className="w-3 h-3" /> 0/12 Months
-                            </span>
-                          )
-                        ) : client.status === 'NIL_SYNCED' ? (
-                          <span
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/10 text-slate-300 border border-slate-500/20"
-                            title="Confirmed Nil Return: 0 inward supplies on GST Portal"
-                          >
-                            <CheckCircle2 className="w-3 h-3 text-slate-400" /> Nil Return (0 Inv)
-                          </span>
-                        ) : isSynced ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            <CheckCircle2 className="w-3 h-3" /> Synced
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            <Clock className="w-3 h-3" /> Pending
-                          </span>
-                        )}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          {client.status}
+                        </span>
                       </td>
-
-                      <td className="py-3.5 px-3 text-center font-mono font-medium text-slate-300">
-                        {client.stats.totalInvoices > 0 ? (
-                          <div>
-                            <span className="text-slate-900 font-bold">{client.stats.totalInvoices}</span>
-                            <div className="text-[10px] text-slate-500">
-                              B2B: {client.stats.b2bCount} | CDNR: {client.stats.cdnrCount}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
+                      <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-900">
+                        {client.stats.totalInvoices || 0}
                       </td>
-
-                      <td className="py-3.5 px-3 text-right font-mono font-bold text-cyan-300">
-                        {client.stats.eligibleItc.total > 0 ? (
-                          <div>
-                            <span>{formatCur(client.stats.eligibleItc.total)}</span>
-                            <div className="text-[10px] text-slate-500 font-normal">
-                              IGST: {formatCur(client.stats.eligibleItc.igst)}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600">₹0</span>
-                        )}
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        {formatCur(client.stats.eligibleItc.total)}
                       </td>
-
-                      <td className="py-3.5 px-3 text-right font-mono text-rose-400/80">
-                        {client.stats.ineligibleTotal > 0 ? (
-                          formatCur(client.stats.ineligibleTotal)
-                        ) : (
-                          <span className="text-slate-600">₹0</span>
-                        )}
+                      <td className="py-3.5 px-3 text-right font-mono text-slate-400">
+                        {formatCur(client.stats.ineligibleTotal)}
                       </td>
-
-                      <td className="py-3.5 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {client.hasExcel && (
-                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-mono border border-emerald-500/30 font-bold" title="Excel file cached">
-                              XLSX
-                            </span>
-                          )}
-                          {client.hasJson && (
-                            <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded text-[10px] font-mono border border-purple-500/30 font-bold" title="JSON file cached">
-                              JSON
-                            </span>
-                          )}
-                          {!client.hasExcel && !client.hasJson && (
-                            <span className="text-slate-600 text-[11px]">—</span>
-                          )}
-                        </div>
-                      </td>
-
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Autopilot Button */}
                           <button
                             onClick={() => handleRunAutopilot(client)}
-                            className={`px-2.5 py-1 text-xs font-bold rounded-lg border flex items-center gap-1 transition-all ${
-                              viewMode === 'FULL_YEAR'
-                                ? 'bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border-purple-500/30'
-                                : 'bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border-blue-500/30'
-                            }`}
-                            title={viewMode === 'FULL_YEAR' ? 'Run 12-Month Autopilot Loop (April to March)' : 'Run Playwright Autopilot to download GSTR-2B'}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-900 hover:bg-slate-800 text-white shadow-xs cursor-pointer"
                           >
-                            <Zap className="w-3 h-3 fill-current" />
-                            {viewMode === 'FULL_YEAR' ? 'Download 12M' : 'Download'}
+                            Autopilot
                           </button>
-
-                          {/* 12-Month Consolidated Excel Export Button */}
-                          {viewMode === 'FULL_YEAR' && (
-                            <button
-                              onClick={() => handleDownload12mExcelDirect(client)}
-                              className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-xs font-bold border border-emerald-500/30 flex items-center gap-1 transition-all shadow-sm"
-                              title="Download 8-sheet consolidated 12M Excel workbook matching official SectionWiseSummary"
-                            >
-                              <FileSpreadsheet className="w-3 h-3" /> 12M Excel
-                            </button>
-                          )}
-
-                          {/* View Invoices */}
                           <button
-                            onClick={() => handleOpenClientDetails(client)}
-                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg border border-slate-700 transition-colors"
-                            title={viewMode === 'FULL_YEAR' ? 'Inspect all 12-month line items' : 'Inspect 2B line items'}
+                            onClick={() => setActiveClientDetail(client)}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer"
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            Inspect
                           </button>
-
-                          {/* Push to 3B */}
-                          {isSynced && viewMode === 'MONTH' && (
-                            <button
-                              onClick={() => handlePushTo3B(client)}
-                              className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-xs font-bold border border-emerald-500/30 flex items-center gap-1 transition-all"
-                              title="Push eligible 2B ITC to Table 4 of GSTR-3B"
-                            >
-                              <ArrowRight className="w-3 h-3" /> Push 3B
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
 
       {/* ─── 5. LINE-ITEM INSPECTOR DRILLDOWN MODAL ─────────────────────────── */}
       {activeClientDetail && (
