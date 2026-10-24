@@ -16,7 +16,8 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 8: Autopilot Runtime Execution & Production Database Hardening** - Shield browser evaluation code from obfuscator scrambling and auto-seed master clients database in packaged Windows builds. (completed 2026-10-23)
 - [x] **Phase 9: Suite 04 Returns Enterprise Fluid Dashboard Layout Overhaul** - Elevate and restructure Returns Preparation & Filing across all 5 tabs per the Stitch enterprise design package (`stitch_vaswani_audit_enterprise_dashboard`). (completed 2026-10-24)
 - [x] **Phase 10: Enterprise Modernized Shell & Complete Returns Dashboard 1:1 Stitch Alignment** - Implement the smart collapsible left sidebar rail, standardized top header with Port 9000 & FY switcher, and rebuild all 5 Returns Dashboard tabs to 1:1 match Stitch templates. (completed 2026-10-24)
-- [ ] **Phase 11: Suite 04 Returns Complete Restructuring & Alignment with Newly Downloaded Stitch Assets** - Implement the refined layouts from the new Stitch assets directory (`GST RETURN MODULE UI ASSETS/...`): (1) Tab 1 Formal GSTR-3B Computation Sheet with 28-line table, GSTR-1 & 2B ingest cards, and Rule 88A set-off cascade; (2) Tab 2 FY360 Executive Cockpit with Electronic Credit Ledger horizontal header banner; (3) Tab 3 Nexus IMS Decision Hub with circular timer; (4) Tab 4 Inward ITC Autopilot Cockpit with speed telemetry and interactive captcha resolver; (5) Tab 5 Outward Autopilot Sales Console with horizontal hero and split 12M grid + captcha card; (6) Brand Favicons & PWA Icons.
+- [x] **Phase 11: Suite 04 Returns Complete Restructuring & Alignment with Newly Downloaded Stitch Assets** - Implement the refined layouts from the new Stitch assets directory (`GST RETURN MODULE UI ASSETS/...`): (1) Tab 1 Formal GSTR-3B Computation Sheet with 28-line table, GSTR-1 & 2B ingest cards, and Rule 88A set-off cascade; (2) Tab 2 FY360 Executive Cockpit with Electronic Credit Ledger horizontal header banner; (3) Tab 3 Nexus IMS Decision Hub with circular timer; (4) Tab 4 Inward ITC Autopilot Cockpit with speed telemetry and interactive captcha resolver; (5) Tab 5 Outward Autopilot Sales Console with horizontal hero and split 12M grid + captcha card; (6) Brand Favicons & PWA Icons. (completed 2026-10-24)
+- [ ] **Phase 12: GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)** - Autonomous multi-endpoint scraping across standard notices, additional scrutiny notices (ASMT-10, DRC-01), and Return Compliance (DRC-01B/C), with local SQLite tracking, deterministic multi-return cross-reconciliation, and dual-engine statutory legal reply generation.
 
 ## Phase Details
 
@@ -220,6 +221,32 @@ Plans:
 - [x] 11-04: Tab 4 Inward ITC Autopilot Cockpit & Distorted CAPTCHA Resolver Alignment
 - [x] 11-05: Tab 5 Outward Autopilot Restructured Layout (Split 12M Tabs + CAPTCHA) Alignment
 
+### Phase 12: GST Notices & Orders Autonomous Suite (Autopilot Downloader, Tracker & AI Reply Drafter)
+
+**Goal**: Deliver a comprehensive GST notices and orders management suite for enterprise compliance:
+1. Autonomous Playwright scraper across (a) `View Notices and Orders`, (b) `View Additional Notices/Orders`, and (c) `Return Compliance` (DRC-01B & DRC-01C), safely downloading all notice PDFs and annexures into local encrypted storage without breaking SSO session.
+2. Local SQLite persistence (`gst_notices`, `gst_notice_attachments`, `gst_notice_replies`) maintaining DIN, issuing officers, hearing dates, and demanded amounts.
+3. Limitation & Hearing Calendar HUD alerting 7-day deadlines (DRC-01B/C) and 30-day deadlines (ASMT-10, DRC-01) with urgent priority chips.
+4. Deterministic Multi-Return Cross-Reconciliation comparing notice figures against local GSTR-1, GSTR-2B, GSTR-3B, and Purchase Register tables to calculate the exact cause of difference (timing difference, late vendor filing, RCM, or clerical error) and generate Zero-Merge analytical Excel annexures (`ws['!merges'] = []`).
+5. Dual-Engine Legal Reply Drafter producing audit-grade written submissions in Form GST ASMT-11, Form GST DRC-06, and DRC-01B/C Part B with statutory citations (Sections 16(5)/(6), 61, 73, 74, 128A, and Circular 211/2024).
+
+**Depends on**: Phase 11, Phase 8
+**Requirements**: NOTICES-01, NOTICES-02, NOTICES-03, NOTICES-04, NOTICES-05
+**Success Criteria** (what must be TRUE):
+  1. 1-Login Playwright Autopilot safely navigates to all 3 portal notice destinations and downloads notice PDFs and annexures without hitting "Access Denied" or losing SSO session.
+  2. Notices and evidence files are catalogued in SQLite with limitation date countdowns calculated from issue dates.
+  3. Notice discrepancies cross-reference local return tables and isolate causes of difference without double-counting.
+  4. Legal reply drafts populate correct statutory formats (ASMT-11 / DRC-06) with relevant statutory defenses and zero-merge reconciliation sheets.
+  5. UI dashboard adheres to Obsidian Glass aesthetic and integrates into the persistent sidebar navigation.
+
+**Plans**: 4 plans mapped
+
+Plans:
+- [ ] 12-01: SQLite Schema & Backend API (`notices/db.js`, `notices_routes.js`, `server.js`)
+- [ ] 12-02: Playwright Portal Autopilot Scraper (`notices/autopilot.js`) across 3 notice destinations
+- [ ] 12-03: Deterministic Discrepancy Cross-Reconciler & Zero-Merge Excel Annexure Engine (`src/lib/noticeReconciliation.ts`)
+- [ ] 12-04: AI / Template Legal Reply Drafter & Frontend Dashboard (`src/pages/GstNoticesDashboard.tsx`)
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-24 after Phase 11 completion*
+*Last updated: 2026-10-24 after Phase 12 GST Notices addition*

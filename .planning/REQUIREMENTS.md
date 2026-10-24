@@ -97,6 +97,19 @@
 | UI-STITCH-03 | Phase 9 | Complete |
 | UI-STITCH-04 | Phase 9 | Complete |
 | UI-STITCH-05 | Phase 9 | Complete |
+| NOTICES-01 | Phase 12 | Pending |
+| NOTICES-02 | Phase 12 | Pending |
+| NOTICES-03 | Phase 12 | Pending |
+| NOTICES-04 | Phase 12 | Pending |
+| NOTICES-05 | Phase 12 | Pending |
+
+### GST Notices & Orders Autonomous Hub (Phase 12)
+
+- [ ] **NOTICES-01**: Multi-Endpoint Portal Autopilot Scraper — autonomous 1-login scraping across `View Notices and Orders`, `View Additional Notices/Orders`, and `Return Compliance` (DRC-01B/C) with attachment downloads.
+- [ ] **NOTICES-02**: Persistent SQLite Repository (`gst_notices`, `gst_notice_attachments`, `gst_notice_replies`) storing metadata, DIN, limitation dates, and extracted demand amounts.
+- [ ] **NOTICES-03**: Limitation & Hearing Calendar HUD — automated countdowns alerting 7-day deadlines (DRC-01B/C) and 30-day deadlines (ASMT-10, DRC-01) with urgent risk badges.
+- [ ] **NOTICES-04**: Deterministic Multi-Return Cross-Reconciler — automated mathematical verification of notice demands against local GSTR-1, 2B, 3B, and PR tables, generating Zero-Merge analytical annexures.
+- [ ] **NOTICES-05**: Dual-Engine Legal Reply Drafter — structured generator for ASMT-11, DRC-06, and Part B replies incorporating statutory citations (Sections 16, 61, 73, 74, 128A, and CBIC Circular 211/2024).
 
 ### Suite 04 Returns Enterprise Fluid Dashboard Layout Overhaul (Phase 9)
 
@@ -116,9 +129,10 @@
 
 **Coverage:**
 - v1 requirements: 8 total
-- Mapped to phases: 8
+- Phase 12 requirements: 5 total (NOTICES-01 to NOTICES-05)
+- Mapped to phases: 13
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-22*
-*Last updated: 2026-10-23 after Phase 7 registration*
+*Last updated: 2026-10-24 after Phase 12 GST Notices registration*
