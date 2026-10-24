@@ -1,0 +1,77 @@
+{
+  "name": "Vaswani Return Enterprise - Audit & Tax Intelligence",
+  "short_name": "Vaswani Return",
+  "description": "Enterprise-grade statutory audit, GSTN filing autopilot, TRACES TDS reconciliation, and bank CMA credit appraisal platform for Chartered Accountants.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Practice Dashboard",
+      "short_name": "Dashboard",
+      "description": "Multi-entity client roster and filing compliance control tower",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/dashboard.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "GSTR-3B Working Sheet",
+      "short_name": "GSTR-3B",
+      "description": "Monthly tax liability and Rule 88A set-off cascade matrix",
+      "url": "/returns/working3b",
+      "icons": [{ "src": "/icons/working3b.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "GST IMS & 2B Manager",
+      "short_name": "IMS Manager",
+      "description": "Invoice Management System recipient decision hub",
+      "url": "/returns/ims2b",
+      "icons": [{ "src": "/icons/ims.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "12-Month FY Matrix",
+      "short_name": "FY Matrix",
+      "description": "Annual 12-month comparative reconciliation ledger",
+      "url": "/returns/matrix",
+      "icons": [{ "src": "/icons/matrix.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "GSTR-2B Autopilot",
+      "short_name": "2B Autopilot",
+      "description": "12-Month inward ITC autonomous loop downloader",
+      "url": "/returns/gstr2b-sync",
+      "icons": [{ "src": "/icons/gstr2b.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "GSTR-1 Autopilot",
+      "short_name": "GSTR-1",
+      "description": "12-Month outward sales matrix harvester",
+      "url": "/returns/gstr1-sync",
+      "icons": [{ "src": "/icons/gstr1.png", "sizes": "96x96" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

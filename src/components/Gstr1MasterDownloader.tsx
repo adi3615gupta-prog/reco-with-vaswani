@@ -716,64 +716,246 @@ export default function Gstr1MasterDownloader({
 
       {clientCockpitMode === 'COCKPIT' ? (
         <>
-          {/* ─── 2. LOW-PROFILE KPI & AUTOPILOT VELOCITY TRACKER ───────────────── */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex-1">
+          {/* ─── 1. HERO INGESTION & LAUNCH DECK - FULL HORIZONTAL SINGLE ROW (1:1 STITCH BLUEPRINT) ─── */}
+          <div className="w-full bg-white/95 backdrop-blur-xl rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/80 relative overflow-hidden">
+            <div className="absolute -right-16 -top-16 w-56 h-56 bg-gradient-to-br from-pink-500/15 via-indigo-500/10 to-transparent rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+              {/* Left: Title, Badges, Mode Toggle & Coverage details */}
+              <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-pink-700 bg-pink-50 border border-pink-200/60 px-2.5 py-0.5 rounded-md">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-                    Live Multi-Thread Engine
+                  <span className="font-label text-[11px] uppercase text-pink-700 font-bold tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[15px]">smart_toy</span>
+                    <span>Section 2 · Autonomous Loop Engine</span>
                   </span>
-                  <span className="text-[11px] text-slate-500 font-sans">Targeting GSTN Gateway API v2.9 • Monthly Outward Schema</span>
-                  <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200/50">OTP Auth Active</span>
+                  <span className="px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 border border-pink-200 font-mono text-[11px] font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse"></span>
+                    <span>Headless Chromium :9222 Ready</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[11px] font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>100% SHA-256 Verified</span>
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap items-baseline gap-2 font-sans">
-                  <h2 className="text-sm font-bold text-slate-900">
-                    Autopilot Status: <span className="text-purple-700 font-bold">{activeCockpitClient.syncedCount || 9} / 12 Months Synced</span>
+                <div className="flex flex-wrap items-baseline gap-3 mb-2">
+                  <h2 className="font-headline-sm text-lg sm:text-xl text-slate-900 font-bold tracking-tight">
+                    Autonomous 12-Month Outward Ingestion
                   </h2>
-                  <span className="text-slate-300">•</span>
-                  <div className="text-xs text-slate-600">
-                    Turnover Captured: <span className="font-mono font-bold text-emerald-700">₹ {formatCur(activeCockpitClient.totalTaxable || 184250000)}</span>
-                  </div>
-                  <span className="text-slate-300">•</span>
-                  <div className="text-[11px] text-slate-500">
-                    Session <span className="font-mono font-bold text-slate-700">#GST-8841-PL</span>
+                  <div className="inline-flex p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('SINGLE')}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        viewMode === 'SINGLE'
+                          ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Single-Month Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('12M')}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        viewMode === '12M'
+                          ? 'bg-white text-indigo-700 font-semibold shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Full FY 12 Months Autopilot Loop (Recommended)
+                    </button>
                   </div>
                 </div>
 
-                {/* Glowing Progress Bar */}
-                <div className="mt-2 w-full max-w-3xl">
-                  <div className="flex justify-between items-center text-[11px] mb-1">
-                    <span className="text-slate-500 font-medium">12-Month Ingestion Batch Velocity</span>
-                    <span className="font-mono font-bold text-pink-600">
-                      {Math.round(((activeCockpitClient.syncedCount || 9) / 12) * 100)}% Complete (Oct In Progress)
-                    </span>
+                <p className="font-body-sm text-xs text-slate-500 leading-relaxed">
+                  Background browser worker iterates GST portal tables (4A/4B/6B/6C, 5A/5B, Table 7, 9B CDNR, Table 12 HSN &amp; 13 Docs) synthesizing 12 monthly payloads into normalized ledger cache.
+                </p>
+              </div>
+
+              {/* Right: Key telemetry pills + Primary Trigger Button */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                <div className="grid grid-cols-2 sm:flex items-center gap-2">
+                  <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 text-center sm:text-left">
+                    <div className="text-[10px] uppercase text-slate-400 font-bold tracking-wider font-mono">Current Speed</div>
+                    <div className="font-mono text-sm font-bold text-slate-900 flex items-center justify-center sm:justify-start gap-1">
+                      <span className="material-symbols-outlined text-indigo-600 text-[16px]">speed</span> 1.6s / mo
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/80">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 shadow-xs relative transition-all duration-500"
-                      style={{ width: `${Math.round(((activeCockpitClient.syncedCount || 9) / 12) * 100)}%` }}
-                    >
-                      <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                  <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 text-center sm:text-left">
+                    <div className="text-[10px] uppercase text-slate-400 font-bold tracking-wider font-mono">Tables Covered</div>
+                    <div className="font-mono text-sm font-bold text-emerald-700 flex items-center justify-center sm:justify-start gap-1">
+                      <span className="material-symbols-outlined text-emerald-600 text-[16px]">check_circle</span> 9 Sections
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Autopilot Launch Button */}
-              <div className="flex items-center gap-2 shrink-0">
                 <button
+                  type="button"
                   onClick={() => handleRunAutopilot(activeCockpitClient)}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-700 hover:to-rose-700 text-white font-semibold text-xs shadow-sm shadow-pink-600/20 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+                  className="py-3 px-5 rounded-xl bg-gradient-to-r from-slate-900 via-slate-950 to-black text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-[0.98] group shrink-0"
                 >
-                  <Zap className="w-4 h-4 text-white fill-white" />
-                  <span>Launch GSTR-1 12M Autopilot</span>
+                  <span className="material-symbols-outlined text-pink-400 text-[18px] group-hover:rotate-45 group-hover:scale-110 transition-transform">
+                    rocket_launch
+                  </span>
+                  <span>Launch GSTR-1 12-Month Autopilot</span>
                 </button>
               </div>
             </div>
           </div>
+
+          {/* ─── 2. SPLIT LAYOUT: 12-MONTH SMALL TABS (LEFT) + GST PORTAL CAPTCHA RESOLVER (RIGHT) (1:1 STITCH BLUEPRINT) ─── */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+            {/* LEFT: 12-MONTH SYNCHRONIZATION STATUS (8 cols) */}
+            <div className="xl:col-span-8 bg-white/95 backdrop-blur-xl rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[19px]">view_timeline</span>
+                  </div>
+                  <div>
+                    <h3 className="font-headline-sm text-sm font-bold text-slate-900">
+                      12-Month Synchronization Status (FY {financialYear})
+                    </h3>
+                    <p className="font-body-sm text-[11px] text-slate-400">
+                      Realtime micro-worker status per tax period across GSTR-1 tables
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span>{activeCockpitClient.syncedCount || 9}/12 Reconciled</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Small compact 12-month tabs: 6 per row */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                {monthHarvestGrid.map((item) => (
+                  <div
+                    key={item.m}
+                    className={`rounded-xl p-2.5 border transition-all flex flex-col justify-between ${
+                      item.status === 'SYNCED'
+                        ? 'bg-slate-50 hover:bg-white border-slate-200/80 hover:border-emerald-300'
+                        : item.status === 'SYNCING'
+                        ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-400/40 shadow-xs'
+                        : 'bg-slate-50/50 border-slate-200/60 opacity-70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs text-slate-900">{item.m} {item.yr}</span>
+                      <span className="material-symbols-outlined text-[16px] text-emerald-600">
+                        {item.status === 'SYNCED' ? 'verified' : item.status === 'SYNCING' ? 'sync' : 'hourglass_top'}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 font-mono text-[11px]">
+                      <div className="text-slate-500">{item.inv > 0 ? `${item.inv} Invs` : '--'}</div>
+                      <div className="text-slate-900 font-semibold truncate">{item.to}</div>
+                    </div>
+                    <div className="mt-2 pt-1 border-t border-slate-200/50 flex items-center justify-between">
+                      <span className={`text-[9px] font-bold uppercase font-mono ${
+                        item.status === 'SYNCED' ? 'text-emerald-700' : item.status === 'SYNCING' ? 'text-amber-700' : 'text-slate-400'
+                      }`}>
+                        {item.status === 'SYNCED' ? 'Synced' : item.status === 'SYNCING' ? 'Syncing' : 'Queued'}
+                      </span>
+                      <span className="material-symbols-outlined text-[12px] text-emerald-600">
+                        {item.status === 'SYNCED' ? 'done_all' : 'pending'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Micro summary strip in card footer */}
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs font-mono text-slate-500 flex-wrap gap-2">
+                <span>Total Turnover: <strong className="text-slate-900">₹ {formatCur(activeCockpitClient.totalTaxable || 184250000)}</strong></span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1 font-sans">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Zero Data Loss Protected
+                </span>
+              </div>
+            </div>
+
+            {/* RIGHT: GST PORTAL CAPTCHA RESOLVER CARD (4 cols) */}
+            <div className="xl:col-span-4 bg-white/95 backdrop-blur-xl rounded-2xl p-4 sm:p-5 shadow-sm border border-amber-300/60 ring-1 ring-amber-400/20 flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-amber-400/10 rounded-full blur-xl pointer-events-none"></div>
+              
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[17px]">lock_open</span>
+                    </span>
+                    <h3 className="font-headline-sm text-sm font-bold text-slate-900">Portal CAPTCHA Resolver</h3>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 font-mono text-[10px] font-bold tracking-wider uppercase">
+                    Oct 24 Challenge
+                  </span>
+                </div>
+
+                <p className="font-body-sm text-xs text-slate-500 mb-3 leading-relaxed">
+                  Chromium agent paused at GSTN login barrier. Solve challenge to resume multi-threaded download.
+                </p>
+
+                {/* CAPTCHA Display & Input Row */}
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5 mb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    {/* Clean CAPTCHA Image Container */}
+                    <div className="h-11 flex-1 rounded-lg border border-slate-300 bg-white flex items-center justify-center overflow-hidden relative shadow-inner select-none px-3">
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+                        <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 30">
+                          <path d="M 0 15 Q 25 5, 50 15 T 100 15" fill="none" stroke="#64748b" strokeWidth="1.5"></path>
+                          <path d="M 0 8 Q 30 25, 70 10 T 100 20" fill="none" stroke="#94a3b8" strokeWidth="1"></path>
+                        </svg>
+                      </div>
+                      <div className="relative z-10 font-mono text-xl font-bold tracking-[0.25em] text-slate-800 flex items-center gap-1.5">
+                        <span className="inline-block transform -rotate-3 text-slate-900">7</span>
+                        <span className="inline-block transform rotate-6 text-slate-700">9</span>
+                        <span className="inline-block transform -rotate-6 text-slate-900">4</span>
+                        <span className="inline-block transform rotate-3 text-slate-800">2</span>
+                        <span className="inline-block transform -rotate-3 text-slate-900">8</span>
+                        <span className="inline-block transform rotate-6 text-slate-700">3</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleBringToFront}
+                      className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:border-slate-300 shadow-2xs transition-all"
+                      title="Bring Browser to Front"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">refresh</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      maxLength={6}
+                      defaultValue="794283"
+                      placeholder="Enter 6-digit code"
+                      className="w-full bg-white text-slate-900 font-mono text-sm text-center py-2 px-3 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold tracking-widest"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleBringToFront}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-emerald-400 text-[18px]">play_circle</span>
+                  <span>Submit &amp; Resume Download</span>
+                </button>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-2 font-mono">
+                  <span>Attempts: 1/3</span>
+                  <span className="text-emerald-700 font-semibold">Non-blocking resilience</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
 
           {/* ─── 3. OUTWARD TABLES COVERAGE DECK (Compact Chips Row) ───────────── */}
           <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs">
@@ -849,62 +1031,7 @@ export default function Gstr1MasterDownloader({
             </div>
           </div>
 
-          {/* ─── 4. MONTH-BY-MONTH PROGRESS GRID (12 Sleek Low-Profile Cards) ─── */}
-          <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-100">
-              <div>
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Month-by-Month Payload Harvesting Grid</h3>
-                <p className="text-[11px] text-slate-400">JSON extractions, verified outward vouchers, and tax yields</p>
-              </div>
-              <div className="font-mono text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                Apr {financialYear.slice(0, 4)} – Mar 20{financialYear.slice(-2)}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {monthHarvestGrid.map((item) => (
-                <div
-                  key={item.m}
-                  className={`p-2.5 rounded-xl border transition-all ${
-                    item.status === 'SYNCED'
-                      ? 'bg-slate-50 hover:bg-slate-100/90 border-slate-200/70'
-                      : item.status === 'SYNCING'
-                      ? 'bg-amber-50/70 border-2 border-amber-500/80 ring-1 ring-amber-400/40 shadow-xs'
-                      : 'bg-slate-50/50 border-slate-200/50 opacity-70'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-slate-900">{item.m} {item.yr}</span>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        item.status === 'SYNCED'
-                          ? 'text-emerald-700 bg-emerald-100'
-                          : item.status === 'SYNCING'
-                          ? 'text-amber-800 bg-amber-100'
-                          : 'text-slate-400 bg-slate-100'
-                      }`}
-                    >
-                      {item.status === 'SYNCED' ? '✓ Synced' : item.status === 'SYNCING' ? 'Fetching' : 'Queued'}
-                    </span>
-                  </div>
-                  <div className="space-y-0.5 text-[11px]">
-                    <div className="flex justify-between text-slate-500">
-                      <span>Inv:</span>
-                      <span className="font-mono text-slate-800 font-semibold">{item.inv > 0 ? item.inv : '--'}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-500">
-                      <span>Turnover:</span>
-                      <span className="font-mono font-medium text-slate-900">{item.to}</span>
-                    </div>
-                    <div className="flex justify-between text-purple-700">
-                      <span>Tax:</span>
-                      <span className="font-mono font-bold">{item.tax}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          
 
           {/* ─── 5. CONSOLIDATED OUTWARD SALES MATRIX SUMMARY ───────────────────── */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">

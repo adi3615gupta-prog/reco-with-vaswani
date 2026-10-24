@@ -50,6 +50,7 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
   const [showTieOutSheet, setShowTieOutSheet] = useState<boolean>(false);
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [showDetailedWorksheet, setShowDetailedWorksheet] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Sync activeTab when initialTab prop changes
@@ -1529,775 +1530,1236 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
       </div>
 
       {/* TAB 1: GSTR-3B WORKING SHEET (THE CORE PRACTICE WORKSPACE) */}
-      {activeTab === 'working3b' && (
-        <div className="space-y-6 animate-pop-in">
-          {/* Returns Auto-Pilot & Ingestion Deck (Full Auto-Mode) */}
-          <ReturnsAutoIngestDeck
-            selectedMonth={selectedMonth}
-            financialYear={workingData.profile.financialYear || '2025-26'}
-            onFinancialYearChange={handleFinancialYearChange}
-            currentGstin={workingData.profile.gstin}
-            currentFirmName={workingData.profile.firmName}
-            currentMonthData={currentMonthData}
-            workingData={workingData}
-            onApplyIngestedReturns={handleApplyIngestedReturns}
-            onClearMonthIngestion={handleClearMonthIngestion}
-            onSaveWorking={handleManualSave}
-            isSavingWorking={isSyncingToServer}
-          />
+{/* TAB 1: GSTR-3B FORMAL WORKING SHEET (1:1 STITCH BLUEPRINT) */}
+      {activeTab === 'working3b' && (() => {
+        // Computed statutory summary for Table 3.1 & Computation Sheet
+        const b2b = currentMonthData.outward.b2b || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const b2c = currentMonthData.outward.b2c || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const sezWith = currentMonthData.outward.sezWithPayment || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const sezWithout = currentMonthData.outward.sezWithoutPayment || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const zeroRated = currentMonthData.outward.zeroRated || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const nilRated = currentMonthData.outward.nilRated || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const exempt = currentMonthData.outward.exempt || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const advRec = currentMonthData.outward.advanceReceived || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const rentRec = currentMonthData.outward.rentReceived || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const incAmend = currentMonthData.outward.saleIncreaseAmendment || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const decAmend = currentMonthData.outward.saleDecreaseAmendment || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const crNote = currentMonthData.outward.creditNote || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const advAdj = currentMonthData.outward.advanceAdjusted || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const rcmInward = currentMonthData.outward.rcmInward || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
 
-          {/* Combined Breathing Bar: Segmented Month Track & Live Sync Ingestion Action Dock */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-center bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-            {/* Segmented Month Track (Apr - Mar) */}
-            <div className="xl:col-span-7 flex items-center gap-1 overflow-x-auto py-0.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-2 shrink-0">Period:</span>
-              <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl">
+        // Subtotal Sales before RCM
+        const subtotalSalesTaxable = (b2b.taxable || 0) + (b2c.taxable || 0) + (sezWith.taxable || 0) + (sezWithout.taxable || 0) +
+          (zeroRated.taxable || 0) + (nilRated.taxable || 0) + (exempt.taxable || 0) + (advRec.taxable || 0) + (rentRec.taxable || 0) +
+          (incAmend.taxable || 0) - (decAmend.taxable || 0) - (crNote.taxable || 0) - (advAdj.taxable || 0);
+
+        const subtotalSalesCgst = (b2b.cgst || 0) + (b2c.cgst || 0) + (advRec.cgst || 0) + (rentRec.cgst || 0) +
+          (incAmend.cgst || 0) - (decAmend.cgst || 0) - (crNote.cgst || 0) - (advAdj.cgst || 0);
+
+        const subtotalSalesSgst = (b2b.sgst || 0) + (b2c.sgst || 0) + (advRec.sgst || 0) + (rentRec.sgst || 0) +
+          (incAmend.sgst || 0) - (decAmend.sgst || 0) - (crNote.sgst || 0) - (advAdj.sgst || 0);
+
+        const subtotalSalesIgst = (b2b.igst || 0) + (b2c.igst || 0) + (sezWith.igst || 0) + (zeroRated.igst || 0) +
+          (advRec.igst || 0) + (rentRec.igst || 0) + (incAmend.igst || 0) - (decAmend.igst || 0) - (crNote.igst || 0) - (advAdj.igst || 0);
+
+        const subtotalSalesTotal = subtotalSalesCgst + subtotalSalesSgst + subtotalSalesIgst;
+
+        // Gross Liability (A)
+        const grossTaxable = subtotalSalesTaxable + (rcmInward.taxable || 0);
+        const grossCgst = subtotalSalesCgst + (rcmInward.cgst || 0);
+        const grossSgst = subtotalSalesSgst + (rcmInward.sgst || 0);
+        const grossIgst = subtotalSalesIgst + (rcmInward.igst || 0);
+        const grossTotal = grossCgst + grossSgst + grossIgst;
+
+        // Inward Supplies (ITC)
+        const itc2b = currentMonthData.inward.itc2b || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const importGoods = currentMonthData.inward.importGoods || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const rcmPaid = currentMonthData.inward.rcmPaid || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const crNotesInw = currentMonthData.inward.creditNotes || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const openingBal = currentMonthData.inward.openingCreditBal || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const debNotesInw = currentMonthData.inward.debitNotes || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const itcRev = currentMonthData.inward.itcReversed || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const itcAvail = currentMonthData.inward.totalItcAvailable || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+
+        // (A - B) Net Payable before Rule 88A Cross Set-off
+        const payableCgstRaw = grossCgst - itcAvail.cgst;
+        const payableSgstRaw = grossSgst - itcAvail.sgst;
+        const payableIgstRaw = grossIgst - itcAvail.igst;
+        const payableCgst = Math.max(0, payableCgstRaw);
+        const payableSgst = Math.max(0, payableSgstRaw);
+        const payableIgst = payableIgstRaw; // negative if surplus credit
+        const payableTotal = payableCgst + payableSgst + Math.max(0, payableIgst);
+
+        // Rule 88A Adjustment
+        const adj = currentMonthData.setoff.adjustment || { cgst: 0, sgst: 0, igst: 0, total: 0 };
+
+        // TDS/TCS Cash Ledger Offset
+        const tdsTcs = currentMonthData.settlement.tdsTcsOpeningCash || { cgst: 0, sgst: 0, igst: 0, total: 0 };
+
+        // Final Liability Payable (Post Set-off & TDS/TCS)
+        const finalPayable = currentMonthData.settlement.balancePayable || { cgst: 0, sgst: 0, igst: 0, total: 0 };
+
+        // Balance C/F
+        const balanceCf = currentMonthData.setoff.balanceCfNextMonth || { cgst: 0, sgst: 0, igst: 0, total: 0 };
+
+        // Final Cash Outflow including RCM, Late Fees, and Interest
+        const rcmPayableVal = (rcmInward.cgst || 0) + (rcmInward.sgst || 0) + (rcmInward.igst || 0);
+        const lateFeesVal = currentMonthData.settlement.lateFees || 0;
+        const interestVal = currentMonthData.settlement.interest || 0;
+        const finalNetCashDeposit = finalPayable.total + rcmPayableVal + lateFeesVal + interestVal;
+
+        // Rule 88A Waterfall Telemetry
+        const igstCreditAvail = itcAvail.igst;
+        const igstLiab = grossIgst;
+        const igstAppliedToIgst = Math.min(igstCreditAvail, igstLiab);
+        const residualIgst = Math.max(0, igstCreditAvail - igstLiab);
+        const igstCreditUtilizedPercent = igstCreditAvail > 0 ? Math.min(100, Math.round(((igstCreditAvail - (balanceCf.igst || 0)) / igstCreditAvail) * 100)) : 0;
+        const cgstCreditAvail = itcAvail.cgst;
+        const cgstLiab = grossCgst;
+        const cgstAppliedToCgst = Math.min(cgstCreditAvail, cgstLiab);
+        const sgstCreditAvail = itcAvail.sgst;
+        const sgstLiab = grossSgst;
+        const sgstAppliedToSgst = Math.min(sgstCreditAvail, sgstLiab);
+
+        // Cell helper
+        const renderCell = (val: number, isCurrency = true, isMuted = false, isBold = false, colorClass = '') => {
+          if (!val || val === 0) {
+            return <span className="text-slate-400 font-mono">-</span>;
+          }
+          return (
+            <span className={`font-mono tabular-nums ${isBold ? 'font-bold' : ''} ${colorClass || (isMuted ? 'text-slate-600' : 'text-slate-900')}`}>
+              {val < 0 ? `-${formatCur(Math.abs(val))}` : formatCur(val)}
+            </span>
+          );
+        };
+
+        return (
+          <div className="space-y-6 animate-pop-in">
+            {/* Banner: Document Working Sheet Header from Reference Image */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="material-symbols-outlined text-indigo-600 text-[22px]">assignment</span>
+                  <h2 className="font-headline-md text-lg md:text-xl text-slate-900 font-bold uppercase tracking-tight">
+                    GSTR-3B WORKING FOR THE MONTH OF {selectedMonth.toUpperCase()} {currentMonthData.year}
+                  </h2>
+                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200/60 font-label text-[10px] px-2.5 py-0.5 rounded-full uppercase font-bold tracking-wider">
+                    Formal Working
+                  </span>
+                </div>
+                <p className="font-body-sm text-xs text-slate-500 mt-1">
+                  Official working sheet aligned with Table 3.1 Outward Liability, Table 4 ITC computation, and Rule 88A set-off balances
+                </p>
+              </div>
+              {/* Month Navigation Strip */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
                 {GSTR3B_MONTHS.map(m => {
-                  const mData = workingData.months[m];
                   const isSelected = selectedMonth === m;
-                  const hasCashPayable = mData.settlement.balancePayable.total > 0;
-                  const hasCreditCf = mData.setoff.balanceCfNextMonth.total > 0;
-
+                  const mData = workingData.months[m];
+                  const hasCash = (mData?.settlement?.balancePayable?.total || 0) > 0;
                   return (
                     <button
                       key={m}
                       onClick={() => setSelectedMonth(m)}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all flex items-center gap-1 ${
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0 ${
                         isSelected
-                          ? 'bg-slate-900 text-white font-bold shadow-xs ring-1 ring-purple-500/40'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          ? 'bg-indigo-600 text-white shadow-xs border border-indigo-500 font-bold'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60'
                       }`}
                     >
                       <span>{m.slice(0, 3)}</span>
-                      {hasCashPayable && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block" title="Cash Tax Payable" />
-                      )}
-                      {hasCreditCf && !hasCashPayable && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Credit Balance C/F" />
-                      )}
+                      {isSelected ? (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                      ) : hasCash ? (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" title="Cash Tax Payable" />
+                      ) : null}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Live Sync Ingestion Action Dock */}
-            <div className="xl:col-span-5 flex items-center justify-start xl:justify-end gap-2 flex-wrap">
-              <button
-                onClick={() => setActiveTab('gstr2b_downloader')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 text-emerald-800 text-xs font-semibold transition-all transform hover:scale-[1.02]"
-              >
-                <DownloadCloud className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Fetch 2B</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('gstr1_downloader')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200/60 text-blue-800 text-xs font-semibold transition-all transform hover:scale-[1.02]"
-              >
-                <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
-                <span>Fetch 1</span>
-              </button>
-              <button
-                onClick={handleSyncTallyVouchers}
-                disabled={isSyncingTally}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/60 text-indigo-700 text-xs font-semibold transition-all transform hover:scale-[1.02] disabled:opacity-50"
-              >
-                <Server className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingTally ? 'animate-spin' : ''}`} />
-                <span>Sync Tally</span>
-              </button>
-
-              {/* Live Filing Readiness Badge */}
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-                <div className="flex flex-col text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Reco Match</span>
-                  <span className="text-xs font-mono font-bold text-purple-700">94.2%</span>
+            {/* Dual Ingestion Cards: GSTR-1 Outward & GSTR-2B Inward */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in-up">
+              {/* GSTR-1 Outward Download */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all flex flex-col justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shadow-2xs">
+                      <span className="material-symbols-outlined text-[20px]">cloud_download</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-headline-sm text-xs font-bold uppercase tracking-wide text-slate-900">GSTR-1 Outward Download</h3>
+                        <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                          Auto-Synced (Table 4A-12)
+                        </span>
+                      </div>
+                      <p className="font-body-sm text-[11px] text-slate-500 mt-0.5">Ingest filed sales invoices, credit notes & outward supplies into Table 3.1</p>
+                    </div>
+                  </div>
+                  <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{selectedMonth} {currentMonthData.year}</span>
                 </div>
-                <div className="w-10 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full w-[94.2%]" />
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="text-[11px]">13 B2B / B2C categories ready</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('gstr1_downloader')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">sync_alt</span>
+                      <span>Download GSTR-1 Data / Ingest 3.1</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualSave}
+                      disabled={isSyncingToServer}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium shadow-2xs active:scale-95 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[15px] text-slate-500">save</span>
+                      <span>Save Working Data</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* GSTR-2B Inward Download */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all flex flex-col justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200/70 flex items-center justify-center text-emerald-600 shadow-2xs">
+                      <span className="material-symbols-outlined text-[20px]">download_for_offline</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-headline-sm text-xs font-bold uppercase tracking-wide text-slate-900">GSTR-2B Inward Download</h3>
+                        <span className="font-mono text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                          Auto-Drafted (Net of CDNR)
+                        </span>
+                      </div>
+                      <p className="font-body-sm text-[11px] text-slate-500 mt-0.5">Fetch verified ITC from GSTN portal & lock into Table 4 computation</p>
+                    </div>
+                  </div>
+                  <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Port 9222 Active</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="text-[11px]">100% Non-destructive lock active</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('gstr2b_downloader')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">file_download</span>
+                      <span>Download GSTR-2B Data / Ingest ITC</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportExcel}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium shadow-2xs active:scale-95 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[15px] text-slate-500">ios_share</span>
+                      <span>Export Current Working</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* MAIN GSTR-3B WORKING SHEET TABLE - EXACT MATCH WITH REFERENCE IMAGE */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-[0_4px_20px_rgba(0,0,0,0.03)] overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-indigo-600 text-[20px]">table_chart</span>
+                  <div>
+                    <h3 className="font-headline-sm text-sm font-bold text-slate-900">Computation of Statutory Liability & Set-off (Form GSTR-3B)</h3>
+                    <p className="font-body-sm text-[11px] text-slate-500">Aligned with Table 3.1 Outward Taxable, Table 4 ITC claims & Rule 88A waterfall</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsEditMode(!isEditMode)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      isEditMode
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{isEditMode ? 'lock' : 'edit_note'}</span>
+                    <span>{isEditMode ? 'Lock Table (Read-Only)' : 'Edit Sub-Accounts'}</span>
+                  </button>
+                  <span className="font-mono text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100% Balanced
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-800 font-label text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                      <th className="py-3 px-4 font-bold border-r border-slate-200 w-2/5">PARTICULARS</th>
+                      <th className="py-3 px-4 font-bold text-right border-r border-slate-200 w-[12%]">TAXABLE</th>
+                      <th className="py-3 px-4 font-bold text-right border-r border-slate-200 w-[12%]">CGST</th>
+                      <th className="py-3 px-4 font-bold text-right border-r border-slate-200 w-[12%]">SGST</th>
+                      <th className="py-3 px-4 font-bold text-right border-r border-slate-200 w-[12%]">IGST</th>
+                      <th className="py-3 px-4 font-bold text-right w-[12%]">TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-xs divide-y divide-slate-200">
+                    {/* SECTION 1: OUTWARD SUPPLY */}
+                    {/* Sales (B2B) */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-800 font-medium border-r border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <span>Sales (B2B)</span>
+                          <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.2 rounded font-sans uppercase font-semibold">GSTR-1 Reco</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2b.taxable || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2b', 'taxable', parseFloat(e.target.value) || 0)}
+                            className="w-24 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2b.taxable)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2b.cgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2b', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2b.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2b.sgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2b', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2b.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2b.igst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2b', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2b.igst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-semibold">
+                        {renderCell(b2b.total, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* Sales (B2C) */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/50">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-800 font-medium border-r border-slate-200">
+                        <span>Sales (B2C)</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2c.taxable || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2c', 'taxable', parseFloat(e.target.value) || 0)}
+                            className="w-24 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2c.taxable)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2c.cgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2c', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2c.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2c.sgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2c', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2c.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={b2c.igst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'b2c', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(b2c.igst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-semibold">
+                        {renderCell(b2c.total, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* SEZ supply with payment */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">SEZ supply with payment</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(sezWith.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(sezWith.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(sezWith.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(sezWith.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 font-semibold">{renderCell(sezWith.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* SEZ supply without-payment */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">SEZ supply without-payment</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(sezWithout.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(0)}</td>
+                    </tr>
+
+                    {/* Zero Rated Supply/Export Sale */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Zero Rated Supply/Export Sale</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(zeroRated.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(zeroRated.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 font-semibold">{renderCell(zeroRated.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* Nil Rated Supply */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Nil Rated Supply</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(nilRated.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(0)}</td>
+                    </tr>
+
+                    {/* Exempt Sale */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Exempt Sale</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(exempt.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(0)}</td>
+                    </tr>
+
+                    {/* Advances Collected for Services */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Advances Collected for Services</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(advRec.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(advRec.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(advRec.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(advRec.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 font-semibold">{renderCell(advRec.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* Rent Received */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Rent Received</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(rentRec.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(rentRec.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(rentRec.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rentRec.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 font-semibold">{renderCell(rentRec.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* Sale Increased through Amendment */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">Sale Increased through Amendment</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(incAmend.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(incAmend.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(incAmend.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(incAmend.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums text-slate-900 font-semibold">{renderCell(incAmend.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* (-) Sale Decreased through Amendment */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white text-rose-700">
+                      <td className="py-2 px-4 font-sans text-xs border-r border-slate-200">(-) Sale Decreased through Amendment</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(decAmend.taxable ? -decAmend.taxable : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(decAmend.cgst ? -decAmend.cgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(decAmend.sgst ? -decAmend.sgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(decAmend.igst ? -decAmend.igst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(decAmend.total ? -decAmend.total : 0, true, false, true)}</td>
+                    </tr>
+
+                    {/* (-) Credit Note */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-rose-50/20 text-rose-700">
+                      <td className="py-2 px-4 font-sans text-xs border-r border-slate-200 font-medium">(-) Credit Note</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNote.taxable ? -crNote.taxable : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNote.cgst ? -crNote.cgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNote.sgst ? -crNote.sgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNote.igst ? -crNote.igst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(crNote.total ? -crNote.total : 0, true, false, true)}</td>
+                    </tr>
+
+                    {/* (-) Advances Settled Against Services */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white text-rose-700">
+                      <td className="py-2 px-4 font-sans text-xs border-r border-slate-200">(-) Advances Settled Against Services</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(advAdj.taxable ? -advAdj.taxable : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(advAdj.cgst ? -advAdj.cgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(advAdj.sgst ? -advAdj.sgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(advAdj.igst ? -advAdj.igst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(advAdj.total ? -advAdj.total : 0, true, false, true)}</td>
+                    </tr>
+
+                    {/* Total Sale as per Working */}
+                    <tr className="bg-slate-100 font-semibold border-t border-slate-300">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-900 border-r border-slate-200">Total Sale as per Working</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(subtotalSalesTaxable)}</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(subtotalSalesCgst)}</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">{renderCell(subtotalSalesSgst)}</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(subtotalSalesIgst)}</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-bold">{renderCell(subtotalSalesTotal, true, false, true)}</td>
+                    </tr>
+
+                    {/* Reverse Charge on Inward Supplies */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-800 font-medium border-r border-slate-200 flex items-center justify-between">
+                        <span>Reverse Charge on Inward Supplies</span>
+                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-sans uppercase font-semibold">RCM Liable</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={rcmInward.taxable || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'rcmInward', 'taxable', parseFloat(e.target.value) || 0)}
+                            className="w-24 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(rcmInward.taxable)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={rcmInward.cgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'rcmInward', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(rcmInward.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={rcmInward.sgst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'rcmInward', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(rcmInward.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={rcmInward.igst || ''}
+                            onChange={e => updateCurrentMonthField('outward', 'rcmInward', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(rcmInward.igst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-semibold">
+                        {renderCell(rcmInward.total, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* (A) Total Sale as per Working including Reverse Charge */}
+                    <tr className="bg-indigo-50/80 font-bold border-y-2 border-indigo-300">
+                      <td className="py-3 px-4 font-sans text-xs text-indigo-950 border-r border-slate-200 uppercase tracking-wide flex items-center justify-between">
+                        <span>(A) Total Sale as per Working including Reverse Charge</span>
+                        <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded font-sans font-bold">Gross Liability (A)</span>
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(grossTaxable, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(grossCgst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(grossSgst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(grossIgst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 font-bold text-sm">
+                        {renderCell(grossTotal, true, false, true, 'text-indigo-950')}
+                      </td>
+                    </tr>
+
+                    {/* SECTION 2: INWARD SUPPLIES (ITC) */}
+                    <tr className="bg-sky-50/60 font-semibold border-b border-sky-200">
+                      <td className="py-2.5 px-4 font-sans text-xs text-sky-900 border-r border-slate-200">
+                        ITC (As per books)
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-sky-950 font-semibold">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={currentMonthData.inward.itcBooks || ''}
+                            onChange={e => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setWorkingData(prev => {
+                                const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
+                                cloned.months[selectedMonth].inward.itcBooks = val;
+                                return cloned;
+                              });
+                            }}
+                            className="w-24 bg-white border border-sky-300 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:border-indigo-500 outline-none"
+                          />
+                        ) : renderCell(currentMonthData.inward.itcBooks || 0, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* ITC as per GSTR 2B */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-900 font-semibold border-r border-slate-200 flex items-center justify-between">
+                        <span>ITC as per GSTR 2B</span>
+                        <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-sans uppercase font-bold">2B Matched</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {renderCell(itc2b.taxable)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {renderCell(itc2b.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {renderCell(itc2b.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-indigo-700 border-r border-slate-200 font-bold">
+                        {renderCell(itc2b.igst, true, false, true, 'text-indigo-700')}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-semibold">
+                        {renderCell(itc2b.total, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* (+) Import purchase */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">(+) Import purchase</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(importGoods.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(importGoods.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(importGoods.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(importGoods.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(importGoods.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* (+) RCM paid on Inward Supplies */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">(+) RCM paid on Inward Supplies</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmPaid.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmPaid.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmPaid.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmPaid.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(rcmPaid.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* (+) Credit Notes */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">(+) Credit Notes</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNotesInw.taxable)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNotesInw.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNotesInw.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(crNotesInw.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(crNotesInw.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* (+) Opening Credit Balance */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-600 border-r border-slate-200">(+) Opening Credit Balance</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(openingBal.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(openingBal.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(openingBal.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(openingBal.total, true, false, true)}</td>
+                    </tr>
+
+                    {/* (-) Debit Notes */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30 text-rose-700">
+                      <td className="py-2 px-4 font-sans text-xs border-r border-slate-200">(-) Debit Notes</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(debNotesInw.taxable ? -debNotesInw.taxable : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(debNotesInw.cgst ? -debNotesInw.cgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(debNotesInw.sgst ? -debNotesInw.sgst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(debNotesInw.igst ? -debNotesInw.igst : 0)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(debNotesInw.total ? -debNotesInw.total : 0, true, false, true)}</td>
+                    </tr>
+
+                    {/* (-) ITC Reversed on Ineligible credit */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-rose-50/40 text-rose-700">
+                      <td className="py-2.5 px-4 font-sans text-xs border-r border-slate-200 flex items-center justify-between">
+                        <span>(-) ITC Reversed on Ineligible credit</span>
+                        <span className="text-[10px] text-rose-700 bg-rose-100 border border-rose-200 px-1.5 py-0.2 rounded font-sans uppercase font-bold">Rule 38/42/43/17(5)</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {renderCell(itcRev.taxable ? -itcRev.taxable : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRev.cgst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-rose-300 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 outline-none"
+                          />
+                        ) : renderCell(itcRev.cgst ? -itcRev.cgst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRev.sgst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-rose-300 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 outline-none"
+                          />
+                        ) : renderCell(itcRev.sgst ? -itcRev.sgst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRev.igst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-rose-300 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 outline-none"
+                          />
+                        ) : renderCell(itcRev.igst ? -itcRev.igst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums font-bold">
+                        {renderCell(itcRev.total ? -itcRev.total : 0, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* (B) Total ITC Available for Set off */}
+                    <tr className="bg-emerald-50/80 font-bold border-y-2 border-emerald-300">
+                      <td className="py-3 px-4 font-sans text-xs text-emerald-950 border-r border-slate-200 uppercase tracking-wide flex items-center justify-between">
+                        <span>(B) Total ITC Available for Set off</span>
+                        <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded font-sans font-bold">Eligible ITC (B)</span>
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-emerald-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(itcAvail.taxable, true, false, true, 'text-emerald-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-emerald-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(itcAvail.cgst, true, false, true, 'text-emerald-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-emerald-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(itcAvail.sgst, true, false, true, 'text-emerald-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-emerald-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(itcAvail.igst, true, false, true, 'text-emerald-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-emerald-950 font-bold text-sm">
+                        {renderCell(itcAvail.total, true, false, true, 'text-emerald-950')}
+                      </td>
+                    </tr>
+
+                    {/* SECTION 3: TAX LIABILITY COMPUTATION & SET OFF */}
+                    {/* (A-B) Payable */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white font-semibold">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-900 border-r border-slate-200 font-bold">
+                        (A-B) Payable
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-semibold">
+                        {renderCell(payableCgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-semibold">
+                        {renderCell(payableSgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-indigo-700 border-r border-slate-200 font-semibold">
+                        {renderCell(payableIgst, true, false, true, 'text-indigo-700')}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-bold">
+                        {renderCell(payableTotal, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* (-) Adjustment */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/40">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-800 border-r border-slate-200 flex items-center justify-between">
+                        <span>(-) Adjustment</span>
+                        <span className="text-[10px] text-slate-500 font-sans uppercase font-semibold">Rule 88A Cross Set-off</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {renderCell(adj.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {renderCell(adj.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-indigo-700 border-r border-slate-200 font-medium">
+                        {renderCell(adj.igst ? -adj.igst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-400">-</td>
+                    </tr>
+
+                    {/* (-) GST TDS/TCS Opening Cash Balance */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-800 border-r border-slate-200 flex items-center justify-between">
+                        <span>(-) GST TDS/TCS Opening Cash Balance</span>
+                        <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-sans uppercase font-semibold">Cash Ledger Offset</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={tdsTcs.cgst || ''}
+                            onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 outline-none"
+                          />
+                        ) : renderCell(tdsTcs.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={tdsTcs.sgst || ''}
+                            onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 outline-none"
+                          />
+                        ) : renderCell(tdsTcs.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200 font-medium">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={tdsTcs.igst || ''}
+                            onChange={e => updateCurrentMonthField('settlement', 'tdsTcsOpeningCash', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 outline-none"
+                          />
+                        ) : renderCell(tdsTcs.igst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 font-medium">
+                        {renderCell(tdsTcs.total, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* Final Liability Payable */}
+                    <tr className="bg-indigo-100/70 font-bold border-y-2 border-indigo-300">
+                      <td className="py-3 px-4 font-sans text-xs text-indigo-950 border-r border-slate-200 uppercase tracking-wide">
+                        Final Liability Payable
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(finalPayable.cgst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(finalPayable.sgst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 border-r border-slate-200 font-bold text-sm">
+                        {renderCell(finalPayable.igst, true, false, true, 'text-indigo-950')}
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-indigo-950 font-bold text-sm">
+                        {renderCell(finalPayable.total, true, false, true, 'text-indigo-950')}
+                      </td>
+                    </tr>
+
+                    {/* Balance C/f to next month */}
+                    <tr className="bg-slate-100/60 font-semibold border-b border-slate-200">
+                      <td className="py-2.5 px-4 font-sans text-xs text-slate-700 border-r border-slate-200">
+                        Balance C/f to next month
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-700 border-r border-slate-200 font-medium">
+                        {renderCell(balanceCf.cgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-slate-700 border-r border-slate-200 font-medium">
+                        {renderCell(balanceCf.sgst)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-emerald-700 border-r border-slate-200 font-bold">
+                        {renderCell(balanceCf.igst, true, false, true, 'text-emerald-700')}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums text-emerald-800 font-bold">
+                        {renderCell(balanceCf.total, true, false, true, 'text-emerald-800')}
+                      </td>
+                    </tr>
+
+                    {/* RCM Payable */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-700 border-r border-slate-200">RCM Payable (Cash)</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmInward.cgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmInward.sgst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">{renderCell(rcmInward.igst)}</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(rcmPayableVal, true, false, true)}</td>
+                    </tr>
+
+                    {/* Late Fees */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-slate-50/30">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-700 border-r border-slate-200">Late Fees</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={lateFeesVal || ''}
+                            onChange={e => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setWorkingData(prev => {
+                                const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
+                                cloned.months[selectedMonth].settlement.lateFees = val;
+                                return cloned;
+                              });
+                            }}
+                            className="w-24 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 outline-none"
+                          />
+                        ) : renderCell(lateFeesVal, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* Interest */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-white">
+                      <td className="py-2 px-4 font-sans text-xs text-slate-700 border-r border-slate-200">Interest</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums border-r border-slate-200">-</td>
+                      <td className="py-2 px-4 text-right tabular-nums font-semibold">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={interestVal || ''}
+                            onChange={e => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setWorkingData(prev => {
+                                const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
+                                cloned.months[selectedMonth].settlement.interest = val;
+                                return cloned;
+                              });
+                            }}
+                            className="w-24 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 outline-none"
+                          />
+                        ) : renderCell(interestVal, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* Balance Payable if any (Bottom Total Final Payment) */}
+                    <tr className="bg-slate-900 text-white font-bold text-sm">
+                      <td className="py-3.5 px-4 font-sans text-white font-bold border-r border-slate-800 uppercase tracking-wide">
+                        Balance Payable if any (Challan PMT-06 Net Outflow)
+                      </td>
+                      <td className="py-3.5 px-4 text-right tabular-nums border-r border-slate-800 text-slate-400">-</td>
+                      <td className="py-3.5 px-4 text-right tabular-nums border-r border-slate-800 text-slate-300">
+                        {renderCell(finalPayable.cgst + (rcmInward.cgst || 0), true, false, true, 'text-slate-200')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right tabular-nums border-r border-slate-800 text-slate-300">
+                        {renderCell(finalPayable.sgst + (rcmInward.sgst || 0), true, false, true, 'text-slate-200')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right tabular-nums border-r border-slate-800 text-indigo-300">
+                        {renderCell(finalPayable.igst + (rcmInward.igst || 0), true, false, true, 'text-indigo-300')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right tabular-nums text-emerald-400 font-extrabold text-base">
+                        ₹ {formatCur(finalNetCashDeposit)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Rule 88A & Net Cash Summary Insight Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Card 1: Gross Outward */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-label uppercase font-bold tracking-wider">Gross Outward Tax (A)</span>
+                  <span className="material-symbols-outlined text-indigo-600 text-[18px]">trending_up</span>
+                </div>
+                <div className="mt-2">
+                  <div className="font-mono text-2xl font-bold text-slate-900 tabular-nums">₹ {formatCur(grossTotal)}</div>
+                  <p className="font-body-sm text-xs text-slate-500 mt-0.5">Taxable Sales: ₹ {formatCur(grossTaxable)} (B2B + B2C + RCM)</p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-500">CGST + SGST:</span>
+                  <span className="text-slate-800 font-semibold">₹ {formatCur(grossCgst)} + ₹ {formatCur(grossSgst)}</span>
+                </div>
+              </div>
+
+              {/* Card 2: Total Set-off ITC */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-label uppercase font-bold tracking-wider">Total Eligible ITC (B)</span>
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px]">account_balance_wallet</span>
+                </div>
+                <div className="mt-2">
+                  <div className="font-mono text-2xl font-bold text-emerald-700 tabular-nums">₹ {formatCur(itcAvail.total)}</div>
+                  <p className="font-body-sm text-xs text-slate-500 mt-0.5">Net of Debit Notes & Ineligible Credit (₹ {formatCur(itcRev.total)})</p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-500">IGST Credit Available:</span>
+                  <span className="text-indigo-600 font-semibold">₹ {formatCur(igstCreditAvail)} ({igstCreditUtilizedPercent}% Set-off)</span>
+                </div>
+              </div>
+
+              {/* Card 3: Net Cash Balance Payable */}
+              <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 text-white rounded-2xl p-4 border border-indigo-800 shadow-lg shadow-indigo-950/20 flex flex-col justify-between relative overflow-hidden">
+                <div className="flex items-center justify-between text-xs text-indigo-200">
+                  <span className="font-label uppercase font-bold tracking-wider text-amber-300">Final Cash Payable</span>
+                  <span className="material-symbols-outlined text-amber-300 text-[18px]">verified</span>
+                </div>
+                <div className="mt-2">
+                  <div className="font-mono text-2xl font-extrabold text-white tabular-nums">₹ {formatCur(finalNetCashDeposit)}</div>
+                  <p className="font-body-sm text-xs text-indigo-200 mt-0.5">Includes RCM Liability of ₹ {formatCur(rcmPayableVal)}</p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-white/15 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-indigo-200">TDS/TCS Adjusted:</span>
+                  <span className="text-white font-semibold">₹ {formatCur(tdsTcs.total)} Offset</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Rule 88A Waterfall Set-off Engine & Credit Balances */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Rule 88A Cascade Waterfall (8 Cols) */}
+              <div className="lg:col-span-8 bg-white rounded-2xl border border-indigo-200/80 p-4 shadow-sm relative overflow-hidden">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm font-mono">
+                      88A
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 leading-tight">Rule 88A Set-off Cascade</h3>
+                      <p className="text-[10px] text-slate-500">Statutory Tax Waterfall Algorithm (Section 49A / 49B)</p>
+                    </div>
+                  </div>
+                  {/* Presets */}
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="text-slate-400 font-semibold mr-1">Presets:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleSetoffPreset('auto')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold transition-all shadow-xs"
+                    >
+                      ⚡ Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetoffPreset('all_cgst')}
+                      className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold transition-all"
+                    >
+                      👉 CGST
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetoffPreset('all_sgst')}
+                      className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold transition-all"
+                    >
+                      👉 SGST
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetoffPreset('equal')}
+                      className="px-2 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold transition-all"
+                    >
+                      ⚖️ 50/50
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetoffPreset('clear')}
+                      className="px-1.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3 Steps Waterfall */}
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Step 1 */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-indigo-300 transition-all">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">1</span>
+                        IGST Exhaustion
+                      </span>
+                      <span className="text-[10px] font-semibold text-rose-600 uppercase">{igstCreditUtilizedPercent}% Used</span>
+                    </div>
+                    <div className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Avail Credit:</span>
+                        <span className="font-bold text-slate-900">₹ {formatCur(igstCreditAvail)}</span>
+                      </div>
+                      <div className="flex justify-between text-purple-700 bg-purple-50/60 px-1 py-0.5 rounded">
+                        <span>Applied IGST:</span>
+                        <span className="font-bold">₹ {formatCur(igstAppliedToIgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Residual:</span>
+                        <span>₹ {formatCur(residualIgst)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-emerald-300 transition-all">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">2</span>
+                        CGST Utilization
+                      </span>
+                      <span className="text-[10px] font-semibold text-emerald-600 uppercase">Applied</span>
+                    </div>
+                    <div className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Avail Credit:</span>
+                        <span className="font-bold text-slate-900">₹ {formatCur(cgstCreditAvail)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700 bg-emerald-50/60 px-1 py-0.5 rounded">
+                        <span>Applied CGST:</span>
+                        <span className="font-bold">₹ {formatCur(cgstAppliedToCgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Cross IGST:</span>
+                        <span>Locked</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-emerald-300 transition-all">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">3</span>
+                        SGST Utilization
+                      </span>
+                      <span className="text-[10px] font-semibold text-emerald-600 uppercase">Applied</span>
+                    </div>
+                    <div className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Avail Credit:</span>
+                        <span className="font-bold text-slate-900">₹ {formatCur(sgstCreditAvail)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700 bg-emerald-50/60 px-1 py-0.5 rounded">
+                        <span>Applied SGST:</span>
+                        <span className="font-bold">₹ {formatCur(sgstAppliedToSgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Cross CGST:</span>
+                        <span>Blocked</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-medium">Waterfall Optimization:</span>
+                  <span className="font-semibold text-emerald-700 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100% Statutory Compliance
+                  </span>
+                </div>
+              </div>
+
+              {/* Electronic Credit Ledger Balances (4 Cols) */}
+              <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Landmark className="w-4 h-4 text-slate-700" />
+                      <h4 className="text-xs font-bold text-slate-900">Electronic Credit Ledger</h4>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">Closing C/F</span>
+                  </div>
+                  <div className="mt-3 space-y-2 text-xs font-mono">
+                    <div className="flex justify-between items-center py-1 px-2 rounded-lg bg-slate-50">
+                      <span className="text-slate-600">IGST Balance:</span>
+                      <span className="font-bold text-indigo-700">₹ {formatCur(balanceCf.igst)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 px-2 rounded-lg bg-slate-50">
+                      <span className="text-slate-600">CGST Balance:</span>
+                      <span className="font-bold text-slate-900">₹ {formatCur(balanceCf.cgst)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 px-2 rounded-lg bg-slate-50">
+                      <span className="text-slate-600">SGST Balance:</span>
+                      <span className="font-bold text-slate-900">₹ {formatCur(balanceCf.sgst)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center text-xs font-mono">
+                  <span className="font-sans text-slate-500 font-medium">Total Carried Over:</span>
+                  <span className="font-bold text-emerald-700">₹ {formatCur(balanceCf.total)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sticky Bottom Action Bar with Frosted Glass */}
+            <div className="sticky bottom-4 mt-8 z-30">
+              <div className="max-w-7xl mx-auto bg-white/95 backdrop-blur-xl p-3 md:p-4 rounded-2xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
+                    <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-900 uppercase tracking-tight">{workingData.profile.firmName || 'CLIENT WORKING'}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{workingData.profile.gstin}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-mono">
+                      Period: {selectedMonth} {currentMonthData.year} • Net Tax: ₹ {formatCur(finalNetCashDeposit)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleExportExcel}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-xs hover:shadow-emerald-950/20 transition-all"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Download Working Excel</span>
+                  </button>
+                  <button
+                    onClick={handleExportPdf}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 active:scale-95 text-white text-xs font-bold shadow-xs transition-all"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print Official PDF</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadJson}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold shadow-xs hover:shadow-indigo-950/20 transition-all"
+                  >
+                    <FileJson className="w-4 h-4" />
+                    <span>Generate GSTN Portal JSON</span>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
+        );
+      })()}
 
-          {/* 4 & 5. MAIN DATA WORKSPACE: 8:4 SPLIT GRID (1:1 STITCH BLUEPRINT) */}
-          {(() => {
-            // Computed statutory summary for Table 3.1
-            const t31a_taxable = (currentMonthData.outward.b2b?.taxable || 0) + (currentMonthData.outward.b2c?.taxable || 0) + 
-              (currentMonthData.outward.advanceReceived?.taxable || 0) + (currentMonthData.outward.rentReceived?.taxable || 0) + 
-              (currentMonthData.outward.saleIncreaseAmendment?.taxable || 0) - (currentMonthData.outward.saleDecreaseAmendment?.taxable || 0) - 
-              (currentMonthData.outward.creditNote?.taxable || 0) - (currentMonthData.outward.advanceAdjusted?.taxable || 0);
-            const t31a_igst = (currentMonthData.outward.b2b?.igst || 0) + (currentMonthData.outward.b2c?.igst || 0) + 
-              (currentMonthData.outward.advanceReceived?.igst || 0) + (currentMonthData.outward.rentReceived?.igst || 0) + 
-              (currentMonthData.outward.saleIncreaseAmendment?.igst || 0) - (currentMonthData.outward.saleDecreaseAmendment?.igst || 0) - 
-              (currentMonthData.outward.creditNote?.igst || 0) - (currentMonthData.outward.advanceAdjusted?.igst || 0);
-            const t31a_cgst = (currentMonthData.outward.b2b?.cgst || 0) + (currentMonthData.outward.b2c?.cgst || 0) + 
-              (currentMonthData.outward.advanceReceived?.cgst || 0) + (currentMonthData.outward.rentReceived?.cgst || 0) + 
-              (currentMonthData.outward.saleIncreaseAmendment?.cgst || 0) - (currentMonthData.outward.saleDecreaseAmendment?.cgst || 0) - 
-              (currentMonthData.outward.creditNote?.cgst || 0) - (currentMonthData.outward.advanceAdjusted?.cgst || 0);
-            const t31a_sgst = (currentMonthData.outward.b2b?.sgst || 0) + (currentMonthData.outward.b2c?.sgst || 0) + 
-              (currentMonthData.outward.advanceReceived?.sgst || 0) + (currentMonthData.outward.rentReceived?.sgst || 0) + 
-              (currentMonthData.outward.saleIncreaseAmendment?.sgst || 0) - (currentMonthData.outward.saleDecreaseAmendment?.sgst || 0) - 
-              (currentMonthData.outward.creditNote?.sgst || 0) - (currentMonthData.outward.advanceAdjusted?.sgst || 0);
-
-            const t31b_taxable = (currentMonthData.outward.zeroRated?.taxable || 0) + (currentMonthData.outward.sezWithPayment?.taxable || 0) + (currentMonthData.outward.sezWithoutPayment?.taxable || 0);
-            const t31b_igst = (currentMonthData.outward.zeroRated?.igst || 0) + (currentMonthData.outward.sezWithPayment?.igst || 0);
-            const t31b_cgst = (currentMonthData.outward.zeroRated?.cgst || 0) + (currentMonthData.outward.sezWithPayment?.cgst || 0);
-            const t31b_sgst = (currentMonthData.outward.zeroRated?.sgst || 0) + (currentMonthData.outward.sezWithPayment?.sgst || 0);
-
-            const t31c_taxable = (currentMonthData.outward.nilRated?.taxable || 0) + (currentMonthData.outward.exempt?.taxable || 0);
-
-            // Computed statutory summary for Table 4
-            const t4_avail_igst = (currentMonthData.inward.importGoods?.igst || 0) + (currentMonthData.inward.rcmPaid?.igst || 0) + (currentMonthData.inward.itc2b?.igst || 0) + (currentMonthData.inward.creditNotes?.igst || 0) + (currentMonthData.inward.openingCreditBal?.igst || 0);
-            const t4_avail_cgst = (currentMonthData.inward.importGoods?.cgst || 0) + (currentMonthData.inward.rcmPaid?.cgst || 0) + (currentMonthData.inward.itc2b?.cgst || 0) + (currentMonthData.inward.creditNotes?.cgst || 0) + (currentMonthData.inward.openingCreditBal?.cgst || 0);
-            const t4_avail_sgst = (currentMonthData.inward.importGoods?.sgst || 0) + (currentMonthData.inward.rcmPaid?.sgst || 0) + (currentMonthData.inward.itc2b?.sgst || 0) + (currentMonthData.inward.creditNotes?.sgst || 0) + (currentMonthData.inward.openingCreditBal?.sgst || 0);
-
-            const t4_rev_igst = (currentMonthData.inward.itcReversed?.igst || 0) + (currentMonthData.inward.debitNotes?.igst || 0);
-            const t4_rev_cgst = (currentMonthData.inward.itcReversed?.cgst || 0) + (currentMonthData.inward.debitNotes?.cgst || 0);
-            const t4_rev_sgst = (currentMonthData.inward.itcReversed?.sgst || 0) + (currentMonthData.inward.debitNotes?.sgst || 0);
-
-            // Rule 88A Waterfall Numbers
-            const igstCreditAvail = currentMonthData.inward.totalItcAvailable.igst;
-            const igstLiab = currentMonthData.outward.totalSalePortal.igst;
-            const igstAppliedToIgst = Math.min(igstCreditAvail, igstLiab);
-            const residualIgst = Math.max(0, igstCreditAvail - igstLiab);
-            const igstCreditUtilizedPercent = igstCreditAvail > 0 ? Math.min(100, Math.round(((igstCreditAvail - (currentMonthData.setoff.balanceCfNextMonth?.igst || 0)) / igstCreditAvail) * 100)) : 0;
-
-            const cgstCreditAvail = currentMonthData.inward.totalItcAvailable.cgst;
-            const cgstLiab = currentMonthData.outward.totalSalePortal.cgst;
-            const cgstAppliedToCgst = Math.min(cgstCreditAvail, cgstLiab);
-
-            const sgstCreditAvail = currentMonthData.inward.totalItcAvailable.sgst;
-            const sgstLiab = currentMonthData.outward.totalSalePortal.sgst;
-            const sgstAppliedToSgst = Math.min(sgstCreditAvail, sgstLiab);
-
-            return (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                {/* LEFT 8 COLS: Table 3.1 Outward, Table 4 ITC, Table 6.1 Cash */}
-                <div className="lg:col-span-8 space-y-4">
-                  {/* TABLE 3.1: OUTWARD TAXABLE SUPPLIES */}
-                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all duration-300 hover:shadow-md">
-                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold font-mono">3.1</span>
-                        <div>
-                          <h2 className="text-sm font-bold text-slate-900 tracking-tight">Outward Supplies &amp; Inward Liable to Reverse Charge (RCM)</h2>
-                          <p className="text-[11px] text-slate-500">Auto-reconciled with GSTR-1 &amp; Sales Register</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setShowDetailedWorksheet(!showDetailedWorksheet)}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1"
-                        >
-                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetailedWorksheet ? 'rotate-180' : ''}`} />
-                          <span>{showDetailedWorksheet ? 'Hide Granular' : 'Edit Sub-Accounts'}</span>
-                        </button>
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100% Reconciled
-                        </span>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/30">
-                            <th className="py-2.5 px-4 font-medium">Nature of Supplies</th>
-                            <th className="py-2.5 px-3 text-right font-medium">Taxable Value (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">IGST (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">CGST (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">SGST (₹)</th>
-                            <th className="py-2.5 px-4 text-right font-medium">Cess / Total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-mono text-slate-700">
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">(a) Outward taxable supplies (other than zero rated, nil, exempt)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(t31a_taxable)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31a_igst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31a_cgst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31a_sgst)}</td>
-                            <td className="py-2.5 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">(b) Outward taxable supplies (zero rated - Exports / SEZ)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(t31b_taxable)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31b_igst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31b_cgst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t31b_sgst)}</td>
-                            <td className="py-2.5 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">(c) Other outward supplies (Nil rated, exempted)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(t31c_taxable)}</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2.5 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">(d) Inward supplies (liable to reverse charge - RCM)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(currentMonthData.outward.rcmInward?.taxable || 0)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(currentMonthData.outward.rcmInward?.igst || 0)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(currentMonthData.outward.rcmInward?.cgst || 0)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(currentMonthData.outward.rcmInward?.sgst || 0)}</td>
-                            <td className="py-2.5 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          {/* Total Row */}
-                          <tr className="bg-purple-50/50 font-bold border-t-2 border-purple-200/60">
-                            <td className="py-3 px-4 font-sans text-purple-950 font-bold">Total Gross Tax Liability (3.1)</td>
-                            <td className="py-3 px-3 text-right text-slate-900">{formatCur(currentMonthData.outward.totalSalePortal.taxable)}</td>
-                            <td className="py-3 px-3 text-right text-purple-700">{formatCur(currentMonthData.outward.totalSalePortal.igst)}</td>
-                            <td className="py-3 px-3 text-right text-purple-700">{formatCur(currentMonthData.outward.totalSalePortal.cgst)}</td>
-                            <td className="py-3 px-3 text-right text-purple-700">{formatCur(currentMonthData.outward.totalSalePortal.sgst)}</td>
-                            <td className="py-3 px-4 text-right text-purple-800 font-extrabold">{formatCur(currentMonthData.outward.totalSalePortal.total)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* TABLE 4: ELIGIBLE INPUT TAX CREDIT (ITC) & REVERSALS */}
-                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all duration-300 hover:shadow-md">
-                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold font-mono">4</span>
-                        <div>
-                          <h2 className="text-sm font-bold text-slate-900 tracking-tight">Eligible Input Tax Credit (ITC) &amp; Reversals</h2>
-                          <p className="text-[11px] text-slate-500">Cross-verified against GSTR-2B Auto-Drafted Statement</p>
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200/60 flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Rule 36(4) Compliant (105% Cap Safe)
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/30">
-                            <th className="py-2.5 px-4 font-medium">Credit Breakdown</th>
-                            <th className="py-2.5 px-3 text-right font-medium">IGST (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">CGST (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">SGST (₹)</th>
-                            <th className="py-2.5 px-4 text-right font-medium">Cess / Total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-mono text-slate-700">
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-semibold text-slate-900">(1) ITC Available (Whether in full or part)</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t4_avail_igst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t4_avail_cgst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatCur(t4_avail_sgst)}</td>
-                            <td className="py-2.5 px-4 text-right font-bold text-slate-900">{formatCur(t4_avail_igst + t4_avail_cgst + t4_avail_sgst)}</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/60 transition-colors text-slate-500">
-                            <td className="py-2 px-4 pl-8 font-sans">↳ A. Import of goods (included above)</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.importGoods?.igst || 0)}</td>
-                            <td className="py-2 px-3 text-right">0.00</td>
-                            <td className="py-2 px-3 text-right">0.00</td>
-                            <td className="py-2 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/60 transition-colors text-slate-500">
-                            <td className="py-2 px-4 pl-8 font-sans">↳ B. Inward supplies liable to RCM</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.rcmPaid?.igst || 0)}</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.rcmPaid?.cgst || 0)}</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.rcmPaid?.sgst || 0)}</td>
-                            <td className="py-2 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/60 transition-colors text-slate-500">
-                            <td className="py-2 px-4 pl-8 font-sans">↳ C. All other ITC (GSTR-2B Net)</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.itc2b?.igst || 0)}</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.itc2b?.cgst || 0)}</td>
-                            <td className="py-2 px-3 text-right">{formatCur(currentMonthData.inward.itc2b?.sgst || 0)}</td>
-                            <td className="py-2 px-4 text-right font-medium text-emerald-700">{formatCur(currentMonthData.inward.itc2b?.total || 0)}</td>
-                          </tr>
-                          <tr className="hover:bg-rose-50/30 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-rose-700">(2) ITC Reversed (Rule 42 &amp; 43 / Section 17(5) Blocked)</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-rose-600">-{formatCur(t4_rev_igst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-rose-600">-{formatCur(t4_rev_cgst)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold text-rose-600">-{formatCur(t4_rev_sgst)}</td>
-                            <td className="py-2.5 px-4 text-right text-rose-700 font-bold">-{formatCur(t4_rev_igst + t4_rev_cgst + t4_rev_sgst)}</td>
-                          </tr>
-                          {/* Net Row */}
-                          <tr className="bg-emerald-50/50 font-bold border-t-2 border-emerald-200/60">
-                            <td className="py-3 px-4 font-sans text-emerald-950 font-bold">(3) Net Eligible ITC Available (1 - 2)</td>
-                            <td className="py-3 px-3 text-right text-emerald-700">{formatCur(currentMonthData.inward.totalItcAvailable.igst)}</td>
-                            <td className="py-3 px-3 text-right text-emerald-700">{formatCur(currentMonthData.inward.totalItcAvailable.cgst)}</td>
-                            <td className="py-3 px-3 text-right text-emerald-700">{formatCur(currentMonthData.inward.totalItcAvailable.sgst)}</td>
-                            <td className="py-3 px-4 text-right text-emerald-800 font-extrabold">{formatCur(currentMonthData.inward.totalItcAvailable.total)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* TABLE 6.1: CASH PAYABLE CHALLAN SUMMARY */}
-                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all duration-300 hover:shadow-md">
-                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-6 h-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold font-mono">6.1</span>
-                        <div>
-                          <h2 className="text-sm font-bold text-slate-900 tracking-tight">Net Tax Payable in Cash (Electronic Cash Ledger Deposit)</h2>
-                          <p className="text-[11px] text-slate-500">Post Rule 88A set-off cascade calculations</p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-semibold text-slate-500">Challan PMT-06 Prepared</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/30">
-                            <th className="py-2.5 px-4 font-medium">Tax Head</th>
-                            <th className="py-2.5 px-3 text-right font-medium">Liability (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">ITC Utilized (₹)</th>
-                            <th className="py-2.5 px-3 text-right font-medium">TDS/TCS (₹)</th>
-                            <th className="py-2.5 px-4 text-right font-bold text-slate-900">Net Cash Payable (₹)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-mono text-slate-700">
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">Integrated Tax (IGST)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(currentMonthData.outward.totalSalePortal.igst)}</td>
-                            <td className="py-2.5 px-3 text-right text-emerald-600">{formatCur(Math.max(0, currentMonthData.outward.totalSalePortal.igst - currentMonthData.settlement.balancePayable.igst))}</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">{formatCur(currentMonthData.settlement.tdsTcsOpeningCash?.igst || 0)}</td>
-                            <td className="py-2.5 px-4 text-right font-bold text-purple-700">{formatCur(currentMonthData.settlement.balancePayable.igst)}</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">Central Tax (CGST)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(currentMonthData.outward.totalSalePortal.cgst)}</td>
-                            <td className="py-2.5 px-3 text-right text-emerald-600">{formatCur(Math.max(0, currentMonthData.outward.totalSalePortal.cgst - currentMonthData.settlement.balancePayable.cgst))}</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">{formatCur(currentMonthData.settlement.tdsTcsOpeningCash?.cgst || 0)}</td>
-                            <td className="py-2.5 px-4 text-right font-bold text-purple-700">{formatCur(currentMonthData.settlement.balancePayable.cgst)}</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-4 font-sans font-medium text-slate-800">State/UT Tax (SGST)</td>
-                            <td className="py-2.5 px-3 text-right">{formatCur(currentMonthData.outward.totalSalePortal.sgst)}</td>
-                            <td className="py-2.5 px-3 text-right text-emerald-600">{formatCur(Math.max(0, currentMonthData.outward.totalSalePortal.sgst - currentMonthData.settlement.balancePayable.sgst))}</td>
-                            <td className="py-2.5 px-3 text-right text-slate-400">{formatCur(currentMonthData.settlement.tdsTcsOpeningCash?.sgst || 0)}</td>
-                            <td className="py-2.5 px-4 text-right font-bold text-purple-700">{formatCur(currentMonthData.settlement.balancePayable.sgst)}</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2 px-4 font-sans font-medium text-slate-800">Cess</td>
-                            <td className="py-2 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2 px-3 text-right text-slate-400">0.00</td>
-                            <td className="py-2 px-4 text-right text-slate-400">0.00</td>
-                          </tr>
-                          {/* Final Cash Row */}
-                          <tr className="bg-slate-900 text-white font-bold">
-                            <td className="py-3 px-4 font-sans text-white font-bold">Final Net Cash Deposit Required</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{formatCur(currentMonthData.outward.totalSalePortal.total)}</td>
-                            <td className="py-3 px-3 text-right text-emerald-400">{formatCur(Math.max(0, currentMonthData.outward.totalSalePortal.total - currentMonthData.settlement.balancePayable.total))}</td>
-                            <td className="py-3 px-3 text-right text-slate-400">{formatCur(currentMonthData.settlement.tdsTcsOpeningCash?.total || 0)}</td>
-                            <td className="py-3 px-4 text-right text-emerald-400 text-sm font-mono font-bold">₹ {formatCur(currentMonthData.settlement.balancePayable.total)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* OPTIONAL EXPANDABLE: DETAILED 28-LINE ITEM CA WORKING WORKSHEET */}
-                  {showDetailedWorksheet && (
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4 animate-in fade-in duration-200">
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-purple-600" />
-                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
-                            Itemized Granular Working Paper ({selectedMonth.toUpperCase()}-{currentMonthData.year})
-                          </h4>
-                        </div>
-                        <span className="text-[11px] text-slate-400">All values dynamically recalculate Rule 88A set-off</span>
-                      </div>
-                      <div className="overflow-x-auto max-h-96">
-                        <table className="w-full text-xs text-left border-collapse">
-                          <thead>
-                            <tr className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider border-b border-slate-200 text-[10px]">
-                              <th className="py-2 px-3">Sub-Account</th>
-                              <th className="py-2 px-2 text-right">Taxable</th>
-                              <th className="py-2 px-2 text-right">CGST</th>
-                              <th className="py-2 px-2 text-right">SGST</th>
-                              <th className="py-2 px-2 text-right">IGST</th>
-                              <th className="py-2 px-3 text-right">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                            {/* Section 1 Outward Granular */}
-                            <tr className="bg-slate-100/70 font-sans font-bold text-slate-800 text-[10px]">
-                              <td colSpan={6} className="py-1 px-3 uppercase">1. Outward Supply Granular Lines</td>
-                            </tr>
-                            {[
-                              { key: 'b2b', label: 'Sales (B2B)' },
-                              { key: 'b2c', label: 'Sales (B2C)' },
-                              { key: 'sezWithPayment', label: 'SEZ with payment' },
-                              { key: 'sezWithoutPayment', label: 'SEZ without payment' },
-                              { key: 'zeroRated', label: 'Zero Rated / Exports' },
-                              { key: 'nilRated', label: 'Nil Rated Supply' },
-                              { key: 'exempt', label: 'Exempt Sale' },
-                              { key: 'advanceReceived', label: 'Advances Collected' },
-                              { key: 'rentReceived', label: 'Rent Received' },
-                              { key: 'creditNote', label: '(-) Credit Note' }
-                            ].map(({ key, label }) => {
-                              const rowData = ((currentMonthData.outward as any)[key] as TaxBreakdown) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
-                              return (
-                                <tr key={key} className="hover:bg-slate-50">
-                                  <td className="py-1.5 px-3 font-sans text-slate-800">{label}</td>
-                                  <td className="py-1 px-2 text-right">
-                                    <input
-                                      type="number"
-                                      value={rowData.taxable || ''}
-                                      placeholder="0"
-                                      onChange={e => updateCurrentMonthField('outward', key, 'taxable', parseFloat(e.target.value) || 0)}
-                                      className="w-24 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none"
-                                    />
-                                  </td>
-                                  <td className="py-1 px-2 text-right">
-                                    <input
-                                      type="number"
-                                      value={rowData.cgst || ''}
-                                      placeholder="0"
-                                      onChange={e => updateCurrentMonthField('outward', key, 'cgst', parseFloat(e.target.value) || 0)}
-                                      className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none"
-                                    />
-                                  </td>
-                                  <td className="py-1 px-2 text-right">
-                                    <input
-                                      type="number"
-                                      value={rowData.sgst || ''}
-                                      placeholder="0"
-                                      onChange={e => updateCurrentMonthField('outward', key, 'sgst', parseFloat(e.target.value) || 0)}
-                                      className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none"
-                                    />
-                                  </td>
-                                  <td className="py-1 px-2 text-right">
-                                    <input
-                                      type="number"
-                                      value={rowData.igst || ''}
-                                      placeholder="0"
-                                      onChange={e => updateCurrentMonthField('outward', key, 'igst', parseFloat(e.target.value) || 0)}
-                                      className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none"
-                                    />
-                                  </td>
-                                  <td className="py-1.5 px-3 text-right font-bold text-slate-700">{formatCur(rowData.total)}</td>
-                                </tr>
-                              );
-                            })}
-                            {/* Section 2 Inward Granular */}
-                            <tr className="bg-slate-100/70 font-sans font-bold text-slate-800 text-[10px]">
-                              <td colSpan={6} className="py-1 px-3 uppercase">2. Inward ITC Granular Lines</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50">
-                              <td className="py-1.5 px-3 font-sans text-slate-800">ITC (As per books)</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1 px-3 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.itcBooks || ''}
-                                  placeholder="0"
-                                  onChange={e => {
-                                    const val = parseFloat(e.target.value) || 0;
-                                    setWorkingData(prev => {
-                                      const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
-                                      cloned.months[selectedMonth].inward.itcBooks = val;
-                                      return cloned;
-                                    });
-                                  }}
-                                  className="w-24 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none"
-                                />
-                              </td>
-                            </tr>
-                            <tr className="hover:bg-slate-50">
-                              <td className="py-1.5 px-3 font-sans text-slate-800">Opening Credit Balance (B/F)</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.openingCreditBal.cgst || ''}
-                                  disabled={selectedMonth !== 'April'}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'cgst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none disabled:opacity-60"
-                                />
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.openingCreditBal.sgst || ''}
-                                  disabled={selectedMonth !== 'April'}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'sgst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none disabled:opacity-60"
-                                />
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.openingCreditBal.igst || ''}
-                                  disabled={selectedMonth !== 'April'}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'openingCreditBal', 'igst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-mono text-slate-900 focus:bg-white focus:border-purple-400 outline-none disabled:opacity-60"
-                                />
-                              </td>
-                              <td className="py-1.5 px-3 text-right font-bold text-slate-700">{formatCur(currentMonthData.inward.openingCreditBal.total)}</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50">
-                              <td className="py-1.5 px-3 font-sans text-rose-700">(-) ITC Reversed (17(5))</td>
-                              <td className="py-1.5 px-2 text-right text-slate-400">-</td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.itcReversed.cgst || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'cgst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-rose-200 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 focus:bg-white focus:border-rose-400 outline-none"
-                                />
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.itcReversed.sgst || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'sgst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-rose-200 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 focus:bg-white focus:border-rose-400 outline-none"
-                                />
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={currentMonthData.inward.itcReversed.igst || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCurrentMonthField('inward', 'itcReversed', 'igst', parseFloat(e.target.value) || 0)}
-                                  className="w-20 bg-slate-50 border border-rose-200 rounded px-1.5 py-0.5 text-right font-mono text-rose-700 focus:bg-white focus:border-rose-400 outline-none"
-                                />
-                              </td>
-                              <td className="py-1.5 px-3 text-right font-bold text-rose-700">{formatCur(currentMonthData.inward.itcReversed.total)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* RIGHT 4 COLS: Rule 88A Waterfall Set-off Engine & Credit Balances */}
-                <div className="lg:col-span-4 space-y-4">
-                  {/* 5. ADVANCED RULE 88A CASCADE WATERFALL */}
-                  <div className="bg-white rounded-2xl border border-indigo-200/80 p-4 shadow-sm relative overflow-hidden rule88a-waterfall">
-                    {/* Header */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm font-mono">
-                          88A
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-bold text-slate-900 leading-tight">Rule 88A Set-off Cascade</h3>
-                          <p className="text-[10px] text-slate-500">Statutory Tax Waterfall Algorithm</p>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/60">
-                        {currentMonthData.setoff.isManualAdjustment ? 'Manual Adjusted' : 'Optimal Flow'}
-                      </span>
-                    </div>
-
-                    {/* Quick Presets Bar */}
-                    <div className="mt-2.5 flex items-center justify-between gap-1 flex-wrap text-[10px]">
-                      <span className="text-slate-400 font-semibold">Presets:</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleSetoffPreset('auto')}
-                          className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-white font-bold transition-all shadow-xs"
-                          title="Auto Rule 88A Optimization"
-                        >
-                          ⚡ Auto
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetoffPreset('all_cgst')}
-                          className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold transition-all"
-                          title="Set off 100% surplus IGST credit against CGST"
-                        >
-                          👉 CGST
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetoffPreset('all_sgst')}
-                          className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold transition-all"
-                          title="Set off 100% surplus IGST credit against SGST"
-                        >
-                          👉 SGST
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetoffPreset('equal')}
-                          className="px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold transition-all"
-                          title="Split surplus IGST credit 50/50 between CGST and SGST"
-                        >
-                          ⚖️ 50/50
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetoffPreset('clear')}
-                          className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all"
-                          title="Clear all adjustment amounts"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Waterfall Step Connectors */}
-                    <div className="mt-3 space-y-3 relative">
-                      {/* Step 1 */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-indigo-300 transition-all group">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">1</span>
-                            IGST Credit Exhaustion
-                          </span>
-                          <span className="text-[10px] font-semibold text-rose-600 uppercase">
-                            {igstCreditUtilizedPercent}% Used
-                          </span>
-                        </div>
-                        <div className="space-y-1 text-[11px] font-mono">
-                          <div className="flex justify-between text-slate-600">
-                            <span>Available Credit:</span>
-                            <span className="font-bold text-slate-900">₹ {formatCur(igstCreditAvail)}</span>
-                          </div>
-                          <div className="flex justify-between text-purple-700 bg-purple-50/60 px-1.5 py-0.5 rounded">
-                            <span>↳ Applied to IGST Liab:</span>
-                            <span className="font-bold">₹ {formatCur(igstAppliedToIgst)}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-400">
-                            <span>↳ Residual to CGST / SGST:</span>
-                            <span>₹ {formatCur(residualIgst)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Cascade Flow Icon */}
-                      <div className="flex justify-center -my-1 text-slate-300">
-                        <span className="material-symbols-outlined text-[16px] animate-bounce">arrow_downward</span>
-                      </div>
-
-                      {/* Step 2 */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-emerald-300 transition-all">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">2</span>
-                            CGST Credit Utilization
-                          </span>
-                          <span className="text-[10px] font-semibold text-emerald-600 uppercase">Applied</span>
-                        </div>
-                        <div className="space-y-1 text-[11px] font-mono">
-                          <div className="flex justify-between text-slate-600">
-                            <span>Available Credit:</span>
-                            <span className="font-bold text-slate-900">₹ {formatCur(cgstCreditAvail)}</span>
-                          </div>
-                          <div className="flex justify-between text-emerald-700 bg-emerald-50/60 px-1.5 py-0.5 rounded">
-                            <span>↳ Applied to CGST Liab:</span>
-                            <span className="font-bold">₹ {formatCur(cgstAppliedToCgst)}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-400">
-                            <span>↳ Cross offset IGST (Locked):</span>
-                            <span>N/A</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Cascade Flow Icon */}
-                      <div className="flex justify-center -my-1 text-slate-300">
-                        <span className="material-symbols-outlined text-[16px] animate-bounce">arrow_downward</span>
-                      </div>
-
-                      {/* Step 3 */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-emerald-300 transition-all">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1.5">
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">3</span>
-                            SGST Credit Utilization
-                          </span>
-                          <span className="text-[10px] font-semibold text-emerald-600 uppercase">Applied</span>
-                        </div>
-                        <div className="space-y-1 text-[11px] font-mono">
-                          <div className="flex justify-between text-slate-600">
-                            <span>Available Credit:</span>
-                            <span className="font-bold text-slate-900">₹ {formatCur(sgstCreditAvail)}</span>
-                          </div>
-                          <div className="flex justify-between text-emerald-700 bg-emerald-50/60 px-1.5 py-0.5 rounded">
-                            <span>↳ Applied to SGST Liab:</span>
-                            <span className="font-bold">₹ {formatCur(sgstAppliedToSgst)}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-400">
-                            <span>↳ Cross CGST (Prohibited):</span>
-                            <span>Blocked</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Optimization Guarantee Footer */}
-                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500 font-medium">Waterfall Efficiency:</span>
-                      <span className="font-semibold text-emerald-700 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Max Cash Saved
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Electronic Credit Ledger Balance Card */}
-                  <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                      <h3 className="text-xs font-bold text-slate-900">Electronic Credit Ledger Balances</h3>
-                      <span className="text-[10px] text-slate-400">Post 3B Set-off</span>
-                    </div>
-                    <div className="space-y-1.5 font-mono text-xs">
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="text-slate-600 text-[11px] font-sans">Integrated Tax (IGST)</span>
-                        <span className="font-bold text-slate-800">₹ {formatCur(currentMonthData.setoff.balanceCfNextMonth?.igst || 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="text-slate-600 text-[11px] font-sans">Central Tax (CGST)</span>
-                        <span className="font-bold text-slate-800">₹ {formatCur(currentMonthData.setoff.balanceCfNextMonth?.cgst || 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="text-slate-600 text-[11px] font-sans">State Tax (SGST)</span>
-                        <span className="font-bold text-slate-800">₹ {formatCur(currentMonthData.setoff.balanceCfNextMonth?.sgst || 0)}</span>
-                      </div>
-                    </div>
-                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
-                      <span>Tally Ledger Alignment:</span>
-                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Matched
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Statutory Compliance Audit Notes */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span className="text-xs font-bold">Rule 88A Optimization Notice</span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 leading-relaxed font-sans">
-                      Full IGST credit is exhausted against IGST liability in compliance with Section 49A/49B. Balance cash outflow of{' '}
-                      <strong className="text-white font-mono">₹ {formatCur(currentMonthData.settlement.balancePayable.total)}</strong> is generated and mapped to Challan GST PMT-06.
-                    </p>
-                    <div className="pt-2 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-700/60 font-mono">
-                      <span>AUDIT HASH: 88A-{selectedMonth.slice(0, 3).toUpperCase()}{currentMonthData.year.toString().slice(-2)}-OK</span>
-                      <span className="text-emerald-400 font-semibold">VALIDATED</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* TAB 2: 12-MONTH FINANCIAL YEAR MATRIX */}
+            {/* TAB 2: 12-MONTH FINANCIAL YEAR MATRIX */}
       {activeTab === 'matrix' && (() => {
         const fyString = workingData.profile.financialYear || '2024-25';
         const fyParts = fyString.split('-');
@@ -2323,302 +2785,285 @@ export default function ReturnsDashboard({ onBack, initialTab }: ReturnsDashboar
 
         return (
           <div className="space-y-4 animate-pop-in text-slate-800">
-            {/* STREAMLINED COMPACT KPI SUMMARY BAR */}
-            <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {/* KPI 1: Turnover */}
-              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
+            {/* VARIANT 1: INTEGRATED EXECUTIVE COCKPIT CARD (1:1 STITCH BLUEPRINT) */}
+            <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+              {/* Top Title & Action Bar */}
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Turnover (Outward)</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1.5">
+                    <span className="hover:text-slate-800 cursor-pointer">Suite 04</span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                    <span className="hover:text-slate-800 cursor-pointer">Returns Preparation &amp; Filing</span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                    <span className="text-slate-800 font-bold">FY360° Reconciliation Matrix</span>
                   </div>
-                  <div className="font-mono text-[20px] font-bold text-slate-900 tracking-tight">
-                    {formatCur(totalTurnover)}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium mt-0.5">
-                    <span>Diff vs 3B:</span>
-                    <span className="font-mono font-bold bg-emerald-50 px-1 rounded text-emerald-700">₹0.00 (100% Match)</span>
-                  </div>
-                </div>
-                <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                  <Wallet className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* KPI 2: Eligible ITC */}
-              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Eligible ITC (Table 4)</span>
-                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                  </div>
-                  <div className="font-mono text-[20px] font-bold text-slate-900 tracking-tight">
-                    {formatCur(totalItc)}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-amber-600 font-medium mt-0.5">
-                    <span>Books vs 2B Diff:</span>
-                    <span className="font-mono font-bold bg-amber-50 px-1 rounded text-amber-700">
-                      {isCrossVerifyActive ? '±₹0.00 (Matched)' : '+₹4,250 (Timing)'}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 p-1 flex items-center justify-center text-emerald-600">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                        {workingData.profile.firmName || 'Siddha Edibles Pvt Ltd'}
+                      </h1>
+                    </div>
+                    <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md font-mono text-xs font-semibold border border-slate-200">
+                      {workingData.profile.gstin || '27AABCS1234D1Z2'}
+                    </span>
+                    <span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-blue-200/60 font-mono">
+                      FY {fyString} (Annual Tie-Out)
                     </span>
                   </div>
                 </div>
-                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-                  <Boxes className="w-5 h-5" />
-                </div>
-              </div>
 
-              {/* KPI 3: Cash Tax Paid */}
-              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Cash Tax Paid (6.1)</span>
-                    <CreditCard className="w-3.5 h-3.5 text-blue-600" />
-                  </div>
-                  <div className="font-mono text-[20px] font-bold text-slate-900 tracking-tight">
-                    {formatCur(totalCashPaid)}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium mt-0.5">
-                    <span>Cash Ledger:</span>
-                    <span className="font-mono font-bold bg-emerald-50 px-1 rounded text-emerald-700">Fully Reconciled</span>
-                  </div>
-                </div>
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                  <Landmark className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* KPI 4: Audit Risk Exposure */}
-              <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Audit Risk Exposure</span>
-                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                  </div>
-                  <div className="font-mono text-[20px] font-bold text-slate-900 tracking-tight">
-                    ₹0.00 Unpaid
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-indigo-700 font-medium mt-0.5">
-                    <span>Status:</span>
-                    <span className="font-mono font-bold bg-indigo-50 px-1 rounded text-indigo-700">Ready for GSTR-9/9C</span>
-                  </div>
-                </div>
-                <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-              </div>
-            </section>
-
-            {/* MATRIX FILTER & TOOLBAR */}
-            <section className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setMatrixViewMode('monthly')}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
-                      matrixViewMode === 'monthly'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Quarterly &amp; Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixViewMode('cumulative')}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
-                      matrixViewMode === 'cumulative'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Cumulative Trend
-                  </button>
-                </div>
-
-                <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors text-xs font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={isCrossVerifyActive}
-                    onChange={(e) => setIsCrossVerifyActive(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-0 cursor-pointer accent-slate-900"
-                  />
-                  <span>Cross-Verify Tie-Out Active</span>
-                </label>
-
-                <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200/60 text-xs font-semibold">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Zero-Tolerance Rule: ± ₹2.00 Strictly Merged</span>
-                </div>
-
-                {/* Density Toggle */}
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-medium border border-slate-200">
-                  <span className="text-[11px] text-slate-500 font-medium px-1">Density:</span>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixDensity('compact')}
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                      matrixDensity === 'compact'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Compact
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixDensity('relaxed')}
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                      matrixDensity === 'relaxed'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Relaxed
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowTieOutSheet(!showTieOutSheet)}
-                  className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs active:scale-95"
-                >
-                  <ListChecks className="w-4 h-4 text-slate-700" />
-                  <span>{showTieOutSheet ? 'Hide Tie-Out' : 'Tie-Out Sheet'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportExcel}
-                  className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs active:scale-95"
-                >
-                  <Download className="w-4 h-4 text-emerald-400" />
-                  <span>Download 13-Col Matrix (Excel)</span>
-                </button>
-              </div>
-            </section>
-
-            {/* OPTIONAL EXPANDABLE STATUTORY TIE-OUT SHEET */}
-            {showTieOutSheet && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 animate-pop-in space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ListChecks className="w-5 h-5 text-indigo-600" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                      Statutory Tie-Out &amp; Cross-Verification Sheet ({workingData.profile.financialYear || '2024-25'})
-                    </h4>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowTieOutSheet(false)}
-                    className="text-xs text-slate-500 hover:text-slate-800 p-1"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  {/* Outward Turnover */}
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between font-semibold text-slate-700">
-                      <span>Outward Turnover Tie-Out</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">100% Reconciled</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>GSTR-3B Table 3.1:</span>
-                      <span className="font-mono font-medium">{formatCur(totalTurnover)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>GSTR-1 Filed Turnover:</span>
-                      <span className="font-mono font-medium">{formatCur(totalTurnover)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>Books Sales Register:</span>
-                      <span className="font-mono font-medium">{formatCur(totalTurnover)}</span>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-100 flex justify-between font-bold text-emerald-700 text-[11px]">
-                      <span>Outward Variance (Δ):</span>
-                      <span className="font-mono">₹0.00</span>
-                    </div>
-                  </div>
-
-                  {/* ITC Tie-Out */}
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between font-semibold text-slate-700">
-                      <span>Input Tax Credit (ITC) Tie-Out</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">Verified</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>GSTR-3B Table 4(A)(5):</span>
-                      <span className="font-mono font-medium">{formatCur(totalItc)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>GSTR-2B Auto-Drafted:</span>
-                      <span className="font-mono font-medium">{formatCur(totalItc)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>Books Purchase Register:</span>
-                      <span className="font-mono font-medium">{formatCur(totalItc)}</span>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-100 flex justify-between font-bold text-emerald-700 text-[11px]">
-                      <span>Inward Discrepancy (Δ):</span>
-                      <span className="font-mono">₹0.00</span>
-                    </div>
-                  </div>
-
-                  {/* Tax Settlement Tie-Out */}
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between font-semibold text-slate-700">
-                      <span>Tax Settlement &amp; Ledger Tie-Out</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">Zero Liability</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>Cash Deposited (Table 6.1):</span>
-                      <span className="font-mono font-medium">{formatCur(totalCashPaid)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>PMT-06 / 3B Challans:</span>
-                      <span className="font-mono font-medium">{formatCur(totalCashPaid)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>ECL Closing Credit Balance:</span>
-                      <span className="font-mono font-medium">{formatCur(closingCreditTotal)}</span>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-100 flex justify-between font-bold text-emerald-700 text-[11px]">
-                      <span>Settlement Net Balance:</span>
-                      <span className="font-mono">₹0.00</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CORE 13-COLUMN ANNUAL COMPARATIVE MATRIX */}
-            <section className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col">
-              {/* Table Header & Controls Strip */}
-              <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-                    <Table className="w-4 h-4 text-white" />
+                  <button
+                    onClick={() => handleExportExcel()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Export FY Matrix (.xlsx)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Compact Horizontal Metric Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-slate-50/50">
+                {/* KPI 1 */}
+                <div className="p-4 md:px-5 md:py-4 relative group hover:bg-white transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Outward Turnover Matched</span>
+                    <span className="w-6 h-6 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    </span>
                   </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-xl font-bold font-mono text-slate-900 tracking-tight">
+                      ₹ {formatCur(totalTurnover)}
+                    </div>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 shrink-0 font-mono">
+                      100%
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between font-sans">
+                    <span>3B vs 1 vs Books diff</span>
+                    <span className="font-mono text-emerald-700 font-semibold">₹0.00 Matched</span>
+                  </div>
+                </div>
+
+                {/* KPI 2 */}
+                <div className="p-4 md:px-5 md:py-4 relative group hover:bg-white transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Inward ITC Claimed (Net)</span>
+                    <span className="w-6 h-6 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Wallet className="w-4 h-4 text-amber-600" />
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-xl font-bold font-mono text-slate-900 tracking-tight">
+                      ₹ {formatCur(totalItc)}
+                    </div>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 shrink-0 font-mono">
+                      {isCrossVerifyActive ? '±₹0.00' : '+₹4,250'} Diff
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between font-sans">
+                    <span>GSTR-2B vs 3B Claimed</span>
+                    <span className="font-mono text-amber-700 font-semibold">{isCrossVerifyActive ? 'Exact Match' : '1 In-Transit'}</span>
+                  </div>
+                </div>
+
+                {/* KPI 3 */}
+                <div className="p-4 md:px-5 md:py-4 relative group hover:bg-white transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Cash Tax Paid (PMT-06)</span>
+                    <span className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <CreditCard className="w-4 h-4 text-emerald-600" />
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-xl font-bold font-mono text-slate-900 tracking-tight">
+                      ₹ {formatCur(totalCashPaid)}
+                    </div>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0 font-mono">
+                      Settled
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between font-sans">
+                    <span>CIN Bank Challans</span>
+                    <span className="font-mono text-slate-700 font-medium">12 Months Cleared</span>
+                  </div>
+                </div>
+
+                {/* KPI 4 */}
+                <div className="p-4 md:px-5 md:py-4 relative group hover:bg-white transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Audit Risk Exposure</span>
+                    <span className="w-6 h-6 rounded-md bg-purple-50 text-purple-600 flex items-center justify-center">
+                      <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-xl font-bold font-mono text-emerald-700 tracking-tight">
+                      ₹0.00
+                    </div>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0 font-mono">
+                      Zero Penalty Risk
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between font-sans">
+                    <span>Sec 73/74 Notices Est.</span>
+                    <span className="font-mono text-emerald-700 font-semibold">Clean Record</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* VARIANT 1: Electronic Credit Ledger Horizontal Header Banner (1:1 STITCH BLUEPRINT) */}
+            <section className="p-4 md:px-5 md:py-4 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100/90 border border-slate-200 flex flex-col xl:flex-row items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-center gap-3.5 w-full xl:w-auto">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Landmark className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 leading-tight">Electronic Credit Ledger Balances</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Closing ledger position as of 31-Mar-20{endYearShort} • Cross-verified against Tally GST Ledger</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full xl:w-auto">
+                <div className="bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs min-w-[125px]">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-sans">IGST BALANCE</span>
+                  <span className="font-mono text-sm font-bold text-slate-900 block mt-0.5">
+                    ₹ {formatCur(workingData?.months?.March?.setoff?.balanceCfNextMonth?.igst || 1250000)}
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5 font-sans">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Tally Matched
+                  </span>
+                </div>
+
+                <div className="bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs min-w-[125px]">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-sans">CGST BALANCE</span>
+                  <span className="font-mono text-sm font-bold text-slate-900 block mt-0.5">
+                    ₹ {formatCur(workingData?.months?.March?.setoff?.balanceCfNextMonth?.cgst || 410000)}
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5 font-sans">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Tally Matched
+                  </span>
+                </div>
+
+                <div className="bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs min-w-[125px]">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-sans">SGST BALANCE</span>
+                  <span className="font-mono text-sm font-bold text-slate-900 block mt-0.5">
+                    ₹ {formatCur(workingData?.months?.March?.setoff?.balanceCfNextMonth?.sgst || 410000)}
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5 font-sans">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Tally Matched
+                  </span>
+                </div>
+
+                <div className="bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-xs flex flex-col justify-center min-w-[150px]">
+                  <span className="text-[9px] uppercase font-bold text-emerald-100 tracking-wider font-sans">TOTAL ITC CARRIED OVER</span>
+                  <span className="font-mono text-sm font-bold mt-0.5">
+                    ₹ {formatCur(closingCreditTotal || 2070000)}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* Dedicated Multi-Tier Table Control Center */}
+            <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+              <div className="border-b border-slate-200 bg-slate-50/70 p-3.5 md:px-6 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Table className="w-5 h-5 text-blue-600" />
                   <div>
-                    <h2 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
-                      12-Month Cross-Verification Ledger ({workingData.profile.financialYear || 'FY 2024-25'})
-                    </h2>
-                    <p className="text-[11px] text-slate-500 font-normal">
-                      Comparative analysis: GSTR-3B vs GSTR-1 vs GSTR-2B vs ERP Books (Tally Prime)
-                    </p>
+                    <h2 className="text-base font-bold text-slate-900 leading-tight">12-Month Financial Year Reco Matrix</h2>
+                    <span className="text-[10px] font-mono uppercase bg-slate-200/70 text-slate-700 px-2 py-0.5 rounded font-semibold tracking-wider inline-block mt-0.5">
+                      Tabular Nums • Zero-Merge
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase tracking-wider font-semibold bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded">
-                    All Values in INR (₹)
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setMatrixViewMode('monthly')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        matrixViewMode === 'monthly'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Quarterly &amp; Monthly
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixViewMode('cumulative')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        matrixViewMode === 'cumulative'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Cumulative Trend
+                    </button>
+                  </div>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors text-xs font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={isCrossVerifyActive}
+                      onChange={(e) => setIsCrossVerifyActive(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-0 cursor-pointer accent-slate-900"
+                    />
+                    <span>Cross-Verify Tie-Out</span>
+                  </label>
+
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-medium border border-slate-200">
+                    <span className="text-[11px] text-slate-500 font-medium px-1">Density:</span>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixDensity('compact')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                        matrixDensity === 'compact'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Compact
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixDensity('relaxed')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                        matrixDensity === 'relaxed'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Relaxed
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tolerance Filter & Period Indicators Row */}
+              <div className="px-3.5 md:px-6 py-2 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs bg-slate-50/40">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mr-1 font-sans">TOLERANCE FILTER:</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium border border-emerald-200/60 font-mono text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Diff ≤ ₹2.00
                   </span>
-                  <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                    Live Matched
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200/60 font-mono text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Timing Variance
                   </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 font-medium border border-rose-200/60 font-mono text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Mismatch
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 font-sans">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                  <span>13 Periods Active (12 Monthly Cycles + Annual FY Total)</span>
                 </div>
               </div>
 

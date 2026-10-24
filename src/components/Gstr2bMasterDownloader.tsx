@@ -785,161 +785,225 @@ export default function Gstr2bMasterDownloader({
 
       {clientCockpitMode === 'COCKPIT' ? (
         <>
-          {/* ─── 3. COMPACT HERO SECTION: AUTONOMOUS LOOP & CAPTCHA RESOLVER (7:5 SPLIT) ─── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
-            {/* Left: Autonomous Chromium Pipeline Card (col-span-7) */}
-            <div className="lg:col-span-7 bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-100">
+          {/* ─── TOP COMMAND RIBBON & SEGMENTED WORKFLOW TOGGLE (1:1 STITCH BLUEPRINT) ─── */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-1">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <span className="hover:text-slate-800 cursor-pointer transition-colors">Suite 04</span>
+                <span className="text-slate-300">/</span>
+                <span className="hover:text-slate-800 cursor-pointer transition-colors">Returns Preparation &amp; Filing</span>
+                <span className="text-slate-300">/</span>
+                <span className="font-semibold text-slate-900">Inward ITC Autopilot Cockpit</span>
+              </div>
+              <div className="flex items-center gap-3 pt-0.5">
+                <h1 className="font-headline-md text-2xl lg:text-[26px] text-slate-900 font-bold tracking-tight">
+                  GSTR-2B Inward ITC Autopilot
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-cyan-500/10 text-indigo-700 border border-indigo-200/50 font-mono font-semibold">
+                  PORTAL AGENT v4.8b
+                </span>
+              </div>
+            </div>
+
+            {/* Segmented Workflow Toggle */}
+            <div className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setViewMode('SINGLE')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  viewMode === 'SINGLE'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Single-Month Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('12M')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  viewMode === '12M'
+                    ? 'text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 shadow-md hover:shadow-indigo-500/25'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <span>Full FY 12 Months Autopilot Loop</span>
+                <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full uppercase tracking-wider font-mono">Recommended</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ─── PRIMARY INTERACTIVE SPLIT: AUTOPILOT TRIGGER & EMBEDDED CAPTCHA RESOLVER (7:5 SPLIT) ─── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Left Column: Master Trigger Cockpit (7 cols) */}
+            <div className="lg:col-span-7 bg-white/95 backdrop-blur-xl rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-gradient-to-br from-indigo-500/10 via-cyan-400/10 to-transparent blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
+              
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-[10px] font-bold tracking-wider uppercase font-mono">
-                      AUTONOMOUS CHROMIUM LOOP
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-mono uppercase bg-slate-100 text-slate-700 border border-slate-200 font-bold flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span>PORT 9222 CHROMIUM DAEMON READY</span>
                     </span>
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Port 9222 Ready
-                    </span>
+                    <span className="text-slate-400 font-mono text-xs">#AUT-2B-{financialYear}</span>
                   </div>
-                  <span className="font-mono text-[10px] text-slate-400">#AUT-2B-{financialYear}</span>
+                  <span className="px-2.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono font-bold">
+                    ZERO DATA LOSS ACTIVE
+                  </span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Pipeline Progress</div>
-                    <div className="text-lg font-bold text-slate-900 flex items-center gap-2 mt-0.5">
-                      <span>{activeCockpitClient.syncedCount || 7} / 12 Months Synced</span>
-                      <span className="text-xs font-mono text-purple-700 font-bold">
-                        ({Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}% Complete)
-                      </span>
+                <div>
+                  <h3 className="font-headline-sm text-lg font-bold text-slate-900 tracking-tight">
+                    Multi-Period Auto-Rotator &amp; SQLite Ingestion Engine
+                  </h3>
+                  <p className="font-body-sm text-xs text-slate-500 mt-1 leading-relaxed">
+                    Background Playwright worker rotates portal sub-periods (Apr through Mar), fetches raw JSON inward batches, normalizes B2B &amp; CDNR vouchers, and locks records with zero duplicate overwriting.
+                  </p>
+                </div>
+
+                {/* Metric Pulse Cards inside Cockpit */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <span className="material-symbols-outlined text-[16px] text-indigo-600">speed</span>
+                      <span>Loop Speed</span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-sans">
-                      Auto-rotates portal sub-periods, parses JSON payloads, and persists into normalized SQLite ledger tables.
-                    </p>
+                    <div className="font-mono text-lg font-bold text-slate-900 mt-1">1.8s / mo</div>
+                    <div className="text-[10px] text-emerald-600 font-medium mt-0.5">Fast Stream Mode</div>
                   </div>
 
-                  {/* Launch Button */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <span className="material-symbols-outlined text-[16px] text-emerald-600">history_toggle_off</span>
+                      <span>Retention</span>
+                    </div>
+                    <div className="font-mono text-lg font-bold text-slate-900 mt-1">100% Non-Block</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">Golden Rule Guard</div>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <span className="material-symbols-outlined text-[16px] text-purple-600">rule_folder</span>
+                      <span>B2B Coverage</span>
+                    </div>
+                    <div className="font-mono text-lg font-bold text-slate-900 mt-1">
+                      {activeCockpitClient.stats?.totalInvoices || 702} Items
+                    </div>
+                    <div className="text-[10px] text-purple-700 font-medium mt-0.5">Full FY Ingested</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Button Group */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap relative z-10">
+                <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => handleRunAutopilot(activeCockpitClient)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs active:scale-95 transition-all shrink-0 self-start sm:self-center cursor-pointer"
+                    className="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-slate-900 text-white font-bold text-xs shadow-md hover:shadow-indigo-950/20 active:scale-95 transition-all flex items-center gap-2"
                   >
-                    <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
-                    <span>Launch 1-Click 12M Autopilot</span>
+                    <span className="material-symbols-outlined text-[18px] text-amber-300">rocket_launch</span>
+                    <span>Launch 12-Month Autopilot Loop</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCancelTask}
+                    className="px-3.5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all flex items-center gap-1.5"
+                    title="Cleanly stop current running download"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">stop_circle</span>
+                    <span>Cancel Task</span>
                   </button>
                 </div>
 
-                {/* Progress Bar */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1 font-sans">
-                      <RefreshCw className="w-3.5 h-3.5 text-purple-600 animate-spin" />
-                      Active Cycle: FY {financialYear} Iteration
-                    </span>
-                    <span className="font-mono text-[11px] font-bold text-slate-800">
-                      {Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}% Processed
-                    </span>
+                <div className="text-right">
+                  <div className="font-mono text-xs font-bold text-slate-900">
+                    {activeCockpitClient.syncedCount || 7} / 12 Months Synced
                   </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
-                    <div
-                      className="h-full bg-gradient-to-r from-purple-600 to-emerald-500 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Telemetry 4-Metric Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-100">
-                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Resilience</div>
-                  <div className="text-xs font-bold text-emerald-700 font-mono mt-0.5">100% Non-Block</div>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Safe Retention</div>
-                  <div className="text-xs font-bold text-slate-800 font-mono mt-0.5">11/12 Protected</div>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Invoices Synced</div>
-                  <div className="text-xs font-bold text-slate-800 font-mono mt-0.5">
-                    {activeCockpitClient.stats?.totalInvoices || 702} Invoices
-                  </div>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase font-sans">Gross ITC</div>
-                  <div className="text-xs font-bold text-purple-700 font-mono mt-0.5">
-                    ₹ {formatCur(activeCockpitClient.stats?.eligibleItc?.total || 19860000)}
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    {Math.round(((activeCockpitClient.syncedCount || 7) / 12) * 100)}% Complete
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Right: In-Page CAPTCHA Resolver Widget (col-span-5) */}
-            <div className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-2.5">
+            {/* Right Column: Interactive In-Page CAPTCHA Dialog Card (5 cols) */}
+            <div className="lg:col-span-5 bg-white/95 backdrop-blur-xl rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                    <h3 className="text-xs font-bold text-slate-900 font-sans">In-Page CAPTCHA Resolver</h3>
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span className="font-headline-sm text-base text-slate-900 font-bold">Portal CAPTCHA Resolver</span>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200/60 font-mono">
-                    Portal Bridge
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-amber-50 border border-amber-200 text-amber-700 font-mono font-bold">
+                    OCT 24 CHALLENGE
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 font-sans">
-                  Chromium automated GST login challenge. Solve once to authorize the automated 12-month retrieval pipe.
+                <p className="font-body-sm text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  Chromium agent paused at GSTN login barrier. Solve challenge to resume multi-threaded download.
                 </p>
 
-                {/* Captcha Box Widget */}
-                <div className="mt-2 bg-slate-50 rounded-xl p-2.5 border border-slate-200/80 space-y-2">
+                {/* Sleek In-Page CAPTCHA Box */}
+                <div className="mt-3.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">GST Portal Challenge</span>
+                    <span className="font-label text-[10px] text-slate-500 uppercase font-bold tracking-wider">Portal Security Image</span>
                     <button
                       onClick={handleBringToFront}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-purple-700 hover:underline cursor-pointer"
+                      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold transition-colors"
                     >
-                      <Laptop className="w-3 h-3 text-purple-600" /> Bring Browser Front
+                      <span className="material-symbols-outlined text-[15px]">refresh</span>
+                      <span>Bring Browser Front</span>
                     </button>
                   </div>
 
-                  {/* Stylized Visual Challenge */}
-                  <div className="w-full h-11 bg-white border border-slate-200 rounded-lg flex items-center justify-between px-3 select-none relative overflow-hidden">
-                    <div className="flex items-center gap-2 font-mono text-lg font-bold text-slate-900 tracking-wider italic">
-                      <span className="text-purple-600">8</span>
-                      <span className="text-blue-600">4</span>
-                      <span className="text-slate-800">9</span>
-                      <span className="text-emerald-600">2</span>
-                      <span className="text-amber-600">7</span>
-                      <span className="text-indigo-600">5</span>
+                  <div className="flex items-center gap-3">
+                    {/* Distorted high-visibility security badge */}
+                    <div className="relative w-40 h-12 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 rounded-lg flex items-center justify-center overflow-hidden shadow-inner select-none tracking-widest border border-slate-700 shrink-0">
+                      <div className="absolute inset-0 opacity-25 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:6px_6px]"></div>
+                      <span className="font-mono text-xl font-bold text-cyan-300 tracking-widest italic transform -skew-x-12 select-none">
+                        849275
+                      </span>
+                      <div className="absolute inset-x-0 h-0.5 bg-purple-400/50 transform rotate-6"></div>
+                      <div className="absolute inset-x-0 h-0.5 bg-cyan-400/50 transform -rotate-3"></div>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">
-                      OCR Ready
-                    </span>
-                  </div>
 
-                  {/* Input & Trigger Row */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleBringToFront}
-                      className="flex-1 py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Laptop className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Focus Chromium Browser</span>
-                    </button>
-                    <button
-                      onClick={() => handleScanDownloads()}
-                      className="py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <FolderSearch className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Scan Files</span>
-                    </button>
+                    {/* Sleek Input */}
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        defaultValue="849275"
+                        placeholder="6-digit code"
+                        className="w-full bg-white text-slate-900 font-mono text-sm text-center py-2.5 px-3 rounded-lg border border-slate-300 shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold tracking-widest"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-1 flex items-center gap-1.5 text-[10px] text-slate-400 border-t border-slate-100 font-sans">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span>Automated retry &amp; fallback safeguard active on invalid attempt.</span>
+              {/* Submit & Non-blocking info */}
+              <div className="pt-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleBringToFront}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-emerald-400">check_circle</span>
+                  <span>Submit &amp; Resume 12M Download</span>
+                </button>
+                <p className="text-[10px] text-slate-400 text-center font-mono">
+                  Autonomous loop will retry automatically on timeout with zero data loss.
+                </p>
               </div>
             </div>
           </div>
+
 
           {/* ─── 4. COMPACT 12-MONTH TIMELINE BADGES (April - March) ─────────────── */}
           <div className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-xs space-y-2.5">

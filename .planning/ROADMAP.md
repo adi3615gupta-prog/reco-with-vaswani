@@ -16,6 +16,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 8: Autopilot Runtime Execution & Production Database Hardening** - Shield browser evaluation code from obfuscator scrambling and auto-seed master clients database in packaged Windows builds. (completed 2026-10-23)
 - [x] **Phase 9: Suite 04 Returns Enterprise Fluid Dashboard Layout Overhaul** - Elevate and restructure Returns Preparation & Filing across all 5 tabs per the Stitch enterprise design package (`stitch_vaswani_audit_enterprise_dashboard`). (completed 2026-10-24)
 - [x] **Phase 10: Enterprise Modernized Shell & Complete Returns Dashboard 1:1 Stitch Alignment** - Implement the smart collapsible left sidebar rail, standardized top header with Port 9000 & FY switcher, and rebuild all 5 Returns Dashboard tabs to 1:1 match Stitch templates. (completed 2026-10-24)
+- [ ] **Phase 11: Suite 04 Returns Complete Restructuring & Alignment with Newly Downloaded Stitch Assets** - Implement the refined layouts from the new Stitch assets directory (`GST RETURN MODULE UI ASSETS/...`): (1) Tab 1 Formal GSTR-3B Computation Sheet with 28-line table, GSTR-1 & 2B ingest cards, and Rule 88A set-off cascade; (2) Tab 2 FY360 Executive Cockpit with Electronic Credit Ledger horizontal header banner; (3) Tab 3 Nexus IMS Decision Hub with circular timer; (4) Tab 4 Inward ITC Autopilot Cockpit with speed telemetry and interactive captcha resolver; (5) Tab 5 Outward Autopilot Sales Console with horizontal hero and split 12M grid + captcha card; (6) Brand Favicons & PWA Icons.
 
 ## Phase Details
 
@@ -197,6 +198,28 @@ Plans:
 - [x] 10-03: Returns Dashboard Tab 3 — GST IMS & 2B Manager 1:1 Stitch Alignment
 - [x] 10-04: Returns Dashboard Tab 4 & 5 — GSTR-2B & GSTR-1 Autopilot 1:1 Stitch Alignment
 
+### Phase 11: Suite 04 Returns Complete Restructuring & Alignment with Newly Downloaded Stitch Assets
+
+**Goal**: Implement the newly downloaded Stitch assets (`stitch_vaswani_audit_enterprise_dashboard (1)/stitch_vaswani_audit_enterprise_dashboard/`) across the entire Returns Dashboard suite with 100% visual fidelity and zero functional regressions:
+1. Tab 1: Formal GSTR-3B Computation Sheet (`gstr_3b_working_sheet_rule_88a_matrix`) with the 28-line CA computation table, dual ingestion action cards (GSTR-1 & GSTR-2B), 3 insight cards, and Rule 88A set-off cascade.
+2. Tab 2: FY360° Reconciliation Matrix Split Executive Layout (`fy360_reconciliation_matrix_split_executive_layout`) with 4-column metric strip and Electronic Credit Ledger horizontal header banner.
+3. Tab 3: Nexus IMS Decision Hub Updated Header (`nexus_ims_decision_hub_updated_header`) with 20-minute circular countdown ring and recipient action toggles.
+4. Tab 4: Inward ITC Autopilot Cockpit Updated Header (`inward_itc_autopilot_cockpit_updated_header`) with telemetry pulse cards and distorted security badge CAPTCHA resolver.
+5. Tab 5: Outward Autopilot Sales Console Restructured Layout (`outward_autopilot_sales_console_restructured_layout`) with full horizontal launch deck, 12M small tabs (8 cols) + portal captcha resolver (4 cols).
+6. Web favicon & PWA app icons alignment.
+
+**Depends on**: Phase 10
+**Requirements**: UI-STITCH-NEW-01, UI-STITCH-NEW-02, UI-STITCH-NEW-03, UI-STITCH-NEW-04, UI-STITCH-NEW-05
+
+**Plans**: 5/5 plans complete
+
+Plans:
+- [x] 11-01: Tab 1 GSTR-3B Formal Computation Sheet & Dual Ingestion Deck 1:1 Alignment
+- [x] 11-02: Tab 2 FY360° Executive Cockpit & Electronic Credit Ledger Banner Alignment
+- [x] 11-03: Tab 3 Nexus IMS Decision Hub Circular Timer & Action Deck Alignment
+- [x] 11-04: Tab 4 Inward ITC Autopilot Cockpit & Distorted CAPTCHA Resolver Alignment
+- [x] 11-05: Tab 5 Outward Autopilot Restructured Layout (Split 12M Tabs + CAPTCHA) Alignment
+
 ---
 *Roadmap defined: 2026-10-22*
-*Last updated: 2026-10-24 after Phase 10 planning*
+*Last updated: 2026-10-24 after Phase 11 completion*
