@@ -189,10 +189,10 @@ Plans:
   5. Returns Dashboard Tab 4 (GSTR-2B Autopilot) and Tab 5 (GSTR-1 Autopilot) match their respective Stitch blueprints 1:1.
   6. Strict Functional Invariance: 0 changes to Rule 88A set-off, SA 530 sampling, Tandon MPBF II, Form 3CD Clause 44, 115BAC formulas, SQLite queries, or Playwright automation.
 
-**Plans**: 0/4 plans complete
+**Plans**: 1/4 plans complete
 
 Plans:
-- [ ] 10-01: Modernized App Shell — Smart Collapsible Sidebar Rail & Standardized Header
+- [x] 10-01: Modernized App Shell — Smart Collapsible Sidebar Rail & Standardized Header
 - [ ] 10-02: Returns Dashboard Tab 1 — GSTR-3B Working Sheet & Rule 88A Matrix 1:1 Stitch Alignment
 - [ ] 10-03: Returns Dashboard Tab 3 — GST IMS & 2B Manager 1:1 Stitch Alignment
 - [ ] 10-04: Returns Dashboard Tab 4 & 5 — GSTR-2B & GSTR-1 Autopilot 1:1 Stitch Alignment
