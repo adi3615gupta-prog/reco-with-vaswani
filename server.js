@@ -350,15 +350,21 @@ const setupLicenseMonitoring = (officeId) => {
                 LICENSE_DELETED = false; // Key found and active, clear any stale deleted flag
 
             // Sync Gemini API Key if configured in cloud server key
-            if (serverKeyDoc.gemini_api_key && typeof serverKeyDoc.gemini_api_key === 'string' && serverKeyDoc.gemini_api_key.trim().length > 5) {
-                const cloudKey = serverKeyDoc.gemini_api_key.trim();
+            let cloudKey = null;
+            for (const [k, v] of Object.entries(serverKeyDoc)) {
+                if (k.trim() === 'gemini_api_key' && typeof v === 'string' && v.trim().length > 5) {
+                    cloudKey = v.trim();
+                    break;
+                }
+            }
+            if (cloudKey) {
                 db.serialize(() => {
                     db.run(
-                        "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
-                        [cloudKey, cloudKey]
+                        "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        [cloudKey]
                     );
                     db.run(
-                        "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = 'cloud_office'"
+                        "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
                     );
                 });
                 console.log("[Gemini Cloud Sync] API key synced from office cloud license via live snapshot");

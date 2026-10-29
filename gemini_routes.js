@@ -191,7 +191,9 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
         return res.status(503).json({ ok: false, configured: false, error: 'Firebase Firestore is not initialized on this server' });
       }
 
-      const officeId = await getOfficeId();
+      const officeId = (req.body && req.body.officeId && typeof req.body.officeId === 'string' && req.body.officeId.trim())
+        ? req.body.officeId.trim()
+        : await getOfficeId();
       console.log(`[Gemini Cloud Sync] Manual sync requested for office: ${officeId || 'unassigned'}`);
 
       const result = await syncCloudGeminiKey(firestore, db, officeId);
@@ -232,7 +234,9 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
       const trimmedKey = apiKey.trim();
 
       if (scope === 'office') {
-        const officeId = await getOfficeId();
+        const officeId = (req.body && req.body.officeId && typeof req.body.officeId === 'string' && req.body.officeId.trim())
+          ? req.body.officeId.trim()
+          : await getOfficeId();
         if (!officeId) {
           return res.status(400).json({ error: 'This installation does not have an active office_id assigned.' });
         }
