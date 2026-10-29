@@ -36,7 +36,7 @@ describe('Sourav AI Frontend — Action Parser & Navigation Mapping', () => {
     expect(cleanText).toContain('[ACTION:other:foo]');
   });
 
-  it('should have all 11 core module navigation targets defined', () => {
+  it('should have all 11 core module navigation targets defined and mapped to valid routes', () => {
     const expectedTargets = [
       'reco', 'ims', '3b', 'gstr1', 'notices', 'tds',
       'tally', 'incometax', 'cma', 'finstatements', 'settings'
@@ -46,5 +46,9 @@ describe('Sourav AI Frontend — Action Parser & Navigation Mapping', () => {
       expect(ACTION_NAV_TARGETS[target]).toBeDefined();
       expect(ACTION_NAV_TARGETS[target].label).toBeTruthy();
     }
+
+    // Verify cma maps to valid AppRoute 'bank-cma'
+    expect(ACTION_NAV_TARGETS['cma'].route).toBe('bank-cma');
+    expect(ACTION_NAV_TARGETS['bankcma'].route).toBe('bank-cma');
   });
 });

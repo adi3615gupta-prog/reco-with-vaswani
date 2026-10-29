@@ -2,6 +2,68 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
 
 /**
+ * Sanitizes chat history to conform strictly to Google Gemini's multi-turn conversational rules:
+ * 1. History must start with role 'user'.
+ * 2. Turns must strictly alternate between 'user' and 'model'.
+ * 3. Consecutive turns with the same role are merged into one turn with '\n\n'.
+ * 4. Trailing 'user' turns are removed because chat.sendMessage(new_message) provides the final 'user' turn.
+ * 5. Returns items formatted as [{ role: 'user' | 'model', parts: [{ text }] }]
+ * 
+ * @param {Array<{ role: string, text?: string, parts?: Array<{ text: string }> }>} rawHistory 
+ * @returns {Array<{ role: 'user' | 'model', parts: [{ text: string }] }>}
+ */
+export function sanitizeGeminiHistory(rawHistory) {
+  if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
+
+  // 1. Extract valid entries with clean text
+  const valid = [];
+  for (const item of rawHistory) {
+    if (!item) continue;
+    const role = (item.role === 'user' || item.role === 'model') ? item.role : null;
+    if (!role) continue;
+
+    let text = '';
+    if (typeof item.text === 'string') {
+      text = item.text.trim();
+    } else if (Array.isArray(item.parts) && item.parts.length > 0) {
+      text = item.parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('\n').trim();
+    }
+
+    if (text.length > 0) {
+      valid.push({ role, text });
+    }
+  }
+
+  // 2. Drop any leading 'model' messages (e.g., initial system greetings or sync banners)
+  while (valid.length > 0 && valid[0].role === 'model') {
+    valid.shift();
+  }
+
+  if (valid.length === 0) return [];
+
+  // 3. Merge consecutive same-role messages so turns strictly alternate
+  const alternating = [];
+  for (const turn of valid) {
+    if (alternating.length > 0 && alternating[alternating.length - 1].role === turn.role) {
+      alternating[alternating.length - 1].text += '\n\n' + turn.text;
+    } else {
+      alternating.push({ role: turn.role, text: turn.text });
+    }
+  }
+
+  // 4. History must end with 'model' because chat.sendMessage(userMessage) will supply the next 'user' turn
+  while (alternating.length > 0 && alternating[alternating.length - 1].role === 'user') {
+    alternating.pop();
+  }
+
+  // 5. Convert to Gemini SDK format
+  return alternating.map(t => ({
+    role: t.role,
+    parts: [{ text: t.text }]
+  }));
+}
+
+/**
  * Fetch Gemini API key from Firebase Firestore.
  * Level 1: Check office-specific serial_keys doc where office_id == officeId and key_type == 'server'
  * Level 2: Fallback to global master doc system_config/ai_settings
@@ -314,18 +376,16 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
       const genAI = new GoogleGenerativeAI(apiKey);
       const systemInstruction = buildSystemPrompt(context);
 
-      // Filter and format history strictly to { role: 'user' | 'model', parts: [{ text }] }
-      const formattedHistory = Array.isArray(history)
-        ? history
-            .filter(h => h && (h.role === 'user' || h.role === 'model') && typeof h.text === 'string' && h.text.trim().length > 0)
-            .map(h => ({
-              role: h.role,
-              parts: [{ text: h.text }],
-            }))
-        : [];
+      // Sanitize multi-turn history to guarantee strict user-model alternation and leading user turn
+      const formattedHistory = sanitizeGeminiHistory(history);
 
-      // Resilient model cascade: try fast lite first, then flash models
-      const modelCandidates = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+      // Fast, resilient model cascade: gemini-3.5-flash responds in <2s, fall back to 3.6-flash / 3.1-flash-lite
+      const modelCandidates = [
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-3.5-flash-lite',
+      ];
       let lastError = null;
       let responseText = null;
 
@@ -339,8 +399,8 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
           const chat = model.startChat({
             history: formattedHistory,
             generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 1024,
+              temperature: 0.35,
+              maxOutputTokens: 768,
             },
           });
 
@@ -403,6 +463,8 @@ When advising the user to go to a feature, or when the user asks you to open/do 
 - [ACTION:navigate:incometax] — Income Tax Regime Engine
 - [ACTION:navigate:cma] — Bank CMA Appraisal
 - [ACTION:navigate:finstatements] — Schedule III Financial Statements
+- [ACTION:navigate:audit] — Statutory Audit Suite
+- [ACTION:navigate:clause44] — Tax Audit Clause 44
 - [ACTION:navigate:settings] — Settings & Configurations
 
 Your software capabilities:
@@ -426,8 +488,7 @@ Active Context:
 - Active Module: ${activeModule || 'General Dashboard'}
 
 Rules:
-- Be concise, accurate, and professional.
-- Keep answers under 300 words unless in-depth legal analysis or step-by-step guidance is requested.
+- Be crisp, concise, and direct. Skip filler greetings. Keep answers typically under 180-250 words for fast reading.
 - Never make up tax rates, circulars, or deadlines.
-- If user asks you to perform an action, tell them what to do and supply the matching [ACTION:navigate:xxx] token so they can jump there immediately.`;
+- If user asks you to perform an action or open a screen, supply the matching [ACTION:navigate:xxx] token so they can jump there immediately.`;
 }

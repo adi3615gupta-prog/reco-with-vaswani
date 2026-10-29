@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import sqlite3 from 'sqlite3';
-import setupGeminiRoutes from '../../gemini_routes.js';
+import setupGeminiRoutes, { sanitizeGeminiHistory } from '../../gemini_routes.js';
 import type { Server } from 'http';
 
 describe('Gemini Backend Routes (/api/gemini)', () => {
@@ -76,5 +76,59 @@ describe('Gemini Backend Routes (/api/gemini)', () => {
       body: JSON.stringify({ message: '   ' }),
     });
     expect(res.status).toBe(400);
+  });
+
+  describe('sanitizeGeminiHistory Invariant Enforcer', () => {
+    it('should drop leading model messages to ensure conversation starts with user', () => {
+      const raw = [
+        { role: 'model', text: 'Welcome to Sourav AI!' },
+        { role: 'model', text: 'License synced successfully.' },
+        { role: 'user', text: 'Hello Sourav' },
+        { role: 'model', text: 'Hi! How can I assist?' },
+      ];
+      const sanitized = sanitizeGeminiHistory(raw as any);
+
+      expect(sanitized[0].role).toBe('user');
+      expect(sanitized[0].parts[0].text).toBe('Hello Sourav');
+      expect(sanitized[1].role).toBe('model');
+      expect(sanitized[1].parts[0].text).toBe('Hi! How can I assist?');
+      expect(sanitized).toHaveLength(2);
+    });
+
+    it('should merge consecutive same-role turns into a single alternating turn', () => {
+      const raw = [
+        { role: 'user', text: 'Question 1' },
+        { role: 'user', text: 'Also consider this detail' },
+        { role: 'model', text: 'Answer 1 part A' },
+        { role: 'model', text: 'Answer 1 part B' },
+      ];
+      const sanitized = sanitizeGeminiHistory(raw as any);
+
+      expect(sanitized).toHaveLength(2);
+      expect(sanitized[0].role).toBe('user');
+      expect(sanitized[0].parts[0].text).toBe('Question 1\n\nAlso consider this detail');
+      expect(sanitized[1].role).toBe('model');
+      expect(sanitized[1].parts[0].text).toBe('Answer 1 part A\n\nAnswer 1 part B');
+    });
+
+    it('should strip trailing user messages so chat.sendMessage(new_message) alternates cleanly', () => {
+      const raw = [
+        { role: 'user', text: 'First query' },
+        { role: 'model', text: 'First answer' },
+        { role: 'user', text: 'Unanswered trailing query' },
+      ];
+      const sanitized = sanitizeGeminiHistory(raw as any);
+
+      expect(sanitized).toHaveLength(2);
+      expect(sanitized[sanitized.length - 1].role).toBe('model');
+      expect(sanitized[sanitized.length - 1].parts[0].text).toBe('First answer');
+    });
+
+    it('should handle empty or malformed inputs without throwing', () => {
+      expect(sanitizeGeminiHistory(null as any)).toEqual([]);
+      expect(sanitizeGeminiHistory([] as any)).toEqual([]);
+      expect(sanitizeGeminiHistory([{ role: 'unknown', text: 'test' }] as any)).toEqual([]);
+      expect(sanitizeGeminiHistory([{ role: 'user', text: '   ' }] as any)).toEqual([]);
+    });
   });
 });

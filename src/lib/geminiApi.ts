@@ -131,8 +131,11 @@ export const ACTION_NAV_TARGETS: Record<string, { label: string; tabId?: string;
   tds: { label: 'Open TDS Consolidator', route: 'tds-reco' },
   tally: { label: 'Open Tally Direct Bridge', route: 'tally-direct' },
   incometax: { label: 'Open Income Tax Engine', route: 'income-tax' },
-  cma: { label: 'Open Bank CMA Appraisal', route: 'cma-report' },
+  cma: { label: 'Open Bank CMA Appraisal', route: 'bank-cma' },
+  bankcma: { label: 'Open Bank CMA Appraisal', route: 'bank-cma' },
   finstatements: { label: 'Open Schedule III Financial Statements', route: 'fin-statements' },
+  audit: { label: 'Open Statutory Audit Suite', route: 'audit' },
+  clause44: { label: 'Open Tax Audit Clause 44', route: 'clause44' },
   settings: { label: 'Open Settings', route: 'settings' },
 };
 
