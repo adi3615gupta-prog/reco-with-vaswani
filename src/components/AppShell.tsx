@@ -51,6 +51,7 @@ interface AppShellProps {
   returnsTab?: ReturnsTabKey;
   setReturnsTab?: (tab: ReturnsTabKey) => void;
   companyName?: string;
+  setCompanyName?: (name: string) => void;
   financialYear?: string;
   loginUser?: string;
   networkDiagnostics?: { status: string; latency: number };
@@ -610,7 +611,10 @@ export function AppShell({
           if (tab) setSettingsActiveTab(tab as any);
           setIsSettingsOpen(true);
         }}
-        onNavigate={(route, tabId) => {
+        onNavigate={(route, tabId, clientInfo) => {
+          if (clientInfo?.clientName && setCompanyName) {
+            setCompanyName(clientInfo.clientName);
+          }
           if (route) setAppRoute(route as any);
           if (tabId && setReturnsTab) {
             if (tabId === 'ims') setReturnsTab('ims2b');

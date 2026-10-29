@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import sqlite3 from 'sqlite3';
-import setupGeminiRoutes, { sanitizeGeminiHistory } from '../../gemini_routes.js';
+import setupGeminiRoutes, { sanitizeGeminiHistory, findMatchingClients } from '../../gemini_routes.js';
 import type { Server } from 'http';
 
 describe('Gemini Backend Routes (/api/gemini)', () => {
@@ -17,6 +17,12 @@ describe('Gemini Backend Routes (/api/gemini)', () => {
     db = new sqlite3.Database(':memory:');
     await new Promise((resolve) => {
       db.run('CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT)', resolve);
+    });
+    await new Promise((resolve) => {
+      db.run('CREATE TABLE IF NOT EXISTS clients (id TEXT PRIMARY KEY, gstin TEXT, trade_name TEXT, legal_name TEXT, is_deleted INTEGER)', resolve);
+    });
+    await new Promise((resolve) => {
+      db.run("INSERT INTO clients VALUES ('1', '27AAQCS1984G1ZT', 'SIDDHA PERFECT SYSTEMS PRIVATE LIMITED', 'SIDDHA PERFECT SYSTEMS PRIVATE LIMITED', 0)", resolve);
     });
 
     setupGeminiRoutes(app, db);
@@ -129,6 +135,20 @@ describe('Gemini Backend Routes (/api/gemini)', () => {
       expect(sanitizeGeminiHistory([] as any)).toEqual([]);
       expect(sanitizeGeminiHistory([{ role: 'unknown', text: 'test' }] as any)).toEqual([]);
       expect(sanitizeGeminiHistory([{ role: 'user', text: '   ' }] as any)).toEqual([]);
+    });
+  });
+
+  describe('findMatchingClients Query Engine', () => {
+    it('should match client from database when user asks by keyword', async () => {
+      const matches = await findMatchingClients(db, 'open 3b working of siddha');
+      expect(matches).toHaveLength(1);
+      expect(matches[0].gstin).toBe('27AAQCS1984G1ZT');
+      expect(matches[0].name).toBe('SIDDHA PERFECT SYSTEMS PRIVATE LIMITED');
+    });
+
+    it('should return empty array when query has no matching keywords', async () => {
+      const matches = await findMatchingClients(db, 'what is the deadline for GSTR-3B?');
+      expect(matches).toHaveLength(0);
     });
   });
 });

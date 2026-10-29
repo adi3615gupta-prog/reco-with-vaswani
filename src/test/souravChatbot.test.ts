@@ -51,4 +51,15 @@ describe('Sourav AI Frontend — Action Parser & Navigation Mapping', () => {
     expect(ACTION_NAV_TARGETS['cma'].route).toBe('bank-cma');
     expect(ACTION_NAV_TARGETS['bankcma'].route).toBe('bank-cma');
   });
+
+  it('should parse client-specific action tokens with GSTIN parameter', () => {
+    const raw = 'Opening 3B working for Siddha: [ACTION:navigate:3b:27AAQCS1984G1ZT]';
+    const { cleanText, actions } = extractActionTags(raw);
+
+    expect(cleanText).toBe('Opening 3B working for Siddha:');
+    expect(actions).toHaveLength(1);
+    expect(actions[0].target).toBe('3b');
+    expect(actions[0].gstin).toBe('27AAQCS1984G1ZT');
+    expect(actions[0].label).toContain('27AAQCS1984G1ZT');
+  });
 });

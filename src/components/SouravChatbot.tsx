@@ -132,7 +132,7 @@ interface SouravChatbotProps {
   gstin?: string;
   financialYear?: string;
   activeModule?: string;
-  onNavigate?: (route: string, tabId?: string) => void;
+  onNavigate?: (route: string, tabId?: string, clientInfo?: { gstin?: string; clientName?: string }) => void;
   onOpenSettings?: (tab?: string) => void;
 }
 
@@ -272,7 +272,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
     }
   };
 
-  const handleActionClick = (target: string) => {
+  const handleActionClick = (target: string, gstin?: string, clientName?: string) => {
     const targetInfo = ACTION_NAV_TARGETS[target];
     if (!targetInfo) return;
 
@@ -283,20 +283,45 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       return;
     }
 
+    if (gstin) {
+      localStorage.setItem('gstr3b_active_client_gstin', gstin);
+    }
+    if (clientName) {
+      localStorage.setItem('np_reco_company', clientName);
+      localStorage.setItem('np_company_name', clientName);
+    }
+
     if (onNavigate) {
-      onNavigate(targetInfo.route || 'reco', targetInfo.tabId);
-    } else {
-      // Global event fallback
+      onNavigate(targetInfo.route || 'reco', targetInfo.tabId, { gstin, clientName });
+    }
+
+    // Always dispatch global events so mounted components update immediately
+    window.dispatchEvent(
+      new CustomEvent('app-navigate', {
+        detail: {
+          route: targetInfo.route,
+          tabId: targetInfo.tabId,
+          gstin,
+          clientName,
+        },
+      })
+    );
+
+    if (gstin) {
       window.dispatchEvent(
-        new CustomEvent('app-navigate', {
-          detail: { route: targetInfo.route, tabId: targetInfo.tabId },
+        new CustomEvent('gstr3b-select-client', {
+          detail: {
+            gstin,
+            clientName,
+            tab: targetInfo.tabId === 'gstr3b' ? 'working3b' : targetInfo.tabId,
+          },
         })
       );
     }
 
     // Auto-minimize/close drawer so the user can immediately interact with the navigated module
     setIsOpen(false);
-    toast.success(`Navigated to ${targetInfo.label}`);
+    toast.success(`Opening ${targetInfo.label}${clientName || gstin ? ` • ${clientName || gstin}` : ''}`);
   };
 
   const handleClearChat = () => {
@@ -539,11 +564,11 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                         {actions.map((act, aIdx) => (
                           <button
                             key={aIdx}
-                            onClick={() => handleActionClick(act.target)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-all cursor-pointer hover:border-amber-400"
+                            onClick={() => handleActionClick(act.target, act.gstin, act.clientName)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-all cursor-pointer hover:border-amber-400 shadow-sm"
                           >
                             <span>{act.label}</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
                           </button>
                         ))}
                       </div>

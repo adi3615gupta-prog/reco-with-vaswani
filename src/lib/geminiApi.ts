@@ -139,24 +139,40 @@ export const ACTION_NAV_TARGETS: Record<string, { label: string; tabId?: string;
   settings: { label: 'Open Settings', route: 'settings' },
 };
 
+export interface ParsedAction {
+  target: string;
+  label: string;
+  gstin?: string;
+  clientName?: string;
+}
+
 /**
- * Parse [ACTION:navigate:<target>] tags from response text.
+ * Parse [ACTION:navigate:<target>] and [ACTION:navigate:<target>:<gstin>] tags from response text.
  */
 export function extractActionTags(rawText: string): {
   cleanText: string;
-  actions: Array<{ target: string; label: string }>;
+  actions: ParsedAction[];
 } {
-  const actions: Array<{ target: string; label: string }> = [];
-  const regex = /\[ACTION:navigate:([a-z0-9_-]+)\]/gi;
+  const actions: ParsedAction[] = [];
+  const regex = /\[ACTION:navigate:([a-z0-9_-]+)(?::([a-z0-9_-]+))?\]/gi;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(rawText)) !== null) {
     const targetKey = match[1].toLowerCase();
+    const gstinParam = match[2] ? match[2].trim().toUpperCase() : undefined;
     const targetInfo = ACTION_NAV_TARGETS[targetKey];
     if (targetInfo) {
-      // Deduplicate identical action buttons in a single turn
-      if (!actions.some(a => a.target === targetKey)) {
-        actions.push({ target: targetKey, label: targetInfo.label });
+      const actionKey = gstinParam ? `${targetKey}:${gstinParam}` : targetKey;
+      if (!actions.some(a => (a.gstin ? `${a.target}:${a.gstin}` : a.target) === actionKey)) {
+        let label = targetInfo.label;
+        if (gstinParam) {
+          label = `${targetInfo.label} (${gstinParam})`;
+        }
+        actions.push({
+          target: targetKey,
+          label,
+          gstin: gstinParam,
+        });
       }
     }
   }

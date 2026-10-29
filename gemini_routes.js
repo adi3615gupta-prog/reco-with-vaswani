@@ -2,6 +2,59 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
 
 /**
+ * Search the SQLite clients table for clients matching keywords in the user query.
+ * 
+ * @param {import('sqlite3').Database} db 
+ * @param {string} message 
+ * @returns {Promise<Array<{ gstin: string, name: string }>>}
+ */
+export function findMatchingClients(db, message) {
+  return new Promise((resolve) => {
+    if (!db || !message || typeof message !== 'string') return resolve([]);
+
+    // Extract potential client tokens (alphanumeric >= 3 chars, filtering standard English/tax words)
+    const stopWords = new Set([
+      'the', 'and', 'for', 'open', 'show', 'working', 'sheet', 'reco', 'return',
+      'returns', 'please', 'with', 'what', 'gstr', 'gstr1', 'gstr3b', 'gstr2b',
+      'tally', 'from', 'audit', 'data', 'file', 'portal', 'pvt', 'ltd', 'private',
+      'limited', 'help', 'check', 'view', 'goto', 'take', 'want', 'kaise', 'karo'
+    ]);
+
+    const tokens = message
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !stopWords.has(w));
+
+    if (tokens.length === 0) return resolve([]);
+
+    const conditions = [];
+    const params = [];
+    tokens.forEach((tok) => {
+      conditions.push('(trade_name LIKE ? OR legal_name LIKE ? OR gstin LIKE ?)');
+      params.push(`%${tok}%`, `%${tok}%`, `%${tok}%`);
+    });
+
+    const sql = `
+      SELECT gstin, trade_name, legal_name 
+      FROM clients 
+      WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (${conditions.join(' OR ')})
+      LIMIT 10
+    `;
+
+    db.all(sql, params, (err, rows) => {
+      if (err || !rows) return resolve([]);
+      resolve(
+        rows.map((r) => ({
+          gstin: (r.gstin || '').trim().toUpperCase(),
+          name: (r.trade_name || r.legal_name || '').trim(),
+        }))
+      );
+    });
+  });
+}
+
+/**
  * Sanitizes chat history to conform strictly to Google Gemini's multi-turn conversational rules:
  * 1. History must start with role 'user'.
  * 2. Turns must strictly alternate between 'user' and 'model'.
@@ -374,7 +427,10 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const systemInstruction = buildSystemPrompt(context);
+
+      // Search registered clients table for any clients referenced in user query
+      const matchedClients = await findMatchingClients(db, message);
+      const systemInstruction = buildSystemPrompt(context, matchedClients);
 
       // Sanitize multi-turn history to guarantee strict user-model alternation and leading user turn
       const formattedHistory = sanitizeGeminiHistory(history);
@@ -421,7 +477,7 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
         throw lastError || new Error('No response from Gemini API models');
       }
 
-      res.json({ reply: responseText });
+      res.json({ reply: responseText, matchedClients });
     } catch (err) {
       console.error('[Gemini Route Error]:', err);
       const msg = err.message || '';
@@ -437,13 +493,20 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
 }
 
 /**
- * Construct dynamic system instruction with active context and software knowledge.
+ * Construct dynamic system instruction with active context, software knowledge, and matching clients.
  * 
  * @param {object} context 
+ * @param {Array<{ gstin: string, name: string }>} matchedClients
  * @returns {string}
  */
-function buildSystemPrompt(context = {}) {
+function buildSystemPrompt(context = {}, matchedClients = []) {
   const { clientName = '', gstin = '', fy = '', module: activeModule = '' } = context;
+
+  const matchedClientsBlock = matchedClients && matchedClients.length > 0
+    ? `\nMatched Registered Clients in Office Database for this query:\n${matchedClients
+        .map((c) => `- ${c.name} | GSTIN: ${c.gstin}`)
+        .join('\n')}\n`
+    : '';
   
   return `You are Sourav, an expert AI compliance assistant and software co-pilot for AUDIT WITH VASWANI — an enterprise GST compliance, reconciliation, and statutory audit desktop suite developed by Sourav Vaswani (CA firm, India).
 
@@ -467,6 +530,19 @@ When advising the user to go to a feature, or when the user asks you to open/do 
 - [ACTION:navigate:clause44] — Tax Audit Clause 44
 - [ACTION:navigate:settings] — Settings & Configurations
 
+Client-Specific Navigation:
+When the user asks to open, reconcile, or work on a specific client (e.g., "open 3b working of siddha", "reconcile dyp infra", "open ims of deep gas"):
+1. Check the "Matched Registered Clients" list below.
+2. If one or more clients match, include the client's GSTIN in the action token:
+   Format: [ACTION:navigate:<target>:<gstin>]
+   Examples:
+   - [ACTION:navigate:3b:27AAQCS1984G1ZT] — Open GSTR-3B Working Sheet for SIDDHA PERFECT SYSTEMS PRIVATE LIMITED
+   - [ACTION:navigate:reco:27AZNPB4348J1Z4] — Open 2B vs Books Reco for DEEP GAS SYSTEM
+   - [ACTION:navigate:ims:27AAQCS1984G1ZT] — Open IMS Decision Hub for SIDDHA PERFECT SYSTEMS PRIVATE LIMITED
+   - [ACTION:navigate:gstr1:27AAGCD4105L1ZO] — Open GSTR-1 Sales Downloader for DYP INFRAPROJECTS PRIVATE LIMITED
+3. If there is a single clear match or a primary match, state that you are opening that client and provide the matching action button: [ACTION:navigate:<target>:<gstin>].
+4. If multiple matching clients exist, list them and output an action button for each so the user can click either one directly!
+${matchedClientsBlock}
 Your software capabilities:
 1. Module 1: GST Reconciliation (2B vs Books / Purchase Register) — multi-pass matching, 6-pass debit note engine, tolerance matching
 2. Module 2: Vendor Party-Wise Report & Dispute Hub — vendor net position, 1-click dispute notices (Email/WhatsApp)
