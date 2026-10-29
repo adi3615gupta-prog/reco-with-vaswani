@@ -11,6 +11,7 @@ import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
 import { safeApiFetch } from '@/lib/api';
 import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
 import { getGeminiStatus, saveGeminiApiKey, sendChatMessage, syncGeminiFromCloud, pushGeminiToCloud } from '@/lib/geminiApi';
+import { Switch } from '@/components/ui/switch';
 
 export interface VaultClient {
   id: string;
@@ -121,6 +122,44 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isSavingGemini, setIsSavingGemini] = useState(false);
   const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // ─── 7. WINDOWS AUTO-START & DESKTOP LOCO PILOT STATE ───
+  const [openAtLogin, setOpenAtLogin] = useState(false);
+  const [isUpdatingAutostart, setIsUpdatingAutostart] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.getStartupSettings) {
+      electronAPI.getStartupSettings().then((res: any) => {
+        if (res && typeof res.openAtLogin === 'boolean') {
+          setOpenAtLogin(res.openAtLogin);
+        }
+      });
+    }
+  }, [isOpen]);
+
+  const handleToggleAutostart = async (checked: boolean) => {
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (!electronAPI?.setStartupSettings) return;
+
+    setIsUpdatingAutostart(true);
+    try {
+      const res = await electronAPI.setStartupSettings(checked);
+      if (res?.success) {
+        setOpenAtLogin(checked);
+        toast.success(
+          checked
+            ? 'AUDIT WITH VASWANI will now start automatically in the background on Windows boot.'
+            : 'Windows auto-startup disabled.'
+        );
+      }
+    } catch (e: any) {
+      toast.error('Failed to update startup settings: ' + e.message);
+    } finally {
+      setIsUpdatingAutostart(false);
+    }
+  };
 
   // Fetch configs on open
   useEffect(() => {
@@ -1574,6 +1613,34 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                     <CloudUpload className={`w-3.5 h-3.5 ${isPushingGeminiCloud ? 'animate-bounce' : ''}`} />
                     <span>{isPushingGeminiCloud ? 'Pushing to Firebase...' : 'Push to Cloud'}</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Windows Background & PC Loco Pilot Controls */}
+              <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <span>🚀 Windows Background Auto-Start (Loco Pilot Mode)</span>
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      Silently launch AUDIT WITH VASWANI on Windows boot in System Tray so Express backend (Port 3001) and Sourav AI are always active.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={openAtLogin}
+                    onCheckedChange={handleToggleAutostart}
+                    disabled={isUpdatingAutostart}
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                  <div className="text-slate-600">
+                    <span className="font-semibold text-slate-800">Universal Global Hotkey:</span> Press anywhere in Windows to summon Sourav AI
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-300 font-mono text-[11px] font-bold border border-amber-500/30">
+                    Ctrl + Alt + S
+                  </span>
                 </div>
               </div>
 

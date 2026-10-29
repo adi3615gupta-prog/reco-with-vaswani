@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { SettingsModal, SettingsTabKey } from '@/components/SettingsModal';
 import { SouravChatbot } from '@/components/SouravChatbot';
+import { ACTION_NAV_TARGETS } from '@/lib/geminiApi';
+import { getApiBase } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   CommandDialog,
@@ -240,6 +242,41 @@ export function AppShell({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Listen for navigation commands from Universal Desktop Copilot ("Loco Pilot")
+  useEffect(() => {
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.onAppNavigate) {
+      const cleanup = electronAPI.onAppNavigate(async ({ target, gstin }: { target: string; gstin?: string }) => {
+        const targetMeta = ACTION_NAV_TARGETS[target] || { route: target };
+
+        if (gstin) {
+          try {
+            const res = await fetch(`${getApiBase()}/api/clients`);
+            if (res.ok) {
+              const clients = await res.json();
+              const matched = clients.find((c: any) => c.gstin?.toUpperCase() === gstin.toUpperCase());
+              if (matched && (matched.trade_name || matched.legal_name) && setCompanyName) {
+                setCompanyName(matched.trade_name || matched.legal_name);
+              }
+            }
+          } catch (e) {
+            console.warn('[AppShell] Failed to lookup client by GSTIN:', e);
+          }
+        }
+
+        if (targetMeta.route) setAppRoute(targetMeta.route as any);
+        if (targetMeta.tabId && setReturnsTab) {
+          if (targetMeta.tabId === 'ims') setReturnsTab('ims2b');
+          else if (targetMeta.tabId === 'gstr3b') setReturnsTab('working3b');
+          else if (targetMeta.tabId === 'gstr1') setReturnsTab('gstr1_downloader');
+          else if (targetMeta.tabId === '2b' || targetMeta.tabId === 'gstr2b') setReturnsTab('gstr2b_downloader');
+          else setReturnsTab(targetMeta.tabId as any);
+        }
+      });
+      return cleanup;
+    }
+  }, [setCompanyName, setAppRoute, setReturnsTab]);
 
   const getInitials = (name?: string) => {
     if (!name) return 'CV';

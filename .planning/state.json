@@ -111,13 +111,13 @@
     {
       "number": "24",
       "name": "Windows Background Auto-Start & Universal Desktop AI Copilot (PC Loco Pilot)",
-      "status": "planned"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd-execute-phase 24",
-    "label": "Execute Phase 24",
-    "reason": "Phase 24 planned (3 plans ready)"
+    "command": "/gsd-progress",
+    "label": "Show progress",
+    "reason": "Phase 24 complete"
   },
   "updated_at": "2026-10-30T00:50:00.000Z"
 }

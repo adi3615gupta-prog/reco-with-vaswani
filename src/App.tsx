@@ -12,6 +12,7 @@ import TBImportFullscreen from "./pages/TBImportFullscreen.tsx";
 import IncomeTaxDashboard from "./pages/IncomeTaxDashboard.tsx";
 import ClientImsReview from "./pages/ClientImsReview.tsx";
 import GstNoticesDashboard from "./pages/GstNoticesDashboard.tsx";
+import CopilotDesktop from "./pages/CopilotDesktop.tsx";
 
 const queryClient = new QueryClient();
 
@@ -70,6 +71,7 @@ const App = () => (
                 <Route path="/income-tax-calculator" element={<IncomeTaxDashboard />} />
                 <Route path="/gst-notices" element={<GstNoticesDashboard />} />
                 <Route path="/ims-review/:token" element={<ClientImsReview />} />
+                <Route path="/copilot-desktop" element={<CopilotDesktop />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </HashRouter>

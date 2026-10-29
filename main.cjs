@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Tray, Menu, screen, globalShortcut } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -33,6 +33,22 @@ function logMain(message) {
 if (process.env.ELECTRON_RUN_AS_NODE) {
   console.log('Unsetting ELECTRON_RUN_AS_NODE to fix process initialization...');
   delete process.env.ELECTRON_RUN_AS_NODE;
+}
+
+// Single-instance lock to ensure background service and tray don't launch duplicates
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  logMain('Another instance of AUDIT WITH VASWANI is already running. Quitting duplicate instance.');
+  app.quit();
+} else {
+  app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+    logMain('Second instance launch intercepted. Restoring and focusing mainWindow.');
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
 }
 
 // Global reference for updater
@@ -86,9 +102,26 @@ function initializeUpdater() {
 }
 
 let mainWindow = null;
+let copilotWindow = null;
+let tray = null;
+let isQuitting = false;
 let backendProcess = null;
 let currentAppMode = 'server';
 const BACKEND_PORT = 3001; // Single port — Express serves both API and frontend
+
+// Helper to resolve app icon across development and packaged builds
+function getAppIconPath() {
+  const candidates = [
+    path.join(__dirname, 'public/icons/icon-192x192.png'),
+    path.join(__dirname, 'public/favicon.png'),
+    path.join(__dirname, 'dist/favicon.png'),
+    path.join(__dirname, 'public/logo.png')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
+}
 
 function startBackendServer(serverJsPath) {
   try {
@@ -201,17 +234,34 @@ function waitForBackend(port, timeoutMs = 45000) {
 }
 
 async function createWindow(appMode = currentAppMode) {
+  const isHiddenLaunch = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden;
+  logMain(`createWindow called. isHiddenLaunch: ${isHiddenLaunch}`);
+
+  const iconPath = getAppIconPath();
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: !isHiddenLaunch,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true, // Re-enabled for security (was dangerously set to false)
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, 'public/icon.png'),
+    icon: iconPath,
     backgroundColor: '#090d18'
+  });
+
+  // Intercept window close to minimize to tray instead of killing the background server
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      logMain('mainWindow close intercepted: minimized to background System Tray.');
+      return false;
+    }
+    logMain('mainWindow closing for app quit.');
   });
 
   try {
@@ -270,6 +320,172 @@ async function createWindow(appMode = currentAppMode) {
   });
 }
 
+function updateTrayContextMenu() {
+  if (!tray) return;
+  try {
+    const loginSettings = app.getLoginItemSettings();
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Open AUDIT WITH VASWANI',
+        click: () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            if (!mainWindow.isVisible()) mainWindow.show();
+            mainWindow.focus();
+          }
+        }
+      },
+      {
+        label: 'Toggle Sourav AI Copilot (Ctrl+Alt+S)',
+        click: () => {
+          toggleCopilotWindow();
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Start with Windows (Background)',
+        type: 'checkbox',
+        checked: loginSettings.openAtLogin,
+        click: (menuItem) => {
+          app.setLoginItemSettings({
+            openAtLogin: menuItem.checked,
+            openAsHidden: true,
+            args: ['--hidden']
+          });
+          logMain(`System Tray context menu: openAtLogin set to ${menuItem.checked}`);
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit Completely',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ]);
+    tray.setContextMenu(contextMenu);
+  } catch (err) {
+    logMain(`updateTrayContextMenu error: ${err.message}`);
+  }
+}
+
+function createTray() {
+  if (tray) return;
+  const iconPath = getAppIconPath();
+  if (!iconPath) {
+    logMain('Warning: No icon available for System Tray');
+    return;
+  }
+
+  try {
+    tray = new Tray(iconPath);
+    tray.setToolTip('AUDIT WITH VASWANI — Enterprise Compliance & Sourav AI');
+    updateTrayContextMenu();
+
+    tray.on('double-click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+
+    logMain('System Tray created successfully');
+  } catch (err) {
+    logMain(`createTray error: ${err.message}`);
+  }
+}
+
+function createCopilotWindow() {
+  if (copilotWindow) return;
+
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+    
+    // Initial compact floating orb at bottom right
+    const orbSize = 64;
+    const initialX = Math.max(0, screenW - orbSize - 24);
+    const initialY = Math.max(0, screenH - orbSize - 40);
+
+    const iconPath = getAppIconPath();
+
+    copilotWindow = new BrowserWindow({
+      width: orbSize,
+      height: orbSize,
+      x: initialX,
+      y: initialY,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      focusable: true,
+      hasShadow: false,
+      backgroundColor: '#00000000',
+      icon: iconPath,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true,
+        preload: path.join(__dirname, 'preload.js')
+      }
+    });
+
+    copilotWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    const copilotUrl = currentAppMode !== 'client'
+      ? `http://localhost:${BACKEND_PORT}/#/copilot-desktop`
+      : `file://${path.join(__dirname, 'dist/index.html')}#/copilot-desktop`;
+
+    copilotWindow.loadURL(copilotUrl).catch((e) => {
+      logMain(`copilotWindow failed to load: ${e.message}`);
+    });
+
+    copilotWindow.on('closed', () => {
+      copilotWindow = null;
+    });
+
+    logMain('copilotWindow created successfully (always-on-top desktop overlay)');
+  } catch (err) {
+    logMain(`createCopilotWindow error: ${err.message}`);
+  }
+}
+
+function toggleCopilotWindow() {
+  if (!copilotWindow) {
+    createCopilotWindow();
+    return;
+  }
+  if (!copilotWindow.isVisible()) {
+    copilotWindow.show();
+    copilotWindow.focus();
+  }
+  copilotWindow.webContents.send('copilot_toggle_state');
+}
+
+function registerGlobalHotkeys() {
+  try {
+    const hotkey = 'CommandOrControl+Alt+S';
+    const registered = globalShortcut.register(hotkey, () => {
+      logMain(`Global hotkey ${hotkey} triggered.`);
+      toggleCopilotWindow();
+    });
+    if (registered) {
+      logMain(`Global hotkey ${hotkey} registered successfully.`);
+    } else {
+      console.warn(`Could not register global hotkey ${hotkey}`);
+    }
+  } catch (err) {
+    logMain(`registerGlobalHotkeys error: ${err.message}`);
+  }
+}
+
 app.whenReady().then(() => {
   logMain('app.whenReady triggered');
   
@@ -309,6 +525,9 @@ app.whenReady().then(() => {
   }
 
   createWindow(currentAppMode);
+  createTray();
+  createCopilotWindow();
+  registerGlobalHotkeys();
 
   // Initialize updater after window is ready
   initializeUpdater();
@@ -325,6 +544,23 @@ app.whenReady().then(() => {
       }
     }, 3000);
   }
+});
+
+ipcMain.handle('select_folder', async (_event, defaultPath) => {
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const options = {
+    title: 'Select Centralized Returns & Client Storage Folder',
+    properties: ['openDirectory', 'createDirectory']
+  };
+  if (defaultPath && typeof defaultPath === 'string') {
+    const clean = defaultPath.replace(/^["']|["']$/g, '').trim();
+    if (fs.existsSync(clean)) options.defaultPath = clean;
+  }
+  const result = await dialog.showOpenDialog(win, options);
+  if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+    return { success: true, folderPath: result.filePaths[0] };
+  }
+  return { success: false, canceled: true };
 });
 
 ipcMain.handle('check_for_updates', () => {
@@ -534,9 +770,95 @@ ipcMain.handle('fetch_tally_data', async (event, { port = 9000, xmlPayload }) =>
   });
 });
 
-app.on('window-all-closed', () => {
+// --- Windows Auto-Start & Desktop Copilot IPC ---
+ipcMain.handle('get_startup_settings', () => {
+  try {
+    const settings = app.getLoginItemSettings();
+    return {
+      openAtLogin: settings.openAtLogin,
+      openAsHidden: settings.openAsHidden
+    };
+  } catch (err) {
+    return { openAtLogin: false, openAsHidden: false };
+  }
+});
+
+ipcMain.handle('set_startup_settings', (_event, enabled) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!enabled,
+      openAsHidden: true,
+      args: ['--hidden']
+    });
+    logMain(`set_startup_settings: openAtLogin set to ${!!enabled}`);
+    updateTrayContextMenu();
+    return { success: true, openAtLogin: !!enabled };
+  } catch (err) {
+    logMain(`set_startup_settings failed: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.on('resize_copilot', (_event, { expanded }) => {
+  if (!copilotWindow) return;
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+    if (expanded) {
+      const width = 420;
+      const height = 640;
+      copilotWindow.setBounds({
+        x: Math.max(0, screenW - width - 20),
+        y: Math.max(0, screenH - height - 30),
+        width,
+        height
+      });
+    } else {
+      const orbSize = 64;
+      copilotWindow.setBounds({
+        x: Math.max(0, screenW - orbSize - 24),
+        y: Math.max(0, screenH - orbSize - 40),
+        width: orbSize,
+        height: orbSize
+      });
+    }
+  } catch (e) {
+    logMain(`resize_copilot error: ${e.message}`);
+  }
+});
+
+ipcMain.on('toggle_copilot', () => {
+  toggleCopilotWindow();
+});
+
+ipcMain.on('navigate_app', (_event, data) => {
+  logMain(`navigate_app bridge invoked: ${JSON.stringify(data)}`);
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('app_navigate', data);
+  }
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  try {
+    globalShortcut.unregisterAll();
+  } catch (e) {}
   if (backendProcess) backendProcess.kill();
-  if (process.platform !== 'darwin') {
+});
+
+app.on('will-quit', () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch (e) {}
+});
+
+app.on('window-all-closed', () => {
+  // If tray is active on Windows, do NOT quit on window close — keep running in background!
+  if (isQuitting || process.platform === 'darwin') {
+    if (backendProcess) backendProcess.kill();
     app.quit();
   }
 });
@@ -545,8 +867,4 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
-});
-
-app.on('before-quit', () => {
-  if (backendProcess) backendProcess.kill();
 });
