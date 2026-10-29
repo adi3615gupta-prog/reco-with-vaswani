@@ -76,10 +76,7 @@ export default function setupGeminiRoutes(app, db) {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
-        systemInstruction: buildSystemPrompt(context),
-      });
+      const systemInstruction = buildSystemPrompt(context);
 
       // Filter and format history strictly to { role: 'user' | 'model', parts: [{ text }] }
       const formattedHistory = Array.isArray(history)
@@ -91,16 +88,42 @@ export default function setupGeminiRoutes(app, db) {
             }))
         : [];
 
-      const chat = model.startChat({
-        history: formattedHistory,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-        },
-      });
+      // Resilient model cascade: try fast lite first, then flash models
+      const modelCandidates = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+      let lastError = null;
+      let responseText = null;
 
-      const result = await chat.sendMessage(message);
-      const responseText = result.response.text();
+      for (const candidateModel of modelCandidates) {
+        try {
+          const model = genAI.getGenerativeModel({
+            model: candidateModel,
+            systemInstruction,
+          });
+
+          const chat = model.startChat({
+            history: formattedHistory,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 1024,
+            },
+          });
+
+          const result = await chat.sendMessage(message);
+          responseText = result.response.text();
+          if (responseText) break;
+        } catch (modelErr) {
+          lastError = modelErr;
+          console.warn(`[Gemini] Candidate ${candidateModel} failed:`, modelErr.message);
+          // If invalid key or quota, don't try other models — fail fast
+          if (modelErr.message?.includes('API_KEY_INVALID') || modelErr.message?.includes('429')) {
+            throw modelErr;
+          }
+        }
+      }
+
+      if (!responseText) {
+        throw lastError || new Error('No response from Gemini API models');
+      }
 
       res.json({ reply: responseText });
     } catch (err) {
