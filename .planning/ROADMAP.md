@@ -24,6 +24,8 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 18: Suite 01 Work In Progress & Practice Hub - Module 1.6 Financial Statements Engine (Schedule III Corporate & Non-Corporate ICAI 2022 Suite)** (completed 2026-10-27)
 - [x] **Phase 19: GSTR-3B Inward ITC Manual Allocation & Voucher-Level Audit Workbench (2B Drill-Down, Field Selection & Statutory Track Record)** - In-place 2B drill-down on Table 4 Inward ITC, bill-by-bill classification into statutory 3B fields (Eligible 4(A)(5), RCM 4(A)(3), Import 4(A)(1), Reversals 4(B), Ineligible Sec 17(5) 4(D)(1), Ineligible Sec 16(4)/POS 4(D)(2), Defer), real-time 3B recalculation, persistent SQLite audit allocations, and Zero-Merge Excel export. (completed 2026-10-28)
 - [x] **Phase 20: Direct Client Directory Auto-Save Architecture (Zero-Download Prompt Workflow)** - Automatically save GSTR-3B Working Excel, PDF, JSON portal payload, and all supporting base schedules (R1 Base, 2B Base, Credit Notes Base, Reversal Base) directly into structured subfolders under the client's month directory (`gst_returns_data/<Client>/<FY>/<Month>/3B Working/`) upon clicking "Save Working Sheet" (and Ctrl+S) without triggering browser file picker/save prompts, while preserving explicit Download buttons. (completed 2026-10-28)
+- [x] **Phase 21: GST Client Credentials Vault & Master Directory Multi-PC LAN Synchronization Engine** (completed 2026-10-29)
+- [x] **Phase 22: Sourav — Universal Gemini AI Assistant & In-App Chatbot** - Integrated Google Gemini 2.0 Flash API copilot named "Sourav" with floating amber FAB, slide-in drawer panel, 1-click deep-link action pills, adaptive Hinglish/English statutory answers, SQLite app_config key storage, and Settings AI tab. (completed 2026-10-29)
 
 ## Phase Details
 
@@ -431,6 +433,6 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
   5. If no API key is configured, Sourav displays a friendly prompt directing user to Settings.
   6. All TypeScript compiles with zero errors.
 
-**Plans**: 1/2 plans complete
+**Plans**: 2/2 plans complete
 - [x] 22-01: Gemini API Backend Engine — `/api/gemini/chat`, `/api/gemini/config`, system prompt, `app_config` key storage
-- [ ] 22-02: Sourav Frontend Chat UI — Floating FAB, slide-in chat panel, context chips, Settings AI tab
+- [x] 22-02: Sourav Frontend Chat UI — Floating FAB, slide-in chat panel, context chips, Settings AI tab

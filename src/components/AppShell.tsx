@@ -9,6 +9,7 @@ import {
   Briefcase, Receipt, ArrowUpRight, Calculator, Table, Send
 } from 'lucide-react';
 import { SettingsModal, SettingsTabKey } from '@/components/SettingsModal';
+import { SouravChatbot } from '@/components/SouravChatbot';
 import { cn } from '@/lib/utils';
 import {
   CommandDialog,
@@ -41,7 +42,7 @@ export type AppRoute =
   | 'notices'
   | 'voucher-reclass';
 
-export type ReturnsTabKey = 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader';
+export type ReturnsTabKey = 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -168,7 +169,8 @@ const RETURNS_SUBMODULES: { id: ReturnsTabKey; num: string; label: string; icon:
   { id: 'matrix', num: '02', label: '12M FY Matrix', icon: Table },
   { id: 'ims2b', num: '03', label: 'Nexus IMS Hub', icon: Sparkles },
   { id: 'gstr2b_downloader', num: '04', label: 'Inward 2B Autopilot', icon: CloudDownload },
-  { id: 'gstr1_downloader', num: '05', label: 'Outward GSTR-1', icon: ArrowUpRight }
+  { id: 'gstr1_downloader', num: '05', label: 'Outward GSTR-1', icon: ArrowUpRight },
+  { id: 'returns_tracking', num: '06', label: 'Returns Tracker', icon: CalendarClock }
 ];
 
 export function AppShell({
@@ -190,12 +192,13 @@ export function AppShell({
   onOpenUserGuide,
   onLogout,
 }: AppShellProps) {
-  // Collapsible sidebar state with local storage persistence
+  // Collapsible sidebar state with local storage persistence (defaults to true for desktop audit suite)
   const [isPinned, setIsPinned] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('np_sidebar_pinned') === 'true';
+      const saved = localStorage.getItem('np_sidebar_pinned');
+      return saved !== null ? saved === 'true' : true;
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -252,7 +255,7 @@ export function AppShell({
       <aside
         id="smartSidebar"
         className={cn(
-          "sidebar-rail fixed left-0 top-0 h-full z-50 flex flex-col bg-white border-r border-slate-200/90 py-5 group shadow-sm transition-all duration-300 overflow-hidden",
+          "sidebar-rail fixed left-0 top-0 h-full z-50 flex flex-col bg-white border-r border-slate-200/90 pt-4 pb-2 group shadow-sm transition-all duration-300 overflow-hidden",
           isPinned ? "!w-[17rem] shadow-xl" : ""
         )}
       >
@@ -343,8 +346,9 @@ export function AppShell({
                 {/* If Returns & Filing is active, show the 5 standalone submodules */}
                 {suite.id === 'returns' && isSuiteActive && (
                   <div className={cn(
-                    "expanded-content pl-8 pr-1 space-y-1 transition-all duration-200",
-                    isPinned && "!opacity-100 !max-w-[220px] !translate-x-0"
+                    "max-h-0 opacity-0 overflow-hidden group-hover:max-h-96 group-hover:opacity-100 transition-all duration-300",
+                    isPinned && "!max-h-96 !opacity-100",
+                    "pl-8 pr-1 space-y-1"
                   )}>
                     {RETURNS_SUBMODULES.map(sub => {
                       const SubIcon = sub.icon;
@@ -403,26 +407,9 @@ export function AppShell({
         </nav>
 
         {/* Sidebar Footer / Diagnostics & Settings */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2 flex-shrink-0">
-          {/* Settings Trigger */}
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            className="w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400 hover:shadow-xs cursor-pointer"
-            title="System Settings (Data Path & Tally Bridge)"
-          >
-            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 group-hover:rotate-45 transition-transform flex-shrink-0">
-              <Settings className="w-3.5 h-3.5" />
-            </div>
-            <div className={cn("expanded-content flex flex-col text-left truncate", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
-              <span className="truncate leading-tight text-slate-900 font-bold">System Settings</span>
-              <span className="text-[9px] text-slate-500 font-mono">Data Path &amp; Tally</span>
-            </div>
-            <span className={cn("expanded-content w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto shrink-0", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}></span>
-          </button>
-
+        <div className="p-2.5 sm:p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2 flex-shrink-0 mt-auto">
           {/* User Profile Info */}
-          <div className="flex items-center gap-3 min-w-[200px] pt-1 px-1">
+          <div className="flex items-center gap-3 min-w-[200px] px-1 py-0.5" title={loginUser || 'CA Vaswani'}>
             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-xs">
               {getInitials(companyName || loginUser)}
             </div>
@@ -440,6 +427,23 @@ export function AppShell({
               <span>Online</span>
             </span>
           </div>
+
+          {/* Settings Trigger — Anchored at the very bottom */}
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-full flex items-center gap-2.5 rounded-xl p-2 font-bold text-xs transition-all group border bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400 hover:shadow-xs cursor-pointer"
+            title="System Settings (Data Path & Tally Bridge)"
+          >
+            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 group-hover:rotate-45 transition-transform flex-shrink-0">
+              <Settings className="w-3.5 h-3.5" />
+            </div>
+            <div className={cn("expanded-content flex flex-col text-left truncate", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}>
+              <span className="truncate leading-tight text-slate-900 font-bold">System Settings</span>
+              <span className="text-[9px] text-slate-500 font-mono">Data Path &amp; Tally</span>
+            </div>
+            <span className={cn("expanded-content w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto shrink-0", isPinned && "!opacity-100 !max-w-[220px] !translate-x-0")}></span>
+          </button>
         </div>
       </aside>
 
@@ -595,6 +599,27 @@ export function AppShell({
         isOpen={isSettingsOpen}
         initialTab={settingsActiveTab}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* 5. SOURAV UNIVERSAL AI ASSISTANT CHATBOT */}
+      <SouravChatbot
+        clientName={companyName}
+        financialYear={financialYear}
+        activeModule={appRoute}
+        onOpenSettings={(tab) => {
+          if (tab) setSettingsActiveTab(tab as any);
+          setIsSettingsOpen(true);
+        }}
+        onNavigate={(route, tabId) => {
+          if (route) setAppRoute(route as any);
+          if (tabId && setReturnsTab) {
+            if (tabId === 'ims') setReturnsTab('ims2b');
+            else if (tabId === 'gstr3b') setReturnsTab('working3b');
+            else if (tabId === 'gstr1') setReturnsTab('gstr1_downloader');
+            else if (tabId === '2b' || tabId === 'gstr2b') setReturnsTab('gstr2b_downloader');
+            else setReturnsTab(tabId as any);
+          }
+        }}
       />
     </div>
   );

@@ -3,12 +3,14 @@ import {
   Settings, Database, Server, RefreshCw, Check, Copy, FolderOpen,
   X, CheckCircle2, AlertTriangle, HardDrive, Laptop, Sparkles, Sliders,
   Key, Mail, ShieldAlert, Send, Eye, EyeOff, Building2, Search, Download,
-  FileSpreadsheet, ExternalLink, Trash2, ShieldCheck, CheckCheck, SlidersHorizontal
+  FileSpreadsheet, ExternalLink, Trash2, ShieldCheck, CheckCheck, SlidersHorizontal,
+  RotateCcw, Bot
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
 import { safeApiFetch } from '@/lib/api';
 import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
+import { getGeminiStatus, saveGeminiApiKey, sendChatMessage } from '@/lib/geminiApi';
 
 export interface VaultClient {
   id: string;
@@ -22,7 +24,7 @@ export interface VaultClient {
   portal_password?: string;
 }
 
-export type SettingsTabKey = 'storage' | 'tally' | 'credentials' | 'reco' | 'gateway' | 'appearance';
+export type SettingsTabKey = 'storage' | 'tally' | 'credentials' | 'reco' | 'gateway' | 'appearance' | 'ai';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -44,8 +46,10 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
   const [newPathInput, setNewPathInput] = useState<string>('');
   const [serverHost, setServerHost] = useState<string>('');
   const [serverIps, setServerIps] = useState<string[]>([]);
+  const [storageStatus, setStorageStatus] = useState<{ exists?: boolean; isWritable?: boolean }>({});
   const [isLoadingStorage, setIsLoadingStorage] = useState(false);
   const [isSavingStorage, setIsSavingStorage] = useState(false);
+  const [isBrowsingStorage, setIsBrowsingStorage] = useState(false);
 
   // ─── 2. TALLY BRIDGE STATE ───
   const [tallyHost, setTallyHost] = useState<string>('localhost');
@@ -89,15 +93,30 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
     try {
       return JSON.parse(
         localStorage.getItem('np_smtp_settings') ||
-        '{"host":"smtp.mailgun.org","port":"587","email":"notifications@vaswanireturn.com","senderName":"Vaswani & Associates CA"}'
+        '{"host":"smtp.gmail.com","port":"587","email":"","senderName":"Vaswani & Associates CA"}'
       );
     } catch {
-      return { host: "smtp.mailgun.org", port: "587", email: "notifications@vaswanireturn.com", senderName: "Vaswani & Associates CA" };
+      return { host: "smtp.gmail.com", port: "587", email: "", senderName: "Vaswani & Associates CA" };
     }
   });
+  const [appPassword, setAppPassword] = useState('');
+  const [showAppPassword, setShowAppPassword] = useState(false);
+  const [firmName, setFirmName] = useState('');
+  const [caPhone, setCaPhone] = useState('');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [isSmtpConfigured, setIsSmtpConfigured] = useState(false);
   const [twilioToken, setTwilioToken] = useState<string>(() => {
     return localStorage.getItem('np_twilio_token') || 'sk_live_twilio_sandbox_vaswani_token';
   });
+
+  // ─── 6. SOURAV AI ASSISTANT (GEMINI) STATE ───
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isGeminiConfigured, setIsGeminiConfigured] = useState<boolean | null>(null);
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [isSavingGemini, setIsSavingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Fetch configs on open
   useEffect(() => {
@@ -115,6 +134,10 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
             setNewPathInput(data.dataPath || '');
             setServerHost(data.serverHost || '');
             setServerIps(Array.isArray(data.serverIps) ? data.serverIps : []);
+            setStorageStatus({
+              exists: Boolean(data.exists),
+              isWritable: Boolean(data.isWritable)
+            });
           }
         }
       } catch (e) {
@@ -142,13 +165,87 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
       }
     };
 
+    // 3. Fetch backend email / SMTP settings
+    const fetchEmailSettings = async () => {
+      try {
+        const res = await safeApiFetch('/api/ims/email-settings');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.settings) {
+            setSmtpSettings(prev => ({
+              ...prev,
+              email: data.settings.sender_email || prev.email,
+              senderName: data.settings.sender_name || prev.senderName,
+              host: prev.host || 'smtp.gmail.com',
+              port: prev.port || '587'
+            }));
+            setAppPassword(data.settings.app_password || '');
+            setFirmName(data.settings.firm_name || '');
+            setCaPhone(data.settings.ca_phone || '');
+            setIsSmtpConfigured(Boolean(data.isConfigured));
+          }
+        }
+      } catch (e) {
+        console.warn('Failed fetching email settings:', e);
+      }
+    };
+
+    // 4. Fetch Gemini AI status
+    const fetchGemini = async () => {
+      try {
+        const res = await getGeminiStatus();
+        setIsGeminiConfigured(res.configured);
+      } catch (e) {
+        console.warn('Failed fetching Gemini status:', e);
+      }
+    };
+
     fetchStorageConfig();
     fetchVault();
+    fetchEmailSettings();
+    fetchGemini();
   }, [isOpen]);
+
+  const handleSaveGeminiKey = async () => {
+    const key = geminiApiKey.trim();
+    if (!key) {
+      toast.error('Please enter a valid Gemini API key');
+      return;
+    }
+    setIsSavingGemini(true);
+    try {
+      await saveGeminiApiKey(key);
+      setIsGeminiConfigured(true);
+      setGeminiApiKey('');
+      toast.success('Gemini API Key Saved', {
+        description: 'Sourav AI Assistant is now activated and ready to assist.',
+      });
+    } catch (e: any) {
+      toast.error('Failed to save Gemini API key', { description: e.message });
+    } finally {
+      setIsSavingGemini(false);
+    }
+  };
+
+  const handleTestGemini = async () => {
+    setIsTestingGemini(true);
+    setGeminiTestResult(null);
+    try {
+      const reply = await sendChatMessage('Say: "Connected to Vaswani Enterprise!" in one short sentence.');
+      setGeminiTestResult({ success: true, message: reply });
+      toast.success('Gemini AI Connected Successfully!');
+    } catch (e: any) {
+      setGeminiTestResult({ success: false, message: e.message || 'Connection test failed' });
+      toast.error('Gemini Test Failed', { description: e.message });
+    } finally {
+      setIsTestingGemini(false);
+    }
+  };
 
   // Handle saving new data path
   const handleSaveDataPath = async () => {
-    if (!newPathInput.trim()) {
+    const cleanPath = newPathInput.trim().replace(/^["']|["']$/g, '').trim();
+    if (!cleanPath) {
       toast.error('Data path cannot be empty');
       return;
     }
@@ -157,17 +254,19 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
       const res = await safeApiFetch('/api/returns/storage-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataPath: newPathInput.trim() })
+        body: JSON.stringify({ dataPath: cleanPath })
       });
       const data = await res.json();
-      if (data && data.success) {
+      if (res.ok && data && data.success) {
         setCurrentDataPath(data.dataPath);
+        setNewPathInput(data.dataPath);
+        setStorageStatus({ exists: true, isWritable: true });
         window.dispatchEvent(new CustomEvent('storage-config-updated', { detail: { dataPath: data.dataPath } }));
         toast.success('Data Storage Path Updated', {
           description: `All client returns and batches will be stored in: ${data.dataPath}`
         });
       } else {
-        toast.error('Failed to update data path', { description: data?.message || 'Server error' });
+        toast.error('Failed to update data path', { description: data?.error || data?.message || 'Server error' });
       }
     } catch (e: any) {
       toast.error('Failed to save data path', { description: e.message });
@@ -176,11 +275,71 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
     }
   };
 
+  // Reset to default local folder
+  const handleResetDefaultStorage = async () => {
+    if (!window.confirm('Reset storage directory back to local application default folder?')) return;
+    setIsSavingStorage(true);
+    try {
+      const res = await safeApiFetch('/api/returns/reset-default-storage', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data && data.success) {
+        setCurrentDataPath(data.dataPath);
+        setNewPathInput(data.dataPath);
+        setStorageStatus({ exists: true, isWritable: true });
+        window.dispatchEvent(new CustomEvent('storage-config-updated', { detail: { dataPath: data.dataPath } }));
+        toast.success('Storage Path Reset', { description: 'Restored default local returns directory' });
+      } else {
+        toast.error('Failed to reset path', { description: data?.error || 'Server error' });
+      }
+    } catch (e: any) {
+      toast.error('Reset failed', { description: e.message });
+    } finally {
+      setIsSavingStorage(false);
+    }
+  };
+
+  // Browse folder using Electron native dialog or Windows FolderBrowserDialog
+  const handleBrowseFolder = async () => {
+    setIsBrowsingStorage(true);
+    try {
+      // 1. Electron Native Folder Browser Dialog
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.invoke) {
+        const res = await (window as any).electronAPI.invoke('select_folder', currentDataPath || newPathInput);
+        if (res && res.success && res.folderPath) {
+          setNewPathInput(res.folderPath);
+          toast.info('Folder Selected', { description: res.folderPath });
+          return;
+        } else if (res && res.canceled) {
+          return;
+        }
+      }
+
+      // 2. Server-side Windows Native Folder Browser
+      const res = await safeApiFetch('/api/returns/browse-folder', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success && data.folderPath) {
+        setNewPathInput(data.folderPath);
+        toast.info('Folder Selected', { description: data.folderPath });
+      } else if (data && !data.canceled) {
+        toast.error('Could not open folder picker', { description: data?.error || 'Unknown error' });
+      }
+    } catch (e: any) {
+      toast.error('Folder browse error', { description: e.message });
+    } finally {
+      setIsBrowsingStorage(false);
+    }
+  };
+
   // Open directory in Windows File Explorer
   const handleOpenStorageExplorer = async () => {
     try {
-      await safeApiFetch('/api/returns/open-storage-folder', { method: 'POST' });
-      toast.success('Opened storage folder in File Explorer');
+      const res = await safeApiFetch('/api/returns/open-folder', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        toast.success('Opened storage folder in File Explorer');
+      } else {
+        toast.error('Could not open folder', { description: data?.error || 'Server error' });
+      }
     } catch (e: any) {
       toast.error('Could not open folder', { description: e.message });
     }
@@ -298,7 +457,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast.success('Downloaded Credentials Vault Template');
     } catch (err: any) {
       toast.error('Failed generating template', { description: err?.message });
@@ -370,13 +529,81 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
   };
 
   // Save SMTP & Gateway
-  const handleSaveGateway = (e?: React.FormEvent) => {
+  const handleSaveGateway = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    localStorage.setItem('np_smtp_settings', JSON.stringify(smtpSettings));
-    localStorage.setItem('np_twilio_token', twilioToken);
-    toast.success('Gateway & SMTP Settings Saved', {
-      description: `Sender: ${smtpSettings.senderName} (${smtpSettings.email})`
-    });
+    if (!smtpSettings.email || !smtpSettings.email.includes('@')) {
+      toast.error('Please enter a valid Sender Email Address.');
+      return;
+    }
+    if (!appPassword || !appPassword.trim()) {
+      toast.error('Please enter your 16-character Google App Password.');
+      return;
+    }
+
+    setIsSavingSmtp(true);
+    try {
+      // 1. Save to backend database (ims_email_settings)
+      const res = await safeApiFetch('/api/ims/email-settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_name: smtpSettings.senderName,
+          sender_email: smtpSettings.email.trim(),
+          app_password: appPassword.replace(/\s+/g, '').trim(),
+          firm_name: firmName || smtpSettings.senderName,
+          ca_phone: caPhone
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // 2. Also save to localStorage for client-side templates
+        localStorage.setItem('np_smtp_settings', JSON.stringify(smtpSettings));
+        localStorage.setItem('np_twilio_token', twilioToken);
+        setIsSmtpConfigured(true);
+        toast.success('SMTP & Gateway Settings Saved Successfully!', {
+          description: `Sender: ${smtpSettings.senderName} (${smtpSettings.email})`
+        });
+      } else {
+        toast.error(data.error || 'Failed saving SMTP settings to database.');
+      }
+    } catch (err: any) {
+      toast.error('Failed saving gateway settings: ' + err.message);
+    } finally {
+      setIsSavingSmtp(false);
+    }
+  };
+
+  // Test SMTP Connection
+  const handleTestSmtp = async () => {
+    if (!smtpSettings.email || !appPassword) {
+      toast.error('Please enter Sender Email and 16-character Google App Password first.');
+      return;
+    }
+    setIsTestingSmtp(true);
+    const toastId = toast.loading('Connecting to Gmail SMTP and sending test email...');
+    try {
+      const res = await safeApiFetch('/api/ims/email-settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_email: smtpSettings.email.trim(),
+          app_password: appPassword.replace(/\s+/g, '').trim(),
+          sender_name: smtpSettings.senderName || firmName,
+          test_recipient: smtpSettings.email.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'SMTP Verified! Test email delivered to your inbox.', { id: toastId });
+        setIsSmtpConfigured(true);
+      } else {
+        toast.error(data.error || 'SMTP Connection failed.', { id: toastId, duration: 6000 });
+      }
+    } catch (err: any) {
+      toast.error('SMTP test error: ' + err.message, { id: toastId });
+    } finally {
+      setIsTestingSmtp(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -422,6 +649,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
             { id: 'credentials', label: 'Credentials Vault', icon: Key, color: 'border-amber-600 text-amber-700 bg-white', badge: vaultClients.filter(c => c.portal_username && c.portal_password).length },
             { id: 'reco', label: 'GST Reco Rules', icon: Sliders, color: 'border-emerald-600 text-emerald-700 bg-white' },
             { id: 'gateway', label: 'SMTP & Gateway', icon: Mail, color: 'border-purple-600 text-purple-700 bg-white' },
+            { id: 'ai', label: 'Sourav AI (Gemini)', icon: Bot, color: 'border-amber-500 text-amber-700 bg-white', badge: isGeminiConfigured ? 'Active' : undefined },
             { id: 'appearance', label: 'Theme & System', icon: Sparkles, color: 'border-slate-800 text-slate-900 bg-white' },
           ].map(tab => {
             const isActive = activeTab === tab.id;
@@ -471,9 +699,19 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                   <label className="text-xs font-bold text-slate-700">
                     Current Active Storage Path
                   </label>
-                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold">
-                    Connected &amp; Writable
-                  </span>
+                  {isLoadingStorage ? (
+                    <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-bold flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
+                    </span>
+                  ) : storageStatus.isWritable ? (
+                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Connected &amp; Writable
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-bold flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-600" /> Inaccessible / Read-only
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all">
@@ -504,18 +742,41 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
 
               {/* Modify Path Input */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
-                <label className="text-xs font-bold text-slate-700">
-                  Update Server Storage Directory (Local Drive or Network Path)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">
+                    Update Server Storage Directory (Local Drive or Network Path)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultStorage}
+                    disabled={isSavingStorage}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 hover:underline"
+                    title="Reset to local application folder"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset to Default
+                  </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={newPathInput}
                     onChange={(e) => setNewPathInput(e.target.value)}
-                    placeholder="e.g. D:\\VaswaniReturnsData or \\\\SERVER\\SharedReturns"
+                    placeholder="e.g. D:\VaswaniReturnsData or \\SERVER\SharedReturns"
                     className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                   <button
+                    type="button"
+                    onClick={handleBrowseFolder}
+                    disabled={isBrowsingStorage || isSavingStorage}
+                    className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    title="Browse and select folder on disk or network"
+                  >
+                    {isBrowsingStorage ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <FolderOpen className="w-3.5 h-3.5 text-blue-600" />}
+                    <span>Browse...</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleSaveDataPath}
                     disabled={isSavingStorage}
                     className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
@@ -900,27 +1161,114 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
           {activeTab === 'gateway' && (
             <div className="space-y-5 animate-fadeIn">
               <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200/60 text-xs text-slate-700 space-y-1">
-                <p className="font-bold text-purple-900 flex items-center gap-1.5">
-                  <Mail className="w-4 h-4 text-purple-600" />
-                  Client Dispute Communication Mailer &amp; Gateway Configurations
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="font-bold text-purple-900 flex items-center gap-1.5">
+                    <Mail className="w-4 h-4 text-purple-600" />
+                    Client Dispute Communication Mailer &amp; Gateway Configurations
+                  </p>
+                  {isSmtpConfigured ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      Active &amp; Authenticated
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      <AlertTriangle className="w-3 h-3 text-amber-600" />
+                      App Password Required
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] leading-relaxed text-slate-600">
-                  Configure custom SMTP mail servers and SMS/WhatsApp gateway credentials for dispatching monthly vendor mismatch notices and 3B reminders.
+                  Configure your sender Gmail and 16-character Google App Password for dispatching GSTR-3B client summaries, IMS review sheets, and vendor mismatch notices.
                 </p>
               </div>
 
               {/* SMTP Configurations */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">SMTP Server Settings</h4>
-                <div className="grid grid-cols-3 gap-3">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Google Gmail SMTP Credentials</h4>
+                
+                {/* Email and App Password */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">
+                      Sender Gmail Address <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={smtpSettings.email}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, email: e.target.value })}
+                      placeholder="e.g. ca.office@gmail.com"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+                      <span>Google 16-Character App Password <span className="text-rose-500">*</span></span>
+                      <a
+                        href="https://myaccount.google.com/apppasswords"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-purple-600 hover:text-purple-800 font-normal inline-flex items-center gap-0.5"
+                      >
+                        Generate on Google <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAppPassword ? "text" : "password"}
+                        value={appPassword}
+                        onChange={(e) => setAppPassword(e.target.value)}
+                        placeholder="•••• •••• •••• ••••"
+                        className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono tracking-wider"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAppPassword(!showAppPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        title={showAppPassword ? "Hide password" : "Show password"}
+                      >
+                        {showAppPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Branding and Firm Phone */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">Sender Name (Branding)</label>
+                    <input
+                      type="text"
+                      value={smtpSettings.senderName}
+                      onChange={(e) => setSmtpSettings({ ...smtpSettings, senderName: e.target.value })}
+                      placeholder="Vaswani & Associates CA"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">CA Office Contact / Phone</label>
+                    <input
+                      type="text"
+                      value={caPhone}
+                      onChange={(e) => setCaPhone(e.target.value)}
+                      placeholder="+91 98200 12345 (Included in email footer)"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Host and Port */}
+                <div className="grid grid-cols-3 gap-3 pt-1">
                   <div className="col-span-2 space-y-1">
                     <label className="text-[11px] font-bold text-slate-600">SMTP Host</label>
                     <input
                       type="text"
                       value={smtpSettings.host}
                       onChange={(e) => setSmtpSettings({ ...smtpSettings, host: e.target.value })}
-                      placeholder="e.g. smtp.mailgun.org or smtp.gmail.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                      placeholder="smtp.gmail.com"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
                     />
                   </div>
                   <div className="space-y-1">
@@ -930,30 +1278,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                       value={smtpSettings.port}
                       onChange={(e) => setSmtpSettings({ ...smtpSettings, port: e.target.value })}
                       placeholder="587"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">Sender Email Address</label>
-                    <input
-                      type="email"
-                      value={smtpSettings.email}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, email: e.target.value })}
-                      placeholder="accounts@vaswanireturn.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">Sender Name (Branding)</label>
-                    <input
-                      type="text"
-                      value={smtpSettings.senderName}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, senderName: e.target.value })}
-                      placeholder="Vaswani & Associates CA"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
                     />
                   </div>
                 </div>
@@ -975,21 +1300,191 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={handleTestSmtp}
+                  disabled={isTestingSmtp || !smtpSettings.email || !appPassword}
+                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                  title="Sends a test verification email to verify Google SMTP credentials"
+                >
+                  <Send className={`w-3.5 h-3.5 text-purple-600 ${isTestingSmtp ? 'animate-pulse' : ''}`} />
+                  <span>{isTestingSmtp ? 'Sending Test...' : 'Test Connection'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleSaveGateway}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                  disabled={isSavingSmtp}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Save Gateway Settings</span>
+                  <span>{isSavingSmtp ? 'Saving...' : 'Save Gateway Settings'}</span>
                 </button>
               </div>
             </div>
           )}
 
           {/* ══════════════════════════════════════════════════════════════════════
-              TAB 6: THEME & SYSTEM ARCHITECTURE
+              TAB 6: SOURAV AI ASSISTANT (GOOGLE GEMINI)
+          ══════════════════════════════════════════════ */}
+          {activeTab === 'ai' && (
+            <div className="space-y-5 animate-fadeIn">
+              {/* Hero Banner */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50/60 border border-amber-200/80 text-xs text-slate-800 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-slate-950 font-bold text-xs shadow-xs">
+                      ✨
+                    </span>
+                    <span className="font-bold text-sm text-amber-950">
+                      Sourav — Universal Gemini AI Assistant
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      gemini-2.0-flash
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Powered by Google Gemini 2.0 Flash with a 1-million token context window. Provides instant statutory answers for GST, GSTR-3B/1/2B mechanics, and 1-click deep-link action buttons across all 12 modules.
+                  </p>
+                </div>
+                <div className="shrink-0 pt-0.5">
+                  {isGeminiConfigured ? (
+                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                      Active &amp; Ready
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      Key Required
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* API Key Configuration Card */}
+              <div className="p-4 rounded-2xl border border-slate-200/80 bg-white space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Key className="w-4 h-4 text-amber-600" />
+                    Google Gemini API Key
+                  </label>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1 hover:underline"
+                  >
+                    <span>Get Free Key at Google AI Studio</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type={showGeminiKey ? 'text' : 'password'}
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder={isGeminiConfigured ? '•••••••••••••••••••••••••••••••••••••••• (Configured — enter new key to overwrite)' : 'Paste your Gemini API key (starts with AIzaSy...)'}
+                    className="w-full pr-10 pl-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 font-mono focus:bg-white focus:outline-none focus:border-amber-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGeminiKey(!showGeminiKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
+                    title={showGeminiKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Stored securely in local SQLite <code className="font-mono text-slate-700">app_config</code>. Never leaked to frontend bundles.</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestGemini}
+                      disabled={isTestingGemini || (!geminiApiKey.trim() && !isGeminiConfigured)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isTestingGemini ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> : <Send className="w-3.5 h-3.5 text-amber-600" />}
+                      <span>{isTestingGemini ? 'Testing...' : 'Test Connection'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveGeminiKey}
+                      disabled={isSavingGemini || !geminiApiKey.trim()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs shadow-xs transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{isSavingGemini ? 'Saving...' : 'Save API Key'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Connection Test Result Feedback */}
+                {geminiTestResult && (
+                  <div className={`p-3 rounded-xl text-xs border ${
+                    geminiTestResult.success
+                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                      : 'bg-rose-50/70 border-rose-200 text-rose-900'
+                  }`}>
+                    <div className="flex items-center gap-1.5 font-bold mb-1">
+                      {geminiTestResult.success ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Gemini API Test Passed</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-rose-600" />
+                          <span>Connection Test Failed</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-mono leading-relaxed pl-5">
+                      {geminiTestResult.message}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Feature Grid Card */}
+              <div className="p-4 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-2.5">
+                <span className="text-xs font-bold text-slate-800 block">
+                  Sourav AI Capabilities &amp; Built-In Domain Safeguards
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
+                    <span className="font-semibold text-slate-900 block mb-0.5">⚖️ Statutory Authority</span>
+                    Cites exact CGST Act sections (Sec 16(2)(aa), Sec 17(5), Sec 50 interest) and official CBIC circulars.
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
+                    <span className="font-semibold text-slate-900 block mb-0.5">🧭 1-Click Navigation</span>
+                    Emits deep-link action pills allowing instant navigation to IMS, 3B Working, Reco, or Notices.
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
+                    <span className="font-semibold text-slate-900 block mb-0.5">🗣️ Adaptive Code-Switching</span>
+                    Responds naturally in Hindi, Hinglish, or professional English based on your input style.
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
+                    <span className="font-semibold text-slate-900 block mb-0.5">🏢 Context Grounding</span>
+                    Automatically recognizes your active client name, GSTIN, and financial year without manual typing.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════
+              TAB 7: THEME & SYSTEM ARCHITECTURE
           ══════════════════════════════════════════════ */}
           {activeTab === 'appearance' && (
             <div className="space-y-5 animate-fadeIn">
