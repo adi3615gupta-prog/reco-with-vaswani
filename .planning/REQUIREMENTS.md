@@ -136,3 +136,48 @@
 ---
 *Requirements defined: 2026-10-22*
 *Last updated: 2026-10-24 after Phase 12 GST Notices registration*
+
+### Financial Statements Engine (Phase 18)
+
+- [ ] **FIN-01**: Comprehensive 4-digit numeric group taxonomy (1001 to 4902) mapping Schedule III Division I/II (1000s Equity/Liabilities, 2000s Assets, 3000s Revenue, 4000s Expenses) with automated Tally/Excel ingestion and grouping confidence scoring.
+- [ ] **FIN-02**: Core financial statements generation: Schedule III Balance Sheet, Statement of Profit & Loss, and AS-3 / Ind AS 7 Indirect Method Cash Flow Statement with dynamic working capital and net tax paid derivation.
+- [ ] **FIN-03**: MCA Notification 2021/2022 Regulatory Disclosures (`R_Disc`) featuring 11 statutory financial ratios with >25% variance triggers, CWIP aging, Intangibles under development aging, MSME Trade Payables aging, and Trade Receivables aging.
+- [ ] **FIN-04**: Non-Corporate Entity Financial Engine as per ICAI June 2022 Technical Guide featuring automated Level I–IV eligibility matrix, AS-1 to AS-29 applicability with disclosure exemptions, Multi-Partner Capital Account schedule, and Horizontal (T-format) presentation.
+- [ ] **FIN-05**: 35+ Rule Preventive Internal Financial Control (IFC) Check Dashboard (`Checks`), Corporate Tax/MAT computation (Sec 115BAA/25%), and Zero-Merge Excel export suite.
+
+
+### GSTR-3B Inward ITC Manual Allocation & Audit Workbench (Phase 19)
+
+- [x] **ITC-ALLOC-01**: Persistent SQLite Allocation Repository (gstr3b_itc_allocations) storing client GSTIN, return period, invoice ID, supplier details, amounts, target 3B field (4A5, 4A3, 4A1, 4B1, 4B2, 4D1, 4D2, DEFERRED), user remarks, and timestamps.
+- [x] **ITC-ALLOC-02**: Backend APIs for querying allocated bills by month, bulk updating target 3B tables, and fetching real-time aggregated Table 4 field totals.
+- [x] **ITC-ALLOC-03**: In-Place 2B Allocation & Audit Workbench UI Component (Gstr3bItcAllocationWorkbench.tsx) with search, filter tabs, multi-select checkboxes, individual row selectors, and bulk classification actions.
+- [x] **ITC-ALLOC-04**: Interactive Drill-Down Hyperlink on Table 4 "ITC as per GSTR 2B" in ReturnsDashboard.tsx enabling seamless toggle between 3B computation table and 2B invoice allocation register with sticky header navigation.
+- [x] **ITC-ALLOC-05**: Dynamic GSTR-3B Table 4 Recalculation (updating 4(A)(5), 4(A)(3), 4(B), 4(D) and Rule 88A settlement) alongside Zero-Merge (ws['!merges'] = []) Statutory Excel Export.
+
+### Direct Client Directory Auto-Save Architecture (Phase 20)
+
+- [x] **AUTOSAVE-01**: Decouple browser downloads from manual save (`handleManualSave` & `Ctrl+S`), eliminating synthetic anchor tag clicks (`excelA.click()`, `jsonA.click()`) and PDF `autoDownload: true` so the browser never prompts "where to save".
+- [x] **AUTOSAVE-02**: Direct filesystem bundle persistence writing to `<dataPath>/<client>/<fy>/<month>/3B Working/` with structured subfolders:
+  - `3B Working/` (3B Working Excel, PDF, JSON, and data state)
+  - `R1 Base/` (GSTR-1 outward sales base schedule Excel & JSON)
+  - `2B Base/` (GSTR-2B inward supplies base schedule Excel & JSON)
+  - `Credit Notes Base/` (CDNR outward & inward credit/debit notes base schedule Excel & JSON)
+  - `Reversal Base/` (Table 4B reversals, Rule 37/38/42/43, Sec 17(5) blocked, Sec 16(4) ineligible schedule Excel & JSON)
+- [x] **AUTOSAVE-03**: Non-intrusive interactive toast feedback displaying clean saved folder destination with an instant 1-click "Open Folder" action launching the native OS file explorer directly to the directory.
+- [x] **AUTOSAVE-04**: Dedicated explicit download buttons ("Download GSTR-3B Working Excel", "Print Official PDF", "Generate GSTN Portal JSON") preserved for explicit user-requested browser downloads.
+
+### GST Client Credentials Vault & Master Directory Multi-PC LAN Synchronization (Phase 21)
+
+- [x] **VAULT-SYNC-01**: Centralized Network Storage Vault (`central_clients_vault.json` in `<dataPath>` and SQLite `clients` table) with bidirectional synchronization across all PCs on the office LAN.
+- [x] **VAULT-SYNC-02**: Automatic Two-Way Synchronization on App Launch, Hub Fetch, and Vault Modal Open — if another PC adds, edits, or imports client credentials, all connected PCs reflect the change seamlessly without manual refresh or re-entry.
+- [x] **VAULT-SYNC-03**: Single & Bulk Credentials Update Sync (`/api/ims/credentials/update` & `/api/ims/credentials/bulk-import`) ensuring edits or Excel imports on any workstation immediately broadcast and update both local SQLite DB and central shared network storage with `last_modified` timestamp conflict resolution.
+- [x] **VAULT-SYNC-04**: Client Deletion & Archival Sync across LAN — when a client is removed or updated from one workstation, the deletion/update is mirrored to central vault so orphaned records do not reappear on other PCs.
+- [x] **VAULT-SYNC-05**: Universal Portal Autopilot & Login Auto-Fill Integration across all 5 autonomous suites (GSTR-1, GSTR-2B, GST IMS, GST Notices, and Returns Tracking) consuming synced credentials on every workstation.
+
+### Sourav — Universal Gemini AI Assistant (Phase 22)
+
+- [ ] **AI-AGENT-01**: Google Gemini API backend integration — `POST /api/gemini/chat` endpoint that accepts `{ message, context, history }`, calls `@google/generative-ai` with `gemini-2.0-flash` model, and returns `{ reply }`. API key stored in SQLite `app_config` table (never exposed to frontend).
+- [ ] **AI-AGENT-02**: Sourav system prompt with GST domain anchoring — persona as "Sourav, AI assistant for AUDIT WITH VASWANI", full GST Act knowledge, all 12 software module descriptions, and dynamic context injection (client name, GSTIN, FY, active module) per request.
+- [ ] **AI-AGENT-03**: Sourav floating chat UI — amber/gold FAB at bottom-right (`position: fixed`), click to toggle slide-in chat panel (384px wide, 520px tall), Obsidian dark theme, message bubbles (user = amber right; Sourav = slate left), typing indicator, auto-scroll, Enter-to-send, welcome message on first open.
+- [ ] **AI-AGENT-04**: Context awareness — active client name, GSTIN, FY, and current module automatically passed as context with every message. Displayed as info chips in chat panel header.
+- [ ] **AI-AGENT-05**: Settings → AI Assistant tab — Gemini API key input (password field with show/hide), save & test connection buttons, "Active/Not Configured" status badge, deep-link to Google AI Studio for key generation.
