@@ -26,6 +26,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 20: Direct Client Directory Auto-Save Architecture (Zero-Download Prompt Workflow)** - Automatically save GSTR-3B Working Excel, PDF, JSON portal payload, and all supporting base schedules (R1 Base, 2B Base, Credit Notes Base, Reversal Base) directly into structured subfolders under the client's month directory (`gst_returns_data/<Client>/<FY>/<Month>/3B Working/`) upon clicking "Save Working Sheet" (and Ctrl+S) without triggering browser file picker/save prompts, while preserving explicit Download buttons. (completed 2026-10-28)
 - [x] **Phase 21: GST Client Credentials Vault & Master Directory Multi-PC LAN Synchronization Engine** (completed 2026-10-29)
 - [x] **Phase 22: Sourav — Universal Gemini AI Assistant & In-App Chatbot** - Integrated Google Gemini 2.0 Flash API copilot named "Sourav" with floating amber FAB, slide-in drawer panel, 1-click deep-link action pills, adaptive Hinglish/English statutory answers, SQLite app_config key storage, and Settings AI tab. (completed 2026-10-29)
+- [x] **Phase 23: Central Office-Wise Gemini Cloud Distribution & Firebase License Sync** - Distribute Gemini API key centrally via Firebase Firestore (reco-vaswani-license) so all workstations in an office activate Sourav AI automatically without manual key entry. (completed 2026-10-29)
 
 ## Phase Details
 
@@ -436,3 +437,20 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
 **Plans**: 2/2 plans complete
 - [x] 22-01: Gemini API Backend Engine — `/api/gemini/chat`, `/api/gemini/config`, system prompt, `app_config` key storage
 - [x] 22-02: Sourav Frontend Chat UI — Floating FAB, slide-in chat panel, context chips, Settings AI tab
+
+### Phase 23: Central Office-Wise Gemini Cloud Distribution & Firebase License Sync
+
+**Goal:** Eliminate manual per-user Gemini API key entry by synchronizing the API key centrally from Firebase Firestore (`reco-vaswani-license` project) down to all client workstations in an office automatically upon launch or license heartbeat. Support a hybrid model: global master key in `system_config/ai_settings` with per-office overrides in `serial_keys`, local SQLite caching for offline resilience, and bidirectional sync (fetch/push) from desktop Admin UI and web serial key generator.
+
+**Depends on:** Phase 22  
+**Requirements**: CLOUD-AI-01, CLOUD-AI-02, CLOUD-AI-03, CLOUD-AI-04, CLOUD-AI-05  
+**Success Criteria**:
+  1. Workstations in an office automatically fetch and activate the Gemini API key from Firebase Firestore without manual user entry.
+  2. The cloud sync engine supports both per-office keys in `serial_keys` and a global fallback key in `system_config/ai_settings`.
+  3. Synced keys are cached locally in SQLite `app_config` so Sourav AI works seamlessly offline.
+  4. Desktop Settings UI displays cloud origin badge (`🟢 Active (Synced from Office Cloud License)`) and provides a "Sync from Cloud" button.
+  5. Admins can push local keys to the cloud as an office or global default directly from the app.
+  6. Ready-to-copy code snippet and schema guide provided for the web serial key generator portal.
+
+**Plans**: 1/1 plan complete
+- [x] 23-01: Firestore Cloud Key Resolver, Two-Way Sync APIs, SQLite Caching, and Desktop Admin UI (completed 2026-10-29)

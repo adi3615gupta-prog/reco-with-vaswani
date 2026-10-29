@@ -1,61 +1,276 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
+
+/**
+ * Fetch Gemini API key from Firebase Firestore.
+ * Level 1: Check office-specific serial_keys doc where office_id == officeId and key_type == 'server'
+ * Level 2: Fallback to global master doc system_config/ai_settings
+ * 
+ * @param {import('firebase/firestore').Firestore} firestore 
+ * @param {string|null} officeId 
+ * @returns {Promise<{ apiKey: string|null, origin: 'cloud_office'|'cloud_global'|null }>}
+ */
+export async function fetchCloudGeminiKey(firestore, officeId) {
+  if (!firestore) return { apiKey: null, origin: null };
+
+  // Level 1: Check Office-Specific Server Key Document
+  if (officeId && typeof officeId === 'string' && officeId.trim().length > 0) {
+    try {
+      const q = query(
+        collection(firestore, 'serial_keys'),
+        where('office_id', '==', officeId.trim()),
+        where('key_type', '==', 'server')
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        if (data.gemini_api_key && typeof data.gemini_api_key === 'string' && data.gemini_api_key.trim().length > 5) {
+          return { apiKey: data.gemini_api_key.trim(), origin: 'cloud_office' };
+        }
+      }
+    } catch (e) {
+      console.warn('[Gemini Cloud Sync] Level 1 office fetch warning:', e.message);
+    }
+  }
+
+  // Level 2: Check Global Master Document (system_config/ai_settings)
+  try {
+    const globalRef = doc(firestore, 'system_config', 'ai_settings');
+    const globalSnap = await getDoc(globalRef);
+    if (globalSnap.exists()) {
+      const data = globalSnap.data();
+      if (data.gemini_api_key && typeof data.gemini_api_key === 'string' && data.gemini_api_key.trim().length > 5) {
+        return { apiKey: data.gemini_api_key.trim(), origin: 'cloud_global' };
+      }
+    }
+  } catch (e) {
+    console.warn('[Gemini Cloud Sync] Level 2 global master fetch warning:', e.message);
+  }
+
+  return { apiKey: null, origin: null };
+}
+
+/**
+ * Synchronize Gemini API key from Firestore into local SQLite app_config.
+ * 
+ * @param {import('firebase/firestore').Firestore} firestore 
+ * @param {import('sqlite3').Database} db 
+ * @param {string|null} officeId 
+ * @returns {Promise<{ apiKey: string|null, origin: string|null, synced: boolean }>}
+ */
+export async function syncCloudGeminiKey(firestore, db, officeId) {
+  const { apiKey, origin } = await fetchCloudGeminiKey(firestore, officeId);
+  if (apiKey && origin) {
+    await new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [apiKey],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+    await new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [origin],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+    return { apiKey, origin, synced: true };
+  }
+  return { apiKey: null, origin: null, synced: false };
+}
 
 /**
  * Setup Google Gemini AI routes for the "Sourav" AI Assistant.
  * 
  * @param {import('express').Express} app 
  * @param {import('sqlite3').Database} db 
+ * @param {import('firebase/firestore').Firestore} [firestore]
  */
-export default function setupGeminiRoutes(app, db) {
-  // Helper to read key from environment or sqlite3 asynchronously
-  const getApiKey = () => new Promise((resolve) => {
-    // 1. Check environment variable first
-    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
-      return resolve(process.env.GEMINI_API_KEY.trim());
-    }
-    // 2. Query SQLite app_config
-    db.get("SELECT value FROM app_config WHERE key = 'gemini_api_key'", [], (err, row) => {
-      if (err || !row || !row.value) return resolve(null);
-      resolve(row.value.trim());
+export default function setupGeminiRoutes(app, db, firestore = null) {
+  // Helper to read office_id from SQLite app_config
+  const getOfficeId = () => new Promise((resolve) => {
+    db.get("SELECT value FROM app_config WHERE key = 'office_id'", [], (err, row) => {
+      resolve(row && row.value ? row.value.trim() : null);
     });
   });
 
-  // Helper to save key to sqlite3 app_config
-  const setApiKey = (key) => new Promise((resolve, reject) => {
-    db.run(
-      "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
-      [key.trim()],
-      (err) => {
-        if (err) return reject(err);
-        resolve();
+  // Helper to read key and origin from environment or sqlite3 asynchronously
+  const getApiKeyAndOrigin = () => new Promise((resolve) => {
+    // 1. Check environment variable first
+    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
+      return resolve({ apiKey: process.env.GEMINI_API_KEY.trim(), origin: 'env' });
+    }
+    // 2. Query SQLite app_config for key and origin
+    db.all(
+      "SELECT key, value FROM app_config WHERE key IN ('gemini_api_key', 'gemini_key_origin')",
+      [],
+      (err, rows) => {
+        if (err || !rows || rows.length === 0) return resolve({ apiKey: null, origin: null });
+        const map = {};
+        rows.forEach(r => { map[r.key] = r.value; });
+        const key = map['gemini_api_key'] ? map['gemini_api_key'].trim() : null;
+        const origin = map['gemini_key_origin'] ? map['gemini_key_origin'].trim() : (key ? 'local_manual' : null);
+        resolve({ apiKey: key, origin });
       }
     );
   });
 
-  // GET /api/gemini/status — Check if Gemini API key is configured
+  // Helper to save key & origin to sqlite3 app_config
+  const setApiKey = (key, origin = 'local_manual') => new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run(
+        "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [key.trim()],
+        (err) => {
+          if (err) return reject(err);
+        }
+      );
+      db.run(
+        "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [origin],
+        (err) => {
+          if (err) return reject(err);
+          resolve();
+        }
+      );
+    });
+  });
+
+  // GET /api/gemini/status — Check if Gemini API key is configured & return origin
   app.get('/api/gemini/status', async (req, res) => {
     try {
-      const key = await getApiKey();
-      res.json({ configured: !!key });
+      const { apiKey, origin } = await getApiKeyAndOrigin();
+      res.json({
+        configured: !!apiKey,
+        origin: apiKey ? origin : null,
+      });
     } catch (err) {
       console.error('[Gemini /status Error]:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // POST /api/gemini/config — Save Gemini API key
+  // POST /api/gemini/config — Save Gemini API key locally (marked as local_manual)
   app.post('/api/gemini/config', async (req, res) => {
     try {
       const { apiKey } = req.body;
       if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
         return res.status(400).json({ error: 'Valid apiKey string is required' });
       }
-      await setApiKey(apiKey);
-      console.log('[Gemini] API key updated successfully in app_config');
-      res.json({ ok: true, message: 'Gemini API key saved successfully' });
+      await setApiKey(apiKey, 'local_manual');
+      console.log('[Gemini] API key updated manually in app_config (origin: local_manual)');
+      res.json({ ok: true, message: 'Gemini API key saved successfully', origin: 'local_manual' });
     } catch (err) {
       console.error('[Gemini /config Error]:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/gemini/sync-cloud — On-demand cloud sync from Firebase Firestore
+  app.post('/api/gemini/sync-cloud', async (req, res) => {
+    try {
+      if (!firestore) {
+        return res.status(503).json({ ok: false, configured: false, error: 'Firebase Firestore is not initialized on this server' });
+      }
+
+      const officeId = await getOfficeId();
+      console.log(`[Gemini Cloud Sync] Manual sync requested for office: ${officeId || 'unassigned'}`);
+
+      const result = await syncCloudGeminiKey(firestore, db, officeId);
+      if (result.synced) {
+        return res.json({
+          ok: true,
+          configured: true,
+          origin: result.origin,
+          message: `Gemini API key successfully synchronized from ${
+            result.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'
+          }.`,
+        });
+      }
+
+      return res.status(404).json({
+        ok: false,
+        configured: false,
+        error: 'No Gemini API key was found in either your Office Cloud License or Global Master settings.',
+      });
+    } catch (err) {
+      console.error('[Gemini /sync-cloud Error]:', err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // POST /api/gemini/push-cloud — Admin push of Gemini key to Firebase Firestore
+  app.post('/api/gemini/push-cloud', async (req, res) => {
+    try {
+      if (!firestore) {
+        return res.status(503).json({ ok: false, error: 'Firebase Firestore is not initialized on this server' });
+      }
+
+      const { apiKey, scope = 'office' } = req.body;
+      if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+        return res.status(400).json({ error: 'Valid apiKey string is required' });
+      }
+
+      const trimmedKey = apiKey.trim();
+
+      if (scope === 'office') {
+        const officeId = await getOfficeId();
+        if (!officeId) {
+          return res.status(400).json({ error: 'This installation does not have an active office_id assigned.' });
+        }
+
+        const q = query(
+          collection(firestore, 'serial_keys'),
+          where('office_id', '==', officeId),
+          where('key_type', '==', 'server')
+        );
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          return res.status(404).json({ error: `Server license key document for office ${officeId} not found in cloud DB.` });
+        }
+
+        const serverDocRef = snap.docs[0].ref;
+        await updateDoc(serverDocRef, {
+          gemini_api_key: trimmedKey,
+          gemini_key_updated_at: Date.now(),
+        });
+
+        // Also save locally with cloud_office origin
+        await setApiKey(trimmedKey, 'cloud_office');
+
+        console.log(`[Gemini Cloud Push] Key successfully pushed to office ${officeId}`);
+        return res.json({
+          ok: true,
+          origin: 'cloud_office',
+          message: `Gemini API key successfully pushed to Office (${officeId}) Cloud License. All workstations in this office will sync automatically.`,
+        });
+      } else if (scope === 'global') {
+        const globalRef = doc(firestore, 'system_config', 'ai_settings');
+        await setDoc(
+          globalRef,
+          {
+            gemini_api_key: trimmedKey,
+            updated_at: Date.now(),
+          },
+          { merge: true }
+        );
+
+        // Also save locally with cloud_global origin
+        await setApiKey(trimmedKey, 'cloud_global');
+
+        console.log('[Gemini Cloud Push] Key successfully pushed to global system_config/ai_settings');
+        return res.json({
+          ok: true,
+          origin: 'cloud_global',
+          message: 'Gemini API key successfully pushed to Global Master settings. All client offices without overrides will inherit this key.',
+        });
+      } else {
+        return res.status(400).json({ error: "Invalid scope parameter. Must be 'office' or 'global'." });
+      }
+    } catch (err) {
+      console.error('[Gemini /push-cloud Error]:', err);
+      res.status(500).json({ ok: false, error: err.message });
     }
   });
 
@@ -66,10 +281,10 @@ export default function setupGeminiRoutes(app, db) {
       return res.status(400).json({ error: 'message string is required' });
     }
 
-    const apiKey = await getApiKey();
+    const { apiKey } = await getApiKeyAndOrigin();
     if (!apiKey) {
       return res.status(403).json({
-        error: 'Gemini API key is not configured. Please enter your API key in Settings → AI Assistant.',
+        error: 'Gemini API key is not configured. Please enter your API key in Settings → AI Assistant or sync from Office Cloud License.',
         unconfigured: true,
       });
     }
@@ -130,7 +345,7 @@ export default function setupGeminiRoutes(app, db) {
       console.error('[Gemini Route Error]:', err);
       const msg = err.message || '';
       if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
-        return res.status(403).json({ error: 'Invalid Gemini API key. Please check and re-enter in Settings → AI Assistant.' });
+        return res.status(403).json({ error: 'Invalid Gemini API key. Please check and re-enter in Settings → AI Assistant or re-sync from Cloud.' });
       }
       if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
         return res.status(429).json({ error: 'Gemini API quota reached. Please wait a moment or upgrade your Google AI Studio plan.' });

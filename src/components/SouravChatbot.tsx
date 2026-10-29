@@ -17,11 +17,13 @@ import {
   sendChatMessage,
   getGeminiStatus,
   saveGeminiApiKey,
+  syncGeminiFromCloud,
   extractActionTags,
   ACTION_NAV_TARGETS,
   ChatMessage,
   GeminiContext
 } from '../lib/geminiApi';
+import { toast } from 'sonner';
 
 interface SouravChatbotProps {
   clientName?: string;
@@ -49,6 +51,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   // Quick API key setup banner state
   const [quickApiKey, setQuickApiKey] = useState('');
   const [isSavingKey, setIsSavingKey] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [showKeyInput, setShowKeyInput] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -135,6 +138,31 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       alert(`Failed to save API key: ${err.message || err}`);
     } finally {
       setIsSavingKey(false);
+    }
+  };
+
+  const handleSyncFromOfficeLicense = async () => {
+    setIsSyncingCloud(true);
+    try {
+      const res = await syncGeminiFromCloud();
+      setIsConfigured(true);
+      setShowKeyInput(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'model',
+          text: `✨ **Gemini API Key synced from ${res.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'}!** Sourav AI is now active and ready to assist you.`,
+        },
+      ]);
+      toast.success('Synced from Cloud License', {
+        description: res.message || 'Gemini API key configured successfully.',
+      });
+    } catch (err: any) {
+      toast.error('Cloud Sync Failed', {
+        description: err.message || 'No Gemini key found in cloud license. Please paste your key below.',
+      });
+    } finally {
+      setIsSyncingCloud(false);
     }
   };
 
@@ -260,8 +288,8 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
 
           {/* Inline Quick API Key Setup Banner (if unconfigured or toggled) */}
           {(isConfigured === false || showKeyInput) && (
-            <div className="p-3 bg-amber-950/40 border-b border-amber-700/50 text-amber-200 shrink-0 text-xs">
-              <div className="flex items-center justify-between mb-1.5">
+            <div className="p-3 bg-amber-950/40 border-b border-amber-700/50 text-amber-200 shrink-0 text-xs space-y-2">
+              <div className="flex items-center justify-between">
                 <span className="font-semibold flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5 text-amber-400" />
                   Google Gemini API Key Required
@@ -275,18 +303,31 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                   Get free key <ExternalLink className="w-2.5 h-2.5" />
                 </a>
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* 1-Click Sync Button */}
+              <button
+                type="button"
+                onClick={handleSyncFromOfficeLicense}
+                disabled={isSyncingCloud}
+                className="w-full py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Automatically fetch the Gemini API key configured in your office license"
+              >
+                <Sparkles className={`w-3.5 h-3.5 fill-slate-950 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+                <span>{isSyncingCloud ? 'Syncing with Office License...' : '⚡ 1-Click Sync from Office License'}</span>
+              </button>
+
+              <div className="flex items-center gap-2 pt-1 border-t border-amber-800/40">
                 <input
                   type="password"
                   value={quickApiKey}
                   onChange={(e) => setQuickApiKey(e.target.value)}
-                  placeholder="Paste AI Studio API key (AIzaSy...)"
+                  placeholder="Or paste API key manually (AIzaSy...)"
                   className="flex-1 bg-slate-900 border border-amber-500/40 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                 />
                 <button
                   onClick={handleSaveQuickKey}
                   disabled={isSavingKey || !quickApiKey.trim()}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded text-xs transition-colors disabled:opacity-50"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/50 font-semibold rounded text-xs transition-colors disabled:opacity-50"
                 >
                   {isSavingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
                 </button>

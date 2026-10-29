@@ -37,7 +37,7 @@ import setupGstr1Routes from './gstr1_routes.js';
 import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
 import setupNoticesRoutes from './notices_routes.js';
-import setupGeminiRoutes from './gemini_routes.js';
+import setupGeminiRoutes, { syncCloudGeminiKey } from './gemini_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
 import helmet from 'helmet';
@@ -275,7 +275,7 @@ setupReturnsStorageRoutes(app, db, userDataPath);
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
 setupAuditTrailRoutes(app, db, userDataPath);
 setupNoticesRoutes(app, db);
-setupGeminiRoutes(app, db);
+setupGeminiRoutes(app, db, firestore);
 
 const saveUserToLocalDb = (user) => {
     db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id)
@@ -348,6 +348,21 @@ const setupLicenseMonitoring = (officeId) => {
             } else {
                 SERVER_REVOKED = false;
                 LICENSE_DELETED = false; // Key found and active, clear any stale deleted flag
+
+            // Sync Gemini API Key if configured in cloud server key
+            if (serverKeyDoc.gemini_api_key && typeof serverKeyDoc.gemini_api_key === 'string' && serverKeyDoc.gemini_api_key.trim().length > 5) {
+                const cloudKey = serverKeyDoc.gemini_api_key.trim();
+                db.serialize(() => {
+                    db.run(
+                        "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+                        [cloudKey, cloudKey]
+                    );
+                    db.run(
+                        "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = 'cloud_office'"
+                    );
+                });
+                console.log("[Gemini Cloud Sync] API key synced from office cloud license via live snapshot");
+            }
             }
         } else {
             // Only mark as revoked if this is a verified online query (not cache fallback)
@@ -400,6 +415,16 @@ setTimeout(async () => {
     const officeId = await getOfficeId();
     if (officeId) {
         setupLicenseMonitoring(officeId);
+    }
+
+    // Startup Gemini Cloud Sync (Office or Global Master)
+    try {
+        const syncRes = await syncCloudGeminiKey(firestore, db, officeId);
+        if (syncRes.synced) {
+            console.log(`[Gemini Cloud Sync] Startup sync successful (origin: ${syncRes.origin})`);
+        }
+    } catch (e) {
+        console.warn("[Gemini Cloud Sync] Startup sync warning:", e.message);
     }
 }, 5000);
 

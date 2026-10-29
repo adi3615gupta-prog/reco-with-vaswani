@@ -12,6 +12,11 @@ export interface GeminiContext {
   module?: string;
 }
 
+export interface GeminiStatus {
+  configured: boolean;
+  origin?: 'cloud_office' | 'cloud_global' | 'local_manual' | 'env' | string | null;
+}
+
 /**
  * Send user message and conversation context to the backend Gemini chat API.
  */
@@ -39,23 +44,23 @@ export async function sendChatMessage(
 }
 
 /**
- * Check if the Google Gemini API key has been configured in the backend.
+ * Check if the Google Gemini API key has been configured in the backend and return origin telemetry.
  */
-export async function getGeminiStatus(): Promise<{ configured: boolean }> {
+export async function getGeminiStatus(): Promise<GeminiStatus> {
   try {
     const res = await fetch(`${getApiBase()}/api/gemini/status`);
-    if (!res.ok) return { configured: false };
+    if (!res.ok) return { configured: false, origin: null };
     return await res.json();
   } catch (err) {
     console.warn('[Gemini API] Failed to fetch status:', err);
-    return { configured: false };
+    return { configured: false, origin: null };
   }
 }
 
 /**
- * Persist the Gemini API key in the backend SQLite app_config table.
+ * Persist the Gemini API key in the backend SQLite app_config table locally.
  */
-export async function saveGeminiApiKey(apiKey: string): Promise<{ ok: boolean; message?: string }> {
+export async function saveGeminiApiKey(apiKey: string): Promise<{ ok: boolean; message?: string; origin?: string }> {
   const res = await fetch(`${getApiBase()}/api/gemini/config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -65,6 +70,50 @@ export async function saveGeminiApiKey(apiKey: string): Promise<{ ok: boolean; m
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.error || 'Failed to save Gemini API key');
+  }
+
+  return data;
+}
+
+/**
+ * Trigger immediate cloud synchronization of the Gemini API key from Firebase Firestore.
+ */
+export async function syncGeminiFromCloud(): Promise<{
+  ok: boolean;
+  configured: boolean;
+  origin?: 'cloud_office' | 'cloud_global' | string;
+  message?: string;
+  error?: string;
+}> {
+  const res = await fetch(`${getApiBase()}/api/gemini/sync-cloud`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to sync Gemini API key from Cloud License');
+  }
+
+  return data;
+}
+
+/**
+ * Push Gemini API key to Firebase Firestore for centralized office or global distribution.
+ */
+export async function pushGeminiToCloud(
+  apiKey: string,
+  scope: 'office' | 'global' = 'office'
+): Promise<{ ok: boolean; origin?: string; message: string }> {
+  const res = await fetch(`${getApiBase()}/api/gemini/push-cloud`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey, scope }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to push Gemini API key to Cloud');
   }
 
   return data;

@@ -4,13 +4,13 @@ import {
   X, CheckCircle2, AlertTriangle, HardDrive, Laptop, Sparkles, Sliders,
   Key, Mail, ShieldAlert, Send, Eye, EyeOff, Building2, Search, Download,
   FileSpreadsheet, ExternalLink, Trash2, ShieldCheck, CheckCheck, SlidersHorizontal,
-  RotateCcw, Bot
+  RotateCcw, Bot, CloudDownload, CloudUpload, Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
 import { safeApiFetch } from '@/lib/api';
 import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
-import { getGeminiStatus, saveGeminiApiKey, sendChatMessage } from '@/lib/geminiApi';
+import { getGeminiStatus, saveGeminiApiKey, sendChatMessage, syncGeminiFromCloud, pushGeminiToCloud } from '@/lib/geminiApi';
 
 export interface VaultClient {
   id: string;
@@ -114,6 +114,10 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [isGeminiConfigured, setIsGeminiConfigured] = useState<boolean | null>(null);
+  const [geminiKeyOrigin, setGeminiKeyOrigin] = useState<string | null>(null);
+  const [isSyncingGeminiCloud, setIsSyncingGeminiCloud] = useState(false);
+  const [isPushingGeminiCloud, setIsPushingGeminiCloud] = useState(false);
+  const [cloudPushScope, setCloudPushScope] = useState<'office' | 'global'>('office');
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isSavingGemini, setIsSavingGemini] = useState(false);
   const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -190,11 +194,12 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
       }
     };
 
-    // 4. Fetch Gemini AI status
+    // 4. Fetch Gemini AI status & origin
     const fetchGemini = async () => {
       try {
         const res = await getGeminiStatus();
         setIsGeminiConfigured(res.configured);
+        setGeminiKeyOrigin(res.origin || null);
       } catch (e) {
         console.warn('Failed fetching Gemini status:', e);
       }
@@ -216,6 +221,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
     try {
       await saveGeminiApiKey(key);
       setIsGeminiConfigured(true);
+      setGeminiKeyOrigin('local_manual');
       setGeminiApiKey('');
       toast.success('Gemini API Key Saved', {
         description: 'Sourav AI Assistant is now activated and ready to assist.',
@@ -224,6 +230,46 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
       toast.error('Failed to save Gemini API key', { description: e.message });
     } finally {
       setIsSavingGemini(false);
+    }
+  };
+
+  const handleSyncGeminiFromCloud = async () => {
+    setIsSyncingGeminiCloud(true);
+    try {
+      const res = await syncGeminiFromCloud();
+      setIsGeminiConfigured(true);
+      setGeminiKeyOrigin(res.origin || 'cloud_office');
+      toast.success('Synced from Cloud License', {
+        description: res.message || 'Gemini API key updated from cloud.',
+      });
+      // Automatically test connection after successful sync
+      handleTestGemini();
+    } catch (e: any) {
+      toast.error('Cloud Sync Failed', { description: e.message });
+    } finally {
+      setIsSyncingGeminiCloud(false);
+    }
+  };
+
+  const handlePushGeminiToCloud = async () => {
+    const key = geminiApiKey.trim();
+    if (!key) {
+      toast.error('Enter an API key in the field above to push to Cloud');
+      return;
+    }
+    setIsPushingGeminiCloud(true);
+    try {
+      const res = await pushGeminiToCloud(key, cloudPushScope);
+      setIsGeminiConfigured(true);
+      setGeminiKeyOrigin(cloudPushScope === 'office' ? 'cloud_office' : 'cloud_global');
+      setGeminiApiKey('');
+      toast.success('Pushed to Firebase Cloud', {
+        description: res.message,
+      });
+    } catch (e: any) {
+      toast.error('Failed to push to Cloud', { description: e.message });
+    } finally {
+      setIsPushingGeminiCloud(false);
     }
   };
 
@@ -1353,7 +1399,11 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                   {isGeminiConfigured ? (
                     <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
                       <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                      Active &amp; Ready
+                      {geminiKeyOrigin === 'cloud_office' && 'Active (Office Cloud License)'}
+                      {geminiKeyOrigin === 'cloud_global' && 'Active (Global Master)'}
+                      {geminiKeyOrigin === 'local_manual' && 'Active (Custom Local Key)'}
+                      {geminiKeyOrigin === 'env' && 'Active (Environment)'}
+                      {!['cloud_office', 'cloud_global', 'local_manual', 'env'].includes(geminiKeyOrigin || '') && 'Active & Ready'}
                     </span>
                   ) : (
                     <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
@@ -1409,6 +1459,17 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={handleSyncGeminiFromCloud}
+                      disabled={isSyncingGeminiCloud}
+                      className="px-3.5 py-2 rounded-xl border border-sky-300 bg-sky-50 text-sky-800 font-bold text-xs hover:bg-sky-100 transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                      title="Fetch and sync latest Gemini API key from Office Cloud License"
+                    >
+                      <CloudDownload className={`w-3.5 h-3.5 text-sky-600 ${isSyncingGeminiCloud ? 'animate-bounce' : ''}`} />
+                      <span>{isSyncingGeminiCloud ? 'Syncing...' : 'Sync from Cloud'}</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleTestGemini}
                       disabled={isTestingGemini || (!geminiApiKey.trim() && !isGeminiConfigured)}
                       className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
@@ -1424,7 +1485,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs shadow-xs transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>{isSavingGemini ? 'Saving...' : 'Save API Key'}</span>
+                      <span>{isSavingGemini ? 'Saving...' : 'Save Locally'}</span>
                     </button>
                   </div>
                 </div>
@@ -1454,6 +1515,66 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage' }: Setti
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Central Office Cloud Distribution Card (Admin / Firebase) */}
+              <div className="p-4 rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-sky-50/50 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0 mt-0.5">
+                      <CloudUpload className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                        Central Office Cloud Distribution (Firebase Firestore)
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold">
+                          Admin / Super User
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
+                        Save the Gemini key into Firebase once. All team workstations in this office will automatically sync and activate Sourav AI without individual user configuration.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2.5 border-t border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-4 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
+                      <input
+                        type="radio"
+                        name="cloudPushScope"
+                        value="office"
+                        checked={cloudPushScope === 'office'}
+                        onChange={() => setCloudPushScope('office')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>This Office License (<code className="font-mono text-indigo-900 font-bold">serial_keys</code>)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
+                      <input
+                        type="radio"
+                        name="cloudPushScope"
+                        value="global"
+                        checked={cloudPushScope === 'global'}
+                        onChange={() => setCloudPushScope('global')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Global Master Default (<code className="font-mono text-indigo-900 font-bold">system_config</code>)</span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePushGeminiToCloud}
+                    disabled={isPushingGeminiCloud || !geminiApiKey.trim()}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                    title="Upload entered key to Firebase Firestore for centralized multi-workstation sync"
+                  >
+                    <CloudUpload className={`w-3.5 h-3.5 ${isPushingGeminiCloud ? 'animate-bounce' : ''}`} />
+                    <span>{isPushingGeminiCloud ? 'Pushing to Firebase...' : 'Push to Cloud'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Feature Grid Card */}

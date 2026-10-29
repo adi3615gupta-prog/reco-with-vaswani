@@ -181,3 +181,11 @@
 - [x] **AI-AGENT-03**: Sourav floating chat UI — amber/gold FAB at bottom-right (`position: fixed`), click to toggle slide-in chat panel (384px wide, 520px tall), Obsidian dark theme, message bubbles (user = amber right; Sourav = slate left), typing indicator, auto-scroll, Enter-to-send, welcome message on first open.
 - [x] **AI-AGENT-04**: Context awareness — active client name, GSTIN, FY, and current module automatically passed as context with every message. Displayed as info chips in chat panel header.
 - [x] **AI-AGENT-05**: Settings → AI Assistant tab — Gemini API key input (password field with show/hide), save & test connection buttons, "Active/Not Configured" status badge, deep-link to Google AI Studio for key generation.
+
+### Central Office-Wise Gemini Cloud Distribution & Firebase License Sync (Phase 23)
+
+- [x] **CLOUD-AI-01**: Firebase Firestore Multi-Tier Storage Architecture — check office-specific `serial_keys` collection (`gemini_api_key`) first, falling back to global master `system_config/ai_settings` document (`gemini_api_key`), cached in local SQLite `app_config` for offline resilience.
+- [x] **CLOUD-AI-02**: Automatic Two-Way Cloud Key Synchronization — automatic sync on server startup (after `office_id` resolution) and live realtime updates via Firestore `onSnapshot` listener in `server.js` when super admin updates the license document.
+- [x] **CLOUD-AI-03**: Backend Sync & Push Endpoints — `POST /api/gemini/sync-cloud` (on-demand pull from Firestore) and `POST /api/gemini/push-cloud` (admin push to Firestore for `office` or `global` scope).
+- [x] **CLOUD-AI-04**: Telemetry & Status Badges — `GET /api/gemini/status` returning origin (`cloud_office`, `cloud_global`, `local_manual`, `env`) with matching origin badges in `SettingsModal.tsx` and in-app Chatbot.
+- [x] **CLOUD-AI-05**: 1-Click UI Activation & Admin Distribution Panel — "⚡ 1-Click Sync from Office License" in `SouravChatbot.tsx`, "Sync from Cloud" button and Admin Cloud Push Card in `SettingsModal.tsx`, plus full web license generator integration documentation in `FIREBASE_AI_PORTAL_GUIDE.md`.
