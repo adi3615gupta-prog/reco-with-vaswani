@@ -24,8 +24,10 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
       const snap = await getDocs(q);
       if (!snap.empty) {
         const data = snap.docs[0].data();
-        if (data.gemini_api_key && typeof data.gemini_api_key === 'string' && data.gemini_api_key.trim().length > 5) {
-          return { apiKey: data.gemini_api_key.trim(), origin: 'cloud_office' };
+        for (const [k, v] of Object.entries(data)) {
+          if (k.trim() === 'gemini_api_key' && typeof v === 'string' && v.trim().length > 5) {
+            return { apiKey: v.trim(), origin: 'cloud_office' };
+          }
         }
       }
     } catch (e) {
@@ -39,8 +41,23 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
     const globalSnap = await getDoc(globalRef);
     if (globalSnap.exists()) {
       const data = globalSnap.data();
-      if (data.gemini_api_key && typeof data.gemini_api_key === 'string' && data.gemini_api_key.trim().length > 5) {
-        return { apiKey: data.gemini_api_key.trim(), origin: 'cloud_global' };
+      for (const [k, v] of Object.entries(data)) {
+        if (k.trim() === 'gemini_api_key' && typeof v === 'string' && v.trim().length > 5) {
+          return { apiKey: v.trim(), origin: 'cloud_global' };
+        }
+      }
+    }
+
+    // Defensive fallback: check collection documents in case of whitespace in doc ID
+    const colSnap = await getDocs(collection(firestore, 'system_config'));
+    for (const d of colSnap.docs) {
+      if (d.id.trim() === 'ai_settings') {
+        const data = d.data();
+        for (const [k, v] of Object.entries(data)) {
+          if (k.trim() === 'gemini_api_key' && typeof v === 'string' && v.trim().length > 5) {
+            return { apiKey: v.trim(), origin: 'cloud_global' };
+          }
+        }
       }
     }
   } catch (e) {
