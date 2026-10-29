@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import sqlite3 from 'sqlite3';
-import setupGeminiRoutes, { sanitizeGeminiHistory, findMatchingClients } from '../../gemini_routes.js';
+import setupGeminiRoutes, { sanitizeGeminiHistory, findMatchingClients, buildSystemPrompt } from '../../gemini_routes.js';
 import type { Server } from 'http';
 
 describe('Gemini Backend Routes (/api/gemini)', () => {
@@ -149,6 +149,61 @@ describe('Gemini Backend Routes (/api/gemini)', () => {
     it('should return empty array when query has no matching keywords', async () => {
       const matches = await findMatchingClients(db, 'what is the deadline for GSTR-3B?');
       expect(matches).toHaveLength(0);
+    });
+  });
+
+  describe('buildSystemPrompt Master Knowledge Base', () => {
+    it('should infuse GST statutory rules (Sec 16(2), 180-day rule, 16(4), 17(5), Rule 88A, Sec 50)', () => {
+      const prompt = buildSystemPrompt({}, []);
+      expect(prompt).toContain('Section 16(2) CGST Act');
+      expect(prompt).toContain('180-Day Payment Rule');
+      expect(prompt).toContain('Table 4(B)(2)');
+      expect(prompt).toContain('Section 16(4)');
+      expect(prompt).toContain('Section 17(5)');
+      expect(prompt).toContain('Rule 88A');
+      expect(prompt).toContain('Section 50(1) Proviso');
+      expect(prompt).toContain('Rule 88B(3)');
+      expect(prompt).toContain('Invoice Management System');
+    });
+
+    it('should infuse landmark precedents and scrutiny procedures (Suncraft Energies, D.Y. Beathel, DRC-01, Sec 128A)', () => {
+      const prompt = buildSystemPrompt({}, []);
+      expect(prompt).toContain('Suncraft Energies Pvt Ltd');
+      expect(prompt).toContain('D.Y. Beathel Enterprises');
+      expect(prompt).toContain('Bharti Airtel Ltd');
+      expect(prompt).toContain('Mohit Minerals');
+      expect(prompt).toContain('Eicher Motors');
+      expect(prompt).toContain('ASMT-10');
+      expect(prompt).toContain('DRC-01B');
+      expect(prompt).toContain('DRC-01C');
+      expect(prompt).toContain('Section 74A');
+      expect(prompt).toContain('Section 128A Amnesty Scheme');
+      expect(prompt).toContain('31st March 2025');
+    });
+
+    it('should infuse Income Tax AY 2025-26 slabs, 115BAC, TDS, CMA, and Clause 44 knowledge', () => {
+      const prompt = buildSystemPrompt({}, []);
+      expect(prompt).toContain('Section 115BAC');
+      expect(prompt).toContain('Rs 75,000 for AY 2025-26');
+      expect(prompt).toContain('Section 87A Full Rebate');
+      expect(prompt).toContain('Section 194C');
+      expect(prompt).toContain('Section 194J');
+      expect(prompt).toContain('Section 194Q');
+      expect(prompt).toContain('Tandon Committee MPBF');
+      expect(prompt).toContain('Method II (Bank Standard Benchmark)');
+      expect(prompt).toContain('Current Ratio: 1.33:1');
+      expect(prompt).toContain('Form 3CD Clause 44');
+      expect(prompt).toContain('Zero-Merge Architecture');
+    });
+
+    it('should dynamically include matched clients with GSTINs for 1-click action buttons', () => {
+      const matched = [
+        { name: 'SIDDHA PERFECT SYSTEMS PRIVATE LIMITED', gstin: '27AAQCS1984G1ZT' }
+      ];
+      const prompt = buildSystemPrompt({ clientName: 'SIDDHA PERFECT SYSTEMS', gstin: '27AAQCS1984G1ZT' }, matched);
+      expect(prompt).toContain('SIDDHA PERFECT SYSTEMS PRIVATE LIMITED');
+      expect(prompt).toContain('27AAQCS1984G1ZT');
+      expect(prompt).toContain('[ACTION:navigate:<target>:<gstin>]');
     });
   });
 });
