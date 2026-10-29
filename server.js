@@ -37,6 +37,7 @@ import setupGstr1Routes from './gstr1_routes.js';
 import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
 import setupNoticesRoutes from './notices_routes.js';
+import setupGeminiRoutes from './gemini_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
 import helmet from 'helmet';
@@ -244,6 +245,10 @@ db.serialize(() => {
     db.run(`ALTER TABLE network_users ADD COLUMN status TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN portal_username TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN portal_password TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN address TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN last_updated INTEGER DEFAULT 0`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN is_deleted INTEGER DEFAULT 0`, (err) => { /* ignore if exists */ });
+    db.run(`CREATE INDEX IF NOT EXISTS idx_clients_gstin_deleted ON clients (gstin, is_deleted)`, (err) => { /* ignore */ });
 });
 
 // 3. Initialize TDS Routes
@@ -255,8 +260,8 @@ setupTaxRoutes(app, db);
 // 5. Initialize Google Drive Cloud Backup Routes
 setupGDriveRoutes(app);
 
-// 6. Initialize GST IMS Routes
-setupImsRoutes(app, db);
+// 6. Initialize GST IMS Routes (Multi-PC Central Vault Sync)
+setupImsRoutes(app, db, userDataPath);
 
 // 7. Initialize GSTR-2B Auto Downloader Routes
 setupGstr2bRoutes(app, db);
@@ -270,6 +275,7 @@ setupReturnsStorageRoutes(app, db, userDataPath);
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
 setupAuditTrailRoutes(app, db, userDataPath);
 setupNoticesRoutes(app, db);
+setupGeminiRoutes(app, db);
 
 const saveUserToLocalDb = (user) => {
     db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id)
@@ -1261,11 +1267,13 @@ app.post('/api/cma/generate', authenticateToken, async (req, res) => {
     }
 });
 
+// API 404 Fallback - ensures all unmatched /api routes return JSON, never HTML
+app.use('/api', (req, res) => {
+    return res.status(404).json({ success: false, error: 'API route not found: ' + req.method + ' ' + req.path });
+});
+
 // Catch-all to serve the React app for any other routes (client-side routing)
 app.get(/(.*)/, (req, res) => {
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ success: false, error: `API route not found: ${req.path}` });
-    }
     res.sendFile(path.join(DIST_PATH, 'index.html'));
 });
 

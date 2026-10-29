@@ -431,6 +431,6 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
   5. If no API key is configured, Sourav displays a friendly prompt directing user to Settings.
   6. All TypeScript compiles with zero errors.
 
-**Plans**: 0/2 plans complete
-- [ ] 22-01: Gemini API Backend Engine — `/api/gemini/chat`, `/api/gemini/config`, system prompt, `app_config` key storage
+**Plans**: 1/2 plans complete
+- [x] 22-01: Gemini API Backend Engine — `/api/gemini/chat`, `/api/gemini/config`, system prompt, `app_config` key storage
 - [ ] 22-02: Sourav Frontend Chat UI — Floating FAB, slide-in chat panel, context chips, Settings AI tab
