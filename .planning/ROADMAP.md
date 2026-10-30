@@ -28,7 +28,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 22: Sourav — Universal Gemini AI Assistant & In-App Chatbot** - Integrated Google Gemini 2.0 Flash API copilot named "Sourav" with floating amber FAB, slide-in drawer panel, 1-click deep-link action pills, adaptive Hinglish/English statutory answers, SQLite app_config key storage, and Settings AI tab. (completed 2026-10-29)
 - [x] **Phase 23: Central Office-Wise Gemini Cloud Distribution & Firebase License Sync** - Distribute Gemini API key centrally via Firebase Firestore (reco-vaswani-license) so all workstations in an office activate Sourav AI automatically without manual key entry. (completed 2026-10-29)
 - [x] **Phase 24: Windows Background Auto-Start & Universal Desktop AI Copilot (PC Loco Pilot)** - Silent background auto-launch on Windows startup, system tray residency, close-to-tray protection, universal always-on-top floating desktop widget, global system hotkey (`Ctrl+Alt+S`), and bidirectional IPC bridge to control the full application from anywhere on the PC. (completed 2026-10-30)
-- [ ] **Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine & Autonomous Uploader** - Outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, and 1-click autonomous Playwright upload into the GST Portal offline utility section.
+- [ ] **Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite** - Outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, 1-click autonomous Playwright upload into the GST Portal offline utility section, and TaxPower reverse-engineered capabilities (All-In-One flat register parser, Tally UQC dictionary mapping, Table 13 document series gap analyzer, DRC-01B/C comparative audit workbooks, configurable reconciliation settings knobs, Rule 88A mathematical set-off optimizer, and E-Way Bill vs GSTR-1 cross-checker).
 
 ## Phase Details
 
@@ -486,9 +486,9 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
 - [x] 24-02: Universal Always-On-Top Floating Desktop Copilot Window & Global Hotkey (completed 2026-10-30)
 - [x] 24-03: Universal Desktop Copilot UI & Bidirectional "Loco Pilot" Bridge (completed 2026-10-30)
 
-### Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine & Autonomous Uploader
+### Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite
 
-**Goal:** Enable end-to-end outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, and 1-click autonomous Playwright upload into the GST Portal offline utility section without opening the official desktop tool.
+**Goal:** Enable end-to-end outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, 1-click autonomous Playwright upload into the GST Portal offline utility section, and integrate advanced enterprise capabilities reverse-engineered from **TaxPower GST** (All-In-One flat register ingestion, Tally UQC dictionary mapping, Table 13 document series gap analyzer, DRC-01B/DRC-01C detailed comparative audit exporters, configurable reconciliation settings knobs, Rule 88A mathematical cash liability set-off optimizer, and E-Way Bill vs GSTR-1 cross-checker).
 
 **Depends on:** Phase 20, Phase 21  
 **Success Criteria**:
@@ -498,9 +498,14 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
   4. 1-Click JSON generator produces 100% portal-compliant payload identical to `GST Offline Tool.exe` v3.2.4 schema with 19,000 row / 5 MB chunking safeguards.
   5. Official V2.2 32-sheet Excel workbook and 31 section-wise CSV zip bundle export with zero merged cells (`ws['!merges'] = []`).
   6. Autonomous Playwright bot logs in, navigates to Returns Dashboard, selects period, opens GSTR-1 `PREPARE OFFLINE`, and attaches the JSON file directly.
+  7. TaxPower normalization suite integrates Tally UQC dictionary mapping (`tallyUnitUqcMap`), Table 13 document series gap detection (`TallyDocIssuedMapper`), 3-tier POS state resolution, and flat All-In-One register ingestion.
+  8. TaxPower audit defense exporters produce Zero-Merge `CompareGSTR3BWithGSTR1Detailed.xlsx` (DRC-01B) and `CompareGSTR3BWithBooksNew.xlsx` (DRC-01C) workbooks.
+  9. Advanced Reconciliation Settings Hub exposes configurable knobs (tolerance ₹1-₹10, prior FY toggle, next period timing diffs, ITC availability, RCM).
+  10. Rule 88A mathematical set-off optimizer strictly exhausts IGST credit to minimize cash liability, and E-Way Bill vs GSTR-1 cross-checker flags missing EWBs or un-reported sales.
 
-**Plans**: 0/3 plans complete
-- [ ] 25-01: GSTR-1 Canonical Data Model, Auto-Classification Engine & Official Offline JSON Generator
-- [ ] 25-02: Official V2.2 32-Sheet Excel Exporter & Section-Wise CSV Suite
-- [ ] 25-03: GSTR-1 Workbench UI, Direct Client Auto-Save & Autonomous Playwright Portal Uploader
+**Plans**: 0/4 plans complete
+- [ ] 25-01: GSTR-1 Canonical Data Model, Auto-Classification Engine, TaxPower Tally Normalizer & Official Offline JSON Generator
+- [ ] 25-02: Official V2.2 32-Sheet Excel Exporter, TaxPower Audit Defense Suite (DRC-01B/C) & Section-Wise CSV Suite
+- [ ] 25-03: GSTR-1 Workbench UI, DRC-01B Real-Time Guard, Direct Client Auto-Save & Autonomous Playwright Portal Uploader
+- [ ] 25-04: Advanced Reconciliation Settings Hub, Configurable Matching Knobs, Rule 88A Mathematical Set-Off Optimizer & E-Way Bill Scrutiny Suite
 
