@@ -230,7 +230,15 @@
 - **Frontend Components:**
   - [`src/components/Gstr3bWorkingSheet.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/components/Gstr3bWorkingSheet.tsx) — Monthly working sheet UI with live tax set-off calculations.
   - [`src/components/FyMatrixView.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/components/FyMatrixView.tsx) — 12-month FY Matrix view.
-  - [`src/pages/ReturnsDashboard.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/ReturnsDashboard.tsx) — Hub with 4 Tabs (`gstr3b_sheet`, `fy_matrix`, `ims_manager`, `2b_downloader`).
+  - [`src/components/ReturnsTrackingMaster.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/components/ReturnsTrackingMaster.tsx) — Submodule 06: High-density statutory compliance tracking cockpit (Dual Mode: All-Clients Cockpit + Single-Client 12M Matrix), live statutory deadline countdowns (Rule 59 & 61), ₹50/day late fee & 18% p.a. Section 50 interest estimators, ARN/filing date persistence, 1-click jump to working papers, and Zero-Merge compliance export (`removeAllMergesFromWorkbook`).
+  - [`src/components/Gstr3bItcAllocationWorkbench.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/components/Gstr3bItcAllocationWorkbench.tsx) — In-place GSTR-3B Table 4 Inward ITC Allocation & Audit Workbench:
+    - **Drill-down trigger:** Table 4 row "ITC as per GSTR 2B" button (`View & Allocate 2B Bills`) replaces 3B computation table on the same page with sticky `← Back to GSTR-3B Working Sheet` switcher.
+    - **Statutory Selection Tabs:** `All Bills`, `Eligible ITC [4(A)(5)]`, `Temporary Reversal [4(B)(2)]` (Rule 37 180-days unpaid / goods not received - reclaimable), `Ineligible ITC [4(D)]` (Sec 17(5) blocked & 16(4) time-barred), `Permanent Reversal [4(B)(1)]` (Rule 38/42/43), `Inward RCM [4(A)(3)]`, `Deferred (Hold)`.
+    - **1-Click Bulk Move Toolbar:** Checkboxes + instant move to any statutory category with reason chips.
+    - **Dynamic Table 4 Recalculation:** Updates `itc2b` (4A5), `rcmPaid` (4A3), `itcReversed` (4B), and Table 4(D) disclosure, recalculating Total ITC Available `(B)` and Rule 88A set-off cascade.
+    - **SQLite Repository:** `gstr3b_itc_allocations` in `gstr2b/db.js` queried via `getInvoicesWithAllocations` and updated via `bulkSaveItcAllocations`.
+    - **Zero-Merge Excel Exporter:** `gstr2b/itcAuditExcel.js` generates 7-sheet statutory audit annexure enforcing `ws['!merges'] = []`.
+  - [`src/pages/ReturnsDashboard.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/ReturnsDashboard.tsx) — Hub with 6 Submodules (`working3b`, `matrix`, `ims2b`, `gstr2b_downloader`, `gstr1_downloader`, `returns_tracking`).
 
 ---
 
@@ -392,3 +400,40 @@
    - Backend Express Server: `3001`
    - Frontend Vite Dev Server: `8080`
    - TallyPrime Native XML Port: `9000`
+
+---
+
+## 14. Directory & Data Ownership Architecture Memory
+
+### A. Folder Ownership & Data Mapping
+1. **`gst_returns_data/` (Taxpayer Real Filing Bundles):**
+   - Stores client-wise folders named by legal name & GSTIN (e.g. `DYP INFRAPROJECTS PRIVATE LIMITED - 27AAGCD4105L1ZO`, `GOYAL AGROTECH - 27ATDPA3250A1ZJ`, etc.).
+   - Contains FY subfolders (`2025-26`, `2026-27`) holding saved GSTR-3B Excel working workbooks, GSTN statement PDFs, and upload-ready JSON payloads.
+2. **`reco_history/` (Reconciliation Snapshots):**
+   - Stores timestamped snapshot JSONs (`reco_snapshot_*.json`) of completed 2B vs Purchase Register matching runs for instant state restoration without re-computation.
+3. **`network_data.db` & `database.sqlite` (Primary Relational Storage):**
+   - Central SQLite persistence for taxpayer profiles, credentials vault, downloaded 2B/1 invoices, IMS batches & client review decisions, and GST notices.
+4. **`gstr1/`, `gstr2b/`, `notices/` (Playwright Browser Automations):**
+   - Dedicated automation bot modules that log into GST portal, handle CAPTCHA sessions, download monthly inward/outward invoices, and retrieve official notices & orders.
+5. **`LevitateExtract/` (OCR & Document Processing Microservice):**
+   - Python microservice for parsing Form 26AS, AIS, and bank statement PDFs into tabular structured JSON.
+6. **`admin-web/` (Admin Dashboard Web Application):**
+   - Standalone administrative interface for multi-tenant licensing, user accounts, and audit log analysis.
+7. **`logs/` (Segregated System Logs):**
+   - Dedicated folder for standard output and error logs (`stderr.log`, `stdout.log`, `server_*.log`, `programmatic_*.log`). Kept strictly out of the repository root.
+8. **`scratch/` (Developer Scratchpad & Debug Dumps):**
+   - Isolated staging area for 20MB+ Tally XML debug dumps (`tally_debug_*.xml`), experimental scripts (`test_*.cjs`, `scratch_*.py`), and temporary validation workbooks.
+
+### B. Critical Automation & Stream Integrity Rules
+1. **Portal Login Automation (Angular-Safe Event Timing):**
+   - On `https://services.gst.gov.in/services/login`, Angular executes asynchronous validation on username change/blur.
+   - Always await `page.waitForTimeout(800)` after username typing before attempting to fill `#user_pass`.
+   - Use multi-selector `#user_pass, input[name="user_pass"], input[type="password"]` and dispatch synthetic `input`, `change`, and `blur` events.
+   - Database queries against Credentials Vault must be case-insensitive and trimmed: `UPPER(TRIM(gstin)) = ?`.
+2. **Corrupted File Prevention & Stream Lifecycle:**
+   - In Playwright, wrap all `page.on('download')` listeners in an `activeDownloadPromises` Set and await `Promise.all(activeDownloadPromises)` before executing `browser.close()`.
+   - In Express backend routes, always set explicit `Content-Type` and `Content-Length: buf.length` headers and stream binary buffers via `res.end(buf)`.
+   - In frontend React components, NEVER call synchronous `URL.revokeObjectURL(url)` immediately after `a.click()`. Always delay revocation via `setTimeout(() => URL.revokeObjectURL(url), 60000)` to allow the browser download manager to finish streaming the blob to disk.
+3. **Repository Root Hygiene:**
+   - Root folder must strictly contain only core configuration files, operational server entry points (`server.js`, `main.cjs`), backend route definitions (`*_routes.js`), and batch launchers (`START_APP.bat`).
+

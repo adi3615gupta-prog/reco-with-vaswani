@@ -329,6 +329,7 @@ export default function ReturnsDashboard({
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [isLaunchingPortal, setIsLaunchingPortal] = useState(false);
+  const [isUploadingPortalJson, setIsUploadingPortalJson] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState('');
 
   // ─── Central Server Storage & Multi-PC LAN State ───
@@ -1910,6 +1911,62 @@ export default function ReturnsDashboard({
       toast.success('JSON Generated', { description: `Upload-ready payload for ${selectedMonth}-${currentMonthData.year}` });
     } catch (err: any) {
       toast.error('Failed to generate JSON', { description: err?.message });
+    }
+  };
+
+  // Upload JSON Directly to GST Portal (Autopilot)
+  const handleUploadJsonDirectlyToPortal = async () => {
+    const gstin = workingData.profile.gstin;
+    if (!gstin || gstin === 'Not Specified' || gstin.length < 10) {
+      toast.error('Invalid GSTIN', { description: 'Please select a client with a valid GSTIN first.' });
+      return;
+    }
+
+    setIsUploadingPortalJson(true);
+    toast.info(`Initiating GSTR-3B Portal Upload for ${selectedMonth}...`, {
+      description: 'Launching browser and preparing JSON payload.'
+    });
+
+    try {
+      const jsonStr = generateGstr3bPortalJson(currentMonthData, workingData.profile);
+      const portalJsonObj = JSON.parse(jsonStr);
+
+      const res = await fetch(`${getApiBase()}/api/returns/upload-3b-portal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getAuthToken()}`
+        },
+        body: JSON.stringify({
+          gstin,
+          month: selectedMonth,
+          financialYear: workingData.profile.financialYear || '2026-27',
+          portalJson: portalJsonObj
+        })
+      });
+
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text.slice(0, 80));
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to upload JSON to portal');
+      }
+
+      toast.success('GSTR-3B Uploaded to Portal!', {
+        description: data.message || 'JSON payload successfully uploaded to GST Portal!'
+      });
+    } catch (err: any) {
+      console.error('[Upload 3B Portal Error]:', err);
+      toast.error('Portal Upload Failed', {
+        description: err?.message || 'Error occurred during portal upload.'
+      });
+    } finally {
+      setIsUploadingPortalJson(false);
     }
   };
 
@@ -4919,6 +4976,21 @@ export default function ReturnsDashboard({
                   >
                     <span className="material-symbols-outlined text-[18px]">download</span>
                     <span>Generate GSTN Portal JSON</span>
+                    <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/25 to-transparent"></div>
+                  </button>
+
+                  <button
+                    onClick={handleUploadJsonDirectlyToPortal}
+                    disabled={isUploadingPortalJson}
+                    className="relative group overflow-hidden flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold shadow-[0_4px_16px_rgba(16,185,129,0.35)] hover:shadow-[0_6px_22px_rgba(16,185,129,0.5)] transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                    title={`Launch Chrome autopilot to automatically upload ${selectedMonth} GSTR-3B JSON directly into GST Portal`}
+                  >
+                    {isUploadingPortalJson ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <UploadCloud className="w-4 h-4 text-white" />
+                    )}
+                    <span>{isUploadingPortalJson ? 'Uploading to Portal...' : 'Upload JSON directly to Portal'}</span>
                     <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/25 to-transparent"></div>
                   </button>
 

@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 import { openPortalLoginHelper } from './gstr2b/autopilot.js';
 import { runReturnsTrackingAutopilot } from './gstr_tracking/autopilot.js';
 import { syncCredentialsWithCentral } from './credentialsVaultSync.js';
+import { runGstr3bUploadAutopilot } from './gstr3b/autopilot.js';
 
 /**
  * Enterprise Server Shared Data Storage Routes for GSTR Returns
@@ -2376,6 +2377,57 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     } catch (err) {
       console.error('[Returns Open Portal Error]:', err);
       res.status(500).json({ success: false, error: err.message || 'Failed to open portal login' });
+    }
+  });
+
+  // POST /api/returns/upload-3b-portal (Direct Autonomous GSTR-3B JSON Upload to Portal)
+  app.post('/api/returns/upload-3b-portal', async (req, res) => {
+    try {
+      const { gstin, month, financialYear, portalJson } = req.body;
+      const cleanGstin = String(gstin || '').trim().toUpperCase();
+      const cleanMonth = String(month || 'September').trim();
+      const cleanFy = normalizeFy(financialYear || '2026-27');
+
+      if (!cleanGstin) {
+        return res.status(400).json({ success: false, error: 'Client GSTIN is required' });
+      }
+
+      // Check if file already exists in client folder
+      let jsonFilePath = null;
+      try {
+        const clientDir = resolveClientDirectory(storageConfig.dataPath, cleanGstin);
+        const fDir = path.join(clientDir, cleanFy);
+        const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
+        const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, '0') : '06';
+        const mDir = path.join(fDir, `${mPrefix} - ${cleanMonth}`);
+        const candidate1 = path.join(mDir, `gstr3b_portal_${cleanMonth}.json`);
+        const candidate2 = path.join(mDir, '3B Working', `gstr3b_portal_${cleanMonth}.json`);
+        if (fs.existsSync(candidate1)) jsonFilePath = candidate1;
+        else if (fs.existsSync(candidate2)) jsonFilePath = candidate2;
+      } catch (e) {}
+
+      console.log(`[GSTR-3B Portal Upload Route] Initiating upload for ${cleanGstin} (${cleanMonth} ${cleanFy})`);
+      const result = await runGstr3bUploadAutopilot({
+        db,
+        gstin: cleanGstin,
+        month: cleanMonth,
+        financialYear: cleanFy,
+        jsonFilePath,
+        jsonContent: portalJson,
+        browserState
+      });
+
+      res.json({
+        success: true,
+        ...result,
+        message: result.message || 'GSTR-3B JSON uploaded directly to GST Portal successfully!'
+      });
+    } catch (err) {
+      console.error('[GSTR-3B Portal Upload Error]:', err);
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to upload GSTR-3B JSON directly to portal'
+      });
     }
   });
 
