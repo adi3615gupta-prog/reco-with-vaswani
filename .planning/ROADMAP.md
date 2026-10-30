@@ -28,6 +28,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 22: Sourav — Universal Gemini AI Assistant & In-App Chatbot** - Integrated Google Gemini 2.0 Flash API copilot named "Sourav" with floating amber FAB, slide-in drawer panel, 1-click deep-link action pills, adaptive Hinglish/English statutory answers, SQLite app_config key storage, and Settings AI tab. (completed 2026-10-29)
 - [x] **Phase 23: Central Office-Wise Gemini Cloud Distribution & Firebase License Sync** - Distribute Gemini API key centrally via Firebase Firestore (reco-vaswani-license) so all workstations in an office activate Sourav AI automatically without manual key entry. (completed 2026-10-29)
 - [x] **Phase 24: Windows Background Auto-Start & Universal Desktop AI Copilot (PC Loco Pilot)** - Silent background auto-launch on Windows startup, system tray residency, close-to-tray protection, universal always-on-top floating desktop widget, global system hotkey (`Ctrl+Alt+S`), and bidirectional IPC bridge to control the full application from anywhere on the PC. (completed 2026-10-30)
+- [ ] **Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine & Autonomous Uploader** - Outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, and 1-click autonomous Playwright upload into the GST Portal offline utility section.
 
 ## Phase Details
 
@@ -295,6 +296,16 @@ Plans:
 **Plans:** 1/1 plan complete
 - [x] 16-01: Returns Tracking 2-Step Architecture (Distinct Client Directory Gateway & Scoped Detail Workspace)
 
+### Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine & Autonomous Uploader
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 24
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 25 to break down)
+
 ---
 *Roadmap defined: 2026-10-22*
 *Last updated: 2026-10-24 after Phase 15 Returns Tracking addition*
@@ -474,3 +485,22 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
 - [x] 24-01: Electron Core Lifecycle, Background Auto-Startup & System Tray Hub (completed 2026-10-30)
 - [x] 24-02: Universal Always-On-Top Floating Desktop Copilot Window & Global Hotkey (completed 2026-10-30)
 - [x] 24-03: Universal Desktop Copilot UI & Bidirectional "Loco Pilot" Bridge (completed 2026-10-30)
+
+### Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine & Autonomous Uploader
+
+**Goal:** Enable end-to-end outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, and 1-click autonomous Playwright upload into the GST Portal offline utility section without opening the official desktop tool.
+
+**Depends on:** Phase 20, Phase 21  
+**Success Criteria**:
+  1. Full TypeScript GSTR-1 canonical engine (`src/lib/gstr1Engine.ts`) accurately models all outward supply tables (4, 5, 7, 9B, 11, 12, 13, 14, 15).
+  2. Automatic classification accurately routes inter-state unregistered supplies > ₹1,00,000 (post-August 2024 rule) to Table 5 (B2CL) and others to Table 7 (B2CS).
+  3. Table 12 HSN summary is strictly bifurcated into `hsn_b2b` and `hsn_b2c` with mandatory turnover-based digit validation.
+  4. 1-Click JSON generator produces 100% portal-compliant payload identical to `GST Offline Tool.exe` v3.2.4 schema with 19,000 row / 5 MB chunking safeguards.
+  5. Official V2.2 32-sheet Excel workbook and 31 section-wise CSV zip bundle export with zero merged cells (`ws['!merges'] = []`).
+  6. Autonomous Playwright bot logs in, navigates to Returns Dashboard, selects period, opens GSTR-1 `PREPARE OFFLINE`, and attaches the JSON file directly.
+
+**Plans**: 0/3 plans complete
+- [ ] 25-01: GSTR-1 Canonical Data Model, Auto-Classification Engine & Official Offline JSON Generator
+- [ ] 25-02: Official V2.2 32-Sheet Excel Exporter & Section-Wise CSV Suite
+- [ ] 25-03: GSTR-1 Workbench UI, Direct Client Auto-Save & Autonomous Playwright Portal Uploader
+

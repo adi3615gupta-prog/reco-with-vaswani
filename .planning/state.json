@@ -80,12 +80,12 @@
     },
     {
       "number": "18",
-      "name": "Suite 01 Work In Progress & Practice Hub — Module 1.6 Financial Statements Engine (Schedule III Corporate & Non-Corporate ICAI 2022 Suite)",
+      "name": "Suite 01 Work In Progress & Practice Hub - Module 1.6 Financial Statements Engine (Schedule III Corporate & Non-Corporate ICAI 2022 Suite)",
       "status": "complete"
     },
     {
       "number": "19",
-      "name": "GSTR-3B Inward ITC Manual Allocation & Voucher-Level Audit Workbench",
+      "name": "GSTR-3B Inward ITC Manual Allocation & Voucher-Level Audit Workbench (2B Drill-Down, Field Selection & Statutory Track Record)",
       "status": "complete"
     },
     {
@@ -117,7 +117,7 @@
   "next": {
     "command": "/gsd-progress",
     "label": "Show progress",
-    "reason": "Phase 24 complete"
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-10-30T00:50:00.000Z"
+  "updated_at": "2026-10-30T11:48:53.414Z"
 }
