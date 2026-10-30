@@ -438,12 +438,22 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
       // Sanitize multi-turn history to guarantee strict user-model alternation and leading user turn
       const formattedHistory = sanitizeGeminiHistory(history);
 
-      // Fast, resilient model cascade: gemini-3.5-flash responds in <2s, fall back to 3.6-flash / 3.1-flash-lite
+      // Ultra-resilient multi-tier model cascade:
+      // Priority 1: gemini-3.8-flash (latest, ultra-fast <1.5s, active free tier quota)
+      // Priority 2: gemini-3.7-flash
+      // Priority 3: gemini-2.5-flash (rock-solid, high token limits)
+      // Priority 4: gemini-flash-latest
+      // Priority 5: gemini-3.1-flash-lite
+      // Priority 6: gemini-3.5-flash
+      // Priority 7: gemini-3.6-flash
       const modelCandidates = [
+        'gemini-3.8-flash',
+        'gemini-3.7-flash',
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+        'gemini-3.1-flash-lite',
         'gemini-3.5-flash',
         'gemini-3.6-flash',
-        'gemini-3.1-flash-lite-preview',
-        'gemini-3.5-flash-lite',
       ];
       let lastError = null;
       let responseText = null;
@@ -469,9 +479,14 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
         } catch (modelErr) {
           lastError = modelErr;
           console.warn(`[Gemini] Candidate ${candidateModel} failed:`, modelErr.message);
-          // If invalid key or quota, don't try other models — fail fast
-          if (modelErr.message?.includes('API_KEY_INVALID') || modelErr.message?.includes('429')) {
+          // If invalid key, fail fast because all models will fail
+          if (modelErr.message?.includes('API_KEY_INVALID') || modelErr.message?.includes('API key not valid')) {
             throw modelErr;
+          }
+          // If 429 quota reached on this specific model, cascade to next available model instead of aborting
+          if (modelErr.message?.includes('429') || modelErr.message?.includes('RESOURCE_EXHAUSTED')) {
+            console.warn(`[Gemini] Candidate ${candidateModel} quota reached (429). Cascading to next candidate in pool...`);
+            continue;
           }
         }
       }
