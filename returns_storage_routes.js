@@ -9,6 +9,7 @@ import { openPortalLoginHelper } from './gstr2b/autopilot.js';
 import { runReturnsTrackingAutopilot } from './gstr_tracking/autopilot.js';
 import { syncCredentialsWithCentral } from './credentialsVaultSync.js';
 import { runGstr3bUploadAutopilot } from './gstr3b/autopilot.js';
+import { runGstr1UploadAutopilot } from './gstr1/autopilot.js';
 
 /**
  * Enterprise Server Shared Data Storage Routes for GSTR Returns
@@ -2428,6 +2429,148 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
         success: false,
         error: err.message || 'Failed to upload GSTR-3B JSON directly to portal'
       });
+    }
+  });
+
+  // POST /api/returns/upload-1-portal (Direct Autonomous GSTR-1 JSON Upload to Portal)
+  app.post('/api/returns/upload-1-portal', async (req, res) => {
+    try {
+      const { gstin, month, financialYear, portalJson } = req.body;
+      const cleanGstin = String(gstin || '').trim().toUpperCase();
+      const cleanMonth = String(month || 'September').trim();
+      const cleanFy = normalizeTrackingFy(financialYear || '2026-27');
+
+      if (!cleanGstin) {
+        return res.status(400).json({ success: false, error: 'Client GSTIN is required' });
+      }
+
+      // Check if file already exists in client folder
+      let jsonFilePath = null;
+      try {
+        const clientDir = resolveClientDirectory(storageConfig.dataPath, cleanGstin);
+        const fDir = path.join(clientDir, cleanFy);
+        const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
+        const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, '0') : '06';
+        const mDir = path.join(fDir, `${mPrefix} - ${cleanMonth}`);
+        const candidate1 = path.join(mDir, `gstr1_portal_${cleanMonth}.json`);
+        const candidate2 = path.join(mDir, '1 Working', `gstr1_portal_${cleanMonth}.json`);
+        if (fs.existsSync(candidate1)) jsonFilePath = candidate1;
+        else if (fs.existsSync(candidate2)) jsonFilePath = candidate2;
+      } catch (e) {}
+
+      console.log(`[GSTR-1 Portal Upload Route] Initiating upload for ${cleanGstin} (${cleanMonth} ${cleanFy})`);
+      const result = await runGstr1UploadAutopilot({
+        db,
+        gstin: cleanGstin,
+        month: cleanMonth,
+        financialYear: cleanFy,
+        jsonFilePath,
+        jsonContent: portalJson,
+        browserState
+      });
+
+      res.json({
+        success: true,
+        ...result,
+        message: result.message || 'GSTR-1 JSON uploaded directly to GST Portal successfully!'
+      });
+    } catch (err) {
+      console.error('[GSTR-1 Portal Upload Error]:', err);
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to upload GSTR-1 JSON directly to portal'
+      });
+    }
+  });
+
+  // POST /api/returns/save-gstr1-bundle (Silent Auto-Save to <dataPath>/<Client>/<FY>/<Month>/1 Working/)
+  app.post('/api/returns/save-gstr1-bundle', async (req, res) => {
+    try {
+      const {
+        gstin,
+        fy,
+        month,
+        clientName,
+        returnData,
+        portalJson,
+        excelBase64,
+        csvsZipBase64,
+        drc01bBase64,
+        timestamp
+      } = req.body;
+
+      if (!gstin) {
+        return res.status(400).json({ success: false, error: 'gstin is required' });
+      }
+
+      const gstinClean = String(gstin).trim().toUpperCase();
+      const fyClean = String(fy || '2026-27').trim();
+      const firmName = clientName || gstinClean;
+      const safeFirm = sanitizeFolderName(firmName) || gstinClean;
+      const monthClean = String(month || 'September').trim();
+      const dataPath = await getActiveDataPath();
+
+      const mIndex = GSTR3B_MONTHS.indexOf(monthClean);
+      const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, '0') : '06';
+      const monthFolder = `${mPrefix} - ${monthClean}`;
+
+      const clientDir = path.join(dataPath, safeFirm);
+      const fyDir = path.join(clientDir, fyClean);
+      const mDir = path.join(fyDir, monthFolder);
+      const workingDir = path.join(mDir, '1 Working');
+
+      if (!fs.existsSync(workingDir)) {
+        fs.mkdirSync(workingDir, { recursive: true });
+      }
+
+      const savedFiles = [];
+
+      // 1. Save Portal JSON
+      if (portalJson) {
+        const jsonPath = path.join(workingDir, `gstr1_portal_${monthClean}.json`);
+        const jsonStr = typeof portalJson === 'string' ? portalJson : JSON.stringify(portalJson, null, 2);
+        fs.writeFileSync(jsonPath, jsonStr, 'utf8');
+        savedFiles.push(`gstr1_portal_${monthClean}.json`);
+      }
+
+      // 2. Save V2.2 Excel Workbook
+      if (excelBase64) {
+        const excelPath = path.join(workingDir, `gstr1_v22_${monthClean}.xlsx`);
+        fs.writeFileSync(excelPath, Buffer.from(excelBase64, 'base64'));
+        savedFiles.push(`gstr1_v22_${monthClean}.xlsx`);
+      }
+
+      // 3. Save CSVs Zip
+      if (csvsZipBase64) {
+        const zipPath = path.join(workingDir, `gstr1_csvs_${monthClean}.zip`);
+        fs.writeFileSync(zipPath, Buffer.from(csvsZipBase64, 'base64'));
+        savedFiles.push(`gstr1_csvs_${monthClean}.zip`);
+      }
+
+      // 4. Save Raw Return Data
+      if (returnData) {
+        const dataPath = path.join(workingDir, `gstr1_data_${monthClean}.json`);
+        fs.writeFileSync(dataPath, JSON.stringify(returnData, null, 2), 'utf8');
+        savedFiles.push(`gstr1_data_${monthClean}.json`);
+      }
+
+      // 5. Save DRC-01B Comparison
+      if (drc01bBase64) {
+        const drcPath = path.join(workingDir, `gstr1_drc01b_${monthClean}.xlsx`);
+        fs.writeFileSync(drcPath, Buffer.from(drc01bBase64, 'base64'));
+        savedFiles.push(`gstr1_drc01b_${monthClean}.xlsx`);
+      }
+
+      res.json({
+        success: true,
+        message: `GSTR-1 working bundle saved successfully into ${workingDir}`,
+        folderPath: workingDir,
+        monthFolder: mDir,
+        savedFiles
+      });
+    } catch (err) {
+      console.error('[GSTR-1 Save Bundle Error]:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to save GSTR-1 bundle' });
     }
   });
 

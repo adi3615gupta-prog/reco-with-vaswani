@@ -1018,6 +1018,11 @@ export async function fetchVouchers(
   return parseTallyVouchers([resp], config, baseVoucherType, customInputTaxGroups, customOutputTaxGroups, customTaxLedgers, strictMode);
 }
 
+export async function fetchTallyVouchers(options: { company?: string } = {}): Promise<TallyFlatVoucher[]> {
+  const config = options.company ? { host: 'localhost', port: 9000, company: options.company } : DEFAULT_CONFIG;
+  return fetchVouchers('Sales', ['Sales', 'Tax Invoice', 'Credit Note', 'Debit Note'], '', '', config);
+}
+
 export async function parseTallyVouchers(
   xmlStrings: string[],
   config: TallyConnectionConfig = DEFAULT_CONFIG,

@@ -14,6 +14,18 @@ export interface ReconciliationOptions {
   dateTolerance?: number;
   /** UI alias for partyTolerance */
   toleranceDays?: number;
+  /** TaxPower Setting: Include prior FY invoices in matching vs exclude to separate bucket (default: false) */
+  considerPreviousYearInvoices?: boolean;
+  /** TaxPower Setting: Filter mode - document date vs filing period */
+  filterType?: 'documentDate' | 'documentPeriod';
+  /** TaxPower Setting: Detect next period timing differences (default: false) */
+  considerInvoicesNextPeriod?: boolean;
+  /** TaxPower Setting: Exclude invoices where ITC is marked Not Available (default: true) */
+  considerITCNotAvailable?: boolean;
+  /** TaxPower Setting: Matching mode strictly exact vs multi-pass waterfall */
+  documentNoMatchType?: 'exact' | 'fuzzy' | 'coreSerial';
+  /** TaxPower Setting: Include RCM records (default: true) */
+  considerRCMInvoices?: boolean;
   /** Called during processing with (stage, percent 0-100) */
   onProgress?: (stage: string, percent: number) => void;
 }
@@ -47,6 +59,7 @@ export type MatchStatus =
   | 'Not in Books'
   | 'Tax Type Error'
   | 'Prior FY (Excluded)'
+  | 'Timing Difference (Next Period)'
   // Legacy / sub-case statuses (kept for compatibility with existing UI tabs):
   | 'Matched'
   | 'Matched (Rounded)'
@@ -318,11 +331,15 @@ export function reconcile(
   partyToleranceArg: number = 5,
   onProgressArg?: (stage: string, percent: number) => void
 ): ReconciliationResult[] {
-  // --- Resolve overloaded parameters ---
+  // --- Resolve overloaded parameters & TaxPower options ---
   let mode: 'input' | 'output' = 'input';
   let tolerance = toleranceArg;
   let partyTolerance = partyToleranceArg;
   let onProgress = onProgressArg;
+  let considerPreviousYearInvoices = false;
+  let considerITCNotAvailable = true;
+  let documentNoMatchType: 'exact' | 'fuzzy' | 'coreSerial' = 'coreSerial';
+  let considerInvoicesNextPeriod = false;
 
   if (typeof modeOrOptions === 'string') {
     mode = modeOrOptions;
@@ -331,6 +348,10 @@ export function reconcile(
     tolerance = modeOrOptions.tolerance ?? modeOrOptions.dateTolerance ?? toleranceArg;
     partyTolerance = modeOrOptions.partyTolerance ?? modeOrOptions.toleranceDays ?? partyToleranceArg;
     onProgress = modeOrOptions.onProgress ?? onProgressArg;
+    considerPreviousYearInvoices = modeOrOptions.considerPreviousYearInvoices ?? false;
+    considerITCNotAvailable = modeOrOptions.considerITCNotAvailable ?? true;
+    documentNoMatchType = modeOrOptions.documentNoMatchType ?? 'coreSerial';
+    considerInvoicesNextPeriod = modeOrOptions.considerInvoicesNextPeriod ?? false;
   }
 
   const totalPR = prRecords.length;
@@ -366,9 +387,14 @@ export function reconcile(
   const validTwoB: InvoiceRecord[] = [];
   const priorTwoB: InvoiceRecord[] = [];
   for (const t of twoBRecords) {
+    // If user opts to filter out Ineligible/ITC Not Available records (TaxPower GSTR2BConsiderITCNotAvailable)
+    if (!considerITCNotAvailable && (t.filingStatus === 'Ineligible' || (t as any).itcAvailable === false || (t as any).itcavl === 'N')) {
+      continue;
+    }
     const prepared = prepareRecord(t);
     let isPrior = false;
-    if (currentStartYear > 0 && prepared.financialYear && prepared.financialYear !== 'UNKNOWN') {
+    // Only separate into prior FY if considerPreviousYearInvoices is false
+    if (!considerPreviousYearInvoices && currentStartYear > 0 && prepared.financialYear && prepared.financialYear !== 'UNKNOWN') {
       const tStartYear = parseInt(prepared.financialYear.split('-')[0], 10);
       if (tStartYear < currentStartYear) {
         isPrior = true;
@@ -542,8 +568,8 @@ export function reconcile(
       (j) => twoB[j].cleanedInvoice === p.cleanedInvoice
     ) : undefined;
 
-    // 2. Pre-computed core invoice match (avoids repeating regex in loop)
-    if (invoiceMatchIdx === undefined && p.coreInvoice) {
+    // 2. Pre-computed core invoice match (skipped if documentNoMatchType === 'exact')
+    if (documentNoMatchType !== 'exact' && invoiceMatchIdx === undefined && p.coreInvoice) {
       const pCore = p.coreInvoice;
       const coreMatchIdx = availableCandidates.find((j) => twoB[j].coreInvoice !== '' && twoB[j].coreInvoice === pCore);
       if (coreMatchIdx !== undefined) {
@@ -552,7 +578,7 @@ export function reconcile(
       }
     }
 
-    if (invoiceMatchIdx === undefined && p.cleanedInvoice) {
+    if (documentNoMatchType !== 'exact' && invoiceMatchIdx === undefined && p.cleanedInvoice) {
       const fallbackIdx = availableCandidates.find((j) => {
         const t = twoB[j];
         const pInv = p.cleanedInvoice!;
@@ -585,7 +611,7 @@ export function reconcile(
       }
     }
 
-    if (invoiceMatchIdx === undefined) {
+    if (documentNoMatchType !== 'exact' && invoiceMatchIdx === undefined) {
       const fuzzyIdx = availableCandidates.find((j) => {
         const t = twoB[j];
         

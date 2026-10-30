@@ -36,6 +36,7 @@ import CredentialsVaultModal, { VaultClient } from '@/components/CredentialsVaul
 import ImsMasterManager from '@/components/ImsMasterManager';
 import Gstr2bMasterDownloader from '@/components/Gstr2bMasterDownloader';
 import Gstr1MasterDownloader from '@/components/Gstr1MasterDownloader';
+import Gstr1WorkingSheet from '@/components/Gstr1WorkingSheet';
 import ReturnsTrackingMaster from '@/components/ReturnsTrackingMaster';
 import Gstr3bItcAllocationWorkbench, { AllocationSummary, Gstr2bInvoiceRow } from '@/components/Gstr3bItcAllocationWorkbench';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
@@ -62,6 +63,7 @@ export default function ReturnsDashboard({
 }: ReturnsDashboardProps) {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking'>(initialTab || 'working3b');
+  const [gstr1SubMode, setGstr1SubMode] = useState<'workbench' | 'downloader'>('workbench');
   const [selectedMonth, setSelectedMonth] = useState<GSTR3BMonthKey>('April');
   const [matrixDensity, setMatrixDensity] = useState<'compact' | 'relaxed'>('compact');
   const [matrixViewMode, setMatrixViewMode] = useState<'monthly' | 'cumulative'>('monthly');
@@ -5819,14 +5821,62 @@ export default function ReturnsDashboard({
         />
       )}
 
-      {/* TAB 5: GSTR-1 DOWNLOADER (AUTOPILOT) */}
+      {/* TAB 5: GSTR-1 OUTWARD RETURN PREPARATION & 12M AUTOPILOT SUITE */}
       {activeTab === 'gstr1_downloader' && (
-        <Gstr1MasterDownloader
-          selectedMonth={selectedMonth}
-          financialYear={workingData.profile.financialYear || '2025-26'}
-          currentGstin={workingData.profile.gstin}
-          onApplyTo3B={handleApplyGstr1To3B}
-        />
+        <div className="space-y-4">
+          {/* Dual-Mode Subheader Switcher */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-1.5 flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setGstr1SubMode('workbench')}
+                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                  gstr1SubMode === 'workbench'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" /> GSTR-1 Preparation & Filing Workbench
+              </button>
+              <button
+                onClick={() => setGstr1SubMode('downloader')}
+                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                  gstr1SubMode === 'downloader'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <DownloadCloud className="w-3.5 h-3.5" /> Outward 12M Autopilot Downloader & Annual Matrix
+              </button>
+            </div>
+            <div className="text-xs text-slate-400 pr-2">
+              Period: <span className="font-semibold text-white">{selectedMonth} ({workingData.profile.financialYear || '2025-26'})</span>
+            </div>
+          </div>
+
+          {gstr1SubMode === 'workbench' ? (
+            <Gstr1WorkingSheet
+              currentGstin={workingData.profile.gstin}
+              clientName={workingData.profile.firmName}
+              financialYear={workingData.profile.financialYear || '2025-26'}
+              selectedMonth={selectedMonth}
+              gstr3bOutwardTaxable={currentMonthData?.taxOnOutwardSupplies?.taxableValue || 0}
+              gstr3bOutwardTax={
+                (currentMonthData?.taxOnOutwardSupplies?.integratedTax || 0) +
+                (currentMonthData?.taxOnOutwardSupplies?.centralTax || 0) +
+                (currentMonthData?.taxOnOutwardSupplies?.stateUtTax || 0) +
+                (currentMonthData?.taxOnOutwardSupplies?.cess || 0)
+              }
+              onApplyTo3B={handleApplyGstr1To3B}
+            />
+          ) : (
+            <Gstr1MasterDownloader
+              selectedMonth={selectedMonth}
+              financialYear={workingData.profile.financialYear || '2025-26'}
+              currentGstin={workingData.profile.gstin}
+              onApplyTo3B={handleApplyGstr1To3B}
+            />
+          )}
+        </div>
       )}
 
       {/* TAB 6: RETURNS TRACKING & STATUTORY COMPLIANCE MASTER */}
