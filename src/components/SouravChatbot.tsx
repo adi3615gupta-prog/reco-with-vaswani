@@ -367,12 +367,11 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                     className={`inline-block w-2 h-2 rounded-full ${
                       isConfigured ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
                     }`}
-                    title={isConfigured ? 'Gemini API Active' : 'API Key Required'}
+                    title={isConfigured ? 'AI Active' : 'Configuration Required'}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-                  <span>Fast Gemini Flash</span>
-                  <span className="text-amber-400 font-bold" title="Sub-2s Response Pool">⚡</span>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <span>Compliance Co-Pilot</span>
                 </div>
               </div>
             </div>
