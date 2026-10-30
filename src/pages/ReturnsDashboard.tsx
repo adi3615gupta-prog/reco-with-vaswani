@@ -1232,12 +1232,15 @@ export default function ReturnsDashboard({
     setWorkingData(prev => {
       const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
       const cur = cloned.months[selectedMonth];
+      const calculatedTotal = outward.total !== undefined 
+        ? outward.total 
+        : ((outward.igst || 0) + (outward.cgst || 0) + (outward.sgst || 0) + (outward.cess || 0));
       cur.outward.b2b = {
-        taxable: outward.taxable,
-        igst: outward.igst,
-        cgst: outward.cgst,
-        sgst: outward.sgst,
-        total: outward.total
+        taxable: outward.taxable || 0,
+        igst: outward.igst || 0,
+        cgst: outward.cgst || 0,
+        sgst: outward.sgst || 0,
+        total: calculatedTotal
       };
       return recalculateAnnualWorking(cloned);
     });
@@ -5824,9 +5827,9 @@ export default function ReturnsDashboard({
       {/* TAB 5: GSTR-1 OUTWARD RETURN PREPARATION & 12M AUTOPILOT SUITE */}
       {activeTab === 'gstr1_downloader' && (
         <div className="space-y-4">
-          {/* Dual-Mode Subheader Switcher */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-1.5 flex items-center justify-between">
-            <div className="flex items-center gap-1">
+          {/* Dual-Mode Subheader Switcher + Interactive Month Selector */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setGstr1SubMode('workbench')}
                 className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
@@ -5848,16 +5851,29 @@ export default function ReturnsDashboard({
                 <DownloadCloud className="w-3.5 h-3.5" /> Outward 12M Autopilot Downloader & Annual Matrix
               </button>
             </div>
-            <div className="text-xs text-slate-400 pr-2">
-              Period: <span className="font-semibold text-white">{selectedMonth} ({workingData.profile.financialYear || '2025-26'})</span>
+
+            {/* Interactive Return Period Selector for GSTR-1 */}
+            <div className="flex items-center gap-2 pr-1">
+              <span className="text-xs text-slate-400 font-medium">Return Period:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value as GSTR3BMonthKey)}
+                className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:border-blue-500 cursor-pointer"
+              >
+                {GSTR3B_MONTHS.map(m => (
+                  <option key={m} value={m}>
+                    {m} ({workingData?.profile?.financialYear || '2025-26'})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           {gstr1SubMode === 'workbench' ? (
             <Gstr1WorkingSheet
-              currentGstin={workingData.profile.gstin}
-              clientName={workingData.profile.firmName}
-              financialYear={workingData.profile.financialYear || '2025-26'}
+              currentGstin={workingData?.profile?.gstin || ''}
+              clientName={workingData?.profile?.firmName || ''}
+              financialYear={workingData?.profile?.financialYear || '2025-26'}
               selectedMonth={selectedMonth}
               gstr3bOutwardTaxable={currentMonthData?.taxOnOutwardSupplies?.taxableValue || 0}
               gstr3bOutwardTax={
@@ -5871,8 +5887,8 @@ export default function ReturnsDashboard({
           ) : (
             <Gstr1MasterDownloader
               selectedMonth={selectedMonth}
-              financialYear={workingData.profile.financialYear || '2025-26'}
-              currentGstin={workingData.profile.gstin}
+              financialYear={workingData?.profile?.financialYear || '2025-26'}
+              currentGstin={workingData?.profile?.gstin || ''}
               onApplyTo3B={handleApplyGstr1To3B}
             />
           )}

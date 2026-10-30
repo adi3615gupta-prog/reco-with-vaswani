@@ -30,7 +30,7 @@ interface Gstr1WorkingSheetProps {
   selectedMonth: string;
   gstr3bOutwardTaxable?: number;
   gstr3bOutwardTax?: number;
-  onApplyTo3B?: (summary: { taxable: number; igst: number; cgst: number; sgst: number; cess: number }) => void;
+  onApplyTo3B?: (summary: { taxable: number; igst: number; cgst: number; sgst: number; cess: number; total: number }) => void;
 }
 
 export default function Gstr1WorkingSheet({
@@ -432,7 +432,8 @@ export default function Gstr1WorkingSheet({
                 igst: returnData.summary?.totalIgst || 0,
                 cgst: returnData.summary?.totalCgst || 0,
                 sgst: returnData.summary?.totalSgst || 0,
-                cess: returnData.summary?.totalCess || 0
+                cess: returnData.summary?.totalCess || 0,
+                total: returnData.summary?.totalTax || 0
               })}
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow"
             >
@@ -748,6 +749,92 @@ export default function Gstr1WorkingSheet({
                       <td className="p-2.5 text-right text-slate-400">₹{(item.csamt || 0).toLocaleString('en-IN')}</td>
                     </tr>
                   ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* SECTION 9B: CDNR (Registered) & CDNUR (Unregistered) */}
+        {activeSection === 'cdnr' && (
+          <div className="overflow-x-auto max-h-[500px]">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-900/90 sticky top-0 text-slate-400 uppercase text-[10px] font-semibold border-b border-slate-800 tracking-wider">
+                <tr>
+                  <th className="p-2.5">GSTIN / Recipient</th>
+                  <th className="p-2.5">Receiver Name</th>
+                  <th className="p-2.5 text-center">Type</th>
+                  <th className="p-2.5">Note No</th>
+                  <th className="p-2.5">Note Date</th>
+                  <th className="p-2.5 text-right">Note Value (₹)</th>
+                  <th className="p-2.5 text-center">POS</th>
+                  <th className="p-2.5 text-center">Rate</th>
+                  <th className="p-2.5 text-right">Taxable (₹)</th>
+                  <th className="p-2.5 text-right">IGST (₹)</th>
+                  <th className="p-2.5 text-right">CGST (₹)</th>
+                  <th className="p-2.5 text-right">SGST (₹)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900 text-slate-300 font-mono">
+                {((returnData.cdnr?.length || 0) === 0 && (returnData.cdnur?.length || 0) === 0) ? (
+                  <tr>
+                    <td colSpan={12} className="text-center py-10 text-slate-500 font-sans">
+                      No Credit or Debit notes found for this period.
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {returnData.cdnr?.flatMap(g =>
+                      g.nt.flatMap(n =>
+                        n.itms.map((itm, itmIdx) => (
+                          <tr key={`cdnr-${g.ctin}-${n.nt_num}-${itmIdx}`} className="hover:bg-slate-900/40">
+                            <td className="p-2.5 text-blue-400 font-semibold">{g.ctin}</td>
+                            <td className="p-2.5 font-sans truncate max-w-[180px]">{n.buyerName || '-'}</td>
+                            <td className="p-2.5 text-center">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                n.ntty === 'C' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              }`}>
+                                {n.ntty === 'C' ? 'Credit Note' : 'Debit Note'}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-white font-bold">{n.nt_num}</td>
+                            <td className="p-2.5">{n.nt_dt}</td>
+                            <td className="p-2.5 text-right">₹{n.val.toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 text-center">{n.pos}</td>
+                            <td className="p-2.5 text-center">{itm.itm_det.rt}%</td>
+                            <td className="p-2.5 text-right text-slate-200">₹{itm.itm_det.txval.toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 text-right text-blue-400">₹{(itm.itm_det.iamt || 0).toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 text-right text-emerald-400">₹{(itm.itm_det.camt || 0).toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 text-right text-emerald-400">₹{(itm.itm_det.samt || 0).toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))
+                      )
+                    )}
+                    {returnData.cdnur?.flatMap(n =>
+                      n.itms.map((itm, itmIdx) => (
+                        <tr key={`cdnur-${n.nt_num}-${itmIdx}`} className="hover:bg-slate-900/40">
+                          <td className="p-2.5 text-amber-400 font-semibold">URP ({n.typ})</td>
+                          <td className="p-2.5 font-sans truncate max-w-[180px]">{n.buyerName || 'Unregistered'}</td>
+                          <td className="p-2.5 text-center">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              n.ntty === 'C' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}>
+                              {n.ntty === 'C' ? 'Credit Note' : 'Debit Note'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-white font-bold">{n.nt_num}</td>
+                          <td className="p-2.5">{n.nt_dt}</td>
+                          <td className="p-2.5 text-right">₹{n.val.toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-center">{n.pos}</td>
+                          <td className="p-2.5 text-center">{itm.itm_det.rt}%</td>
+                          <td className="p-2.5 text-right text-slate-200">₹{itm.itm_det.txval.toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right text-blue-400">₹{(itm.itm_det.iamt || 0).toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right text-emerald-400">₹{(itm.itm_det.camt || 0).toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right text-emerald-400">₹{(itm.itm_det.samt || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
