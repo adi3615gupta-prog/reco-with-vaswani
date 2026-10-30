@@ -2386,7 +2386,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const { gstin, month, financialYear, portalJson } = req.body;
       const cleanGstin = String(gstin || '').trim().toUpperCase();
       const cleanMonth = String(month || 'September').trim();
-      const cleanFy = normalizeFy(financialYear || '2026-27');
+      const cleanFy = normalizeTrackingFy(financialYear || '2026-27');
 
       if (!cleanGstin) {
         return res.status(400).json({ success: false, error: 'Client GSTIN is required' });
