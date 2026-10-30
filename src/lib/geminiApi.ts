@@ -17,14 +17,23 @@ export interface GeminiStatus {
   origin?: 'cloud_office' | 'cloud_global' | 'local_manual' | 'env' | string | null;
 }
 
+export interface ChatMetaResponse {
+  reply: string;
+  fastPath?: boolean;
+  matchedClients?: Array<{ gstin: string; name: string }>;
+  target?: string;
+  fy?: string;
+  month?: string;
+}
+
 /**
- * Send user message and conversation context to the backend Gemini chat API.
+ * Send user message with full metadata return (including instant fastPath flags).
  */
-export async function sendChatMessage(
+export async function sendChatMessageWithMeta(
   message: string,
   context: GeminiContext = {},
   history: ChatMessage[] = []
-): Promise<string> {
+): Promise<ChatMetaResponse> {
   const res = await fetch(`${getApiBase()}/api/gemini/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -40,7 +49,26 @@ export async function sendChatMessage(
     throw err;
   }
 
-  return (data.reply as string) || '';
+  return {
+    reply: (data.reply as string) || '',
+    fastPath: Boolean(data.fastPath),
+    matchedClients: data.matchedClients,
+    target: data.target,
+    fy: data.fy,
+    month: data.month,
+  };
+}
+
+/**
+ * Send user message and conversation context to the backend Gemini chat API.
+ */
+export async function sendChatMessage(
+  message: string,
+  context: GeminiContext = {},
+  history: ChatMessage[] = []
+): Promise<string> {
+  const meta = await sendChatMessageWithMeta(message, context, history);
+  return meta.reply;
 }
 
 /**

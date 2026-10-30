@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   sendChatMessage,
+  sendChatMessageWithMeta,
   getGeminiStatus,
   extractActionTags,
   ACTION_NAV_TARGETS,
@@ -202,8 +203,17 @@ export default function CopilotDesktop() {
     setLoading(true);
 
     try {
-      const reply = await sendChatMessage(textToSend, context, messages);
+      const { reply, fastPath } = await sendChatMessageWithMeta(textToSend, context, messages);
       setMessages((prev) => [...prev, { role: 'model', text: reply }]);
+
+      // If instant navigation command detected, trigger desktop app navigation immediately!
+      if (fastPath) {
+        const { actions } = extractActionTags(reply);
+        if (actions.length === 1) {
+          const act = actions[0];
+          handleActionClick(act.target, act.gstin, act.fy, act.month);
+        }
+      }
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,

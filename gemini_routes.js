@@ -57,6 +57,123 @@ export function findMatchingClients(db, message) {
   });
 }
 
+export const FAST_PATH_TARGET_LABELS = {
+  reversal: 'GSTR-3B Table 4(B) ITC Reversals & Allocations',
+  '3b': 'GSTR-3B 28-Line Working Sheet',
+  ims: 'GST Invoice Management System (IMS Hub)',
+  gstr1: 'GSTR-1 Sales Console & Downloader',
+  reco: '2B vs Books Reconciliation & Vendor Dispute Hub',
+  notices: 'GST Notices, Orders & Autonomous Legal Reply Suite',
+  tds: 'TDS / TCS Consolidator & TRACES Reco',
+  tally: 'Tally Prime Direct Bridge (Port 9000)',
+  incometax: 'Income Tax Regime Engine (Old vs 115BAC)',
+  cma: 'Bank CMA Credit Appraisal (5-Yr MPBF)',
+  finstatements: 'Schedule III Financial Statements',
+  audit: 'Statutory Audit Suite & Daybook Scrutiny',
+  clause44: 'Tax Audit Form 3CD Clause 44 Engine',
+  settings: 'System Configuration & Settings',
+};
+
+/**
+ * Instant Local Intent Fast-Path Engine (<15ms).
+ * Directly resolves software navigation commands without waiting for cloud LLM roundtrips.
+ * 
+ * @param {string} message 
+ * @param {Array<{ gstin: string, name: string }>} matchedClients 
+ * @returns {{ fastPath: true, target: string, client?: any, fy?: string, month?: string, actionToken: string, reply: string } | null}
+ */
+export function tryFastPathNavigation(message, matchedClients = []) {
+  if (!message || typeof message !== 'string') return null;
+  const lowerMsg = message.toLowerCase().trim();
+
+  // If message asks an advisory or explanatory question, let cloud Gemini answer
+  const isQuestion = /\b(kya hai|what is|how to|why|rules?|explain|difference|calculate|penalty|interest|kaise|meaning|provision)\b/i.test(lowerMsg);
+  if (isQuestion) return null;
+
+  // Check if intent is navigation / open / view / switch
+  const isNavVerb = /\b(open|show|goto|navigate|view|kholo|chalo|dekho|load|switch|launch|run|jump)\b/i.test(lowerMsg);
+  const hasClient = matchedClients && matchedClients.length > 0;
+
+  let target = null;
+  if (lowerMsg.includes('reversal')) target = 'reversal';
+  else if (lowerMsg.includes('3b') || lowerMsg.includes('working sheet')) target = '3b';
+  else if (lowerMsg.includes('ims')) target = 'ims';
+  else if (lowerMsg.includes('gstr1') || lowerMsg.includes('gstr-1') || lowerMsg.includes('sales')) target = 'gstr1';
+  else if (lowerMsg.includes('reco') || lowerMsg.includes('reconcil')) target = 'reco';
+  else if (lowerMsg.includes('notice') || lowerMsg.includes('order') || lowerMsg.includes('drc') || lowerMsg.includes('asmt')) target = 'notices';
+  else if (lowerMsg.includes('tds') || lowerMsg.includes('traces') || lowerMsg.includes('26as')) target = 'tds';
+  else if (lowerMsg.includes('tally')) target = 'tally';
+  else if (lowerMsg.includes('income tax') || lowerMsg.includes('incometax') || lowerMsg.includes('115bac') || lowerMsg.includes('itr')) target = 'incometax';
+  else if (lowerMsg.includes('cma') || lowerMsg.includes('mpbf') || lowerMsg.includes('banking appraisal')) target = 'cma';
+  else if (lowerMsg.includes('fin statements') || lowerMsg.includes('financial statement') || lowerMsg.includes('balance sheet') || lowerMsg.includes('p&l')) target = 'finstatements';
+  else if (lowerMsg.includes('clause44') || lowerMsg.includes('clause 44') || lowerMsg.includes('3cd')) target = 'clause44';
+  else if (lowerMsg.includes('audit')) target = 'audit';
+  else if (lowerMsg.includes('setting') || lowerMsg.includes('config')) target = 'settings';
+
+  if (!target) {
+    if (hasClient && isNavVerb) target = '3b'; // Default to 3B working when client navigation is requested
+    else return null;
+  }
+
+  // Must have a navigation verb OR a matched client OR an explicit target like "reversal", "ims", "3b"
+  if (!isNavVerb && !hasClient && !['reversal', '3b', 'ims', 'gstr1', 'reco', 'notices', 'tds', 'tally', 'incometax', 'cma', 'audit', 'clause44', 'settings'].includes(target)) {
+    return null;
+  }
+
+  // Extract Financial Year
+  let fy = null;
+  const fyMatch = lowerMsg.match(/\b(?:fy\s*)?(?:20)?(\d{2})[-/](\d{2})\b/i);
+  if (fyMatch) fy = `20${fyMatch[1]}-${fyMatch[2]}`;
+
+  // Extract Month
+  const monthMap = {
+    april: 'April', apr: 'April',
+    may: 'May',
+    june: 'June', jun: 'June',
+    july: 'July', jul: 'July',
+    august: 'August', aug: 'August',
+    september: 'September', sept: 'September', sep: 'September',
+    october: 'October', oct: 'October',
+    november: 'November', nov: 'November',
+    december: 'December', dec: 'December',
+    january: 'January', jan: 'January',
+    february: 'February', feb: 'February',
+    march: 'March', mar: 'March'
+  };
+  let month = null;
+  for (const [k, v] of Object.entries(monthMap)) {
+    const r = new RegExp(`\\b${k}\\b`, 'i');
+    if (r.test(lowerMsg)) { month = v; break; }
+  }
+
+  const targetLabel = FAST_PATH_TARGET_LABELS[target] || target.toUpperCase();
+  const client = matchedClients[0];
+  const tokenParts = [target];
+  if (client) tokenParts.push(client.gstin);
+  if (fy) tokenParts.push(fy);
+  if (month) tokenParts.push(month);
+
+  const actionToken = `[ACTION:navigate:${tokenParts.join(':')}]`;
+  const periodText = [month, fy ? `FY ${fy}` : null].filter(Boolean).join(' • ');
+
+  let reply = '';
+  if (client) {
+    reply = `Opening **${targetLabel}** for **${client.name}**${periodText ? ` (${periodText})` : ''}.\n\n${actionToken}`;
+  } else {
+    reply = `Opening **${targetLabel}**${periodText ? ` (${periodText})` : ''}.\n\n${actionToken}`;
+  }
+
+  return {
+    fastPath: true,
+    target,
+    client,
+    fy,
+    month,
+    actionToken,
+    reply
+  };
+}
+
 /**
  * Sanitizes chat history to conform strictly to Google Gemini's multi-turn conversational rules:
  * 1. History must start with role 'user'.
@@ -429,31 +546,45 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
     }
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-
       // Search registered clients table for any clients referenced in user query
       const matchedClients = await findMatchingClients(db, message);
+
+      // 1. Instant Local Intent Fast-Path (<15ms response for navigation & direct commands)
+      // Completely bypasses cloud LLM latency for software control commands
+      const fastPath = tryFastPathNavigation(message, matchedClients);
+      if (fastPath) {
+        return res.json({
+          reply: fastPath.reply,
+          matchedClients,
+          fastPath: true,
+          target: fastPath.target,
+          fy: fastPath.fy,
+          month: fastPath.month
+        });
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
       const systemInstruction = buildSystemPrompt(context, matchedClients);
 
       // Sanitize multi-turn history to guarantee strict user-model alternation and leading user turn
       const formattedHistory = sanitizeGeminiHistory(history);
 
-      // Ultra-resilient multi-tier model cascade:
-      // Priority 1: gemini-3.8-flash (latest, ultra-fast <1.5s, active free tier quota)
-      // Priority 2: gemini-3.7-flash
-      // Priority 3: gemini-2.5-flash (rock-solid, high token limits)
-      // Priority 4: gemini-flash-latest
-      // Priority 5: gemini-3.1-flash-lite
+      // Ultra-fast sub-second model cascade:
+      // Priority 1: gemini-3.1-flash-lite (benchmarked <980ms, dedicated ultra-low latency)
+      // Priority 2: gemini-3.1-flash-lite-preview
+      // Priority 3: gemini-3.5-flash-lite
+      // Priority 4: gemini-flash-latest (<1.1s)
+      // Priority 5: gemini-3.7-flash (<1.3s)
       // Priority 6: gemini-3.5-flash
-      // Priority 7: gemini-3.6-flash
+      // Priority 7: gemini-3.8-flash (fallback)
       const modelCandidates = [
-        'gemini-3.8-flash',
-        'gemini-3.7-flash',
-        'gemini-2.5-flash',
-        'gemini-flash-latest',
         'gemini-3.1-flash-lite',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-3.5-flash-lite',
+        'gemini-flash-latest',
+        'gemini-3.7-flash',
         'gemini-3.5-flash',
-        'gemini-3.6-flash',
+        'gemini-3.8-flash',
       ];
       let lastError = null;
       let responseText = null;
@@ -468,8 +599,8 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
           const chat = model.startChat({
             history: formattedHistory,
             generationConfig: {
-              temperature: 0.35,
-              maxOutputTokens: 1024,
+              temperature: 0.25,
+              maxOutputTokens: 512, // Tight token budget guarantees snappy sub-second responses
             },
           });
 

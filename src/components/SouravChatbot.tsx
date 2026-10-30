@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import {
   sendChatMessage,
+  sendChatMessageWithMeta,
   getGeminiStatus,
   saveGeminiApiKey,
   syncGeminiFromCloud,
@@ -198,8 +199,17 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
     };
 
     try {
-      const replyText = await sendChatMessage(prompt, context, messages);
-      setMessages([...updatedHistory, { role: 'model', text: replyText }]);
+      const { reply, fastPath } = await sendChatMessageWithMeta(prompt, context, messages);
+      setMessages([...updatedHistory, { role: 'model', text: reply }]);
+
+      // If instant navigation command detected and matched single target, auto-execute navigation immediately!
+      if (fastPath) {
+        const { actions } = extractActionTags(reply);
+        if (actions.length === 1) {
+          const act = actions[0];
+          handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month);
+        }
+      }
     } catch (err: any) {
       console.error('[SouravChatbot Error]:', err);
       let errorResponse = 'An error occurred while connecting to Sourav. Please check your internet or API key.';
