@@ -248,8 +248,9 @@ export function AppShell({
   useEffect(() => {
     const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
     if (electronAPI?.onAppNavigate) {
-      const cleanup = electronAPI.onAppNavigate(async ({ target, gstin }: { target: string; gstin?: string }) => {
+      const cleanup = electronAPI.onAppNavigate(async ({ target, gstin, fy, month }: { target: string; gstin?: string; fy?: string; month?: string }) => {
         const targetMeta = ACTION_NAV_TARGETS[target] || { route: target };
+        let matchedClientName: string | undefined;
 
         if (gstin) {
           try {
@@ -257,8 +258,11 @@ export function AppShell({
             if (res.ok) {
               const clients = await res.json();
               const matched = clients.find((c: any) => c.gstin?.toUpperCase() === gstin.toUpperCase());
-              if (matched && (matched.trade_name || matched.legal_name) && setCompanyName) {
-                setCompanyName(matched.trade_name || matched.legal_name);
+              if (matched && (matched.trade_name || matched.legal_name)) {
+                matchedClientName = matched.trade_name || matched.legal_name;
+                if (setCompanyName) {
+                  setCompanyName(matchedClientName);
+                }
               }
             }
           } catch (e) {
@@ -273,6 +277,36 @@ export function AppShell({
           else if (targetMeta.tabId === 'gstr1') setReturnsTab('gstr1_downloader');
           else if (targetMeta.tabId === '2b' || targetMeta.tabId === 'gstr2b') setReturnsTab('gstr2b_downloader');
           else setReturnsTab(targetMeta.tabId as any);
+        }
+
+        // Forward to mounted modules via global events
+        window.dispatchEvent(
+          new CustomEvent('app-navigate', {
+            detail: {
+              route: targetMeta.route,
+              tabId: targetMeta.tabId,
+              target,
+              gstin,
+              clientName: matchedClientName,
+              fy,
+              month,
+            },
+          })
+        );
+
+        if (gstin || fy || month) {
+          window.dispatchEvent(
+            new CustomEvent('gstr3b-select-client', {
+              detail: {
+                gstin,
+                clientName: matchedClientName,
+                tab: targetMeta.tabId === 'gstr3b' ? 'working3b' : targetMeta.tabId,
+                target,
+                fy,
+                month,
+              },
+            })
+          );
         }
       });
       return cleanup;

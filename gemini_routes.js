@@ -17,7 +17,10 @@ export function findMatchingClients(db, message) {
       'the', 'and', 'for', 'open', 'show', 'working', 'sheet', 'reco', 'return',
       'returns', 'please', 'with', 'what', 'gstr', 'gstr1', 'gstr3b', 'gstr2b',
       'tally', 'from', 'audit', 'data', 'file', 'portal', 'pvt', 'ltd', 'private',
-      'limited', 'help', 'check', 'view', 'goto', 'take', 'want', 'kaise', 'karo'
+      'limited', 'help', 'check', 'view', 'goto', 'take', 'want', 'kaise', 'karo',
+      'reversal', 'reversals', 'month', 'year', 'fy', 'table', 'itc', 'rule',
+      'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+      'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
     ]);
 
     const tokens = message
@@ -525,10 +528,11 @@ You possess authoritative, top-notch mastery of Indian taxation laws (CGST/SGST/
 ---
 
 ### Software Navigation & Interactive Action Tokens
-Include 1-click interactive action tokens whenever advising the user to go to a feature, or when the user asks you to open a screen or client:
+Include 1-click interactive action tokens whenever advising the user to go to a feature, or when the user asks you to open a screen, client, financial year, or month:
 - [ACTION:navigate:reco] — 2B vs Books Reconciliation & Vendor Dispute Hub
 - [ACTION:navigate:ims] — GST Invoice Management System (IMS Hub)
 - [ACTION:navigate:3b] — GSTR-3B 28-Line Working Sheet & 12M FY Matrix
+- [ACTION:navigate:reversal] — GSTR-3B Table 4(B) ITC Reversals & 2B Inward Allocation Workbench
 - [ACTION:navigate:gstr1] — GSTR-1 Sales Downloader & Outward Matrix
 - [ACTION:navigate:notices] — GST Notices, Orders & Autonomous Legal Reply Suite
 - [ACTION:navigate:tds] — TDS / TCS Consolidator & TRACES 26AS Reco
@@ -540,11 +544,19 @@ Include 1-click interactive action tokens whenever advising the user to go to a 
 - [ACTION:navigate:clause44] — Tax Audit Form 3CD Clause 44 Engine
 - [ACTION:navigate:settings] — System Configuration & Cloud License Settings
 
-#### Client-Specific Auto-Switching Syntax:
-When a query names a specific client (e.g. "open 3b working of siddha", "reconcile dyp infra", "ims of deep gas"):
-1. Check the "Matched Registered Clients" list below.
-2. Append the client's GSTIN: [ACTION:navigate:<target>:<gstin>].
-   - Single match: Output [ACTION:navigate:3b:27AAQCS1984G1ZT] and state you are opening the requested client.
+#### Client, Financial Year & Month Deep-Linking Syntax:
+When a query names a specific client, financial year, and/or month (e.g. "open reversal of dyp fy 26-27 month sept", "open 3b working of siddha", "gstr1 of dyp 2024-25 october"):
+1. Match the client from the "Matched Registered Clients" list below (e.g. DYP -> 27AAGCD4105L1ZO).
+2. Normalize the Financial Year if specified (e.g. "26-27" -> "2026-27", "24-25" -> "2024-25").
+3. Normalize the Month if specified (e.g. "sept" -> "September", "oct" -> "October", full capitalized month name: April, May, June, July, August, September, October, November, December, January, February, March).
+4. Format the action token as:
+   [ACTION:navigate:<target>:<gstin>:<fy>:<month>]
+   - Example 1 (Client + FY + Month + Reversals):
+     [ACTION:navigate:reversal:27AAGCD4105L1ZO:2026-27:September]
+   - Example 2 (Client only):
+     [ACTION:navigate:3b:27AAQCS1984G1ZT]
+   - Example 3 (Client + FY):
+     [ACTION:navigate:3b:27AAQCS1984G1ZT:2025-26]
    - Multiple matches: Present action buttons for each matched entity so the user can select with 1 click.
 ${matchedClientsBlock}
 ---

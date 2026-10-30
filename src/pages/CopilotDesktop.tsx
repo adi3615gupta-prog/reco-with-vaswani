@@ -217,9 +217,9 @@ export default function CopilotDesktop() {
     }
   };
 
-  const handleActionClick = (target: string, gstin?: string) => {
+  const handleActionClick = (target: string, gstin?: string, fy?: string, month?: string) => {
     if (electronAPI?.navigateApp) {
-      electronAPI.navigateApp({ target, gstin });
+      electronAPI.navigateApp({ target, gstin, fy, month });
     }
   };
 
@@ -334,10 +334,10 @@ export default function CopilotDesktop() {
                         return (
                           <button
                             key={aIdx}
-                            onClick={() => handleActionClick(act.target, act.gstin)}
+                            onClick={() => handleActionClick(act.target, act.gstin, act.fy, act.month)}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-medium transition-all shadow hover:shadow-amber-500/10 active:scale-95 cursor-pointer"
                           >
-                            <span>Open {targetMeta.label}</span>
+                            <span>{act.label}</span>
                             <ArrowRight className="w-3 h-3 text-amber-400" />
                           </button>
                         );

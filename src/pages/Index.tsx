@@ -209,7 +209,13 @@ export default function Index() {
 
   const [activeCategoryCard, setActiveCategoryCard] = useState<'returns' | 'wip' | 'reco' | 'collector' | 'audit' | 'tax' | 'cma-bank' | null>(null);
   const [returnsInitialTab, setReturnsInitialTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking'>('working3b');
-  const [returnsTargetClient, setReturnsTargetClient] = useState<{ gstin?: string; clientName?: string } | null>(null);
+  const [returnsTargetClient, setReturnsTargetClient] = useState<{
+    gstin?: string;
+    clientName?: string;
+    fy?: string;
+    month?: string;
+    action?: string;
+  } | null>(null);
 
     const [showAdmin, setShowAdmin] = useState(false);
     const [networkDiagnostics, setNetworkDiagnostics] = useState({ latency: 0, status: 'Online' });
@@ -433,7 +439,7 @@ export default function Index() {
     // Global listener for unified module and client navigation (e.g. from Sourav AI Assistant)
     useEffect(() => {
       const handleAppNavigate = (e: any) => {
-        const { route, tabId, gstin, clientName } = e.detail || {};
+        const { route, tabId, target, gstin, clientName, fy, month } = e.detail || {};
         if (clientName) {
           setCompanyName(clientName);
           try {
@@ -441,11 +447,23 @@ export default function Index() {
             localStorage.setItem('np_company_name', clientName);
           } catch {}
         }
-        if (gstin) {
-          try {
-            localStorage.setItem('gstr3b_active_client_gstin', gstin);
-          } catch {}
-          setReturnsTargetClient({ gstin, clientName });
+        if (gstin || fy || month || target) {
+          if (gstin) {
+            try {
+              localStorage.setItem('gstr3b_active_client_gstin', gstin);
+            } catch {}
+          }
+          if (fy) {
+            try {
+              localStorage.setItem('gstr3b_active_fy', fy);
+            } catch {}
+          }
+          if (month) {
+            try {
+              localStorage.setItem('gstr3b_active_month', month);
+            } catch {}
+          }
+          setReturnsTargetClient({ gstin, clientName, fy, month, action: target });
         }
         if (route) {
           setAppRoute(route as any);
@@ -3144,6 +3162,9 @@ export default function Index() {
                 initialTab={returnsInitialTab}
                 targetClientGstin={returnsTargetClient?.gstin}
                 targetClientName={returnsTargetClient?.clientName}
+                targetFy={returnsTargetClient?.fy}
+                targetMonth={returnsTargetClient?.month}
+                initialAction={returnsTargetClient?.action}
               />
             )}
 

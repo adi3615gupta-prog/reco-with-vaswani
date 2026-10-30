@@ -272,7 +272,13 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
     }
   };
 
-  const handleActionClick = (target: string, gstin?: string, clientName?: string) => {
+  const handleActionClick = (
+    target: string,
+    gstin?: string,
+    clientName?: string,
+    fy?: string,
+    month?: string
+  ) => {
     const targetInfo = ACTION_NAV_TARGETS[target];
     if (!targetInfo) return;
 
@@ -290,6 +296,12 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       localStorage.setItem('np_reco_company', clientName);
       localStorage.setItem('np_company_name', clientName);
     }
+    if (fy) {
+      localStorage.setItem('gstr3b_active_fy', fy);
+    }
+    if (month) {
+      localStorage.setItem('gstr3b_active_month', month);
+    }
 
     if (onNavigate) {
       onNavigate(targetInfo.route || 'reco', targetInfo.tabId, { gstin, clientName });
@@ -301,19 +313,25 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
         detail: {
           route: targetInfo.route,
           tabId: targetInfo.tabId,
+          target,
           gstin,
           clientName,
+          fy,
+          month,
         },
       })
     );
 
-    if (gstin) {
+    if (gstin || fy || month) {
       window.dispatchEvent(
         new CustomEvent('gstr3b-select-client', {
           detail: {
             gstin,
             clientName,
             tab: targetInfo.tabId === 'gstr3b' ? 'working3b' : targetInfo.tabId,
+            target,
+            fy,
+            month,
           },
         })
       );
@@ -321,7 +339,8 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
 
     // Auto-minimize/close drawer so the user can immediately interact with the navigated module
     setIsOpen(false);
-    toast.success(`Opening ${targetInfo.label}${clientName || gstin ? ` • ${clientName || gstin}` : ''}`);
+    const extraDetails = [clientName || gstin, month, fy].filter(Boolean).join(' • ');
+    toast.success(`Opening ${targetInfo.label}${extraDetails ? ` • ${extraDetails}` : ''}`);
   };
 
   const handleClearChat = () => {
@@ -563,7 +582,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                         {actions.map((act, aIdx) => (
                           <button
                             key={aIdx}
-                            onClick={() => handleActionClick(act.target, act.gstin, act.clientName)}
+                            onClick={() => handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-all cursor-pointer hover:border-amber-400 shadow-sm"
                           >
                             <span>{act.label}</span>

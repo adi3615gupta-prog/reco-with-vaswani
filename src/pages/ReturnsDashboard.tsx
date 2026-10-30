@@ -39,12 +39,16 @@ import Gstr1MasterDownloader from '@/components/Gstr1MasterDownloader';
 import ReturnsTrackingMaster from '@/components/ReturnsTrackingMaster';
 import Gstr3bItcAllocationWorkbench, { AllocationSummary, Gstr2bInvoiceRow } from '@/components/Gstr3bItcAllocationWorkbench';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
+import { normalizeActionMonth } from '@/lib/geminiApi';
 
 interface ReturnsDashboardProps {
   onBack: () => void;
   initialTab?: 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking';
   targetClientGstin?: string;
   targetClientName?: string;
+  targetFy?: string;
+  targetMonth?: string;
+  initialAction?: string;
 }
 
 export default function ReturnsDashboard({
@@ -52,6 +56,9 @@ export default function ReturnsDashboard({
   initialTab,
   targetClientGstin,
   targetClientName,
+  targetFy,
+  targetMonth,
+  initialAction,
 }: ReturnsDashboardProps) {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking'>(initialTab || 'working3b');
@@ -760,11 +767,12 @@ export default function ReturnsDashboard({
 
   const handleSelectClientFromHub = async (
     client: { gstin: string; trade_name?: string; legal_name?: string; address?: string },
-    showNotification = true
+    showNotification = true,
+    explicitFy?: string
   ) => {
     const gstin = client.gstin.trim().toUpperCase();
     const firmName = client.trade_name || client.legal_name || gstin;
-    const currentFy = normalizeFy(workingData.profile.financialYear || '2025-26');
+    const currentFy = normalizeFy(explicitFy || workingData.profile.financialYear || '2025-26');
 
     // 1. Immediately close dropdown and update active client in storage & state (Instant UI update!)
     setIsClientDropdownOpen(false);
@@ -842,27 +850,49 @@ export default function ReturnsDashboard({
     });
   };
 
-  // Synchronize when targetClientGstin is passed from external caller / Sourav AI
+  // Synchronize when targetClientGstin, targetFy, targetMonth, or initialAction is passed from external caller / Sourav AI
   useEffect(() => {
-    if (targetClientGstin) {
-      const gstinClean = targetClientGstin.trim().toUpperCase();
-      const existing = (clientsHub.length > 0 ? clientsHub : vaultClients).find(
-        (c: any) => (c.gstin || '').toUpperCase() === gstinClean
-      );
-      const clientObj = existing || {
-        id: gstinClean,
-        gstin: gstinClean,
-        trade_name: targetClientName || gstinClean,
-        legal_name: targetClientName || gstinClean,
-      };
-      handleSelectClientFromHub(clientObj as any, true);
+    if (targetClientGstin || targetFy || targetMonth || initialAction) {
+      const normalizedFy = targetFy ? normalizeFy(targetFy) : undefined;
+      const normalizedMonth = targetMonth ? normalizeActionMonth(targetMonth) : undefined;
+
+      if (targetClientGstin) {
+        const gstinClean = targetClientGstin.trim().toUpperCase();
+        const existing = (clientsHub.length > 0 ? clientsHub : vaultClients).find(
+          (c: any) => (c.gstin || '').toUpperCase() === gstinClean
+        );
+        const clientObj = existing || {
+          id: gstinClean,
+          gstin: gstinClean,
+          trade_name: targetClientName || gstinClean,
+          legal_name: targetClientName || gstinClean,
+        };
+        handleSelectClientFromHub(clientObj as any, true, normalizedFy);
+      } else if (normalizedFy) {
+        handleFinancialYearChange(normalizedFy);
+      }
+
+      if (normalizedMonth && (GSTR3B_MONTHS as string[]).includes(normalizedMonth)) {
+        setSelectedMonth(normalizedMonth as GSTR3BMonthKey);
+      }
+
+      if (initialAction === 'reversal' || initialAction === 'reversals') {
+        setActiveTab('working3b');
+        setIsViewing2bAllocations(true);
+        toast.success('Viewing GSTR-3B Table 4(B) ITC Reversals & Allocations', {
+          description: `Period: ${normalizedMonth || selectedMonth} ${normalizedFy || workingData.profile.financialYear || ''}`,
+        });
+      }
     }
-  }, [targetClientGstin, targetClientName, clientsHub.length, vaultClients.length]);
+  }, [targetClientGstin, targetClientName, targetFy, targetMonth, initialAction, clientsHub.length, vaultClients.length]);
 
   // Global listener for client selection events from Sourav AI or other modules
   useEffect(() => {
-    const handleSwitchClientEvent = (e: any) => {
-      const { gstin, clientName, tab } = e.detail || {};
+    const handleSwitchClientEvent = async (e: any) => {
+      const { gstin, clientName, tab, fy, month, target } = e.detail || {};
+      const normalizedFy = fy ? normalizeFy(fy) : undefined;
+      const normalizedMonth = month ? normalizeActionMonth(month) : undefined;
+
       if (gstin) {
         const gstinClean = gstin.trim().toUpperCase();
         const existing = (clientsHub.length > 0 ? clientsHub : vaultClients).find(
@@ -874,8 +904,15 @@ export default function ReturnsDashboard({
           trade_name: clientName || gstinClean,
           legal_name: clientName || gstinClean,
         };
-        handleSelectClientFromHub(clientObj as any, true);
+        await handleSelectClientFromHub(clientObj as any, true, normalizedFy);
+      } else if (normalizedFy) {
+        await handleFinancialYearChange(normalizedFy);
       }
+
+      if (normalizedMonth && (GSTR3B_MONTHS as string[]).includes(normalizedMonth)) {
+        setSelectedMonth(normalizedMonth as GSTR3BMonthKey);
+      }
+
       if (tab) {
         if (tab === 'ims') setActiveTab('ims2b');
         else if (tab === 'gstr3b') setActiveTab('working3b');
@@ -883,10 +920,18 @@ export default function ReturnsDashboard({
         else if (tab === '2b' || tab === 'gstr2b') setActiveTab('gstr2b_downloader');
         else setActiveTab(tab as any);
       }
+
+      if (target === 'reversal' || target === 'reversals') {
+        setActiveTab('working3b');
+        setIsViewing2bAllocations(true);
+        toast.success('Viewing GSTR-3B Table 4(B) ITC Reversals & Allocations', {
+          description: `Period: ${normalizedMonth || selectedMonth} ${normalizedFy || workingData.profile.financialYear || ''}`,
+        });
+      }
     };
     window.addEventListener('gstr3b-select-client', handleSwitchClientEvent as any);
     return () => window.removeEventListener('gstr3b-select-client', handleSwitchClientEvent as any);
-  }, [clientsHub, vaultClients]);
+  }, [clientsHub, vaultClients, workingData.profile.financialYear, selectedMonth]);
 
   const handleOpenStorageFolder = async () => {
     try {

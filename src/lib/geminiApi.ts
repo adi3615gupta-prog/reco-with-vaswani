@@ -126,6 +126,8 @@ export const ACTION_NAV_TARGETS: Record<string, { label: string; tabId?: string;
   reco: { label: 'Open 2B vs Books Reco', route: 'reco' },
   ims: { label: 'Open IMS Decision Hub', route: 'returns', tabId: 'ims' },
   '3b': { label: 'Open GSTR-3B Working Sheet', route: 'returns', tabId: 'gstr3b' },
+  reversal: { label: 'Open GSTR-3B Table 4(B) Reversals & Allocations', route: 'returns', tabId: 'gstr3b' },
+  reversals: { label: 'Open GSTR-3B Table 4(B) Reversals & Allocations', route: 'returns', tabId: 'gstr3b' },
   gstr1: { label: 'Open GSTR-1 Sales Console', route: 'returns', tabId: 'gstr1' },
   notices: { label: 'Open GST Notices & Orders Suite', route: 'notices' },
   tds: { label: 'Open TDS Consolidator', route: 'tds-reco' },
@@ -144,36 +146,120 @@ export interface ParsedAction {
   label: string;
   gstin?: string;
   clientName?: string;
+  fy?: string;
+  month?: string;
 }
 
 /**
- * Parse [ACTION:navigate:<target>] and [ACTION:navigate:<target>:<gstin>] tags from response text.
+ * Standardize financial year strings (e.g. "26-27", "2026-27", "2627") to "2026-27".
+ */
+export function normalizeActionFy(input?: string): string | undefined {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  const m = trimmed.match(/^(?:20)?(\d{2})[-/]?(\d{2}|\d{4})$/);
+  if (m) {
+    const start = m[1];
+    const end = m[2].length === 4 ? m[2].slice(-2) : m[2];
+    return `20${start}-${end}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Standardize month names (e.g. "sept", "sep", "09", "september") to Titlecase "September".
+ */
+export function normalizeActionMonth(input?: string): string | undefined {
+  if (!input) return undefined;
+  const clean = input.trim().toLowerCase();
+  const map: Record<string, string> = {
+    jan: 'January', january: 'January', '01': 'January', '1': 'January',
+    feb: 'February', february: 'February', '02': 'February', '2': 'February',
+    mar: 'March', march: 'March', '03': 'March', '3': 'March',
+    apr: 'April', april: 'April', '04': 'April', '4': 'April',
+    may: 'May', '05': 'May', '5': 'May',
+    jun: 'June', june: 'June', '06': 'June', '6': 'June',
+    jul: 'July', july: 'July', '07': 'July', '7': 'July',
+    aug: 'August', august: 'August', '08': 'August', '8': 'August',
+    sep: 'September', sept: 'September', september: 'September', '09': 'September', '9': 'September',
+    oct: 'October', october: 'October', '10': 'October',
+    nov: 'November', november: 'November', '11': 'November',
+    dec: 'December', december: 'December', '12': 'December',
+  };
+  return map[clean] || (clean.length > 0 ? clean.charAt(0).toUpperCase() + clean.slice(1) : undefined);
+}
+
+/**
+ * Parse [ACTION:navigate:<target>] tags with optional :gstin, :fy, and :month parameters.
+ * Examples:
+ *   [ACTION:navigate:3b]
+ *   [ACTION:navigate:3b:27AAGCD4105L1ZO]
+ *   [ACTION:navigate:reversal:27AAGCD4105L1ZO:2026-27:September]
+ *   [ACTION:navigate:reversal:27AAGCD4105L1ZO:26-27:sept]
  */
 export function extractActionTags(rawText: string): {
   cleanText: string;
   actions: ParsedAction[];
 } {
   const actions: ParsedAction[] = [];
-  const regex = /\[ACTION:navigate:([a-z0-9_-]+)(?::([a-z0-9_-]+))?\]/gi;
+  const regex = /\[ACTION:navigate:([^\]]+)\]/gi;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(rawText)) !== null) {
-    const targetKey = match[1].toLowerCase();
-    const gstinParam = match[2] ? match[2].trim().toUpperCase() : undefined;
+    const rawContent = match[1].trim();
+    const parts = rawContent.split(':').map(p => p.trim());
+    if (parts.length === 0) continue;
+
+    const targetKey = parts[0].toLowerCase();
     const targetInfo = ACTION_NAV_TARGETS[targetKey];
-    if (targetInfo) {
-      const actionKey = gstinParam ? `${targetKey}:${gstinParam}` : targetKey;
-      if (!actions.some(a => (a.gstin ? `${a.target}:${a.gstin}` : a.target) === actionKey)) {
-        let label = targetInfo.label;
-        if (gstinParam) {
-          label = `${targetInfo.label} (${gstinParam})`;
-        }
-        actions.push({
-          target: targetKey,
-          label,
-          gstin: gstinParam,
-        });
+    if (!targetInfo) continue;
+
+    let gstinParam: string | undefined;
+    let fyParam: string | undefined;
+    let monthParam: string | undefined;
+
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+
+      // 1. Check if FY (e.g. 26-27, 2026-27, 2024-25)
+      if (!fyParam && /^(?:20)?\d{2}[-/]?\d{2}$/.test(part)) {
+        fyParam = normalizeActionFy(part);
+        continue;
       }
+
+      // 2. Check if Month (e.g. sept, sep, september, october, 09, etc.)
+      const isMonthToken = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|0[1-9]|1[0-2])$/i.test(part);
+      if (!monthParam && isMonthToken) {
+        monthParam = normalizeActionMonth(part);
+        continue;
+      }
+
+      // 3. Otherwise if length >= 8, treat as GSTIN/Client identifier
+      if (!gstinParam && part.length >= 8) {
+        gstinParam = part.toUpperCase();
+        continue;
+      }
+    }
+
+    const actionKey = [targetKey, gstinParam, fyParam, monthParam].filter(Boolean).join(':');
+    if (!actions.some(a => [a.target, a.gstin, a.fy, a.month].filter(Boolean).join(':') === actionKey)) {
+      let label = targetInfo.label;
+      const contextTags: string[] = [];
+      if (gstinParam) contextTags.push(gstinParam);
+      if (monthParam) contextTags.push(monthParam);
+      if (fyParam) contextTags.push(fyParam);
+
+      if (contextTags.length > 0) {
+        label = `${targetInfo.label} (${contextTags.join(' • ')})`;
+      }
+
+      actions.push({
+        target: targetKey,
+        label,
+        gstin: gstinParam,
+        fy: fyParam,
+        month: monthParam,
+      });
     }
   }
 
