@@ -62,7 +62,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <div className="min-h-screen bg-[var(--np-bg)] text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white">
+          <div className={`min-h-screen ${typeof window !== 'undefined' && window.location.hash.includes('copilot-desktop') ? 'bg-transparent' : 'bg-[var(--np-bg)]'} text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white`}>
             <HashRouter>
               <Routes>
                 <Route path="/" element={<Index />} />

@@ -134,7 +134,25 @@ export default function CopilotDesktop() {
   });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+
+  // Ensure transparent background on window body for transparent desktop overlay
+  useEffect(() => {
+    document.documentElement.classList.add('bg-transparent');
+    document.body.classList.add('bg-transparent');
+    document.body.style.backgroundColor = 'transparent';
+    return () => {
+      document.body.style.backgroundColor = '';
+    };
+  }, []);
+
+  // Auto-focus input when expanded
+  useEffect(() => {
+    if (expanded) {
+      setTimeout(() => inputRef.current?.focus(), 150);
+    }
+  }, [expanded]);
 
   // Listen for global shortcut or tray toggle events
   useEffect(() => {
@@ -375,6 +393,7 @@ export default function CopilotDesktop() {
       {/* Input Composer */}
       <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}

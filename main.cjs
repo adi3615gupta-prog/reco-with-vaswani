@@ -233,6 +233,31 @@ function waitForBackend(port, timeoutMs = 45000) {
   });
 }
 
+async function getFrontendBaseUrl() {
+  // 1. Check if Vite dev server on 8080 is active (e.g. during development / npm run electron:dev)
+  const isDevRunning = await new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:8080', { timeout: 800 }, (res) => {
+      resolve(res.statusCode < 500);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+
+  if (isDevRunning) {
+    logMain('Vite dev server detected on http://localhost:8080');
+    return 'http://localhost:8080';
+  }
+
+  // 2. Client mode in packaged app
+  if (currentAppMode === 'client') {
+    return `file://${path.join(__dirname, 'dist/index.html')}`;
+  }
+
+  // 3. Normal server mode: wait for local Express backend server on port 3001
+  await waitForBackend(BACKEND_PORT);
+  return `http://localhost:${BACKEND_PORT}`;
+}
+
 async function createWindow(appMode = currentAppMode) {
   const isHiddenLaunch = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden;
   logMain(`createWindow called. isHiddenLaunch: ${isHiddenLaunch}`);
@@ -265,17 +290,14 @@ async function createWindow(appMode = currentAppMode) {
   });
 
   try {
-    if (appMode !== 'client') {
-      logMain('createWindow: waiting for backend ready status...');
-      // Wait for the Express backend (started in app.whenReady) to be ready
-      await waitForBackend(BACKEND_PORT);
-      logMain(`Backend ready. Loading app from http://localhost:${BACKEND_PORT}`);
-      await mainWindow.loadURL(`http://localhost:${BACKEND_PORT}`);
-    } else {
-      logMain('createWindow: CLIENT mode. Loading index.html from local files...');
+    const baseUrl = await getFrontendBaseUrl();
+    logMain(`Loading mainWindow from: ${baseUrl}`);
+    if (baseUrl.startsWith('file://')) {
       await mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
+    } else {
+      await mainWindow.loadURL(baseUrl);
     }
-    logMain('App loaded successfully');
+    logMain('mainWindow loaded successfully');
   } catch (error) {
     logMain(`Failed to start app: ${error.stack || error.message}`);
     const logFilePath = path.join(app.getPath('userData'), 'backend.log');
@@ -401,7 +423,7 @@ function createTray() {
   }
 }
 
-function createCopilotWindow() {
+async function createCopilotWindow() {
   if (copilotWindow) return;
 
   try {
@@ -438,55 +460,62 @@ function createCopilotWindow() {
     });
 
     copilotWindow.setAlwaysOnTop(true, 'screen-saver');
+    copilotWindow.setVisibleOnAllWorkspaces(true);
 
-    const copilotUrl = currentAppMode !== 'client'
-      ? `http://localhost:${BACKEND_PORT}/#/copilot-desktop`
-      : `file://${path.join(__dirname, 'dist/index.html')}#/copilot-desktop`;
+    const baseUrl = await getFrontendBaseUrl();
+    const copilotUrl = baseUrl.startsWith('file://')
+      ? `${baseUrl}#/copilot-desktop`
+      : `${baseUrl}/#/copilot-desktop`;
 
-    copilotWindow.loadURL(copilotUrl).catch((e) => {
-      logMain(`copilotWindow failed to load: ${e.message}`);
-    });
+    logMain(`Loading copilotWindow from: ${copilotUrl}`);
+    await copilotWindow.loadURL(copilotUrl);
 
     copilotWindow.on('closed', () => {
       copilotWindow = null;
     });
 
-    logMain('copilotWindow created successfully (always-on-top desktop overlay)');
+    logMain('copilotWindow created and loaded successfully (always-on-top desktop overlay)');
   } catch (err) {
     logMain(`createCopilotWindow error: ${err.message}`);
   }
 }
 
-function toggleCopilotWindow() {
+async function toggleCopilotWindow() {
   if (!copilotWindow) {
-    createCopilotWindow();
+    await createCopilotWindow();
     return;
   }
   if (!copilotWindow.isVisible()) {
     copilotWindow.show();
-    copilotWindow.focus();
   }
+  copilotWindow.focus();
   copilotWindow.webContents.send('copilot_toggle_state');
 }
 
 function registerGlobalHotkeys() {
   try {
-    const hotkey = 'CommandOrControl+Alt+S';
-    const registered = globalShortcut.register(hotkey, () => {
-      logMain(`Global hotkey ${hotkey} triggered.`);
-      toggleCopilotWindow();
-    });
-    if (registered) {
-      logMain(`Global hotkey ${hotkey} registered successfully.`);
-    } else {
-      console.warn(`Could not register global hotkey ${hotkey}`);
+    const hotkeys = ['CommandOrControl+Alt+S', 'CommandOrControl+Shift+S'];
+    for (const hotkey of hotkeys) {
+      try {
+        const registered = globalShortcut.register(hotkey, () => {
+          logMain(`Global hotkey ${hotkey} triggered.`);
+          toggleCopilotWindow();
+        });
+        if (registered) {
+          logMain(`Global hotkey ${hotkey} registered successfully.`);
+        } else {
+          logMain(`Could not register global hotkey ${hotkey}`);
+        }
+      } catch (e) {
+        logMain(`Error registering ${hotkey}: ${e.message}`);
+      }
     }
   } catch (err) {
     logMain(`registerGlobalHotkeys error: ${err.message}`);
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   logMain('app.whenReady triggered');
   
   let serverJsPath = path.join(__dirname, 'server.obfuscated.cjs');
@@ -524,9 +553,9 @@ app.whenReady().then(() => {
     logMain(`Error: Backend server script not found! Path check was: ${serverJsPath}`);
   }
 
-  createWindow(currentAppMode);
   createTray();
-  createCopilotWindow();
+  await createWindow(currentAppMode);
+  await createCopilotWindow();
   registerGlobalHotkeys();
 
   // Initialize updater after window is ready
