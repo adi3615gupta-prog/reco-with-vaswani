@@ -78,7 +78,8 @@ export interface InwardSupplies {
   creditNotes: TaxBreakdown;           // (+) Credit Notes
   openingCreditBal: TaxBreakdown;      // (+) Opening Credit Balance (B/F from previous month)
   debitNotes: TaxBreakdown;            // (-) Debit Notes
-  itcReversed: TaxBreakdown;           // (-) ITC Reversed on Ineligible credit (Table 4(B))
+  itcReversed: TaxBreakdown;           // (-) Permanent Reversal [Rule 38/42/43/17(5)] (Table 4(B)(1))
+  itcReversedOther?: TaxBreakdown;     // (-) Temporary Reversal [Rule 37 / 180 Days / Others] (Table 4(B)(2))
   amendmentDiff: TaxBreakdown;         // Preserved for backward compatibility
   totalItcAvailable: TaxBreakdown;     // Auto-computed: (B) Total ITC Available for Set off = SUM(D33:D37) - SUM(D38:D39)
   isManualTotalItc?: boolean;          // If true, user manually specified or edited total ITC available
@@ -207,6 +208,7 @@ export function createEmptyMonthData(month: GSTR3BMonthKey, fy: string = '2025-2
       openingCreditBal: createEmptyTaxBreakdown(),
       debitNotes: createEmptyTaxBreakdown(),
       itcReversed: createEmptyTaxBreakdown(),
+      itcReversedOther: createEmptyTaxBreakdown(),
       amendmentDiff: createEmptyTaxBreakdown(),
       totalItcAvailable: createEmptyTaxBreakdown(),
     },
@@ -375,11 +377,14 @@ export function recalculateMonthData(
   if (inw.importGoods) inw.importGoods.total = round2((inw.importGoods.cgst || 0) + (inw.importGoods.sgst || 0) + (inw.importGoods.igst || 0));
   if (inw.creditNotes) inw.creditNotes.total = round2((inw.creditNotes.cgst || 0) + (inw.creditNotes.sgst || 0) + (inw.creditNotes.igst || 0));
   inw.debitNotes.total = round2((inw.debitNotes.cgst || 0) + (inw.debitNotes.sgst || 0) + (inw.debitNotes.igst || 0));
+  inw.itcReversed = inw.itcReversed || createEmptyTaxBreakdown();
   inw.itcReversed.total = round2((inw.itcReversed.cgst || 0) + (inw.itcReversed.sgst || 0) + (inw.itcReversed.igst || 0));
+  inw.itcReversedOther = inw.itcReversedOther || createEmptyTaxBreakdown();
+  inw.itcReversedOther.total = round2((inw.itcReversedOther.cgst || 0) + (inw.itcReversedOther.sgst || 0) + (inw.itcReversedOther.igst || 0));
   if (inw.amendmentDiff) inw.amendmentDiff.total = round2((inw.amendmentDiff.cgst || 0) + (inw.amendmentDiff.sgst || 0) + (inw.amendmentDiff.igst || 0));
 
-  // 7. (B) Total ITC Available for Set off = SUM(D33:D37) - SUM(D38:D39)
-  // [ITC 2B + Import purchase + RCM Paid + Credit Notes + Opening Credit] - [Debit Notes + ITC Reversed]
+  // 7. (B) Total ITC Available for Set off = SUM(D33:D37) - SUM(D38:D40)
+  // [ITC 2B + Import purchase + RCM Paid + Credit Notes + Opening Credit] - [Debit Notes + Permanent Reversal + Temporary Reversal]
   if (inw.isManualTotalItc && inw.totalItcAvailable) {
     inw.totalItcAvailable.total = round2(
       (inw.totalItcAvailable.cgst || 0) + (inw.totalItcAvailable.sgst || 0) + (inw.totalItcAvailable.igst || 0)
@@ -392,7 +397,8 @@ export function recalculateMonthData(
       (inw.creditNotes?.taxable || 0) +
       (inw.openingCreditBal.taxable || 0) -
       (inw.debitNotes.taxable || 0) -
-      (inw.itcReversed.taxable || 0)
+      (inw.itcReversed.taxable || 0) -
+      (inw.itcReversedOther.taxable || 0)
     );
     inw.totalItcAvailable.cgst = round2(
       (inw.itc2b.cgst || 0) +
@@ -401,7 +407,8 @@ export function recalculateMonthData(
       (inw.creditNotes?.cgst || 0) +
       (inw.openingCreditBal.cgst || 0) -
       (inw.debitNotes.cgst || 0) -
-      (inw.itcReversed.cgst || 0)
+      (inw.itcReversed.cgst || 0) -
+      (inw.itcReversedOther.cgst || 0)
     );
     inw.totalItcAvailable.sgst = round2(
       (inw.itc2b.sgst || 0) +
@@ -410,7 +417,8 @@ export function recalculateMonthData(
       (inw.creditNotes?.sgst || 0) +
       (inw.openingCreditBal.sgst || 0) -
       (inw.debitNotes.sgst || 0) -
-      (inw.itcReversed.sgst || 0)
+      (inw.itcReversed.sgst || 0) -
+      (inw.itcReversedOther.sgst || 0)
     );
     inw.totalItcAvailable.igst = round2(
       (inw.itc2b.igst || 0) +
@@ -419,7 +427,8 @@ export function recalculateMonthData(
       (inw.creditNotes?.igst || 0) +
       (inw.openingCreditBal.igst || 0) -
       (inw.debitNotes.igst || 0) -
-      (inw.itcReversed.igst || 0)
+      (inw.itcReversed.igst || 0) -
+      (inw.itcReversedOther.igst || 0)
     );
     inw.totalItcAvailable.total = round2(
       inw.totalItcAvailable.cgst + inw.totalItcAvailable.sgst + inw.totalItcAvailable.igst
@@ -1118,22 +1127,23 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     const r38 = makeLineVals(38, m.inward.debitNotes || createEmptyTaxBreakdown());
     addRowWithFormulas('', '(-) Debit Notes', r38.d, r38.e, r38.f, r38.g, r38.h);
 
-    // Row 39: (-) ITC Reversed on Ineligible credit
+    // Row 39: (-) Permanent Reversal [Rule 38/42/43/17(5)] (Table 4(B)(1))
     const r39 = makeLineVals(39, m.inward.itcReversed || createEmptyTaxBreakdown());
-    addRowWithFormulas('', '(-) ITC Reversed on Ineligible credit', r39.d, r39.e, r39.f, r39.g, r39.h);
+    addRowWithFormulas('', '(-) Permanent Reversal [Rule 38/42/43/17(5)]', r39.d, r39.e, r39.f, r39.g, r39.h);
 
-    // Row 40: Spacer
-    ws.addRow([]);
+    // Row 40: (-) Temporary Reversal [Rule 37 / 180 Days / Others] (Table 4(B)(2))
+    const r40 = makeLineVals(40, m.inward.itcReversedOther || createEmptyTaxBreakdown());
+    addRowWithFormulas('', '(-) Temporary Reversal [Rule 37 / 180 Days / Others]', r40.d, r40.e, r40.f, r40.g, r40.h);
 
     // Row 41: (B) Total ITC Available for Set off
     addRowWithFormulas(
       '',
       '(B) Total ITC Available for Set off',
-      { formula: 'SUM(D33:D37)-SUM(D38:D39)', result: m.inward.totalItcAvailable.taxable },
-      { formula: 'SUM(E33:E37)-SUM(E38:E39)', result: m.inward.totalItcAvailable.cgst },
-      { formula: 'SUM(F33:F37)-SUM(F38:F39)', result: m.inward.totalItcAvailable.sgst },
-      { formula: 'SUM(G33:G37)-SUM(G38:G39)', result: m.inward.totalItcAvailable.igst },
-      { formula: 'SUM(H33:H37)-SUM(H38:H39)', result: m.inward.totalItcAvailable.total },
+      { formula: 'SUM(D33:D37)-SUM(D38:D40)', result: m.inward.totalItcAvailable.taxable },
+      { formula: 'SUM(E33:E37)-SUM(E38:E40)', result: m.inward.totalItcAvailable.cgst },
+      { formula: 'SUM(F33:F37)-SUM(F38:F40)', result: m.inward.totalItcAvailable.sgst },
+      { formula: 'SUM(G33:G37)-SUM(G38:G40)', result: m.inward.totalItcAvailable.igst },
+      { formula: 'SUM(H33:H37)-SUM(H38:H40)', result: m.inward.totalItcAvailable.total },
       { isTotal: true }
     );
 
@@ -1614,10 +1624,10 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
           csamt: 0
         },
         {
-          ty: 'OTH', // Table 4(B)(2) Temporary Reversals: Others
-          iamt: round2((monthData.inward as any).itcReversedOther?.igst || 0),
-          camt: round2((monthData.inward as any).itcReversedOther?.cgst || 0),
-          samt: round2((monthData.inward as any).itcReversedOther?.sgst || 0),
+          ty: 'OTH', // Table 4(B)(2) Temporary Reversals: Others (Rule 37 / 180 Days / Others)
+          iamt: round2(monthData.inward.itcReversedOther?.igst || 0),
+          camt: round2(monthData.inward.itcReversedOther?.cgst || 0),
+          samt: round2(monthData.inward.itcReversedOther?.sgst || 0),
           csamt: 0
         }
       ],
@@ -1852,7 +1862,9 @@ export async function parseGstr3bWorkingFile(file: File): Promise<GSTR3BAnnualWo
         mData.inward.openingCreditBal = parseRowTax(r);
       } else if (rowTxt.includes('(-) DEBIT NOTES') || (inInwardSection && rowTxt.includes('DEBIT NOTES'))) {
         mData.inward.debitNotes = parseRowTax(r);
-      } else if (rowTxt.includes('ITC REVERSED') || rowTxt.includes('INELIGIBLE CREDIT')) {
+      } else if (rowTxt.includes('TEMPORARY REVERSAL') || rowTxt.includes('RULE 37') || rowTxt.includes('180 DAYS') || rowTxt.includes('4(B)(2)')) {
+        mData.inward.itcReversedOther = parseRowTax(r);
+      } else if (rowTxt.includes('PERMANENT REVERSAL') || rowTxt.includes('ITC REVERSED') || rowTxt.includes('INELIGIBLE CREDIT') || rowTxt.includes('4(B)(1)')) {
         mData.inward.itcReversed = parseRowTax(r);
       }
       // SET-OFF & ADJUSTMENT

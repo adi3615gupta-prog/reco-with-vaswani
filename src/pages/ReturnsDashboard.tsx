@@ -532,12 +532,13 @@ export default function ReturnsDashboard({
 
         // Select target client if requested by prop or pending storage
         const preferredGstin = (targetClientGstin || localStorage.getItem('gstr3b_active_client_gstin') || '').trim().toUpperCase();
+        const preferredFy = targetFy ? normalizeFy(targetFy) : undefined;
         if (data.clients.length > 0) {
           const target = data.clients.find((c: any) => (c.gstin || '').toUpperCase() === preferredGstin);
           if (target && target.gstin?.toUpperCase() !== workingData.profile.gstin?.toUpperCase()) {
-            handleSelectClientFromHub(target, false);
+            handleSelectClientFromHub(target, false, preferredFy);
           } else if (!workingData.profile.gstin || workingData.profile.gstin === 'Not Specified') {
-            handleSelectClientFromHub(data.clients[0], false);
+            handleSelectClientFromHub(data.clients[0], false, preferredFy);
           }
         }
       }
@@ -812,7 +813,7 @@ export default function ReturnsDashboard({
           loaded.profile.firmName = firmName;
           loaded.profile.gstin = gstin;
           if (client.address) loaded.profile.address = client.address;
-          loaded.profile.financialYear = normalizeFy(loaded.profile.financialYear || currentFy);
+          loaded.profile.financialYear = normalizeFy(explicitFy || loaded.profile.financialYear || currentFy);
           setWorkingData(loaded);
           setLastServerSyncTime(data.lastModified || Date.now());
 
@@ -932,6 +933,43 @@ export default function ReturnsDashboard({
     window.addEventListener('gstr3b-select-client', handleSwitchClientEvent as any);
     return () => window.removeEventListener('gstr3b-select-client', handleSwitchClientEvent as any);
   }, [clientsHub, vaultClients, workingData.profile.financialYear, selectedMonth]);
+
+  // Direct Software Control Action Listener (Excel/PDF Export, Edit Toggle, Locks, Allocation Workbench)
+  useEffect(() => {
+    const handleSoftwareActionEvent = async (e: any) => {
+      const { action, target, gstin, fy, month } = e.detail || {};
+      const actionName = action || target;
+      if (!actionName) return;
+
+      if (actionName === 'export_excel') {
+        toast.info('⚡ Auto-Executing GSTR-3B Excel Export...');
+        await handleExportExcel();
+      } else if (actionName === 'export_pdf') {
+        toast.info('⚡ Auto-Executing GSTR-3B PDF Export...');
+        handleExportPdf();
+      } else if (actionName === 'toggle_edit') {
+        setIsEditMode(prev => {
+          const next = !prev;
+          toast.success(`Working Sheet Edit Mode: ${next ? 'Enabled' : 'Disabled'}`);
+          return next;
+        });
+      } else if (actionName === 'lock_sheet') {
+        await handleLockSheet();
+      } else if (actionName === 'matrix') {
+        setActiveTab('matrix');
+        toast.success('Viewing 12-Month Comparative FY Matrix');
+      } else if (actionName === 'reversal' || actionName === 'view_allocations') {
+        setActiveTab('working3b');
+        setIsViewing2bAllocations(true);
+        const targetPeriod = [month, fy].filter(Boolean).join(' • ');
+        toast.success('Viewing GSTR-3B Table 4(B) ITC Reversals & Allocations', {
+          description: targetPeriod ? `Period: ${targetPeriod}` : undefined,
+        });
+      }
+    };
+    window.addEventListener('software-action', handleSoftwareActionEvent as any);
+    return () => window.removeEventListener('software-action', handleSoftwareActionEvent as any);
+  }, [workingData, selectedMonth, isEditMode]);
 
   const handleOpenStorageFolder = async () => {
     try {
@@ -1110,24 +1148,35 @@ export default function ReturnsDashboard({
         };
       }
 
-      // 4. Table 4(B): ITC Reversals (Table 4(B)(2) Temporary + Table 4(B)(1) Permanent + Ineligible u/s 17(5) / 16(4))
-      const revTx = round2((summary.temporary_4b2.taxable || 0) + (summary.permanent_4b1.taxable || 0) + (summary.ineligible_4d1.taxable || 0) + (summary.ineligible_4d2.taxable || 0));
-      const revIg = round2((summary.temporary_4b2.igst || 0) + (summary.permanent_4b1.igst || 0) + (summary.ineligible_4d1.igst || 0) + (summary.ineligible_4d2.igst || 0));
-      const revCg = round2((summary.temporary_4b2.cgst || 0) + (summary.permanent_4b1.cgst || 0) + (summary.ineligible_4d1.cgst || 0) + (summary.ineligible_4d2.cgst || 0));
-      const revSg = round2((summary.temporary_4b2.sgst || 0) + (summary.permanent_4b1.sgst || 0) + (summary.ineligible_4d1.sgst || 0) + (summary.ineligible_4d2.sgst || 0));
-      const totalReversals = round2(revIg + revCg + revSg);
+      // 4. Table 4(B)(1): Permanent ITC Reversals (Table 4(B)(1) Permanent + Ineligible u/s 17(5) / 16(4))
+      const permTx = round2((summary.permanent_4b1?.taxable || 0) + (summary.ineligible_4d1?.taxable || 0) + (summary.ineligible_4d2?.taxable || 0));
+      const permIg = round2((summary.permanent_4b1?.igst || 0) + (summary.ineligible_4d1?.igst || 0) + (summary.ineligible_4d2?.igst || 0));
+      const permCg = round2((summary.permanent_4b1?.cgst || 0) + (summary.ineligible_4d1?.cgst || 0) + (summary.ineligible_4d2?.cgst || 0));
+      const permSg = round2((summary.permanent_4b1?.sgst || 0) + (summary.ineligible_4d1?.sgst || 0) + (summary.ineligible_4d2?.sgst || 0));
+      const permTotal = round2(permIg + permCg + permSg);
 
-      if (totalReversals > 0 || revTx > 0) {
-        cur.inward.itcReversed = {
-          taxable: revTx,
-          igst: revIg,
-          cgst: revCg,
-          sgst: revSg,
-          total: totalReversals
-        };
-      } else {
-        cur.inward.itcReversed = { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 };
-      }
+      cur.inward.itcReversed = {
+        taxable: permTx,
+        igst: permIg,
+        cgst: permCg,
+        sgst: permSg,
+        total: permTotal
+      };
+
+      // 4(B)(2): Temporary ITC Reversals (Rule 37 / 180 Days / Others)
+      const tempTx = round2(summary.temporary_4b2?.taxable || 0);
+      const tempIg = round2(summary.temporary_4b2?.igst || 0);
+      const tempCg = round2(summary.temporary_4b2?.cgst || 0);
+      const tempSg = round2(summary.temporary_4b2?.sgst || 0);
+      const tempTotal = round2(tempIg + tempCg + tempSg);
+
+      cur.inward.itcReversedOther = {
+        taxable: tempTx,
+        igst: tempIg,
+        cgst: tempCg,
+        sgst: tempSg,
+        total: tempTotal
+      };
 
       // 5. Table 4(D): Ineligible ITC track record (Audit Disclosed)
       const inelTotal = round2((summary.ineligible_4d1.total || 0) + (summary.ineligible_4d2.total || 0));
@@ -2383,6 +2432,7 @@ export default function ReturnsDashboard({
         const openingBal = currentMonthData.inward.openingCreditBal || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
         const debNotesInw = currentMonthData.inward.debitNotes || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
         const itcRev = currentMonthData.inward.itcReversed || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+        const itcRevOther = currentMonthData.inward.itcReversedOther || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
         const itcAvail = currentMonthData.inward.totalItcAvailable || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
 
         // (A - B) Net Payable before Rule 88A Cross Set-off
@@ -3983,10 +4033,10 @@ export default function ReturnsDashboard({
                       <td className="py-2 px-4 text-right tabular-nums font-semibold">{renderCell(debNotesInw.total ? -debNotesInw.total : 0, true, false, true)}</td>
                     </tr>
 
-                    {/* (-) ITC Reversed on Ineligible credit */}
+                    {/* (-) Permanent Reversal [Rule 38/42/43/17(5)] - Table 4(B)(1) */}
                     <tr className="hover:bg-slate-50/80 transition-colors bg-rose-50/40 text-rose-700">
                       <td className="py-2.5 px-4 font-sans text-xs border-r border-slate-200 flex items-center justify-between">
-                        <span>(-) ITC Reversed on Ineligible credit</span>
+                        <span>(-) Permanent Reversal (Table 4(B)(1))</span>
                         <span className="text-[10px] text-rose-700 bg-rose-100 border border-rose-200 px-1.5 py-0.2 rounded font-sans uppercase font-bold">Rule 38/42/43/17(5)</span>
                       </td>
                       <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
@@ -4032,6 +4082,58 @@ export default function ReturnsDashboard({
                       </td>
                       <td className="py-2.5 px-4 text-right tabular-nums font-bold">
                         {renderCell(itcRev.total ? -itcRev.total : 0, true, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* (-) Temporary Reversal [Rule 37 / 180 Days / Others] - Table 4(B)(2) */}
+                    <tr className="hover:bg-slate-50/80 transition-colors bg-amber-50/30 text-amber-800">
+                      <td className="py-2.5 px-4 font-sans text-xs border-r border-slate-200 flex items-center justify-between">
+                        <span>(-) Temporary Reversal (Table 4(B)(2))</span>
+                        <span className="text-[10px] text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.2 rounded font-sans uppercase font-bold">Rule 37 / 180 Days / Others</span>
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRevOther.taxable || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversedOther', 'taxable', parseFloat(e.target.value) || 0)}
+                            className="w-24 bg-white border border-amber-300 rounded px-1.5 py-0.5 text-right font-mono text-amber-800 outline-none"
+                            placeholder="0"
+                          />
+                        ) : renderCell(itcRevOther.taxable ? -itcRevOther.taxable : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRevOther.cgst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversedOther', 'cgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-amber-300 rounded px-1.5 py-0.5 text-right font-mono text-amber-800 outline-none"
+                          />
+                        ) : renderCell(itcRevOther.cgst ? -itcRevOther.cgst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRevOther.sgst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversedOther', 'sgst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-amber-300 rounded px-1.5 py-0.5 text-right font-mono text-amber-800 outline-none"
+                          />
+                        ) : renderCell(itcRevOther.sgst ? -itcRevOther.sgst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums border-r border-slate-200">
+                        {isEditMode ? (
+                          <input
+                            type="number"
+                            value={itcRevOther.igst || ''}
+                            onChange={e => updateCurrentMonthField('inward', 'itcReversedOther', 'igst', parseFloat(e.target.value) || 0)}
+                            className="w-20 bg-white border border-amber-300 rounded px-1.5 py-0.5 text-right font-mono text-amber-800 outline-none"
+                          />
+                        ) : renderCell(itcRevOther.igst ? -itcRevOther.igst : 0)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right tabular-nums font-bold">
+                        {renderCell(itcRevOther.total ? -itcRevOther.total : 0, true, false, true)}
                       </td>
                     </tr>
 
