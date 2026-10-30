@@ -183,6 +183,7 @@ export function AppShell({
   returnsTab = 'working3b',
   setReturnsTab,
   companyName,
+  setCompanyName,
   financialYear = '2024-25',
   loginUser = 'Admin',
   networkDiagnostics = { status: 'Connected', latency: 4 },
