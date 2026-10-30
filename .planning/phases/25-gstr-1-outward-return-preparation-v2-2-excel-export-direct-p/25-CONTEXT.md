@@ -7,6 +7,37 @@
 
 ---
 
+## Locked Architectural & User Experience Decisions
+
+### 1. Data Ingestion & Source Priority
+- **Primary Automated Sources:**
+  - **Tally Direct Bridge (Port 9000):** 1-Click extraction of Sales Vouchers, Credit Notes, and Debit Notes directly from active Tally company.
+  - **Sales Register Excel Dropzone:** Ingestion of multi-column client sales registers with auto-mapping for GSTIN, Invoice No, Invoice Date, Value, POS, Tax Rate, and HSN.
+- **In-App Editable Grid:** Accountants can edit values, adjust rounding differences, or add ad-hoc line items directly on screen prior to JSON export.
+
+### 2. UI Placement: Dual-Mode Outward Cockpit (Tab 05)
+- Tab `05. GSTR-1 Outward` in [`ReturnsDashboard.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/ReturnsDashboard.tsx) is upgraded to a unified dual-mode cockpit:
+  - **Mode 1: Outward 12M Downloader & Matrix** (Existing portal downloader for historic/annual sales).
+  - **Mode 2: Monthly GSTR-1 Working Sheet & Offline Preparation Workbench** (New high-density workbench for filing).
+- Sticky sub-header switcher allows seamless toggling between downloading past returns and preparing current month's return.
+
+### 3. Table 13 Document Series & Bifurcated Table 12 HSN
+- **Table 13 (Documents Issued):** Auto-analyzes numeric sequences in invoice numbers, identifies starting serial, ending serial, and gap count (flagged as cancelled), while offering manual row adjustments.
+- **Table 12 (HSN Summary):** Strictly bifurcates items into `hsn_b2b` (supplies to registered buyers) and `hsn_b2c` (unregistered buyers). Enforces 6-digit HSN requirement for businesses with turnover > ₹5 Cr and 4-digit for $\le$ ₹5 Cr.
+- **Table 5 vs Table 7:** Automatically enforces the ₹1,00,000 threshold for return periods post-August 2024 (Notification No. 12/2024-CT) for inter-state unregistered sales.
+
+### 4. Autonomous Portal Upload & Silent Auto-Save Pipeline
+- **1-Click Upload Button:** Styled with an Emerald/Teal gradient (`UploadCloud` icon) in the GSTR-1 action bar, identical to GSTR-3B.
+- **Playwright Autopilot:**
+  - Auto-fills credentials from SQLite Vault.
+  - Displays top assistive banner for interactive CAPTCHA solving.
+  - Uses authentic in-page DOM navigation to avoid SSO "Access Denied" errors.
+  - Selects Financial Year & Month, clicks `SEARCH`.
+  - Targets GSTR-1 / IFF card, clicks **`PREPARE OFFLINE`**, attaches `gstr1_portal_<month>.json`, and captures portal reference acknowledgment.
+- **Silent Multi-Asset Storage:** Clicking *Save Working Sheet (Ctrl+S)* writes `gstr1_portal_<month>.json`, `gstr1_v22_<month>.xlsx`, and `gstr1_data_<month>.json` directly to `<dataPath>/<Client>/<FY>/<Month>/1 Working/` with zero browser download prompts.
+
+---
+
 ## Technical Context & Discoveries from `gst_offline_tool` Reverse Engineering
 1. **Reverse-Engineered Official Payload:**
    - Binary reverse-engineering of `GST Offline Tool.exe` (Release 3.2.4) revealed that the official offline tool is an NW.js/Express.js (Port 3010) application.
