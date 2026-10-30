@@ -1,0 +1,3429 @@
+{
+  "profile": {
+    "firmName": "DYP INFRAPROJECTS PRIVATE LIMITED",
+    "gstin": "27AAGCD4105L1ZO",
+    "address": "Plot No. 185 And 186, Office No. 112 And 113, Kohinoor Majestic Building, Tharmax Company Road, Pimpri Chinchwad, Pune, Maharashtra, 411019",
+    "contact": "9373911379",
+    "financialYear": "2026-2027",
+    "gstnStatus": "Active",
+    "registrationDate": "43082",
+    "natureOfBusiness": "The Engineering of PEB buildings, Industrial construction, Infrastructure development and Landscape & Gardening projects",
+    "authorisedSignatory": "Mr. Dattatray Yadav",
+    "filingType": "Digital Signature",
+    "filingEmail": "dypinfraprojects1@gmail.com",
+    "filingPhone": "9689923807"
+  },
+  "months": {
+    "April": {
+      "month": "April",
+      "calendarMonthIndex": 4,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 7973657.22,
+          "cgst": 670530.2,
+          "sgst": 670530.2,
+          "igst": 83639.16,
+          "total": 1424699.5599999998
+        },
+        "b2c": {
+          "taxable": 167634.76,
+          "cgst": 15087.13,
+          "sgst": 15087.13,
+          "igst": 0,
+          "total": 30174.26
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 196469.34,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 916338.98,
+          "cgst": 82470.45,
+          "sgst": 82470.45,
+          "igst": 0,
+          "total": 164940.9
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 7421422.34,
+          "cgst": 603146.88,
+          "sgst": 603146.88,
+          "igst": 83639.16,
+          "total": 1289932.92
+        },
+        "rcmInward": {
+          "taxable": 7744,
+          "cgst": 193.6,
+          "sgst": 193.6,
+          "igst": 0,
+          "total": 387.2
+        },
+        "rcmTransport": {
+          "taxable": 7744,
+          "cgst": 193.6,
+          "sgst": 193.6,
+          "igst": 0,
+          "total": 387.2
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 7429166.34,
+          "cgst": 603340.48,
+          "sgst": 603340.48,
+          "igst": 83639.16,
+          "total": 1290320.12
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 7966624.5600000005,
+          "cgst": 615166.6899999997,
+          "sgst": 615166.6899999997,
+          "igst": 100733.98,
+          "total": 1331067.36
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 7744,
+          "cgst": 193.6,
+          "sgst": 193.6,
+          "igst": 0,
+          "total": 387.2
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 7974368.56,
+          "cgst": 615360.29,
+          "sgst": 615360.29,
+          "igst": 100733.98,
+          "total": 1331454.56
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": -12213.41,
+          "sgst": -12213.41,
+          "igst": -17094.82,
+          "total": -41521.64
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 17094.82,
+          "sgst": 0,
+          "igst": -17094.82,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 29308.23,
+          "sgst": 12213.41,
+          "igst": 0,
+          "total": 41521.64
+        },
+        "isManualAdjustment": true
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 7744,
+          "cgst": 193.6,
+          "sgst": 193.6,
+          "igst": 0,
+          "total": 387.2
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 193.6,
+          "sgst": 193.6,
+          "igst": 0,
+          "total": 387.2
+        }
+      }
+    },
+    "May": {
+      "month": "May",
+      "calendarMonthIndex": 5,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 14888480.62,
+          "cgst": 1222391.84,
+          "sgst": 1222391.84,
+          "igst": 235142.82,
+          "total": 2679926.5
+        },
+        "b2c": {
+          "taxable": 167634.76,
+          "cgst": 15087.13,
+          "sgst": 15087.13,
+          "igst": 0,
+          "total": 30174.26
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 196469.34,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 878556.26,
+          "cgst": 79070.06,
+          "sgst": 79070.06,
+          "igst": 0,
+          "total": 158140.12
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 14374028.46,
+          "cgst": 1158408.91,
+          "sgst": 1158408.91,
+          "igst": 235142.82,
+          "total": 2551960.64
+        },
+        "rcmInward": {
+          "taxable": 440,
+          "cgst": 11,
+          "sgst": 11,
+          "igst": 0,
+          "total": 22
+        },
+        "rcmTransport": {
+          "taxable": 440,
+          "cgst": 11,
+          "sgst": 11,
+          "igst": 0,
+          "total": 22
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 14374468.46,
+          "cgst": 1158419.91,
+          "sgst": 1158419.91,
+          "igst": 235142.82,
+          "total": 2551982.64
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 11574104.2,
+          "cgst": 881863.11,
+          "sgst": 881863.11,
+          "igst": 224605.45000000004,
+          "total": 1988331.67
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 440,
+          "cgst": 11,
+          "sgst": 11,
+          "igst": 0,
+          "total": 22
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 29308.23,
+          "sgst": 12213.41,
+          "igst": 0,
+          "total": 41521.64
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 11574544.2,
+          "cgst": 911182.34,
+          "sgst": 894087.52,
+          "igst": 224605.45,
+          "total": 2029875.31
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 247226.57,
+          "sgst": 264321.39,
+          "igst": 10537.37,
+          "total": 522085.33
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 247226.57,
+          "sgst": 264321.39,
+          "igst": 10537.37,
+          "total": 522085.33
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 440,
+          "cgst": 11,
+          "sgst": 11,
+          "igst": 0,
+          "total": 22
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 247237.57,
+          "sgst": 264332.39,
+          "igst": 10537.37,
+          "total": 522107.33
+        }
+      }
+    },
+    "June": {
+      "month": "June",
+      "calendarMonthIndex": 6,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 9615526.41,
+          "cgst": 712068.13,
+          "sgst": 712068.13,
+          "igst": 269702.94,
+          "total": 1693839.2
+        },
+        "b2c": {
+          "taxable": 467634.76,
+          "cgst": 42087.13,
+          "sgst": 42087.13,
+          "igst": 0,
+          "total": 84174.26
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 196469.34,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 10279630.51,
+          "cgst": 754155.26,
+          "sgst": 754155.26,
+          "igst": 269702.94,
+          "total": 1778013.46
+        },
+        "rcmInward": {
+          "taxable": 41111,
+          "cgst": 1651.79,
+          "sgst": 1651.79,
+          "igst": 0,
+          "total": 3303.58
+        },
+        "rcmTransport": {
+          "taxable": 41111,
+          "cgst": 1651.79,
+          "sgst": 1651.79,
+          "igst": 0,
+          "total": 3303.58
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 10320741.51,
+          "cgst": 755807.05,
+          "sgst": 755807.05,
+          "igst": 269702.94,
+          "total": 1781317.04
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 7065428.79,
+          "cgst": 539306.84,
+          "sgst": 539306.84,
+          "igst": 92411.82,
+          "total": 1171025.5
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 41111,
+          "cgst": 1651.79,
+          "sgst": 1651.79,
+          "igst": 0,
+          "total": 3303.58
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 33898.3,
+          "cgst": 3050.8500000000004,
+          "sgst": 3050.8500000000004,
+          "igst": 0,
+          "total": 6101.7
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 7072641.49,
+          "cgst": 537907.78,
+          "sgst": 537907.78,
+          "igst": 92411.82,
+          "total": 1168227.38
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 216247.48,
+          "sgst": 216247.48,
+          "igst": 177291.12,
+          "total": 609786.08
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 57700.12,
+          "total": 57700.12
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 216248,
+          "sgst": 216248,
+          "igst": 119591,
+          "total": 552087
+        },
+        "rcmPayable": {
+          "taxable": 41111,
+          "cgst": 1651.79,
+          "sgst": 1651.79,
+          "igst": 0,
+          "total": 3303.58
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 1651.79,
+          "sgst": 1651.79,
+          "igst": 57700.12,
+          "total": 61003.7
+        }
+      }
+    },
+    "July": {
+      "month": "July",
+      "calendarMonthIndex": 7,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 14818817.3,
+          "cgst": 1016947.23,
+          "sgst": 1016947.23,
+          "igst": 465780.85000000003,
+          "total": 2499675.31
+        },
+        "b2c": {
+          "taxable": 191948.31,
+          "cgst": 17275.35,
+          "sgst": 17275.35,
+          "igst": 0,
+          "total": 34550.7
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": -196469.34,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 1381356,
+          "cgst": 124322.04,
+          "sgst": 124322.04,
+          "igst": 0,
+          "total": 248644.08
+        },
+        "creditNote": {
+          "taxable": 4154484.3300000005,
+          "cgst": 373903.59,
+          "sgst": 373903.59,
+          "igst": 0,
+          "total": 747807.18
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 9278455.94,
+          "cgst": 535996.95,
+          "sgst": 535996.95,
+          "igst": 465780.85,
+          "total": 1537774.75
+        },
+        "rcmInward": {
+          "taxable": 11054,
+          "cgst": 276.37,
+          "sgst": 276.37,
+          "igst": 0,
+          "total": 552.74
+        },
+        "rcmTransport": {
+          "taxable": 11054,
+          "cgst": 276.37000000000006,
+          "sgst": 276.37000000000006,
+          "igst": 0,
+          "total": 552.74
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 9289509.94,
+          "cgst": 536273.32,
+          "sgst": 536273.32,
+          "igst": 465780.85,
+          "total": 1538327.49
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 8990304.250000002,
+          "cgst": 710595.7000000001,
+          "sgst": 710595.7000000001,
+          "igst": 125265.90999999999,
+          "total": 1546457.31
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 11054,
+          "cgst": 276.37,
+          "sgst": 276.37,
+          "igst": 0,
+          "total": 552.74
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 945,
+          "sgst": 945,
+          "igst": 0,
+          "total": 1890
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 6165.04,
+          "cgst": 464.86,
+          "sgst": 464.86,
+          "igst": 180,
+          "total": 1109.72
+        },
+        "itcReversed": {
+          "taxable": 7517.11,
+          "cgst": 676.54,
+          "sgst": 676.54,
+          "igst": 0,
+          "total": 1353.08
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 8987676.1,
+          "cgst": 710675.67,
+          "sgst": 710675.67,
+          "igst": 125085.91,
+          "total": 1546437.25
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": -174678.72,
+          "sgst": -174678.72,
+          "igst": 340694.94,
+          "total": -8662.5
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": -174678.72,
+          "sgst": -166016.22,
+          "igst": 340694.94,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 8662.5,
+          "igst": 0,
+          "total": 8662.5
+        },
+        "isManualAdjustment": true
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 2312,
+          "sgst": 2312,
+          "igst": 0,
+          "total": 4624
+        },
+        "rcmPayable": {
+          "taxable": 11054,
+          "cgst": 276.37,
+          "sgst": 276.37,
+          "igst": 0,
+          "total": 552.74
+        },
+        "lateFees": {
+          "cgst": 25,
+          "sgst": 25,
+          "total": 50
+        },
+        "interest": {
+          "cgst": 107.45,
+          "sgst": 107.45,
+          "igst": 87,
+          "total": 301.9
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 408.82,
+          "sgst": 408.82,
+          "igst": 87,
+          "total": 904.64
+        }
+      }
+    },
+    "August": {
+      "month": "August",
+      "calendarMonthIndex": 8,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 13488926.55,
+          "cgst": 1001927.06,
+          "sgst": 1001927.06,
+          "igst": 328926.79,
+          "total": 2332780.91
+        },
+        "b2c": {
+          "taxable": 2841948.31,
+          "cgst": 255775.35,
+          "sgst": 255775.35,
+          "igst": 0,
+          "total": 511550.7
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 16330874.86,
+          "cgst": 1257702.41,
+          "sgst": 1257702.41,
+          "igst": 328926.79,
+          "total": 2844331.61
+        },
+        "rcmInward": {
+          "taxable": 9784,
+          "cgst": 244.61,
+          "sgst": 244.61,
+          "igst": 0,
+          "total": 489.22
+        },
+        "rcmTransport": {
+          "taxable": 9784,
+          "cgst": 244.61,
+          "sgst": 244.61,
+          "igst": 0,
+          "total": 489.22
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 16340658.86,
+          "cgst": 1257947.02,
+          "sgst": 1257947.02,
+          "igst": 328926.79,
+          "total": 2844820.83
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 9022788.81,
+          "cgst": 633290.8699999998,
+          "sgst": 633290.8699999998,
+          "igst": 161321.71,
+          "total": 1427903.45
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 9784,
+          "cgst": 244.61,
+          "sgst": 244.61,
+          "igst": 0,
+          "total": 489.22
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 8662.5,
+          "igst": 0,
+          "total": 8662.5
+        },
+        "debitNotes": {
+          "taxable": 6113.24,
+          "cgst": 550.19,
+          "sgst": 550.19,
+          "igst": 0,
+          "total": 1100.38
+        },
+        "itcReversed": {
+          "taxable": 2635.9,
+          "cgst": 237.23,
+          "sgst": 237.23,
+          "igst": 0,
+          "total": 474.46
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 9023823.67,
+          "cgst": 632748.06,
+          "sgst": 641410.56,
+          "igst": 161321.71,
+          "total": 1435480.33
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 624954.35,
+          "sgst": 616291.85,
+          "igst": 167605.08,
+          "total": 1408851.28
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 622124.35,
+          "sgst": 613461.85,
+          "igst": 167605.08,
+          "total": 1403191.28
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 2830,
+          "sgst": 2830,
+          "igst": 0,
+          "total": 5660
+        },
+        "rcmPayable": {
+          "taxable": 9784,
+          "cgst": 244.61,
+          "sgst": 244.61,
+          "igst": 0,
+          "total": 489.22
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 622368.96,
+          "sgst": 613706.46,
+          "igst": 167605.08,
+          "total": 1403680.5
+        }
+      }
+    },
+    "September": {
+      "month": "September",
+      "calendarMonthIndex": 9,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 20018168.24,
+          "cgst": 1795035.9399999995,
+          "sgst": 1795035.9399999995,
+          "igst": 0,
+          "total": 3590071.879999999
+        },
+        "b2c": {
+          "taxable": 491948.31,
+          "cgst": 44275.35,
+          "sgst": 44275.35,
+          "igst": 0,
+          "total": 88550.7
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 20510116.55,
+          "cgst": 1839311.29,
+          "sgst": 1839311.29,
+          "igst": 0,
+          "total": 3678622.58
+        },
+        "rcmInward": {
+          "taxable": 76310,
+          "cgst": 5183.76,
+          "sgst": 5183.76,
+          "igst": 0,
+          "total": 10367.52
+        },
+        "rcmTransport": {
+          "taxable": 76310,
+          "cgst": 5183.76,
+          "sgst": 5183.76,
+          "igst": 0,
+          "total": 10367.52
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 20586426.55,
+          "cgst": 1844495.05,
+          "sgst": 1844495.05,
+          "igst": 0,
+          "total": 3688990.1
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 6356996.749999999,
+          "cgst": 424030.1399999999,
+          "sgst": 424030.1399999999,
+          "igst": 113124.55000000002,
+          "total": 961184.83
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 76310,
+          "cgst": 5183.76,
+          "sgst": 5183.76,
+          "igst": 0,
+          "total": 10367.52
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 13800,
+          "cgst": 864,
+          "sgst": 864,
+          "igst": 0,
+          "total": 1728
+        },
+        "itcReversed": {
+          "taxable": 20897.58,
+          "cgst": 1880.79,
+          "sgst": 1880.79,
+          "igst": 0,
+          "total": 3761.58
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 6398609.17,
+          "cgst": 426469.11,
+          "sgst": 426469.11,
+          "igst": 113124.55,
+          "total": 966062.77
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 1412842.18,
+          "sgst": 1412842.18,
+          "igst": -113124.55,
+          "total": 2712559.81
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 113124.55,
+          "sgst": 0,
+          "igst": -113124.55,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 1271432.63,
+          "sgst": 1384557.18,
+          "igst": 0,
+          "total": 2655989.81
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "isManualAdjustment": true
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 28285,
+          "sgst": 28285,
+          "igst": 0,
+          "total": 56570
+        },
+        "rcmPayable": {
+          "taxable": 76310,
+          "cgst": 5183.76,
+          "sgst": 5183.76,
+          "igst": 0,
+          "total": 10367.52
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 1276616.39,
+          "sgst": 1389740.94,
+          "igst": 0,
+          "total": 2666357.33
+        }
+      }
+    },
+    "October": {
+      "month": "October",
+      "calendarMonthIndex": 10,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    },
+    "November": {
+      "month": "November",
+      "calendarMonthIndex": 11,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    },
+    "December": {
+      "month": "December",
+      "calendarMonthIndex": 12,
+      "year": "2026",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    },
+    "January": {
+      "month": "January",
+      "calendarMonthIndex": 1,
+      "year": "2027",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    },
+    "February": {
+      "month": "February",
+      "calendarMonthIndex": 2,
+      "year": "2027",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    },
+    "March": {
+      "month": "March",
+      "calendarMonthIndex": 3,
+      "year": "2027",
+      "outward": {
+        "b2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "b2c": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "sezWithoutPayment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "zeroRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "nilRated": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "exempt": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rentReceived": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleIncreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "saleDecreaseAmendment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNote": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "advanceAdjusted": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSaleWorking": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmInward": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmTransport": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmSecurity": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmGuestHouse": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmAdvocate": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalSalePortal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "inward": {
+        "itcBooks": 0,
+        "itc2b": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "importGoods": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPaid": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "creditNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "openingCreditBal": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "debitNotes": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "itcReversed": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "amendmentDiff": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "totalItcAvailable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "setoff": {
+        "rawPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "adjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "payableAfterAdjustment": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balanceCfNextMonth": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      },
+      "settlement": {
+        "tdsTcsOpeningCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "rcmPayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "lateFees": {
+          "cgst": 0,
+          "sgst": 0,
+          "total": 0
+        },
+        "interest": {
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "gstPaidThroughCash": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        },
+        "balancePayable": {
+          "taxable": 0,
+          "cgst": 0,
+          "sgst": 0,
+          "igst": 0,
+          "total": 0
+        }
+      }
+    }
+  }
+}

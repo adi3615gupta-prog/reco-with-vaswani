@@ -1,0 +1,300 @@
+{
+  "month": "September",
+  "financialYear": "2026-27",
+  "clientName": "DYP INFRAPROJECTS PRIVATE LIMITED",
+  "gstin": "27AAGCD4105L1ZO",
+  "lastUpdated": 1793283218806,
+  "data": {
+    "month": "September",
+    "calendarMonthIndex": 9,
+    "year": "2026",
+    "outward": {
+      "b2b": {
+        "taxable": 20018168.6,
+        "cgst": 1795035.9799999997,
+        "sgst": 1795035.9799999997,
+        "igst": 0,
+        "total": 3590071.9599999995
+      },
+      "b2c": {
+        "taxable": 491948,
+        "cgst": 44275.32,
+        "sgst": 44275.32,
+        "igst": 0,
+        "total": 88550.64
+      },
+      "sezWithPayment": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "sezWithoutPayment": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "zeroRated": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "nilRated": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "exempt": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "advanceReceived": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "rentReceived": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "saleIncreaseAmendment": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "saleDecreaseAmendment": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "creditNote": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "advanceAdjusted": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "totalSaleWorking": {
+        "taxable": 20510116.6,
+        "cgst": 1839311.3,
+        "sgst": 1839311.3,
+        "igst": 0,
+        "total": 3678622.6
+      },
+      "rcmInward": {
+        "taxable": 76310,
+        "igst": 0,
+        "cgst": 5183.76,
+        "sgst": 5183.76,
+        "total": 10367.52
+      },
+      "rcmTransport": {
+        "taxable": 76310,
+        "cgst": 5183.76,
+        "sgst": 5183.76,
+        "igst": 0,
+        "total": 10367.52,
+        "cess": 0
+      },
+      "rcmSecurity": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "rcmGuestHouse": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "rcmAdvocate": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "totalSalePortal": {
+        "taxable": 20586426.6,
+        "cgst": 1844495.06,
+        "sgst": 1844495.06,
+        "igst": 0,
+        "total": 3688990.12
+      }
+    },
+    "inward": {
+      "itcBooks": 0,
+      "itc2b": {
+        "taxable": 6356996.75,
+        "igst": 113124.55,
+        "cgst": 424030.14,
+        "sgst": 424030.14,
+        "total": 961184.83
+      },
+      "importGoods": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "rcmPaid": {
+        "taxable": 76310,
+        "cgst": 5183.76,
+        "sgst": 5183.76,
+        "igst": 0,
+        "total": 10367.52
+      },
+      "creditNotes": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "openingCreditBal": {
+        "taxable": 0,
+        "cgst": 13671005.65,
+        "sgst": 11707519.79,
+        "igst": 0,
+        "total": 25378525.44
+      },
+      "debitNotes": {
+        "taxable": 13800,
+        "cgst": 864,
+        "sgst": 864,
+        "igst": 0,
+        "total": 1728
+      },
+      "itcReversed": {
+        "taxable": 20897.58,
+        "cgst": 1880.79,
+        "sgst": 1880.79,
+        "igst": 0,
+        "total": 3761.58
+      },
+      "amendmentDiff": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "totalItcAvailable": {
+        "taxable": 6398609.17,
+        "cgst": 14097474.76,
+        "sgst": 12133988.9,
+        "igst": 113124.55,
+        "total": 26344588.21
+      },
+      "ineligibleItc": {
+        "taxable": 0,
+        "igst": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "total": 0
+      }
+    },
+    "setoff": {
+      "rawPayable": {
+        "taxable": 0,
+        "cgst": -12258163.46,
+        "sgst": -10294677.6,
+        "igst": -113124.55,
+        "total": -22665965.61
+      },
+      "adjustment": {
+        "taxable": 0,
+        "cgst": 113124.55,
+        "sgst": 0,
+        "igst": -113124.55,
+        "total": 0
+      },
+      "payableAfterAdjustment": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "balanceCfNextMonth": {
+        "taxable": 0,
+        "cgst": 12371288.01,
+        "sgst": 10294677.6,
+        "igst": 0,
+        "total": 22665965.61
+      },
+      "isManualAdjustment": false
+    },
+    "settlement": {
+      "tdsTcsOpeningCash": {
+        "taxable": 0,
+        "cgst": 28285,
+        "sgst": 28285,
+        "igst": 0,
+        "total": 56570
+      },
+      "rcmPayable": {
+        "taxable": 76310,
+        "cgst": 5183.76,
+        "sgst": 5183.76,
+        "igst": 0,
+        "total": 10367.52
+      },
+      "lateFees": {
+        "cgst": 0,
+        "sgst": 0,
+        "total": 0
+      },
+      "interest": {
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "gstPaidThroughCash": {
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "total": 0
+      },
+      "balancePayable": {
+        "taxable": 0,
+        "cgst": 5183.76,
+        "sgst": 5183.76,
+        "igst": 0,
+        "total": 10367.52
+      }
+    }
+  }
+}

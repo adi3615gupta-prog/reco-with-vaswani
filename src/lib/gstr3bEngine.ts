@@ -81,6 +81,7 @@ export interface InwardSupplies {
   itcReversed: TaxBreakdown;           // (-) ITC Reversed on Ineligible credit (Table 4(B))
   amendmentDiff: TaxBreakdown;         // Preserved for backward compatibility
   totalItcAvailable: TaxBreakdown;     // Auto-computed: (B) Total ITC Available for Set off = SUM(D33:D37) - SUM(D38:D39)
+  isManualTotalItc?: boolean;          // If true, user manually specified or edited total ITC available
 }
 
 export interface TaxPayableAndSetoff {
@@ -128,26 +129,52 @@ export interface GSTR3BClientProfile {
 export interface GSTR3BAnnualWorking {
   profile: GSTR3BClientProfile;
   months: Record<GSTR3BMonthKey, GSTR3BMonthData>;
+  lockedMonths?: Record<string, boolean>;
 }
 
 // ─── INITIALIZATION FACTORIES ──────────────────────────────────────────────────
 
-export function createEmptyMonthData(month: GSTR3BMonthKey, fy: string = '2025-26'): GSTR3BMonthData {
-  const parts = fy.split('-');
-  const startYear = parts[0] || '2025';
-  const endYear = parts[1] ? (parts[0].slice(0, 2) + parts[1]) : '2026';
+/**
+ * Normalizes Financial Year to standard YYYY-YY format (e.g. "2024-2025" or "2024 25" -> "2024-25")
+ */
+export function normalizeFy(val: string): string {
+  if (!val) return '2025-26';
+  const clean = val.trim();
+  const m = clean.match(/^(\d{4})[\s\-\/]?(\d{2,4})$/);
+  if (m) {
+    const end = m[2].length === 4 ? m[2].slice(2) : m[2];
+    return `${m[1]}-${end}`;
+  }
+  return clean;
+}
 
+/**
+ * Splits Financial Year into 4-digit start and end calendar years
+ */
+export function parseFyYears(fy: string): { startYear: string; endYear: string; startYearShort: string; endYearShort: string } {
+  const norm = normalizeFy(fy);
+  const parts = norm.split('-');
+  const startYear = parts[0] || '2025';
+  const endShort = parts[1] || '26';
+  const endYear = parts[1] && parts[1].length === 4 ? parts[1] : (startYear.slice(0, 2) + endShort);
+  const startYearShort = startYear.slice(-2);
+  const endYearShort = endYear.slice(-2);
+  return { startYear, endYear, startYearShort, endYearShort };
+}
+
+export const GSTR3B_MONTH_INDEX_MAP: Record<GSTR3BMonthKey, number> = {
+  April: 4, May: 5, June: 6, July: 7, August: 8, September: 9,
+  October: 10, November: 11, December: 12, January: 1, February: 2, March: 3
+};
+
+export function createEmptyMonthData(month: GSTR3BMonthKey, fy: string = '2025-26'): GSTR3BMonthData {
+  const { startYear, endYear } = parseFyYears(fy);
   const isNextYear = ['January', 'February', 'March'].includes(month);
   const year = isNextYear ? endYear : startYear;
 
-  const monthIndexMap: Record<GSTR3BMonthKey, number> = {
-    April: 4, May: 5, June: 6, July: 7, August: 8, September: 9,
-    October: 10, November: 11, December: 12, January: 1, February: 2, March: 3
-  };
-
   return {
     month,
-    calendarMonthIndex: monthIndexMap[month],
+    calendarMonthIndex: GSTR3B_MONTH_INDEX_MAP[month] || 4,
     year,
     outward: {
       b2b: createEmptyTaxBreakdown(),
@@ -217,6 +244,7 @@ export function createEmptyAnnualWorking(profile?: Partial<GSTR3BClientProfile>)
   return {
     profile: defaultProfile,
     months,
+    lockedMonths: {},
   };
 }
 
@@ -287,6 +315,13 @@ export function recalculateMonthData(
       (out.rcmTransport?.igst || 0) + (out.rcmSecurity?.igst || 0) +
       (out.rcmGuestHouse?.igst || 0) + (out.rcmAdvocate?.igst || 0)
     );
+  } else if (out.rcmInward && (out.rcmInward.taxable || out.rcmInward.cgst || out.rcmInward.sgst || out.rcmInward.igst)) {
+    if (!out.rcmTransport) out.rcmTransport = createEmptyTaxBreakdown();
+    out.rcmTransport.taxable = out.rcmInward.taxable;
+    out.rcmTransport.cgst = out.rcmInward.cgst;
+    out.rcmTransport.sgst = out.rcmInward.sgst;
+    out.rcmTransport.igst = out.rcmInward.igst;
+    out.rcmTransport.total = out.rcmInward.total;
   }
   out.rcmInward.total = round2(
     (out.rcmInward.cgst || 0) + (out.rcmInward.sgst || 0) + (out.rcmInward.igst || 0)
@@ -299,14 +334,26 @@ export function recalculateMonthData(
   out.totalSalePortal.igst = round2(out.totalSaleWorking.igst + (out.rcmInward.igst || 0));
   out.totalSalePortal.total = round2(out.totalSaleWorking.total + out.rcmInward.total);
 
-  // 4. Inward: RCM Paid flows from outward RCM
-  inw.rcmPaid = {
-    taxable: out.rcmInward.taxable || 0,
-    cgst: out.rcmInward.cgst || 0,
-    sgst: out.rcmInward.sgst || 0,
-    igst: out.rcmInward.igst || 0,
-    total: out.rcmInward.total || 0,
-  };
+  // 4. Inward: RCM Paid flows from outward RCM (or bidirectional sync)
+  if (out.rcmInward && (out.rcmInward.taxable || out.rcmInward.cgst || out.rcmInward.sgst || out.rcmInward.igst)) {
+    inw.rcmPaid = {
+      taxable: out.rcmInward.taxable || 0,
+      cgst: out.rcmInward.cgst || 0,
+      sgst: out.rcmInward.sgst || 0,
+      igst: out.rcmInward.igst || 0,
+      total: out.rcmInward.total || 0,
+    };
+  } else if (inw.rcmPaid && (inw.rcmPaid.taxable || inw.rcmPaid.cgst || inw.rcmPaid.sgst || inw.rcmPaid.igst)) {
+    out.rcmInward = {
+      taxable: inw.rcmPaid.taxable || 0,
+      cgst: inw.rcmPaid.cgst || 0,
+      sgst: inw.rcmPaid.sgst || 0,
+      igst: inw.rcmPaid.igst || 0,
+      total: inw.rcmPaid.total || 0,
+    };
+  } else {
+    inw.rcmPaid = inw.rcmPaid || createEmptyTaxBreakdown();
+  }
 
   // 5. Inward: Opening credit balance (passed in from previous month or retained)
   if (openingCredit) {
@@ -333,48 +380,51 @@ export function recalculateMonthData(
 
   // 7. (B) Total ITC Available for Set off = SUM(D33:D37) - SUM(D38:D39)
   // [ITC 2B + Import purchase + RCM Paid + Credit Notes + Opening Credit] - [Debit Notes + ITC Reversed]
-  inw.totalItcAvailable.taxable = round2(
-    (inw.itc2b.taxable || 0) +
-    (inw.importGoods?.taxable || 0) +
-    (inw.rcmPaid.taxable || 0) +
-    (inw.creditNotes?.taxable || 0) +
-    (inw.openingCreditBal.taxable || 0) -
-    (inw.debitNotes.taxable || 0) -
-    (inw.itcReversed.taxable || 0)
-  );
-  inw.totalItcAvailable.cgst = round2(
-    (inw.itc2b.cgst || 0) +
-    (inw.importGoods?.cgst || 0) +
-    (inw.rcmPaid.cgst || 0) +
-    (inw.creditNotes?.cgst || 0) +
-    (inw.openingCreditBal.cgst || 0) -
-    (inw.debitNotes.cgst || 0) -
-    (inw.itcReversed.cgst || 0)
-  );
-  inw.totalItcAvailable.sgst = round2(
-    (inw.itc2b.sgst || 0) +
-    (inw.importGoods?.sgst || 0) +
-    (inw.rcmPaid.sgst || 0) +
-    (inw.creditNotes?.sgst || 0) +
-    (inw.openingCreditBal.sgst || 0) -
-    (inw.debitNotes.sgst || 0) -
-    (inw.itcReversed.sgst || 0)
-  );
-  inw.totalItcAvailable.igst = round2(
-    (inw.itc2b.igst || 0) +
-    (inw.importGoods?.igst || 0) +
-    (inw.rcmPaid.igst || 0) +
-    (inw.creditNotes?.igst || 0) +
-    (inw.openingCreditBal.igst || 0) -
-    (inw.debitNotes.igst || 0) -
-    (inw.itcReversed.igst || 0)
-  );
-  inw.totalItcAvailable.total = round2(
-    inw.totalItcAvailable.cgst + inw.totalItcAvailable.sgst + inw.totalItcAvailable.igst
-  );
-  inw.totalItcAvailable.total = round2(
-    inw.totalItcAvailable.cgst + inw.totalItcAvailable.sgst + inw.totalItcAvailable.igst
-  );
+  if (inw.isManualTotalItc && inw.totalItcAvailable) {
+    inw.totalItcAvailable.total = round2(
+      (inw.totalItcAvailable.cgst || 0) + (inw.totalItcAvailable.sgst || 0) + (inw.totalItcAvailable.igst || 0)
+    );
+  } else {
+    inw.totalItcAvailable.taxable = round2(
+      (inw.itc2b.taxable || 0) +
+      (inw.importGoods?.taxable || 0) +
+      (inw.rcmPaid.taxable || 0) +
+      (inw.creditNotes?.taxable || 0) +
+      (inw.openingCreditBal.taxable || 0) -
+      (inw.debitNotes.taxable || 0) -
+      (inw.itcReversed.taxable || 0)
+    );
+    inw.totalItcAvailable.cgst = round2(
+      (inw.itc2b.cgst || 0) +
+      (inw.importGoods?.cgst || 0) +
+      (inw.rcmPaid.cgst || 0) +
+      (inw.creditNotes?.cgst || 0) +
+      (inw.openingCreditBal.cgst || 0) -
+      (inw.debitNotes.cgst || 0) -
+      (inw.itcReversed.cgst || 0)
+    );
+    inw.totalItcAvailable.sgst = round2(
+      (inw.itc2b.sgst || 0) +
+      (inw.importGoods?.sgst || 0) +
+      (inw.rcmPaid.sgst || 0) +
+      (inw.creditNotes?.sgst || 0) +
+      (inw.openingCreditBal.sgst || 0) -
+      (inw.debitNotes.sgst || 0) -
+      (inw.itcReversed.sgst || 0)
+    );
+    inw.totalItcAvailable.igst = round2(
+      (inw.itc2b.igst || 0) +
+      (inw.importGoods?.igst || 0) +
+      (inw.rcmPaid.igst || 0) +
+      (inw.creditNotes?.igst || 0) +
+      (inw.openingCreditBal.igst || 0) -
+      (inw.debitNotes.igst || 0) -
+      (inw.itcReversed.igst || 0)
+    );
+    inw.totalItcAvailable.total = round2(
+      inw.totalItcAvailable.cgst + inw.totalItcAvailable.sgst + inw.totalItcAvailable.igst
+    );
+  }
 
   // 8. Raw Difference (Payable if positive, surplus ITC if negative)
   // Outward tax liability to set off is regular sales (Total Sale as per Working), excluding RCM!
@@ -570,8 +620,11 @@ export function recalculateAnnualWorking(annual: GSTR3BAnnualWorking | any, prof
   // Support both annual object { profile, months } and direct months object
   const monthsSource = annual.months ? annual.months : annual;
   const profileSource = annual.profile || profileFallback || createEmptyAnnualWorking().profile;
+  const financialYear = normalizeFy(profileSource.financialYear || '2025-26');
+  profileSource.financialYear = financialYear;
 
-  const emptyTemplate = createEmptyAnnualWorking();
+  const { startYear, endYear } = parseFyYears(financialYear);
+  const emptyTemplate = createEmptyAnnualWorking({ financialYear });
   const clonedMonths: Record<string, any> = {};
 
   for (const m of GSTR3B_MONTHS) {
@@ -580,6 +633,10 @@ export function recalculateAnnualWorking(annual: GSTR3BAnnualWorking | any, prof
     } else {
       clonedMonths[m] = JSON.parse(JSON.stringify(emptyTemplate.months[m]));
     }
+    const isNextYear = ['January', 'February', 'March'].includes(m);
+    clonedMonths[m].month = m;
+    clonedMonths[m].year = isNextYear ? endYear : startYear;
+    clonedMonths[m].calendarMonthIndex = GSTR3B_MONTH_INDEX_MAP[m] || 4;
   }
 
   let currentOpeningCredit: TaxBreakdown = clonedMonths.April?.inward?.openingCreditBal || {
@@ -603,7 +660,8 @@ export function recalculateAnnualWorking(annual: GSTR3BAnnualWorking | any, prof
 
   return {
     profile: profileSource,
-    months: clonedMonths as any
+    months: clonedMonths as any,
+    lockedMonths: annual.lockedMonths || profileSource.lockedMonths || {}
   };
 }
 
@@ -699,20 +757,23 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
   workbook.created = new Date();
   workbook.modified = new Date();
 
-  const primaryNavy = '1E293B'; // Dark Slate
-  const headerBlue = '2563EB';  // Blue
+  const primaryNavy = '0F172A'; // Rich Midnight Navy
+  const headerNavy = '1E293B';  // Slate Navy
+  const headerBlue = '1E3A8A';  // Deep Corporate Sapphire
   const borderLight = { style: 'thin', color: { argb: 'E2E8F0' } } as any;
   const borderMedium = { style: 'medium', color: { argb: '94A3B8' } } as any;
+  const borderDouble = { style: 'double', color: { argb: '0F172A' } } as any;
 
   // 1. Business Details Sheet
   const bdWs = workbook.addWorksheet('Business Details', { properties: { tabColor: { argb: '3B82F6' } } });
-  bdWs.columns = [{ width: 28 }, { width: 75 }];
+  bdWs.views = [{ showGridLines: true }];
+  bdWs.columns = [{ width: 20 }, { width: 45 }];
 
   bdWs.addRow(['Business Details']);
-  bdWs.getCell('A1').font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+  bdWs.getCell('A1').font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFF' } };
   bdWs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryNavy } };
   bdWs.mergeCells('A1:B1');
-  bdWs.getRow(1).height = 28;
+  bdWs.getRow(1).height = 19;
 
   const bdRows: [string, string][] = [
     ['Firm Name:   ', annual.profile.firmName || ''],
@@ -729,12 +790,18 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     ['Filing Mobile No.', annual.profile.filingPhone || '']
   ];
 
-  bdRows.forEach(([lbl, val]) => {
+  bdRows.forEach(([lbl, val], idx) => {
     const r = bdWs.addRow([lbl, val]);
-    r.font = { name: 'Calibri', size: 10, bold: true };
+    r.font = { name: 'Segoe UI', size: 8.5 };
+    r.getCell(1).font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: '1E293B' } };
     r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
-    r.getCell(2).font = { name: 'Calibri', size: 10, bold: false };
-    r.height = 22;
+    r.getCell(1).border = { bottom: borderLight };
+    r.getCell(2).font = { name: 'Segoe UI', size: 8.5, bold: false, color: { argb: '0F172A' } };
+    if (idx % 2 === 1) {
+      r.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+    }
+    r.getCell(2).border = { bottom: borderLight };
+    r.height = 15;
     r.alignment = { vertical: 'middle' };
   });
 
@@ -749,65 +816,70 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     isConsolidated: boolean = false,
     allMonthSheetNames: string[] = []
   ) => {
+    ws.views = [{ showGridLines: true, state: 'frozen', ySplit: 6 }];
     ws.columns = [
-      { width: 5 },  // A
-      { width: 22 }, // B: Section / Category
-      { width: 34 }, // C: Particulars
-      { width: 18 }, // D: Taxable
-      { width: 16 }, // E: CGST
-      { width: 16 }, // F: SGST
-      { width: 16 }, // G: IGST
-      { width: 18 }, // H: TOTAL
+      { width: 3 },  // A: Left margin
+      { width: 17 }, // B: Section / Category
+      { width: 24 }, // C: Particulars
+      { width: 12 }, // D: Taxable
+      { width: 11 }, // E: CGST
+      { width: 11 }, // F: SGST
+      { width: 11 }, // G: IGST
+      { width: 12 }, // H: TOTAL
     ];
 
     // Row 1: Spacer
-    ws.addRow(['', '', '', '', '', '', isConsolidated ? 'Consolidated' : m.month]);
+    const r1 = ws.addRow(['', '', '', '', '', '', isConsolidated ? 'Consolidated' : m.month]);
+    r1.height = 3;
 
     // Row 2: Firm Name
     ws.mergeCells('B2:H2');
     ws.getCell('B2').value = (annual.profile.firmName || 'CLIENT NAME').toUpperCase();
-    ws.getCell('B2').font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFF' } };
+    ws.getCell('B2').font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFF' } };
     ws.getCell('B2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryNavy } };
     ws.getCell('B2').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(2).height = 28;
+    ws.getRow(2).height = 19;
 
     // Row 3: GST No.
     ws.mergeCells('B3:H3');
     ws.getCell('B3').value = `GST No. ${annual.profile.gstin || 'N/A'}`;
-    ws.getCell('B3').font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'E2E8F0' } };
-    ws.getCell('B3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '334155' } };
+    ws.getCell('B3').font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'E2E8F0' } };
+    ws.getCell('B3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerNavy } };
     ws.getCell('B3').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(3).height = 20;
+    ws.getRow(3).height = 14;
 
     // Row 4: Address
     ws.mergeCells('B4:H4');
     ws.getCell('B4').value = annual.profile.address || '';
-    ws.getCell('B4').font = { name: 'Calibri', size: 9, color: { argb: '64748B' } };
+    ws.getCell('B4').font = { name: 'Segoe UI', size: 8, color: { argb: '64748B' } };
     ws.getCell('B4').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(4).height = 18;
+    ws.getRow(4).height = 13;
 
     // Row 5: Title
     ws.mergeCells('B5:H5');
     ws.getCell('B5').value = isConsolidated
       ? `GSTR-3B WORKING CONSOLIDATED SHEET ${annual.profile.financialYear || '2026-2027'}`
       : `GSTR-3B WORKING FOR THE MONTH OF ${m.month.toUpperCase()} ${m.year}`;
-    ws.getCell('B5').font = { name: 'Calibri', size: 11, bold: true, color: { argb: '1E3A8A' } };
-    ws.getCell('B5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DBEAFE' } };
+    ws.getCell('B5').font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: '0F172A' } };
+    ws.getCell('B5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
+    ws.getCell('B5').border = { bottom: { style: 'thin', color: { argb: 'CBD5E1' } } };
     ws.getCell('B5').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(5).height = 24;
+    ws.getRow(5).height = 16;
 
     // Row 6: Table Header
     const headerRow = ws.getRow(6);
     headerRow.values = ['', 'PARTICULARS', '', 'TAXABLE', 'CGST', 'SGST', 'IGST', 'TOTAL'];
-    headerRow.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-    headerRow.height = 22;
+    headerRow.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FFFFFF' } };
+    headerRow.height = 17;
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
     for (let c = 2; c <= 8; c++) {
       headerRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBlue } };
+      headerRow.getCell(c).border = { bottom: { style: 'medium', color: { argb: '0F172A' } } };
     }
 
     // Row 7: Blank spacer
-    ws.addRow([]);
+    const r7 = ws.addRow([]);
+    r7.height = 3;
 
     const addRowWithFormulas = (
       sec: string,
@@ -820,7 +892,7 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
       options: { isHeader?: boolean; isTotal?: boolean; isHighlight?: boolean; isPayable?: boolean; isCarryForward?: boolean } = {}
     ) => {
       const r = ws.addRow(['', sec, particulars, '', '', '', '', '']);
-      r.height = options.isTotal ? 22 : 19;
+      r.height = options.isTotal ? 16 : 14.5;
       r.alignment = { vertical: 'middle' };
 
       r.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
@@ -842,25 +914,25 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
       setCol(8, valH);
 
       if (options.isTotal) {
-        r.font = { name: 'Calibri', size: 10, bold: true };
+        r.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: '0F172A' } };
         for (let col = 2; col <= 8; col++) {
           r.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
-          r.getCell(col).border = { top: borderLight, bottom: borderMedium };
+          r.getCell(col).border = { top: borderMedium, bottom: borderDouble };
         }
       } else if (options.isPayable) {
-        r.font = { name: 'Calibri', size: 10, bold: true, color: { argb: '991B1B' } };
+        r.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: '9F1239' } };
         for (let col = 2; col <= 8; col++) {
-          r.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEE2E2' } };
-          r.getCell(col).border = { top: borderLight, bottom: borderLight };
+          r.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F2' } };
+          r.getCell(col).border = { top: borderMedium, bottom: borderDouble };
         }
       } else if (options.isCarryForward) {
-        r.font = { name: 'Calibri', size: 10, bold: true, color: { argb: '065F46' } };
+        r.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: '166534' } };
         for (let col = 2; col <= 8; col++) {
-          r.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D1FAE5' } };
-          r.getCell(col).border = { top: borderLight, bottom: borderLight };
+          r.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
+          r.getCell(col).border = { top: borderMedium, bottom: borderDouble };
         }
       } else {
-        r.font = { name: 'Calibri', size: 9 };
+        r.font = { name: 'Segoe UI', size: 8.5, color: { argb: '334155' } };
         for (let col = 2; col <= 8; col++) {
           r.getCell(col).border = { bottom: borderLight };
         }
@@ -964,16 +1036,16 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     );
 
     const r25 = makeLineVals(25, m.outward.rcmTransport || createEmptyTaxBreakdown());
-    addRowWithFormulas('', 'RCM on Transport Charges 5%', r25.d, r25.e, r25.f, r25.g, r25.h);
+    addRowWithFormulas('', 'RCM on Transport Charges', r25.d, r25.e, r25.f, r25.g, r25.h);
 
     const r26 = makeLineVals(26, m.outward.rcmSecurity || createEmptyTaxBreakdown());
-    addRowWithFormulas('', 'RCM on Security Charges 18%', r26.d, r26.e, r26.f, r26.g, r26.h);
+    addRowWithFormulas('', 'RCM on Security Charges', r26.d, r26.e, r26.f, r26.g, r26.h);
 
     const r27 = makeLineVals(27, m.outward.rcmGuestHouse || createEmptyTaxBreakdown());
-    addRowWithFormulas('', 'RCM on Guest House Charges 18%', r27.d, r27.e, r27.f, r27.g, r27.h);
+    addRowWithFormulas('', 'RCM on Guest House Charges', r27.d, r27.e, r27.f, r27.g, r27.h);
 
     const r28 = makeLineVals(28, m.outward.rcmAdvocate || createEmptyTaxBreakdown());
-    addRowWithFormulas('', 'RCM on Advocate Charges 18%', r28.d, r28.e, r28.f, r28.g, r28.h);
+    addRowWithFormulas('', 'RCM on Advocate Charges', r28.d, r28.e, r28.f, r28.g, r28.h);
 
     // Row 29: Spacer
     ws.addRow([]);
@@ -993,9 +1065,9 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     // ── SECTION 3: INWARD SUPPLIES & ITC (Rows 31 to 41) ──
     // Row 31: Header
     const r31 = ws.addRow(['', 'Inward Supplies', '', '', '', '', '', '']);
-    r31.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+    r31.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FFFFFF' } };
     r31.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryNavy } };
-    r31.height = 20;
+    r31.height = 15;
 
     // Row 32: ITC (As per books)
     addRowWithFormulas('', 'ITC (As per books)', null, null, null, null, m.inward.itcBooks || 0);
@@ -1072,7 +1144,7 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     // Row 43: (A-B) Payable
     addRowWithFormulas(
       'Tax Set-off',
-      '(A-B) Payable ',
+      '(A-B) Payable',
       null,
       { formula: 'E22-E41', result: m.setoff.rawPayable.cgst },
       { formula: 'F22-F41', result: m.setoff.rawPayable.sgst },
@@ -1105,7 +1177,7 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     // Row 48: Final Liability Payable
     addRowWithFormulas(
       '',
-      'Final Liability Payable ',
+      'Final Liability Payable',
       null,
       { formula: 'IF(E43-E44>0,E43-E44,0)-E46', result: m.setoff.payableAfterAdjustment.cgst },
       { formula: 'IF(F43-F44>0,F43-F44,0)-F46', result: m.setoff.payableAfterAdjustment.sgst },
@@ -1204,30 +1276,34 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
 
   // 4. GST Payment Details Sheet
   const payWs = workbook.addWorksheet('GST Payment Details', { properties: { tabColor: { argb: 'F59E0B' } } });
+  payWs.views = [{ showGridLines: true, state: 'frozen', ySplit: 4 }];
   payWs.columns = [
-    { width: 18 }, // Month
-    { width: 18 }, // GST Liability
-    { width: 18 }, // Payment Mode
-    { width: 22 }, // CPIN No.
-    { width: 16 }, // Payment Date
-    { width: 18 }, // Pending Liability
+    { width: 13 }, // Month
+    { width: 12 }, // GST Liability
+    { width: 12 }, // Payment Mode
+    { width: 15 }, // CPIN No.
+    { width: 11 }, // Payment Date
+    { width: 12 }, // Pending Liability
   ];
 
-  payWs.addRow([]);
+  const paySpacer1 = payWs.addRow([]);
+  paySpacer1.height = 3;
   const payTitle = payWs.addRow(['GST Monthly Payment Details ']);
-  payTitle.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFF' } };
+  payTitle.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFF' } };
   payWs.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryNavy } };
   payWs.mergeCells('A2:F2');
-  payTitle.height = 26;
+  payTitle.height = 19;
 
-  payWs.addRow([]);
+  const paySpacer2 = payWs.addRow([]);
+  paySpacer2.height = 3;
   const payHdr = payWs.addRow(['Month', 'GST Liability', 'Payment Mode', 'CPIN No.', 'Payment Date', 'Pending Liability']);
-  payHdr.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+  payHdr.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FFFFFF' } };
   for (let c = 1; c <= 6; c++) {
     payHdr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBlue } };
     payHdr.getCell(c).alignment = { vertical: 'middle', horizontal: 'center' };
+    payHdr.getCell(c).border = { bottom: { style: 'medium', color: { argb: '0F172A' } } };
   }
-  payHdr.height = 22;
+  payHdr.height = 17;
 
   GSTR3B_MONTHS.forEach((mKey, idx) => {
     const sName = monthSheetNames[idx];
@@ -1239,12 +1315,20 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
       '',
       0
     ]);
-    r.font = { name: 'Calibri', size: 9 };
+    r.font = { name: 'Segoe UI', size: 8.5, color: { argb: '334155' } };
+    if (idx % 2 === 1) {
+      for (let c = 1; c <= 6; c++) {
+        r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+      }
+    }
+    for (let c = 1; c <= 6; c++) {
+      r.getCell(c).border = { bottom: borderLight };
+    }
     r.getCell(2).numFmt = numFormat;
     r.getCell(6).numFmt = numFormat;
     r.getCell(2).alignment = { vertical: 'middle', horizontal: 'right' };
     r.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' };
-    r.height = 19;
+    r.height = 14.5;
   });
 
   // Total Payment Row
@@ -1256,36 +1340,42 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     '',
     { formula: 'SUM(F5:F16)' }
   ]);
-  totalPayRow.font = { name: 'Calibri', size: 10, bold: true };
+  totalPayRow.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: '0F172A' } };
   totalPayRow.getCell(2).numFmt = numFormat;
   totalPayRow.getCell(6).numFmt = numFormat;
+  totalPayRow.height = 16;
   for (let c = 1; c <= 6; c++) {
     totalPayRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
-    totalPayRow.getCell(c).border = { top: borderLight, bottom: borderMedium };
+    totalPayRow.getCell(c).border = { top: borderMedium, bottom: borderDouble };
   }
 
   // 5. Annual Summary Sheet (12-month cross table with dynamic formulas)
   const summaryWs = workbook.addWorksheet('Annual Summary', { properties: { tabColor: { argb: '10B981' } } });
+  summaryWs.views = [{ showGridLines: true, state: 'frozen', ySplit: 3, xSplit: 1 }];
   summaryWs.columns = [
-    { width: 25 }, // Particulars
-    ...GSTR3B_MONTHS.map(() => ({ width: 14 })),
-    { width: 16 } // Total
+    { width: 22 }, // Particulars
+    ...GSTR3B_MONTHS.map(() => ({ width: 10.5 })),
+    { width: 12.5 } // Total
   ];
 
   summaryWs.mergeCells('A1:N1');
   summaryWs.getCell('A1').value = `${annual.profile.firmName || 'CLIENT'} — GSTR-3B ANNUAL SUMMARY (${annual.profile.financialYear || '2026-2027'})`;
-  summaryWs.getCell('A1').font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+  summaryWs.getCell('A1').font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFF' } };
   summaryWs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryNavy } };
   summaryWs.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
-  summaryWs.getRow(1).height = 30;
+  summaryWs.getRow(1).height = 19;
+
+  const sSpacer = summaryWs.addRow([]);
+  sSpacer.height = 3;
 
   const sHeader = summaryWs.getRow(3);
   sHeader.values = ['PARTICULARS', ...GSTR3B_MONTHS, 'FULL YEAR TOTAL'];
-  sHeader.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-  sHeader.height = 24;
+  sHeader.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FFFFFF' } };
+  sHeader.height = 17;
   sHeader.alignment = { vertical: 'middle', horizontal: 'center' };
   for (let c = 1; c <= 14; c++) {
     sHeader.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBlue } };
+    sHeader.getCell(c).border = { bottom: { style: 'medium', color: { argb: '0F172A' } } };
   }
 
   const addSummaryRowWithFormula = (
@@ -1313,8 +1403,8 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
       result: options.customColGetter ? round2(GSTR3B_MONTHS.reduce((acc, m) => acc + (options.customColGetter!(annual.months[m]) || 0), 0)) : undefined
     };
 
-    r.height = isBold ? 22 : 18;
-    r.font = { name: 'Calibri', size: 9, bold: isBold };
+    r.height = isBold ? 16 : 14.5;
+    r.font = { name: 'Segoe UI', size: isBold ? 9 : 8.5, bold: isBold, color: isBold ? { argb: '0F172A' } : { argb: '334155' } };
     r.alignment = { vertical: 'middle' };
     for (let c = 2; c <= 14; c++) {
       r.getCell(c).numFmt = numFormat;
@@ -1323,7 +1413,11 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
     if (isBold) {
       for (let c = 1; c <= 14; c++) {
         r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
-        r.getCell(c).border = { top: borderLight, bottom: borderMedium };
+        r.getCell(c).border = { top: borderLight, bottom: borderDouble };
+      }
+    } else {
+      for (let c = 1; c <= 14; c++) {
+        r.getCell(c).border = { bottom: borderLight };
       }
     }
     return r;
@@ -1513,17 +1607,17 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
       ],
       itc_rev: [
         {
-          ty: 'RUL',
-          iamt: 0,
-          camt: 0,
-          samt: 0,
-          csamt: 0
-        },
-        {
-          ty: 'OTH',
+          ty: 'RUL', // Table 4(B)(1) Permanent Reversal: As per rules 38, 42 and 43 of CGST Rules & Section 17(5)
           iamt: round2(monthData.inward.itcReversed?.igst || 0),
           camt: round2(monthData.inward.itcReversed?.cgst || 0),
           samt: round2(monthData.inward.itcReversed?.sgst || 0),
+          csamt: 0
+        },
+        {
+          ty: 'OTH', // Table 4(B)(2) Temporary Reversals: Others
+          iamt: round2((monthData.inward as any).itcReversedOther?.igst || 0),
+          camt: round2((monthData.inward as any).itcReversedOther?.cgst || 0),
+          samt: round2((monthData.inward as any).itcReversedOther?.sgst || 0),
           csamt: 0
         }
       ],
