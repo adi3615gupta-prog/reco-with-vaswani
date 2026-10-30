@@ -89,12 +89,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Ensure hyphenated copies exist for standard URLs
-  if (fs.existsSync(spacedExe) && !fs.existsSync(hyphenExe)) {
+  // Ensure hyphenated copies exist and are up-to-date for standard URLs and auto-updates
+  if (fs.existsSync(spacedExe)) {
     console.log(`Preparing hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe`);
     fs.copyFileSync(spacedExe, hyphenExe);
   }
-  if (fs.existsSync(blockmap) && !fs.existsSync(hyphenBlockmap)) {
+  if (fs.existsSync(blockmap)) {
     console.log(`Preparing hyphenated copy: AUDIT-WITH-VASWANI-Setup-${version}.exe.blockmap`);
     fs.copyFileSync(blockmap, hyphenBlockmap);
   }
@@ -127,8 +127,8 @@ async function main() {
       body: JSON.stringify({
         tag_name: tag,
         target_commitish: 'main',
-        name: tag,
-        body: `### Release ${tag}\n\n- Chrome-First Browser Architecture across all automation modules (GSTR-2B, GSTR-1, IMS).\n- Auto-update and client startup hardening.`,
+        name: `Release ${tag}`,
+        body: `### Release ${tag}\n\n- **Multi-PC Centralized LAN Synchronization**: Full bidirectional synchronization of GST Client Credentials Vault and Master Directory across workstations via shared Data Path.\n- **Multi-PC GSTR-3B File Locking**: Period-level locking prevents conflicting edits across workstations on LAN.\n- **Direct Client Directory Auto-Save**: Saves working bundles directly into structured subfolders (3B Working, R1 Base, 2B Base, Credit Notes Base, Reversal Base).\n- **Zero-Merge Excel Architecture**: Strict guarantee of 0 merged cells across analytical workbooks for seamless filtering, sorting, and XLOOKUP.\n- **Autonomous Portal Suites**: Chrome-first background processing across GSTR-1, GSTR-2B, IMS, and Notices.`,
         draft: false,
         prerelease: false
       })
@@ -145,7 +145,7 @@ async function main() {
   const uploadUrl = releaseData.upload_url;
   const existingAssets = releaseData.assets || [];
 
-  // Key assets required by electron-updater and users
+  // Key assets required by electron-updater and users (standard hyphenated naming)
   const filesToUpload = [
     { path: hyphenExe, name: `AUDIT-WITH-VASWANI-Setup-${version}.exe`, type: 'application/octet-stream' },
     { path: hyphenBlockmap, name: `AUDIT-WITH-VASWANI-Setup-${version}.exe.blockmap`, type: 'application/octet-stream' },
