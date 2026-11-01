@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 25
-current_phase_name: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite
+milestone: V2.3
+current_phase: 29
+current_phase_name: Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max
 status: completed
-stopped_at: Completed Phase 25 end-to-end with 18 automated tests passing and zero build errors
-last_updated: "2026-10-30T18:46:00.000Z"
-last_activity: 2026-10-30
-last_activity_desc: Fully implemented Phase 25 across all 4 plans — canonical GSTR-1 outward engine, bifurcated HSN & B2CL auto-classification, Tally UQC & Table 13 series gap analyzer, All-In-One flat register parser, official V2.2 32-sheet Zero-Merge Excel exporter, 31 section-wise CSV zip suite, DRC-01B/C comparative audit workbooks, GSTR-1 Workbench UI in Tab 05 with DRC-01B Real-Time Difference Guard, 1-click autonomous Playwright uploader, configurable reconciliation settings knobs, Rule 88A mathematical cash liability set-off optimizer, and E-Way Bill vs GSTR-1 cross-checker. 100% test pass rate (18/18).
+last_updated: "2026-11-01T05:50:00.000Z"
+last_activity: 2026-11-01
+last_activity_desc: Completed Phase 29 execution across all 3 plans. Modernized LandingPage.tsx into an Executive White Gateway, authored 12 passing tests, and verified clean build.
 progress:
-  total_phases: 25
-  completed_phases: 25
-  total_plans: 55
-  completed_plans: 55
-  percent: 100.0
+  total_phases: 29
+  completed_phases: 29
+  total_plans: 70
+  completed_plans: 70
+stopped_at: Completed Phase 29 (Landing Page Layout Transformation & Executive White Theme Modernization) with all 3 plans executed and verified
 ---
 
 # Project State
@@ -22,11 +22,36 @@ progress:
 See: `.planning/PROJECT.md`
 
 **Core value:** Audit-grade, high-precision reconciliation and statutory tax computation that eliminates double-counting, strictly guarantees zero merged cells in analytical workbooks, and runs completely locally and securely.  
-**Current focus:** Phase 25 Complete — GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite
+**Current focus:** Phase 29 Complete — Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max
 
 ## Current Position
 
-Phase: 25 (GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite) — COMPLETED  
-Plans: 25-01 [x], 25-02 [x], 25-03 [x], 25-04 [x]  
-Status: 4/4 Plans Fully Implemented & Verified with 18 Tests  
-Last activity: 2026-10-30 — Implemented all 4 plans of Phase 25 including TaxPower GST reverse-engineered capabilities, verified production build with zero errors, and validated end-to-end functionality.
+Phase: 29 (Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max) — COMPLETED  
+Plans: 29-01 [x], 29-02 [x], 29-03 [x]  
+Status: 3/3 Plans Executed, Verified & Summarized  
+Last activity: 2026-11-01 — Executed plans 29-01, 29-02, and 29-03. All 43 test suites (291 tests) passed and production build succeeded.
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 26 completed: Monthly Audit Format & Working Paper Verification Suite (Suite 08).
+- Phase 27 completed: Modernized and harmonized all remaining suites (03, 05, 06, 07, and GST Notices) into the executive light design system.
+- Phase 28 completed: Fully resolved all 16 audit items across security, concurrency, TDS engine, SQLite WAL, and build hygiene.
+- Phase 29 completed: Fully transformed LandingPage into an advanced Executive White Enterprise Gateway using UI/UX Pro Max. Built frosted sticky navigation, interactive financial cockpit demo, complete 8-Suite + Autopilot showcase with category filters, architectural zero-merge defense breakdown, modernized feedback modal, and 12 unit tests.
+  1. Masked cleartext GST portal credentials and enforced authentication in `ims_routes.js`.
+  2. Restricted reflected CORS policy in `server.js` to local and RFC 1918 private subnets.
+  3. Eliminated Explorer command injection using `child_process.spawn('explorer.exe', ...)` with `shell: false`.
+  4. Enabled SQLite WAL mode, busy timeout (10s), and normal synchronization in `server.js`.
+  5. Confined file paths and removed third-party mock fallback in `monthly_audit_routes.js`.
+  6. Guarded native folder browsing endpoint against unauthorized remote LAN calls.
+  7. Uncommented Traces deletion in `src/lib/tdsEngine.ts` to prevent duplicate "Missing in Books" rows.
+  8. Strictly enforced confirmed matches empty list guard (`confirmedMatches !== undefined`).
+  9. Harmonized PAN threshold group key (`${rawPan}_${resolvedSection}`) across 194Q and credit adjustments.
+  10. Achieved 100% test pass rate in `src/test/tdsEngine.test.ts` (13/13 tests green).
+  11. Isolated multi-user Playwright browser sessions in `gstr2b_routes.js` and `gstr1_routes.js` by GSTIN (`activeBrowsers = new Map()`).
+  12. Corrected interstate vs. intrastate cross-head mismatch categorization to `Tax Type Error` in `src/lib/reconciliation.ts`.
+  13. Implemented unutilized cash credit rollover (`surplusTdsCashCfNextMonth`) in `src/lib/gstr3bEngine.ts`.
+  14. Purged 4 orphaned dead scripts (`src/pages/server.ts`, `src/pages/index.html`, `src/pages/gstr3bParser.ts`, `main.js`).
+  15. Hardened Electron Tally IPC handler (`main.cjs`) against malformed payload crashes.
+  16. Replaced hardcoded user path with dynamic Python microservice resolution in `server.js` and polyfilled jsdom `AbortSignal` guard in `src/lib/tallyApi.ts`.

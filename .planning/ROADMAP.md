@@ -29,6 +29,10 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 23: Central Office-Wise Gemini Cloud Distribution & Firebase License Sync** - Distribute Gemini API key centrally via Firebase Firestore (reco-vaswani-license) so all workstations in an office activate Sourav AI automatically without manual key entry. (completed 2026-10-29)
 - [x] **Phase 24: Windows Background Auto-Start & Universal Desktop AI Copilot (PC Loco Pilot)** - Silent background auto-launch on Windows startup, system tray residency, close-to-tray protection, universal always-on-top floating desktop widget, global system hotkey (`Ctrl+Alt+S`), and bidirectional IPC bridge to control the full application from anywhere on the PC. (completed 2026-10-30)
 - [x] **Phase 25: GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite** - Outward supply preparation, automated statutory bifurcation (B2B vs B2CL vs B2CS, bifurcated HSN B2B/B2C, Table 14/15 ECO), official 32-sheet V2.2 Excel export, 100% portal-compliant GSTR-1 JSON generation directly from books/Tally, 1-click autonomous Playwright upload into the GST Portal offline utility section, and TaxPower reverse-engineered capabilities (All-In-One flat register parser, Tally UQC dictionary mapping, Table 13 document series gap analyzer, DRC-01B/C comparative audit workbooks, configurable reconciliation settings knobs, Rule 88A mathematical set-off optimizer, and E-Way Bill vs GSTR-1 cross-checker). (completed 2026-10-30)
+- [x] **Phase 26: Suite 08 - Monthly Audit Format & Working Paper Verification Suite** - Standardized monthly internal and statutory audit verification suite modeled on firm format docx, 5 core sections, cross-month pending work tracking, TallyPort 9000 auto-population, and 8-sheet Zero-Merge Excel export.
+- [x] **Phase 27: Executive Enterprise Light Theme Harmonization for Suites 03, 05, 06, 07 & GST Notices Suite** - Modernize and harmonize all remaining major suites (Suite 03 Tally Direct, Suite 05 Statutory Audit & Clause 44, Suite 06 Income Tax Sandbox, Suite 07 Bank CMA, and GST Notices & Orders Autonomous Suite) into the clean, high-contrast, executive white theme established in Suite 01, Suite 02, Suite 04, and Suite 08 — eliminating dark obsidian cards, fixing unreadable grey texts, ensuring responsive non-sticky layouts, and validating zero regressions. (completed 2026-11-01)
+- [x] **Phase 28: System Hardening, Security Safeguards & Comprehensive Bug Resolution** - Fix unauthenticated cleartext portal credentials exposure, restrict reflected CORS, eliminate Explorer shell injection, repair TDS engine duplicate rows & threshold calculation, resolve concurrent Playwright browser collisions, enable SQLite WAL mode, fix tax head classification, preserve GSTR-3B cash credits, and remove dead code.
+- [x] **Phase 29: Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max** - Elevate landing page into a fully advanced Executive White Gateway with frosted sticky navigation, interactive financial cockpit, comprehensive 8-Suite showcase with category filters, zero-merge architectural deep-dive, and 100% WCAG 2.2 accessibility. (completed 2026-11-01)
 
 ## Phase Details
 
@@ -306,10 +310,77 @@ Plans:
 Plans:
 - [ ] TBD (run /gsd-plan-phase 25 to break down)
 
+### Phase 26: Suite 08 - Monthly Audit Format & Working Paper Verification Suite
+
+**Goal:** Digitize, automate, and institutionalize the standardized monthly internal and statutory audit verification process modeled directly on the live CA firm format (\\new_server\D\3. 2025-2026\DYP Infraprojects Private Limited\Monthly Audit Format.docx) and cross-month tracker (Work Pending List.xlsx). Provides automated data extraction from TallyPort 9000, multi-source cross-reconciliation (Books Sales vs R1/3B, Books Purchases vs 2B, Payroll vs PF/ESIC/PT, Bank/Loans vs 26AS/AIS), statutory compliance checks (Sec 40A(3) cash > ₹10k, negative cash, Sec 36(1)(va) deposit deadlines, Sec 17(5) blocked ITC, ROC Form CHG-1/4 charges), Maker-Checker 4-eye review & client release workflow (Junior Data Entry -> Senior Review & Sign-Off -> Client Report Release), cross-month action item tracking with resolution audit trails, and 8-sheet Strict Zero-Merge Excel export (ws['!merges'] = []) with direct client directory auto-save.
+
+**Depends on:** Phase 25  
+**Success Criteria**:
+  1. 5 SQLite tables (monthly_audits, udit_checklists, udit_observations, udit_pending_points, udit_verification_data) with cascading deletes and REST APIs in monthly_audit_routes.js.
+  2. Multi-source verification engine (src/lib/monthlyAuditEngine.ts) performs automated checks across Sales, Purchases, Journals, Bank/Loans, ROC charges, Cash compliance, and Labor laws.
+  3. Strict Zero-Merge Excel generator (src/lib/monthlyAuditExcel.ts) produces 8 specialized sheets with zero merged cells (ws['!merges'] = []).
+  4. Direct client directory auto-save saves the working paper to gst_returns_data/<Client Name - GSTIN>/<FY>/<Month>/Audit Working/ without browser prompt interrupts.
+  5. Interactive Monthly Audit UI Workbench (src/pages/MonthlyAuditSuite.tsx) integrated into src/pages/AuditModule.tsx with 12-month completion status timeline, 5 tabs, observation modals, cross-month pending point tracking, and Maker-Checker Review & Release Stepper (Draft -> Under Senior Review -> Approved -> Released to Client).
+  6. All Vitest test suites and full production build (
+pm run build) pass with zero errors.
+
+**Plans**: 4/4 plans complete
+**Wave 1**
+- [x] 26-01: Database Schema, SQLite Storage & Backend REST API Engine
+- [x] 26-02: Core Verification Engine & Tally/GST Auto-Populator
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 26-03: Strict Zero-Merge Multi-Tab Excel Working Paper Exporter
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 26-04: Interactive Monthly Audit UI Workbench & Cross-Month Action Tracker
+
+### Phase 28: System Hardening, Security Safeguards & Comprehensive Bug Resolution
+
+**Goal:** Resolve all 16 critical vulnerabilities, calculation bugs, and concurrency risks identified during the codebase audit: eliminate cleartext portal credential exposure, restrict reflected CORS, remove Explorer shell injection, repair TDS engine duplicate rows & threshold calculation, resolve concurrent Playwright browser collisions, enable SQLite WAL mode, fix cross-head tax type classification, preserve GSTR-3B cash credits across months, and clean up orphaned code.
+
+**Depends on:** Phase 27  
+**Requirements**: SEC-01, SEC-02, SEC-03, TDS-01, TDS-02, TDS-03, CONCUR-01, CONCUR-02, RECO-01, G3B-01, HYG-01, IPC-01, BUILD-01  
+**Success Criteria** (what must be TRUE):
+  1. `GET /api/ims/credentials` requires authentication and never exposes `portal_password` in cleartext (masks as boolean flag).
+  2. CORS headers strictly whitelist trusted local and RFC 1918 private LAN origins, eliminating wide-open reflection.
+  3. Windows Explorer launcher spawns `explorer.exe` with `shell: false`, eliminating shell injection risks.
+  4. SQLite initializes in WAL mode with busy timeout configured, preventing `SQLITE_BUSY` errors during concurrent multi-user access.
+  5. TDS Engine tests pass with 100% success rate (13/13 tests green, resolving the 4 previous failures).
+  6. Playwright Autopilot sessions are isolated in a Map keyed by client GSTIN, preventing cross-user cancellation aborts.
+  7. Reconciliation engine accurately flags cross-head (IGST vs CGST/SGST) disparities as `Tax Type Error` instead of `Value Mismatch`.
+  8. GSTR-3B engine tracks unutilized Electronic Cash Ledger TDS/TCS credits and rolls them into subsequent months.
+  9. Orphaned scripts and dead files (`src/pages/server.ts`, `src/pages/index.html`, `src/pages/gstr3bParser.ts`, `main.js`) are permanently purged.
+  10. Full test suite (`npm run test`) and production build (`npm run build`) pass with 0 errors.
+
+**Plans**: 4/4 plans complete
+- [x] 28-01: Critical Security Hardening, CORS Protection & SQLite Concurrency Architecture (completed 2026-11-01)
+- [x] 28-02: TDS Engine Core Calculation Fixes & Scrutiny Test Recovery (100% Pass Rate) (completed 2026-11-01)
+- [x] 28-03: Statutory GST Reco, GSTR-3B Cash Rollover & Multi-User Autopilot Concurrency (completed 2026-11-01)
+- [x] 28-04: System Hygiene, Tally IPC Robustness, Dead Code Deletion & End-to-End Build Verification (completed 2026-11-01)
+
+### Phase 29: Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max
+
+**Goal:** Transform the landing page into a fully advanced, high-impact Executive White Enterprise Gateway using UI/UX Pro Max intelligence. Eliminate dark backgrounds, broken video elements, and outdated 6-tool layouts. Introduce a frosted sticky header bar, interactive live financial cockpit (simulating ITC matching, Port 9000 status, and 12M autopilot), a comprehensive 8-Suite + Autopilot showcase with interactive category filtering, architectural zero-merge defense breakdown, and modernized feedback collection with 100% WCAG 2.2 accessibility.
+
+**Depends on:** Phase 28  
+**Requirements**: LAND-01, LAND-02, LAND-03, LAND-04, LAND-05, LAND-06  
+**Success Criteria** (what must be TRUE):
+  1. Landing page transitions to the pristine Executive White Enterprise Theme (`#F8FAFC` base, `#FFFFFF` cards, `#E2E8F0` borders, `#0F172A` slate typography) with zero dark obsidian containers.
+  2. Frosted sticky navigation bar provides quick access, official brand emblem, category jump links, global hotkey badge (`Ctrl+Alt+S`), and high-contrast "Get Started" CTA.
+  3. Hero section features a high-impact split layout with verified trust badges and an interactive Live Financial Cockpit replacing the broken video.
+  4. Comprehensive 8-Suite + Autopilot Navigator showcases all modules with interactive category filter tabs (All, Audit & Reco, Returns & Compliance, Tally & Integration, Financial & Tax, AI & Autopilot) and direct launch triggers.
+  5. Architectural Defense Deep Dive clearly illustrates Zero-Merge Excel architecture, air-gapped local SQLite privacy, and mathematical reconciliation invariants.
+  6. Automated Vitest tests in `src/test/landingPage.test.tsx` pass and full production build compiles with 0 errors.
+
+**Plans:** 3/3 plans complete
+- [x] 29-01: Executive White Theme Architecture, Frosted Navigation & High-Impact Hero Showcase (completed 2026-11-01)
+- [x] 29-02: Comprehensive 8-Suite Showcase, Interactive Module Navigator & Filter Cockpit (completed 2026-11-01)
+- [x] 29-03: Architectural Defense Deep-Dive, Executive Feedback Engine & Accessibility Polish (completed 2026-11-01)
+
 ---
 *Roadmap defined: 2026-10-22*
 *Last updated: 2026-10-24 after Phase 15 Returns Tracking addition*
-
 
 ### Phase 17: NOTICE-SHIELD AI (Automated GST Notice Intelligence, Zero-Trust PII Sanitization & Courtroom-Grade Legal Defense Engine)
 
@@ -366,10 +437,10 @@ Plans:
   6. Non-Corporate mode evaluates Level I-IV AS applicability and produces Partners' Capital Accounts and Horizontal T-Format layouts.
   7. Preventive IFC Check Dashboard validates 35+ financial integrity rules in real time.
 
-**Plans**: 0/3 plans complete
-- [ ] 18-01: 4-Digit Taxonomy (1001-4902), Dual-Mode Storage Engine, Level I-IV AS Matrix & Tally/Excel Ingestion
-- [ ] 18-02: Statements Generation (BS, P&L, AS-3 Indirect CFS), Corporate Tax & Deferred Tax Engine
-- [ ] 18-03: MCA 2021 Regulatory Disclosures (11 Ratios & Aging), Non-Corporate Partner Schedules, IFC Checks & Zero-Merge Excel Suite
+**Plans**: 3/3 plans complete
+- [x] 18-01: 4-Digit Taxonomy (1001-4902), Dual-Mode Storage Engine, Level I-IV AS Matrix & Tally/Excel Ingestion (completed 2026-10-27)
+- [x] 18-02: Statements Generation (BS, P&L, AS-3 Indirect CFS), Corporate Tax & Deferred Tax Engine (completed 2026-10-27)
+- [x] 18-03: MCA 2021 Regulatory Disclosures (11 Ratios & Aging), Non-Corporate Partner Schedules, IFC Checks & Zero-Merge Excel Suite (completed 2026-10-27)
 
 ### Phase 19: GSTR-3B Inward ITC Manual Allocation & Voucher-Level Audit Workbench (2B Drill-Down, Field Selection & Statutory Track Record)
 
@@ -400,6 +471,7 @@ Plans:
   3. `2B Base/` — GSTR-2B Inward supplies base schedules (B2B, B2BA, Inward RCM) feeding Table 4 ITC.
   4. `Credit Notes Base/` — Outward & Inward CDNR credit notes schedule adjusting sales and ITC.
   5. `Reversal Base/` — ITC Reversals & Ineligible schedule (Table 4B1, 4B2 Rule 37/38/42/43, Sec 17(5) blocked, Sec 16(4) time-barred, Deferred bills).
+
 Retain explicit manual download actions ("Download GSTR-3B Working Excel", "Print Official PDF", "Generate GSTN Portal JSON") for users who specifically request a local browser download.
 
 **Depends on:** Phase 19
@@ -509,3 +581,21 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
 - [x] 25-03: GSTR-1 Workbench UI, DRC-01B Real-Time Guard, Direct Client Auto-Save & Autonomous Playwright Portal Uploader (completed 2026-10-30)
 - [x] 25-04: Advanced Reconciliation Settings Hub, Configurable Matching Knobs, Rule 88A Mathematical Set-Off Optimizer & E-Way Bill Scrutiny Suite (completed 2026-10-30)
 
+### Phase 27: Executive Enterprise Light Theme Harmonization for Suites 03, 05, 06, 07 & GST Notices Suite
+
+**Goal**: Elevate and harmonize all remaining suites (Suite 03 Tally Direct Integration, Suite 05 Statutory Audit & Tax Audit Clause 44, Suite 06 Income Tax Liability Sandbox, Suite 07 Bank CMA Appraisal, and GST Notices & Orders Autonomous Suite) into the modern executive white enterprise theme with high-contrast slate typography, elevated white cards, crisp borders, unpinned responsive layouts, and zero compilation errors.
+**Depends on**: Phase 26
+**Requirements**: UI-SUITE03, UI-SUITE05, UI-SUITE06, UI-SUITE07, UI-NOTICES
+**Success Criteria** (what must be TRUE):
+  1. Suite 03 (Tally Direct Import, Ledger Import, and Tally Bridge) renders with elevated white cards, crisp status pills, readable ledger tables, and clean Port 9000 diagnostics.
+  2. Suite 05 (Statutory Audit Module, Tax Audit Clause 44, and Audit Worksheets) converts from dark obsidian containers to clean executive light grids with dark slate text and high-contrast badges.
+  3. Suite 06 (Income Tax Liability & Regime Engine) displays old vs new tax regime comparisons, slab matrices, and deduction calculations in pristine white cards with crystal clear typography.
+  4. Suite 07 (Bank CMA Appraisal & Financial Projections) renders balance sheets, P&L statements, MPBF II calculations, and financial ratios with audit-grade white styling and readable tabular formatting.
+  5. GST Notices & Orders Autonomous Suite (Notices Dashboard, Reply Workbench Modal, and Pipeline Visualizer) adopts the executive white theme matching Suite 04 / Suite 01 with non-sticky scroll-safe layouts and accessible actions.
+  6. Vitest automated test suite passes and production build (`npm run build`) compiles cleanly with 0 errors.
+
+**Plans**: 4/4 plans complete
+- [x] 27-01: Suite 03 (Tally Direct Integration & Ledger Bridge) Executive Light Theme Modernization (completed 2026-11-01)
+- [x] 27-02: Suite 05 (Statutory Audit & Tax Audit Clause 44) Executive Light Theme Modernization (completed 2026-11-01)
+- [x] 27-03: Suite 06 (Income Tax Sandbox) & Suite 07 (Bank CMA Appraisal & Projections) Modernization (completed 2026-11-01)
+- [x] 27-04: GST Notices & Orders Autonomous Suite (Dashboard, AI Reply Modal & Pipeline) Modernization (completed 2026-11-01)

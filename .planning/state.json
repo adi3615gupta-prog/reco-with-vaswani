@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": null,
+  "milestone": "V2.2",
   "phases": [
     {
       "number": "1",
@@ -112,6 +112,26 @@
       "number": "24",
       "name": "Windows Background Auto-Start & Universal Desktop AI Copilot (PC Loco Pilot)",
       "status": "complete"
+    },
+    {
+      "number": "25",
+      "name": "GSTR-1 Outward Return Preparation, V2.2 Excel Export, Direct Portal JSON Engine, Autonomous Uploader & TaxPower Scrutiny Suite",
+      "status": "complete"
+    },
+    {
+      "number": "26",
+      "name": "Suite 08 - Monthly Audit Format & Working Paper Verification Suite",
+      "status": "complete"
+    },
+    {
+      "number": "27",
+      "name": "Executive Enterprise Light Theme Harmonization for Suites 03, 05, 06, 07 & GST Notices Suite",
+      "status": "complete"
+    },
+    {
+      "number": "28",
+      "name": "System Hardening, Security Safeguards & Comprehensive Bug Resolution",
+      "status": "complete"
     }
   ],
   "next": {
@@ -119,5 +139,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-10-30T11:48:53.414Z"
+  "updated_at": "2026-11-01T05:29:40.321Z"
 }
