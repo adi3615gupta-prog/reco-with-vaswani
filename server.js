@@ -12,6 +12,35 @@ import crypto from 'crypto';
 import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first'); // FIX: Prevent Node 18 fetch timeouts on broken IPv6 networks
 
+// Polyfill global DOM primitives if missing in Node runtime (prevents PDF parsing library crashes)
+if (typeof globalThis.DOMMatrix === 'undefined') {
+    globalThis.DOMMatrix = class DOMMatrix {
+        constructor() {
+            this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0;
+            this.m11 = 1; this.m12 = 0; this.m13 = 0; this.m14 = 0;
+            this.m21 = 0; this.m22 = 1; this.m23 = 0; this.m24 = 0;
+            this.m31 = 0; this.m32 = 0; this.m33 = 1; this.m34 = 0;
+            this.m41 = 0; this.m42 = 0; this.m43 = 0; this.m44 = 1;
+            this.is2D = true;
+        }
+        translate() { return this; }
+        scale() { return this; }
+        preMultiplySelf() { return this; }
+        invertSelf() { return this; }
+        multiplySelf() { return this; }
+    };
+}
+if (typeof globalThis.ImageData === 'undefined') {
+    globalThis.ImageData = class ImageData {
+        constructor(w = 0, h = 0) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); }
+    };
+}
+if (typeof globalThis.Path2D === 'undefined') {
+    globalThis.Path2D = class Path2D {
+        addPath() {}
+    };
+}
+
 // Catch and suppress transient Playwright IPC channel unbound race conditions without crashing the server
 process.on('uncaughtException', (err) => {
     if (err && err.message && (err.message.includes('was not bound in the connection') || err.message.includes('Target page, context or browser has been closed'))) {
