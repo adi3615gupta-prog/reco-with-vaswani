@@ -20,6 +20,7 @@
 | **10**| **Bank CMA Appraisal & Financial Statements** | `src/pages/BankCmaAppraisal.tsx`, `src/pages/CmaReport.tsx` | `src/lib/cmaEngine.ts`, `src/lib/tallyCmaApi.ts` | `server.js` | Tally Balance Sheet / P&L XML |
 | **11**| **Statutory Audit & Tax Audit Clause 44** | `src/pages/AuditModule.tsx`, `src/pages/TaxAuditClause44.tsx` | `src/lib/auditEngine.ts` | `server.js` | Tally Daybook / Clause 44 Ledgers |
 | **12**| **GST Notices & Orders Autonomous Suite** | `src/pages/GstNoticesDashboard.tsx` | `src/lib/noticeReconciliation.ts`, `src/lib/noticeReplyGenerator.ts` | `notices_routes.js`, `notices/autopilot.js` | SQLite: `gst_notices`, `gst_notice_attachments`, `gst_notice_replies` |
+| **13**| **Suite 08 — Monthly Audit Working Paper Suite** | `src/pages/MonthlyAuditSuite.tsx` | `src/lib/monthlyAuditEngine.ts`, `src/lib/monthlyAuditExcel.ts` | `monthly_audit_routes.js` | SQLite: `monthly_audits`, `audit_checklists`, `audit_observations`, `audit_pending_points`, `audit_verification_data` |
 
 ---
 
@@ -436,4 +437,40 @@
    - In frontend React components, NEVER call synchronous `URL.revokeObjectURL(url)` immediately after `a.click()`. Always delay revocation via `setTimeout(() => URL.revokeObjectURL(url), 60000)` to allow the browser download manager to finish streaming the blob to disk.
 3. **Repository Root Hygiene:**
    - Root folder must strictly contain only core configuration files, operational server entry points (`server.js`, `main.cjs`), backend route definitions (`*_routes.js`), and batch launchers (`START_APP.bat`).
+
+---
+
+## 15. Suite 08: Monthly Audit Format & Working Paper Verification Suite
+
+### A. Purpose & Rationale
+- **Kya karta hai:** CA firm ke standardized monthly internal and statutory audit format (`Monthly Audit Format.docx`) aur cross-month pending action tracker (`Work Pending List.xlsx`) ko institutionalize karta hai.
+- **Kyu karta hai:** Junior article assistants aur senior partners ke beech data entry, senior scrutiny, sign-off, client release, aur cross-month action item continuity ensure karne ke liye.
+- **Kaise karta hai:**
+  1. **Maker-Checker 4-Eye Review Stepper:** `Draft` &rarr; `Under Senior Review` &rarr; `Approved` &rarr; `Released to Client`. Junior submit karta hai, senior approve ya revision request karta hai, aur report officially client directory (`gst_returns_data/<Client Name - GSTIN>/<FY>/<Month>/Released to Client/`) me auto-save hoti hai with WhatsApp/Email options.
+  2. **5 Core Sections & 8 Standard Checklists:**
+     - Section 1: Auditor profile, duration, gross vs books vs GST turnover.
+     - Section 2: Financial details, variance alerts, and 5 Core Registers vouching scope (Sales, Purchase, Journal, DN/CN, Bank/Loans).
+     - Section 3: 
+       - **3.1 Sales Register vs GSTR-1 vs GSTR-3B 12-Month Matrix:** 12-month FY tabular matrix (April to March + Full FY Total) across 5 defined blocks (Books, GSTR-1, Books vs R1 Diff, GSTR-3B, Books vs 3B Diff) with 6 sub-columns each (`Taxable`, `CGST`, `SGST`, `IGST`, `Nil/Exempt`, `Export`), dynamic view filters (`All 5 Blocks`, `Books vs R1`, `Books vs 3B`, `DRC-01B Scrutiny`), real-time variance color-highlighting, auto-fill active month tools, Rule 88C DRC-01B scrutiny alerts, and dedicated Excel working paper attachment option (.xlsx, .xls, .csv upload, sheet parser & local path linker).
+       - **3.2 Purchase Register vs GSTR-2B Inward ITC 12-Month Matrix (No Taxable Value):** 12-month FY tabular matrix (April to March + Full FY Total) across 5 defined blocks (Books, GSTR-2B, Books vs 2B Diff, GSTR-3B, Books vs 3B Diff) without taxable values, focusing strictly on inward tax credit components with 6 sub-columns (`CGST`, `SGST`, `IGST`, `Cess`, `Nil/Exempt`, `Total ITC`), dynamic view filters (`All 5 Blocks`, `Books vs 2B`, `Books vs 3B`, `DRC-01C Scrutiny`), Rule 88D Form DRC-01C excess ITC notice risk alerts, Section 16(4) time-barred risk check, Section 17(5) blocked credit scrutiny, and dedicated Excel working paper attachment option (.xlsx, .xls, .csv upload, sheet parser & local path linker).
+       - **3.3 Journal & TDS:** Suspense accounts, 194C(6) missing PAN, 194Q > ₹50L, 194J 10% vs 2%.
+       - **3.4 Bank Statements, Loan Interest & Form 26AS / AIS Reco (4-Column Matrix):** 4-column substantive reconciliation of Banking Facilities (Savings/Current), Borrowings (CC/OD/Term Loans), and Investments (FD) with 4 columns: `1. Type` (Dropdown: Bank Account, Cash Credit, Overdraft, Term Loan, Fixed Deposit, Other), `2. Account / Facility Name` (Text particulars), `3. Balance (₹)` (Closing balance with Indian number formatting), `4. Status & Auditor Comment` (Dropdown: Match / Not Matched / Self Comment, plus free text input and quick-select presets for common audit comments), along with statutory checks for Stale Cheques (> 3 months), Loan Interest Servicing, and Form 26AS/AIS TDS credit discrepancy.
+       - **3.5 ROC Charges & Loan Borrowing Mapping Table:** Substantive loan-to-charge creation schedule under Section 77(1) Companies Act 2013 and Section 269SS Income Tax Act with columns: `1. Lender / Facility Name` (Text particulars), `2. Category` (Dropdown: Secured Term Loan, Working Capital/CC, Vehicle/Equipment, Unsecured, Director Loan, ICD), `3. Loan Amount (₹)` (Sanctioned principal with Indian formatting), `4. Charge Created Status` (Dropdown: Charge Created [CHG-1 Filed], Charge Pending Creation, Overdue > 30 Days [MCA Violation], Charge Satisfied [CHG-4 Filed], Not Applicable [Unsecured]), `5. MCA SRN / Ref`, `6. Sec 269SS` (Banking Channel vs Cash >= ₹20k violation), `7. Remarks` (Presets & custom text), plus quick-add tools and statutory scrutiny cards.
+       - **3.6 Cash 40A(3) > ₹10,000:** Negative cash days, closing provisions, FA ITC u/s 17(5).
+     - Section 4: 4. Current Period Observations (Labor compliances PF/ESIC/PT u/s 36(1)(va) and Categorized current period audit observations & deficiencies).
+     - Section 5: Persistent cross-month pending points tracker (`Pending` &rarr; `In Progress` &rarr; `Cleared`) with assignment, target dates, and resolution audit notes.
+  3. **Strict Zero-Merge Architecture (`ws['!merges'] = []`):** All 8 sheets in the generated Excel working paper have zero merged cells, preserving AutoFilters, sorting, and lookup formulas.
+  4. **Multi-Source Auto-Populator:** 1-click evidence extraction connecting to live Tally Port 9000 and local GST tables.
+
+### B. File Map & Exact Line Reference
+- **UI Workbench:** [`src/pages/MonthlyAuditSuite.tsx`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/pages/MonthlyAuditSuite.tsx)
+- **Core Engine & Models:** [`src/lib/monthlyAuditEngine.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/lib/monthlyAuditEngine.ts)
+- **Zero-Merge Excel Exporter:** [`src/lib/monthlyAuditExcel.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/lib/monthlyAuditExcel.ts)
+- **Backend SQLite REST APIs:** [`monthly_audit_routes.js`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/monthly_audit_routes.js)
+- **Unit Test Suites (35/35 passing):**
+  - [`src/test/monthlyAuditBackend.test.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/test/monthlyAuditBackend.test.ts)
+  - [`src/test/monthlyAuditEngine.test.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/test/monthlyAuditEngine.test.ts)
+  - [`src/test/monthlyAuditExcel.test.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/test/monthlyAuditExcel.test.ts)
+  - [`src/test/monthlyAuditUi.test.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/test/monthlyAuditUi.test.ts)
+  - [`src/test/monthlyAuditSuitePeriodAndTeam.test.ts`](file:///D:/My%20software/full%20and%20final/gst%20consolidater/reco-with-vaswani-main/src/test/monthlyAuditSuitePeriodAndTeam.test.ts)
 

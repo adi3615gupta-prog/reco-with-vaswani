@@ -37,6 +37,7 @@ import setupGstr1Routes from './gstr1_routes.js';
 import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
 import setupNoticesRoutes from './notices_routes.js';
+import setupMonthlyAuditRoutes from './monthly_audit_routes.js';
 import setupGeminiRoutes, { syncCloudGeminiKey } from './gemini_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
@@ -86,10 +87,22 @@ if (!JWT_SECRET) {
     }
 }
 
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token || token === 'null' || token === 'undefined') return res.sendStatus(401);
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(401);
+        req.user = user;
+        next();
+    });
+};
+
 
 
 // Serve the updates folder statically so Electron can download the .yml and .exe files
 app.use('/updates', express.static(path.join(__dirname, 'updates')));
+app.use('/super-admin', express.static(path.join(__dirname, 'admin-web', 'dist')));
 // Serve the React frontend app statically with no-cache headers to prevent browser caching of code updates
 // Function to reliably find the 'dist' directory whether in dev, production asar, or unpacked
 function findDistPath() {
@@ -131,9 +144,37 @@ app.use(express.static(DIST_PATH, {
         }
     }
 }));
-// CORS: Allow same-origin + LAN requests only (not wide-open to the internet)
+// CORS: Restrict to localhost, Electron, and private RFC 1918 LAN subnets
+const allowedLocalOrigins = new Set([
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001'
+]);
+
 app.use(cors({
-    origin: true, // Reflects the request origin — safe for LAN where all clients are trusted
+    origin: (origin, callback) => {
+        // Allow requests with no origin (Electron file://, desktop IPC, local curl)
+        if (!origin) return callback(null, true);
+        if (allowedLocalOrigins.has(origin)) return callback(null, true);
+
+        try {
+            const url = new URL(origin);
+            const hostname = url.hostname;
+            if (
+                hostname === 'localhost' ||
+                hostname === '127.0.0.1' ||
+                hostname === '::1' ||
+                /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+                /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+                /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+            ) {
+                return callback(null, true);
+            }
+        } catch (e) {}
+
+        callback(new Error('Blocked by Vaswani Enterprise CORS security policy'));
+    },
     credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -205,8 +246,14 @@ ensureProductionDatabase(DB_PATH, userDataPath);
 
 // 1. Initialize SQLite Database
 const db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) console.error("Database connection error:", err);
-    else console.log("Connected to SQLite Database at", DB_PATH);
+    if (err) {
+        console.error("Database connection error:", err);
+    } else {
+        console.log("Connected to SQLite Database at", DB_PATH);
+        db.run('PRAGMA journal_mode = WAL;');
+        db.run('PRAGMA busy_timeout = 10000;');
+        db.run('PRAGMA synchronous = NORMAL;');
+    }
 });
 
 // 2. Create Tables & Seed Admin
@@ -243,6 +290,10 @@ db.serialize(() => {
     // Safe migration for existing DBs
     db.run(`ALTER TABLE network_users ADD COLUMN last_active_at INTEGER`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE network_users ADD COLUMN status TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE network_users ADD COLUMN name TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE network_users ADD COLUMN designation TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE network_users ADD COLUMN department TEXT`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE network_users ADD COLUMN current_device_id TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN portal_username TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN portal_password TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN address TEXT`, (err) => { /* ignore if exists */ });
@@ -258,10 +309,10 @@ setupTdsRoutes(app, db);
 setupTaxRoutes(app, db);
 
 // 5. Initialize Google Drive Cloud Backup Routes
-setupGDriveRoutes(app);
+setupGDriveRoutes(app, authenticateToken);
 
 // 6. Initialize GST IMS Routes (Multi-PC Central Vault Sync)
-setupImsRoutes(app, db, userDataPath);
+setupImsRoutes(app, db, userDataPath, authenticateToken);
 
 // 7. Initialize GSTR-2B Auto Downloader Routes
 setupGstr2bRoutes(app, db);
@@ -275,18 +326,34 @@ setupReturnsStorageRoutes(app, db, userDataPath);
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
 setupAuditTrailRoutes(app, db, userDataPath);
 setupNoticesRoutes(app, db);
-setupGeminiRoutes(app, db, firestore);
+setupMonthlyAuditRoutes(app, db, userDataPath);
+setupGeminiRoutes(app, db, firestore, authenticateToken);
 
 const saveUserToLocalDb = (user) => {
-    db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+    db.run(`INSERT INTO network_users (username, password_hash, role, is_active, office_id, device_id, name, designation, department, current_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(username) DO UPDATE SET
             password_hash = excluded.password_hash,
             role = excluded.role,
             is_active = excluded.is_active,
             office_id = excluded.office_id,
-            device_id = excluded.device_id`,
-        [user.username.toLowerCase().trim(), user.password_hash || user.password || '', user.role, user.is_active, user.office_id, user.device_id || null]
+            device_id = excluded.device_id,
+            name = COALESCE(excluded.name, network_users.name),
+            designation = COALESCE(excluded.designation, network_users.designation),
+            department = COALESCE(excluded.department, network_users.department),
+            current_device_id = excluded.current_device_id`,
+        [
+            user.username.toLowerCase().trim(),
+            user.password_hash || user.password || '',
+            user.role,
+            user.is_active,
+            user.office_id,
+            user.device_id || null,
+            user.name || null,
+            user.designation || null,
+            user.department || null,
+            user.current_device_id || null
+        ]
     );
 };
 
@@ -296,16 +363,6 @@ const getOfficeId = () => new Promise(res => {
     });
 });
 
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token || token === 'null' || token === 'undefined') return res.sendStatus(401);
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(401);
-        req.user = user;
-        next();
-    });
-};
 
 const getMacAddress = () => {
     const interfaces = os.networkInterfaces();
@@ -509,27 +566,55 @@ app.post('/api/activate', async (req, res) => {
             });
         }
 
-        if (row.key_type === 'server') {
-            if (row.bound_mac && row.bound_mac !== SERVER_MAC) {
-                return res.status(403).json({ error: "Hardware mismatch! Server copied illegally." });
-            }
-            if (row.device_id && row.device_id !== deviceId) {
-                return res.status(403).json({ error: "Server key is already bound to another device." });
-            }
-            await updateDoc(keyRef, { device_id: deviceId, bound_mac: SERVER_MAC });
+        // Multi-PC Seat Capacity Policy
+        const maxDevices = Number(row.max_devices) || 1;
+        let boundDevices = Array.isArray(row.bound_devices) ? [...row.bound_devices] : [];
+        if (row.device_id && !boundDevices.includes(row.device_id)) {
+            boundDevices.push(row.device_id);
+        }
 
-            // Re-initialize license monitoring with the new office_id
+        const isAlreadyBound = deviceId && boundDevices.includes(deviceId);
+
+        if (!isAlreadyBound) {
+            if (boundDevices.length >= maxDevices) {
+                return res.status(403).json({
+                    error: `License limit reached (${boundDevices.length}/${maxDevices} PCs active). Contact Super Admin to increase allowed PC seats on this serial key.`
+                });
+            }
+            if (deviceId) {
+                boundDevices.push(deviceId);
+            }
+        }
+
+        if (row.key_type === 'server') {
+            await updateDoc(keyRef, {
+                device_id: deviceId || (boundDevices[0] || null),
+                bound_devices: boundDevices,
+                max_devices: maxDevices,
+                bound_mac: SERVER_MAC
+            });
+
             if (row.office_id) {
                 setupLicenseMonitoring(row.office_id);
             }
 
-            res.json({ success: true, isMaster: true });
+            res.json({
+                success: true,
+                isMaster: true,
+                maxDevices,
+                activeDevices: boundDevices.length
+            });
         } else {
-            if (row.device_id && row.device_id !== deviceId) {
-                return res.status(403).json({ error: "This client key is already in use on another computer." });
-            }
-            await updateDoc(keyRef, { device_id: deviceId });
-            res.json({ success: true });
+            await updateDoc(keyRef, {
+                device_id: deviceId || (boundDevices[0] || null),
+                bound_devices: boundDevices,
+                max_devices: maxDevices
+            });
+            res.json({
+                success: true,
+                maxDevices,
+                activeDevices: boundDevices.length
+            });
         }
     } catch (err) {
         console.error("ACTIVATE ERROR:", err);
@@ -616,14 +701,42 @@ app.get('/api/keys', authenticateToken, async (req, res) => {
     try {
         const officeId = await getOfficeId();
         const snap = await getDocs(query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId)));
-        const rows = snap.docs.map(d => ({ id: d.id, key: d.id, ...d.data() }));
+        const rows = snap.docs.map(d => {
+            const data = d.data();
+            return {
+                id: d.id,
+                key: d.id,
+                ...data,
+                max_devices: data.max_devices !== undefined ? Number(data.max_devices) : 1,
+                bound_devices: Array.isArray(data.bound_devices) ? data.bound_devices : (data.device_id ? [data.device_id] : [])
+            };
+        });
         res.json(rows);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
-app.post('/api/keys', authenticateToken, (req, res) => {
-    return res.status(403).json({ error: "Key generation is locked to 1 Server with Unlimited Clients." });
+app.post('/api/keys', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    try {
+        const officeId = await getOfficeId();
+        const seats = Math.max(1, Number(req.body.max_devices) || 1);
+        const customKey = (req.body.key && req.body.key.trim().toUpperCase()) || ('VASWANI-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase());
+        const keyRef = doc(firestore, 'serial_keys', customKey);
+        await setDoc(keyRef, {
+            key: customKey,
+            key_type: req.body.key_type || 'PRO',
+            is_active: 1,
+            max_devices: seats,
+            bound_devices: [],
+            device_id: null,
+            office_id: officeId,
+            created_at: new Date().toISOString()
+        });
+        res.json({ success: true, key: customKey, max_devices: seats });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 app.patch('/api/keys/:key', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
@@ -635,11 +748,22 @@ app.patch('/api/keys/:key', authenticateToken, async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+app.patch('/api/keys/:key/seats', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    try {
+        const newMax = Math.max(1, Number(req.body.max_devices) || 1);
+        const keyRef = doc(firestore, 'serial_keys', req.params.key);
+        await updateDoc(keyRef, { max_devices: newMax });
+        res.json({ success: true, max_devices: newMax });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 app.patch('/api/keys/:key/unbind', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
     try {
         const keyRef = doc(firestore, 'serial_keys', req.params.key);
-        await updateDoc(keyRef, { device_id: null, bound_mac: null });
+        await updateDoc(keyRef, { device_id: null, bound_mac: null, bound_devices: [] });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -809,25 +933,26 @@ app.post('/api/login', async (req, res) => {
         }
 
         const reqDeviceId = req.body.deviceId || 'legacy_device';
-        if (user.role !== 'admin') {
-            if (user.device_id && user.device_id !== reqDeviceId) {
-                return res.status(403).json({ error: "Account is logged in on another PC. Admin must unbind it first." });
-            }
-            if (!user.device_id && reqDeviceId !== 'legacy_device') {
-                if (isOnline && docRef) {
-                    await withTimeout(updateDoc(docRef, { device_id: reqDeviceId }), 3000).catch(e => console.warn("Failed to update cloud device ID:", e.message));
-                }
-                // Update SQLite locally
-                db.run("UPDATE network_users SET device_id = ? WHERE username = ?", [reqDeviceId, userKey]);
-            }
+        const ACTIVE_SESSION_THRESHOLD_MS = 3 * 60 * 1000; // 3 min heartbeat timeout
+        const lastActive = Number(user.last_active_at) || 0;
+        const isSessionRecent = (Date.now() - lastActive) < ACTIVE_SESSION_THRESHOLD_MS;
+        const currentActiveDevice = user.current_device_id || user.device_id;
+
+        // Floating User Login: Check if user is actively logged in on another PC
+        if (user.role !== 'admin' && user.status === 'online' && isSessionRecent && currentActiveDevice && currentActiveDevice !== reqDeviceId) {
+            return res.status(403).json({
+                error: `Account "${user.username}" is currently active on another PC. Please log out from that PC first before logging in here.`
+            });
         }
 
-        failedLoginAttempts[userKey] = 0;
-        delete lockoutTimeouts[userKey];
-
-        // Update online status
+        // Set active session to this PC
         if (isOnline && docRef) {
-            await withTimeout(updateDoc(docRef, { last_active_at: Date.now(), status: 'online' }), 3000).catch(e => console.warn("Failed to update cloud status:", e.message));
+            await withTimeout(updateDoc(docRef, {
+                current_device_id: reqDeviceId,
+                device_id: reqDeviceId,
+                last_active_at: Date.now(),
+                status: 'online'
+            }), 3000).catch(e => console.warn("Failed to update cloud session:", e.message));
 
             // LOG TO ACTIVITY MONITOR
             await withTimeout(addDoc(collection(firestore, 'audit_logs'), {
@@ -839,11 +964,27 @@ app.post('/api/login', async (req, res) => {
                 office_id: officeId
             }), 3000).catch(e => console.warn("Failed to add cloud audit log:", e.message));
         }
-        
-        db.run("UPDATE network_users SET last_active_at = ? WHERE username = ?", [Date.now(), userKey]);
+
+        db.run(
+            "UPDATE network_users SET current_device_id = ?, device_id = ?, status = 'online', last_active_at = ? WHERE username = ?",
+            [reqDeviceId, reqDeviceId, Date.now(), userKey]
+        );
+
+        failedLoginAttempts[userKey] = 0;
+        delete lockoutTimeouts[userKey];
 
         const token = jwt.sign({ id: userDocId, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, role: user.role, username: user.username, userDocId });
+        
+        // Return full user profile for display on client PC
+        res.json({
+            token,
+            role: user.role,
+            username: user.username,
+            userDocId,
+            name: user.name || user.username,
+            designation: user.designation || (user.role === 'admin' ? 'Administrator' : user.role === 'Senior Auditor' ? 'Senior Auditor' : 'Article Assistant'),
+            department: user.department || 'Audit & Assurance'
+        });
     } catch (err) {
         res.status(500).json({ error: "Server database connection failed." });
     }
@@ -890,20 +1031,30 @@ app.post('/api/users', authenticateToken, async (req, res) => {
         if (existing) return res.status(400).json({ error: "User already exists" });
         
         const docRef = await addDoc(collection(firestore, 'network_users'), {
-            username: usernameNorm,
-            password_hash: hash,
-            role: req.body.role || 'user',
-            is_active: 1,
-            office_id: officeId
-        });
-        
-        saveUserToLocalDb({
+            name: req.body.name || req.body.username,
+            designation: req.body.designation || '',
+            department: req.body.department || '',
             username: usernameNorm,
             password_hash: hash,
             role: req.body.role || 'user',
             is_active: 1,
             office_id: officeId,
-            device_id: null
+            current_device_id: null,
+            status: 'offline'
+        });
+        
+        saveUserToLocalDb({
+            name: req.body.name || req.body.username,
+            designation: req.body.designation || '',
+            department: req.body.department || '',
+            username: usernameNorm,
+            password_hash: hash,
+            role: req.body.role || 'user',
+            is_active: 1,
+            office_id: officeId,
+            device_id: null,
+            current_device_id: null,
+            status: 'offline'
         });
 
         res.json({ success: true, id: docRef.id });
@@ -953,6 +1104,23 @@ app.get('/api/users', authenticateToken, async (req, res) => {
         res.json(rows);
     } catch (e) { 
         res.status(500).json({ error: e.message }); 
+    }
+});
+
+app.post('/api/users/:username/release-session', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    try {
+        const officeId = await getOfficeId();
+        const targetUsernameNorm = String(req.params.username).toLowerCase().trim();
+        db.run("UPDATE network_users SET status = 'offline', current_device_id = NULL WHERE LOWER(username) = ?", [targetUsernameNorm]);
+        const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
+        const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === targetUsernameNorm);
+        if (userDoc) {
+            await updateDoc(userDoc.ref, { status: 'offline', current_device_id: null });
+        }
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -1252,6 +1420,52 @@ app.post('/api/tally-proxy', express.text({ type: '*/*' }), async (req, res) => 
     }
 });
 
+function resolvePythonExecutable() {
+    try {
+        execSync(process.platform === 'win32' ? 'python --version' : 'python3 --version', { stdio: 'ignore' });
+        return process.platform === 'win32' ? 'python' : 'python3';
+    } catch (e) {}
+
+    if (process.platform === 'win32') {
+        try {
+            execSync('py --version', { stdio: 'ignore' });
+            return 'py';
+        } catch (e) {}
+
+        const userProfile = process.env.USERPROFILE || 'C:\\Users\\' + (process.env.USERNAME || 'PC-10');
+        const localPrograms = path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python');
+        if (fs.existsSync(localPrograms)) {
+            try {
+                const subdirs = fs.readdirSync(localPrograms).filter(d => d.toLowerCase().startsWith('python'));
+                for (const dir of subdirs.reverse()) {
+                    const candidate = path.join(localPrograms, dir, 'python.exe');
+                    if (fs.existsSync(candidate)) return candidate;
+                }
+            } catch (e) {}
+        }
+
+        const standardPaths = [
+            'C:\\Python313\\python.exe',
+            'C:\\Python312\\python.exe',
+            'C:\\Python311\\python.exe',
+            'C:\\Python310\\python.exe',
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python313', 'python.exe'),
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe')
+        ];
+        for (const p of standardPaths) {
+            if (p && fs.existsSync(p)) return p;
+        }
+    } else {
+        for (const cmd of ['python3', 'python']) {
+            try {
+                execSync(`${cmd} --version`, { stdio: 'ignore' });
+                return cmd;
+            } catch (e) {}
+        }
+    }
+    return null;
+}
+
 // --- MODULE: CMA PROJECT REPORT EXCEL GENERATION ---
 app.post('/api/cma/generate', authenticateToken, async (req, res) => {
     try {
@@ -1262,7 +1476,11 @@ app.post('/api/cma/generate', authenticateToken, async (req, res) => {
         // Save payload to temp json file
         fs.writeFileSync(tempJsonPath, JSON.stringify(payload));
 
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        const pythonCmd = resolvePythonExecutable();
+        if (!pythonCmd) {
+            try { if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath); } catch (e) {}
+            return res.status(503).json({ error: 'Python runtime is not detected on this system. Please install Python to generate CMA Excel reports.' });
+        }
         const generatorScript = path.join(__dirname, 'scripts', 'cma', 'cma_generator.py');
 
         // Spawn python script to build the spreadsheet
@@ -1314,15 +1532,15 @@ app.listen(PORT, '0.0.0.0', () => {
     // Spawn LevitateExtract python microservice programmatically
     try {
         const pythonScriptPath = path.join(__dirname, 'LevitateExtract', 'main.py');
-        let pythonExe = 'python3';
-        if (process.platform === 'win32') {
-            try {
-                execSync('python --version', { stdio: 'ignore' });
-                pythonExe = 'python';
-            } catch (e) {
-                const userProfile = process.env.USERPROFILE || 'C:\\Users\\Dell05';
-                pythonExe = path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python313', 'python.exe');
-            }
+        if (!fs.existsSync(pythonScriptPath)) {
+            console.log('[LevitateExtract] Microservice script not found, skipping launch.');
+            return;
+        }
+
+        let pythonExe = resolvePythonExecutable();
+        if (!pythonExe) {
+            console.log('[LevitateExtract] Python runtime not detected on system, skipping microservice spawn.');
+            return;
         }
 
         console.log(`[LevitateExtract] Launching microservice programmatically: ${pythonExe}`);
@@ -1349,6 +1567,6 @@ app.listen(PORT, '0.0.0.0', () => {
 
         console.log(`[LevitateExtract] Programmatic microservice spawned detached with log redirection. PID: ${pythonProcess.pid}`);
     } catch (err) {
-        console.error("[LevitateExtract] Failed to spawn programmatic microservice:", err);
+        console.error('[LevitateExtract] Failed to spawn programmatic microservice:', err);
     }
 });
