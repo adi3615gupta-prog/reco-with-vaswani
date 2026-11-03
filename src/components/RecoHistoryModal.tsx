@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Cloud, History, RefreshCw, X, FolderOpen, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, HardDrive } from 'lucide-react';
+import { Cloud, History, RefreshCw, X, FolderOpen, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, HardDrive, Database } from 'lucide-react';
 import {
   listDriveRecoSnapshots,
   downloadDriveRecoSnapshot,
@@ -17,15 +17,17 @@ import { toast } from 'sonner';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onRestoreSession: (payload: RecoSnapshotPayload) => void;
+  onRestoreSession: (payload: any) => void;
   onOpenConnectModal?: () => void;
+  clientGstin?: string;
+  fy?: string;
 }
 
 const fmt = (n: number) =>
   n === 0 ? '0.00' : new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
-export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConnectModal }: Props) {
-  const [activeTab, setActiveTab] = useState<'local' | 'gdrive'>('local');
+export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConnectModal, clientGstin, fy }: Props) {
+  const [activeTab, setActiveTab] = useState<'db' | 'local' | 'gdrive'>('db');
   const [snapshots, setSnapshots] = useState<RecoSnapshotMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -34,7 +36,26 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
   const fetchHistory = async () => {
     setLoading(true);
     try {
-      if (activeTab === 'local') {
+      if (activeTab === 'db') {
+        const gstin = clientGstin || localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+        const currentFy = fy || '2024-25';
+        const res = await fetch(`/api/audit-storage/reco-runs/${encodeURIComponent(gstin)}/${encodeURIComponent(currentFy)}`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.runs)) {
+          setSnapshots(data.runs.map((r: any) => ({
+            id: r.run_id,
+            name: `${r.client_gstin} - ${r.fy} (${new Date(r.run_date).toLocaleString('en-IN')})`,
+            companyName: r.metadata?.companyName || r.client_gstin,
+            financialYear: r.fy,
+            invoiceCount: r.metadata?.totalInvoices || (r.summary?.totalRecords || 0),
+            createdTime: r.run_date,
+            summary: r.summary,
+            mode: r.metadata?.mode
+          })));
+        } else {
+          setSnapshots([]);
+        }
+      } else if (activeTab === 'local') {
         const localFiles = await listLocalRecoSnapshots();
         setSnapshots(localFiles);
       } else {
@@ -65,11 +86,34 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
   const handleRestore = async (fileId: string) => {
     setRestoringId(fileId);
     try {
-      const payload = activeTab === 'local'
-        ? await downloadLocalRecoSnapshot(fileId)
-        : await downloadDriveRecoSnapshot(fileId);
+      let payload: any;
+      if (activeTab === 'db') {
+        const res = await fetch(`/api/audit-storage/reco-runs/detail/${encodeURIComponent(fileId)}`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          const d = data.data;
+          payload = {
+            version: '1.0',
+            timestamp: d.run_date,
+            companyName: d.metadata?.companyName || d.client_gstin,
+            financialYear: d.fy,
+            mode: d.metadata?.mode || 'input',
+            results: d.matched_records || [],
+            debitNotes: d.metadata?.debitNotes,
+            summary: d.summary,
+            vendorDisputes: d.vendor_disputes,
+            outputResults: d.metadata?.outputResults
+          };
+        } else {
+          throw new Error(data.error || 'Failed to fetch run details from SQLite');
+        }
+      } else if (activeTab === 'local') {
+        payload = await downloadLocalRecoSnapshot(fileId);
+      } else {
+        payload = await downloadDriveRecoSnapshot(fileId);
+      }
       onRestoreSession(payload);
-      toast.success(`Restored session: ${payload.companyName} (${payload.financialYear}) successfully!`);
+      toast.success(`Restored session: ${payload.companyName || 'Snapshot'} (${payload.financialYear || ''}) successfully!`);
       onClose();
     } catch (err: any) {
       toast.error(err.message || 'Failed to download snapshot payload');
@@ -81,7 +125,11 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
   const handleDelete = async (fileId: string, fileName: string) => {
     if (!confirm(`Are you sure you want to delete snapshot '${fileName}'?`)) return;
     try {
-      if (activeTab === 'local') {
+      if (activeTab === 'db') {
+        const res = await fetch(`/api/audit-storage/reco-runs/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to delete run from database');
+      } else if (activeTab === 'local') {
         await deleteLocalRecoSnapshot(fileId);
       } else {
         await deleteDriveRecoSnapshot(fileId);
@@ -114,6 +162,17 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
             {/* Tab Switcher */}
             <div className="flex items-center gap-2 bg-slate-950/80 p-1 border border-slate-800 rounded-2xl">
               <button
+                onClick={() => setActiveTab('db')}
+                className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                  activeTab === 'db'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                SQLite DB
+              </button>
+              <button
                 onClick={() => setActiveTab('local')}
                 className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all ${
                   activeTab === 'local'
@@ -122,7 +181,7 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
                 }`}
               >
                 <HardDrive className="w-3.5 h-3.5" />
-                Local PC History
+                Local Files
               </button>
               <button
                 onClick={() => setActiveTab('gdrive')}
@@ -180,7 +239,7 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
               <div className="p-16 text-center space-y-3">
                 <RefreshCw className="w-8 h-8 text-sky-400 animate-spin mx-auto" />
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">
-                  Fetching {activeTab === 'local' ? 'Local PC' : 'Google Drive'} snapshots...
+                  Fetching {activeTab === 'db' ? 'SQLite Database' : activeTab === 'local' ? 'Local PC' : 'Google Drive'} snapshots...
                 </p>
               </div>
             ) : snapshots.length === 0 ? (
@@ -189,7 +248,7 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
                 <div>
                   <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">No Saved Snapshots Found</h4>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Run a reconciliation and click <strong>'{activeTab === 'local' ? 'Save Session to PC' : 'Save to Drive'}'</strong> to store a backup.
+                    Run a reconciliation and click <strong>'{activeTab === 'db' ? 'Save Reco Run' : activeTab === 'local' ? 'Save Session to PC' : 'Save to Drive'}'</strong> to store a backup.
                   </p>
                 </div>
               </div>

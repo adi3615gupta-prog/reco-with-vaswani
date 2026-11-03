@@ -81611,7 +81611,8 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
         if (err) return res.status(500).json({ success: false, error: err.message });
         res.json({
           success: true,
-          status: "ok",
+          status: "healthy",
+          tables: (rows || []).map((r) => r.name),
           initialized_tables: (rows || []).map((r) => r.name),
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
         });
@@ -81861,10 +81862,10 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       });
     });
   });
-  app2.get("/api/audit-storage/fin-statements/:gstin/:fy", (req, res) => {
+  app2.get(["/api/audit-storage/fin-statements/:gstin/:fy", "/api/audit-storage/fin-statements/:gstin/:fy/:taxonomy"], (req, res) => {
     const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
     const fy = String(req.params.fy || "").trim();
-    const taxonomy_type = req.query.taxonomy ? String(req.query.taxonomy).trim().toLowerCase() : null;
+    const taxonomy_type = String(req.params.taxonomy || req.query.taxonomy || "").trim().toLowerCase() || null;
     let sql = `SELECT * FROM financial_statements_workspaces WHERE client_gstin = ? AND fy = ?`;
     const params = [client_gstin, fy];
     if (taxonomy_type) {
@@ -81946,6 +81947,32 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       });
     });
   });
+  app2.get("/api/audit-storage/reco-runs/detail/:runId", (req, res) => {
+    const runId = String(req.params.runId || "").trim();
+    const sql = `SELECT * FROM gst_reconciliation_runs WHERE run_id = ? LIMIT 1`;
+    activeDb.get(sql, [runId], (err, row) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (!row) return res.status(404).json({ success: false, error: "Reconciliation run not found" });
+      try {
+        res.json({
+          success: true,
+          data: {
+            run_id: row.run_id,
+            client_gstin: row.client_gstin,
+            fy: row.fy,
+            run_date: row.run_date,
+            summary: row.summary_json ? JSON.parse(row.summary_json) : null,
+            matched_records: row.matched_records_json ? JSON.parse(row.matched_records_json) : [],
+            vendor_disputes: row.vendor_disputes_json ? JSON.parse(row.vendor_disputes_json) : [],
+            metadata: row.metadata ? JSON.parse(row.metadata) : null,
+            updated_at: row.updated_at
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON in reconciliation run details", detail: parseErr.message });
+      }
+    });
+  });
   app2.get("/api/audit-storage/reco-runs/:gstin/:fy", (req, res) => {
     const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
     const fy = String(req.params.fy || "").trim();
@@ -81973,32 +82000,6 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       }
     });
   });
-  app2.get("/api/audit-storage/reco-runs/detail/:runId", (req, res) => {
-    const runId = String(req.params.runId || "").trim();
-    const sql = `SELECT * FROM gst_reconciliation_runs WHERE run_id = ? LIMIT 1`;
-    activeDb.get(sql, [runId], (err, row) => {
-      if (err) return res.status(500).json({ success: false, error: err.message });
-      if (!row) return res.status(404).json({ success: false, error: "Reconciliation run not found" });
-      try {
-        res.json({
-          success: true,
-          data: {
-            run_id: row.run_id,
-            client_gstin: row.client_gstin,
-            fy: row.fy,
-            run_date: row.run_date,
-            summary: row.summary_json ? JSON.parse(row.summary_json) : null,
-            matched_records: row.matched_records_json ? JSON.parse(row.matched_records_json) : [],
-            vendor_disputes: row.vendor_disputes_json ? JSON.parse(row.vendor_disputes_json) : [],
-            metadata: row.metadata ? JSON.parse(row.metadata) : null,
-            updated_at: row.updated_at
-          }
-        });
-      } catch (parseErr) {
-        res.status(500).json({ success: false, error: "Corrupt JSON in reconciliation run details", detail: parseErr.message });
-      }
-    });
-  });
   app2.delete("/api/audit-storage/reco-runs/:runId", (req, res) => {
     const runId = String(req.params.runId || "").trim();
     const sql = `DELETE FROM gst_reconciliation_runs WHERE run_id = ?`;
@@ -82009,6 +82010,7 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
     });
   });
 }
+var audit_storage_routes_default = setupAuditStorageRoutes;
 
 // node_modules/@google/generative-ai/dist/index.mjs
 var SchemaType;
@@ -84396,7 +84398,7 @@ setupReturnsStorageRoutes(app, db, userDataPath2, authenticateToken);
 setupAuditTrailRoutes(app, db, userDataPath2);
 notices_routes_default(app, db);
 setupMonthlyAuditRoutes(app, db, userDataPath2, authenticateToken);
-setupAuditStorageRoutes(app, db, userDataPath2);
+audit_storage_routes_default(app, db, userDataPath2);
 setupGeminiRoutes(app, db, firestore, authenticateToken);
 var saveUserToLocalDb = (user) => {
   db.run(

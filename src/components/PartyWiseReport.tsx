@@ -1,5 +1,5 @@
 // Party-wise Intelligence & Manual Match Studio component
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ interface Props {
   mode?: 'input' | 'output';
   debitNotes?: { pr?: any[]; twoB?: any[] };
   onResultsChange?: (newResults: ReconciliationResult[]) => void;
+  partyDisputes?: Record<string, any>;
+  onPartyDisputesChange?: (disputes: Record<string, any>) => void;
 }
 
 const fmt = (n: number) =>
@@ -51,10 +53,15 @@ function rowStatusColor(status: string) {
 export type PartySortOption = 'name_asc' | 'name_desc' | 'var_desc' | 'var_asc' | 'count_desc';
 export type PartyStatusFilter = 'all' | 'missing' | 'mismatch' | 'matched' | 'debitNotes';
 
-export function PartyWiseReport({ results, companyName, mode = 'input', debitNotes, onResultsChange }: Props) {
+export function PartyWiseReport({ results, companyName, mode = 'input', debitNotes, onResultsChange, partyDisputes, onPartyDisputesChange }: Props) {
+  const [internalDisputes, setInternalDisputes] = useState<Record<string, any>>({});
+  const activeDisputes = partyDisputes || internalDisputes;
+  const handleDisputesChange = onPartyDisputesChange || setInternalDisputes;
+
   const [groupBy, setGroupBy] = useState<'gstin' | 'name'>('gstin');
   const parties = useMemo(() => aggregateByParty(results, debitNotes, mode, groupBy), [results, debitNotes, mode, groupBy]);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [sortBy, setSortBy] = useState<PartySortOption>('name_asc');
   const [statusFilter, setStatusFilter] = useState<PartyStatusFilter>('all');
 
@@ -82,7 +89,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
   });
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     let list = parties;
 
     if (statusFilter !== 'all') {
@@ -132,7 +139,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     });
 
     return list;
-  }, [parties, search, sortBy, statusFilter]);
+  }, [parties, deferredSearch, sortBy, statusFilter]);
 
   const handleManualMatch = (prInvRow: PartyInvoiceRow, twoBInvRow: PartyInvoiceRow) => {
     if (!onResultsChange || !results) return;
@@ -686,18 +693,18 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   return (
-    <div className="obsidian-card overflow-hidden" style={{ animationDelay: '300ms' }}>
-      <div className="dash-topbar flex flex-wrap items-center justify-between gap-3">
+    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden" style={{ animationDelay: '300ms' }}>
+      <div className="bg-slate-50/80 border-b border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className="dash-dots"><span style={{ background: '#3DCC8E' }}></span><span style={{ background: '#F0A030' }}></span></div>
-          <span className="text-[10px] font-bold text-[var(--np-text2)] uppercase tracking-widest">Party-wise Intelligence ({filtered.length})</span>
+          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest font-mono">Party-wise Intelligence ({filtered.length.toLocaleString('en-IN')})</span>
 
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 p-0.5 rounded-md text-[10px] font-bold">
+          <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-xl text-xs font-semibold shadow-2xs">
             <button
               onClick={() => setGroupBy('gstin')}
               className={cn(
-                "px-2.5 py-0.5 rounded text-[9.5px] uppercase tracking-wider transition-all",
-                groupBy === 'gstin' ? "bg-sky-600 text-white font-bold shadow-sm" : "text-slate-400 hover:text-slate-200"
+                "px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition-all font-bold",
+                groupBy === 'gstin' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
               )}
               title="Group strictly by 15-digit GSTIN"
             >
@@ -706,12 +713,12 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
             <button
               onClick={() => setGroupBy('name')}
               className={cn(
-                "px-2.5 py-0.5 rounded text-[9.5px] uppercase tracking-wider transition-all flex items-center gap-1",
-                groupBy === 'name' ? "bg-purple-600 text-white font-bold shadow-sm" : "text-slate-400 hover:text-slate-200"
+                "px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 font-bold",
+                groupBy === 'name' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
               )}
-              title="Merge branch GSTINs by Party Name / PAN (Combines SANA RCC PRODUCTS cards into 1)"
+              title="Merge branch GSTINs by Party Name / PAN"
             >
-              <Users className="w-3 h-3 text-purple-300" />
+              <Users className="w-3 h-3" />
               By Party Name (Merge Branches)
             </button>
           </div>
@@ -751,66 +758,66 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
 
               <button
                 onClick={handleAutoMatchAll}
-                className="px-3 py-1 bg-sky-600/90 hover:bg-sky-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
                 title="Auto-match all matching invoice pairs across all parties in 1 click"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
                 Auto-Match All Parties
               </button>
             </>
           )}
           <button
             onClick={handleExportPartyWise}
-            className="px-3 py-1 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
             title="Export full Party-Wise Intelligence Report Excel"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-200" />
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
             Export Party Report
           </button>
           {debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0)) && (
             <button
               onClick={handleExport21ColDebitNotes}
-              className="px-3 py-1 bg-amber-600/90 hover:bg-amber-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
               title="Export 21-Column Zero-Merge Debit Note Reconciliation Excel"
             >
-              <Download className="w-3.5 h-3.5 text-amber-200" />
-              Export 21-Col Debit Notes
+              <Download className="w-3.5 h-3.5 text-amber-600" />
+              Export Debit Notes
             </button>
           )}
           <div className="relative w-44 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-sky-400 transition-colors" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
             <input
               placeholder="Search party..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-8 bg-slate-900 border border-slate-700 rounded-md pl-9 pr-3 text-[11px] font-bold text-white placeholder:text-slate-400 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 transition-all shadow-sm"
+              className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-3 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition-all shadow-2xs"
             />
           </div>
 
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as PartyStatusFilter)}
-            className="h-8 bg-slate-900 border border-slate-700 rounded-md px-2.5 text-[10.5px] font-bold text-white focus:outline-none focus:border-sky-400 cursor-pointer transition-all uppercase tracking-wider shadow-sm"
+            className="h-8 bg-white border border-slate-200 rounded-xl px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all uppercase tracking-wider shadow-2xs"
             title="Filter parties by status"
           >
-            <option value="all" className="bg-slate-900 text-white font-bold">All Statuses</option>
-            <option value="missing" className="bg-slate-900 text-white font-bold">Has Missing</option>
-            <option value="mismatch" className="bg-slate-900 text-white font-bold">Has Mismatches</option>
-            <option value="matched" className="bg-slate-900 text-white font-bold">All Matched</option>
-            <option value="debitNotes" className="bg-slate-900 text-amber-400 font-bold">Has Debit Notes</option>
+            <option value="all">All Statuses</option>
+            <option value="missing">Has Missing</option>
+            <option value="mismatch">Has Mismatches</option>
+            <option value="matched">All Matched</option>
+            <option value="debitNotes">Has Debit Notes</option>
           </select>
 
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as PartySortOption)}
-            className="h-8 bg-slate-900 border border-slate-700 rounded-md px-2.5 text-[10.5px] font-bold text-white focus:outline-none focus:border-sky-400 cursor-pointer transition-all uppercase tracking-wider shadow-sm"
+            className="h-8 bg-white border border-slate-200 rounded-xl px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all uppercase tracking-wider shadow-2xs"
             title="Sort parties by Name, Variance, or Invoice Count"
           >
-            <option value="name_asc" className="bg-slate-900 text-white font-bold">Party A → Z</option>
-            <option value="name_desc" className="bg-slate-900 text-white font-bold">Party Z → A</option>
-            <option value="var_desc" className="bg-slate-900 text-white font-bold">Variance: High → Low</option>
-            <option value="var_asc" className="bg-slate-900 text-white font-bold">Variance: Low → High</option>
-            <option value="count_desc" className="bg-slate-900 text-white font-bold">Invoices: High → Low</option>
+            <option value="name_asc">Party A → Z</option>
+            <option value="name_desc">Party Z → A</option>
+            <option value="var_desc">Variance: High → Low</option>
+            <option value="var_asc">Variance: Low → High</option>
+            <option value="count_desc">Invoices: High → Low</option>
           </select>
         </div>
       </div>
@@ -849,6 +856,8 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
             mergeMode={mergeMode}
             isMergeSelected={selectedMergeKeys.has(p.key)}
             onToggleMergeSelect={() => toggleMergeSelection(p.key)}
+            partyDisputes={activeDisputes}
+            onPartyDisputesChange={handleDisputesChange}
           />
         ))}
         {filtered.length === 0 && (
@@ -946,7 +955,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
                           "w-full text-left p-2 rounded-lg border text-[10px] transition-all flex items-center gap-2",
                           activePrimary
                             ? "bg-purple-600/30 border-purple-400 text-purple-100 font-black ring-1 ring-purple-400/40 shadow-sm"
-                            : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                            : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-900 hover:border-slate-700"
                         )}
                       >
                         <div className={cn(
@@ -1003,6 +1012,8 @@ function PartyCard({
   mergeMode,
   isMergeSelected,
   onToggleMergeSelect,
+  partyDisputes,
+  onPartyDisputesChange,
 }: {
   party: PartySummary;
   isOpen: boolean;
@@ -1020,6 +1031,8 @@ function PartyCard({
   mergeMode?: boolean;
   isMergeSelected?: boolean;
   onToggleMergeSelect?: () => void;
+  partyDisputes?: Record<string, any>;
+  onPartyDisputesChange?: (disputes: Record<string, any>) => void;
 }) {
   const [selectedPRIndex, setSelectedPRIndex] = useState<number | null>(null);
   const [selected2BIndex, setSelected2BIndex] = useState<number | null>(null);
@@ -1039,7 +1052,7 @@ function PartyCard({
     <Collapsible open={isOpen} onOpenChange={onToggle}>
       <CollapsibleTrigger asChild>
         <button className={cn(
-          "w-full flex items-center justify-between gap-6 px-6 py-5 hover:bg-white/[0.02] transition-all group text-left",
+          "w-full flex items-center justify-between gap-6 px-6 py-5 hover:bg-slate-50/80 border-b border-slate-100 transition-all group text-left",
           mergeMode && isMergeSelected && "bg-purple-950/30 ring-1 ring-purple-500/30"
         )}>
           <div className="min-w-0 flex-1 flex items-center gap-6">
@@ -1060,17 +1073,22 @@ function PartyCard({
             <div className={cn("w-2 h-2 rounded-full", party.overall === 'All Matched' ? 'bg-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'bg-yellow-500' : 'bg-[var(--np-red)]')} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-extrabold text-[13px] text-white truncate uppercase tracking-wide group-hover:text-[var(--np-sky)] transition-colors">{party.partyName || '— UNNAMED COUNTERPARTY —'}</span>
-                <span className="np-badge np-badge-muted">{party.gstin || 'NO GSTIN'}</span>
+                <span className="font-extrabold text-sm text-slate-900 truncate uppercase tracking-wide group-hover:text-indigo-600 transition-colors">{party.partyName || '— UNNAMED COUNTERPARTY —'}</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-bold">{party.gstin || 'NO GSTIN'}</span>
               </div>
               <div className="flex items-center gap-4 mt-2">
-                <span className="text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest">{party.totals.count} Invoices</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">{party.totals.count} Invoices</span>
                 {party.totals.totalDiff !== 0 && (
-                  <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">₹{fmt(party.totals.totalDiff)} Variance</span>
+                  <span className="text-xs font-bold text-amber-600 uppercase tracking-widest font-mono">₹{fmt(party.totals.totalDiff)} Variance</span>
                 )}
                 <span className={cn("text-[9px] font-black uppercase tracking-[0.2em]", party.overall === 'All Matched' ? 'text-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'text-yellow-500' : 'text-[var(--np-red)]')}>
                   {party.overall}
                 </span>
+                {partyDisputes?.[party.key]?.status && partyDisputes[party.key].status !== 'No Dispute' && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
+                    {partyDisputes[party.key].status}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1079,12 +1097,12 @@ function PartyCard({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="bg-[var(--np-bg3)]/30 border-t border-[var(--np-border)] p-2 overflow-hidden">
+        <div className="bg-slate-50/50 border-t border-slate-200 p-3 overflow-hidden">
           {canEdit && (hasUnmatchedPR || hasUnmatched2B) && (
-            <div className="mb-3 p-3 bg-slate-900/90 border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="mb-3 p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs p-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-sky-400 animate-pulse" />
-                <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">Manual Match Studio</span>
+                <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">Manual Match Studio</span>
                 <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
                   (Select 1 Books & 1 2B invoice, add to batch, then click Apply All)
                 </span>
@@ -1172,7 +1190,7 @@ function PartyCard({
               </div>
               <div className="flex flex-wrap gap-2 pt-1 border-t border-emerald-900/60">
                 {stagedPairs.map((pair, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-emerald-500/40 rounded text-[10px] text-slate-200 font-mono shadow-sm">
+                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-emerald-500/40 rounded text-[10px] text-slate-900 font-mono shadow-sm">
                     <span className="text-emerald-400 font-bold">Pair #{idx + 1}:</span>
                     <span className="text-sky-400">{pair.pr.invoiceNoPR || 'Books'}</span>
                     <span className="text-slate-500">↔</span>
@@ -1193,26 +1211,26 @@ function PartyCard({
           <div className="w-full max-w-full overflow-x-auto">
             <table className="w-full !bg-transparent border-none text-left border-collapse table-dense">
               <thead>
-                <tr className="!bg-transparent border-b border-[var(--np-border)]">
-                  {canEdit && <th className="!py-2 !px-1 !text-[8.5px] font-bold text-slate-400 uppercase text-center w-8">Match</th>}
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Date</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Month / FY</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">GSTIN</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Party Name</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Inv (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Inv (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">Taxable (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">Taxable (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">CGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">CGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">SGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">SGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">IGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">IGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">Val (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase text-right whitespace-nowrap">Val (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[8.5px] font-bold text-slate-400 uppercase whitespace-nowrap">Status</th>
-                  {canEdit && <th className="!py-2 !px-1 !text-[8.5px] font-bold text-slate-400 uppercase text-center whitespace-nowrap">Action</th>}
+                <tr className="bg-slate-100/70 border-b border-slate-200">
+                  {canEdit && <th className="!py-2 !px-1 !text-[9px] font-bold text-slate-700 uppercase text-center w-8">Match</th>}
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Date</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Month / FY</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">GSTIN</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Party Name</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Inv (PR)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Inv (2B)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Taxable (PR)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Taxable (2B)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">CGST PR</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">CGST 2B</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">SGST PR</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">SGST 2B</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">IGST PR</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">IGST 2B</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Val (PR)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Val (2B)</th>
+                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Status</th>
+                  {canEdit && <th className="!py-2 !px-1 !text-[9px] font-bold text-slate-700 uppercase text-center whitespace-nowrap">Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1238,7 +1256,7 @@ function PartyCard({
                     <tr
                       key={i}
                       className={cn(
-                        '!bg-transparent border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors',
+                        'bg-white border-b border-slate-200/60 hover:bg-slate-50 transition-colors',
                         isBatchRow && 'border-l-4 border-l-amber-500/80 bg-amber-950/15',
                         isBatchSub && 'opacity-90',
                         selectedPRIndex === i && 'bg-emerald-950/40 border-emerald-500/50',
@@ -1275,10 +1293,10 @@ function PartyCard({
                           )}
                         </td>
                       )}
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-300 whitespace-nowrap">{dateVal}</td>
+                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-700 whitespace-nowrap">{dateVal}</td>
                       <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-400 whitespace-nowrap">{inv.financialYear}</td>
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-300 whitespace-nowrap">{gstinVal}</td>
-                      <td className="!py-1.5 !px-1.5 font-semibold !text-[9px] text-white truncate max-w-[130px]" title={partyNameVal}>{partyNameVal}</td>
+                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-700 whitespace-nowrap">{gstinVal}</td>
+                      <td className="!py-1.5 !px-1.5 font-bold !text-[9px] text-slate-900 truncate max-w-[130px]" title={partyNameVal}>{partyNameVal}</td>
                       <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-sky-400 whitespace-nowrap">
                         {isBatchLead ? (
                           <div className="flex items-center gap-1.5">
@@ -1294,16 +1312,16 @@ function PartyCard({
                         )}
                       </td>
                       <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-purple-400 whitespace-nowrap">{inv.invoiceNo2B || '—'}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-300")}>{fmt(inv.taxablePR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-300">{fmt(inv.taxable2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-300")}>{fmt(inv.cgstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-300">{fmt(inv.cgst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-300")}>{fmt(inv.sgstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-300">{fmt(inv.sgst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-300")}>{fmt(inv.igstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-300">{fmt(inv.igst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-200")}>{fmt(inv.invoiceValuePR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono text-slate-200">{fmt(inv.invoiceValue2B)}</td>
+                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.taxablePR)}</td>
+                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.taxable2B)}</td>
+                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.cgstPR)}</td>
+                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.cgst2B)}</td>
+                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.sgstPR)}</td>
+                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.sgst2B)}</td>
+                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.igstPR)}</td>
+                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.igst2B)}</td>
+                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-900")}>{fmt(inv.invoiceValuePR)}</td>
+                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono text-slate-900">{fmt(inv.invoiceValue2B)}</td>
                       <td className={cn('!py-1.5 !px-1.5 font-bold !text-[8.5px] uppercase tracking-wider whitespace-nowrap', rowStatusColor(inv.status))}>{inv.status}</td>
                       {canEdit && (
                         <td className="!py-1.5 !px-1 text-center">
@@ -1334,6 +1352,91 @@ function PartyCard({
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Vendor Dispute Hub & Audit Communication */}
+          <div className="mt-3 p-3 bg-white border border-slate-200 rounded-xl shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex-1 w-full space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Vendor Dispute Note & Communication:</span>
+                <select
+                  value={partyDisputes?.[party.key]?.status || 'No Dispute'}
+                  onChange={(e) => {
+                    const status = e.target.value;
+                    const prev = partyDisputes?.[party.key] || { note: '' };
+                    onPartyDisputesChange?.({
+                      ...partyDisputes,
+                      [party.key]: {
+                        ...prev,
+                        status,
+                        partyName: party.partyName,
+                        gstin: party.gstin,
+                        updatedAt: new Date().toISOString()
+                      }
+                    });
+                  }}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-800"
+                >
+                  <option value="No Dispute">No Dispute</option>
+                  <option value="Under Review">Under Review</option>
+                  <option value="Dispute Raised">Dispute Raised</option>
+                  <option value="Notice Dispatched">Notice Dispatched</option>
+                  <option value="Resolved">Resolved</option>
+                </select>
+                {partyDisputes?.[party.key]?.updatedAt && (
+                  <span className="text-[9px] text-slate-400 font-mono">
+                    Updated: {new Date(partyDisputes[party.key].updatedAt!).toLocaleDateString('en-IN')}
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder="Add vendor dispute / resolution note (e.g. Supplier promised GSTR-1 amendment in next return)..."
+                value={partyDisputes?.[party.key]?.note || ''}
+                onChange={(e) => {
+                  const note = e.target.value;
+                  const prev = partyDisputes?.[party.key] || { status: 'Under Review' };
+                  onPartyDisputesChange?.({
+                    ...partyDisputes,
+                    [party.key]: {
+                      ...prev,
+                      note,
+                      partyName: party.partyName,
+                      gstin: party.gstin,
+                      updatedAt: new Date().toISOString()
+                    }
+                  });
+                }}
+                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const missingCount = party.invoices.filter(i => i.status.includes('Missing') || i.status.includes('Not in')).length;
+                  const text = `Notice to ${party.partyName} (GSTIN: ${party.gstin}): You have ${missingCount} invoice differences totalling ₹${fmt(party.totals.totalDiff)} in GSTR-2B reconciliation. Kindly reconcile or amend in GSTR-1.`;
+                  navigator.clipboard.writeText(text);
+                  const prev = partyDisputes?.[party.key] || { note: '' };
+                  onPartyDisputesChange?.({
+                    ...partyDisputes,
+                    [party.key]: {
+                      ...prev,
+                      status: 'Notice Dispatched',
+                      partyName: party.partyName,
+                      gstin: party.gstin,
+                      noticeDispatchedAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString()
+                    }
+                  });
+                  toast.success(`Dispute notice copied to clipboard for ${party.partyName}! Status set to Notice Dispatched.`);
+                }}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Copy formal reconciliation notice for WhatsApp or Email"
+              >
+                Copy Notice
+              </button>
+            </div>
           </div>
         </div>
       </CollapsibleContent>

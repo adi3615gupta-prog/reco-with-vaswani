@@ -105,7 +105,7 @@ export function initAuditStorageDatabase(db) {
 /**
  * Setup Express REST routes for unified audit persistence
  */
-export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '.') {
+export function setupAuditStorageRoutes(app, db, defaultUserDataPath = '.') {
     let activeDb = db;
     if (!activeDb) {
         const dbPath = path.join(defaultUserDataPath || process.cwd(), 'network_data.db');
@@ -127,7 +127,8 @@ export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '
                 if (err) return res.status(500).json({ success: false, error: err.message });
                 res.json({
                     success: true,
-                    status: 'ok',
+                    status: 'healthy',
+                    tables: (rows || []).map(r => r.name),
                     initialized_tables: (rows || []).map(r => r.name),
                     timestamp: new Date().toISOString()
                 });
@@ -419,10 +420,10 @@ export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '
         });
     });
 
-    app.get('/api/audit-storage/fin-statements/:gstin/:fy', (req, res) => {
+    app.get(['/api/audit-storage/fin-statements/:gstin/:fy', '/api/audit-storage/fin-statements/:gstin/:fy/:taxonomy'], (req, res) => {
         const client_gstin = String(req.params.gstin || '').trim().toUpperCase();
         const fy = String(req.params.fy || '').trim();
-        const taxonomy_type = req.query.taxonomy ? String(req.query.taxonomy).trim().toLowerCase() : null;
+        const taxonomy_type = String(req.params.taxonomy || req.query.taxonomy || '').trim().toLowerCase() || null;
 
         let sql = `SELECT * FROM financial_statements_workspaces WHERE client_gstin = ? AND fy = ?`;
         const params = [client_gstin, fy];
@@ -513,36 +514,6 @@ export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '
         });
     });
 
-    // List runs without heavy matched_records
-    app.get('/api/audit-storage/reco-runs/:gstin/:fy', (req, res) => {
-        const client_gstin = String(req.params.gstin || '').trim().toUpperCase();
-        const fy = String(req.params.fy || '').trim();
-
-        const sql = `
-            SELECT run_id, client_gstin, fy, run_date, summary_json, metadata, updated_at
-            FROM gst_reconciliation_runs
-            WHERE client_gstin = ? AND fy = ?
-            ORDER BY run_date DESC
-        `;
-        activeDb.all(sql, [client_gstin, fy], (err, rows) => {
-            if (err) return res.status(500).json({ success: false, error: err.message });
-            try {
-                const parsed = (rows || []).map(r => ({
-                    run_id: r.run_id,
-                    client_gstin: r.client_gstin,
-                    fy: r.fy,
-                    run_date: r.run_date,
-                    summary: r.summary_json ? JSON.parse(r.summary_json) : null,
-                    metadata: r.metadata ? JSON.parse(r.metadata) : null,
-                    updated_at: r.updated_at
-                }));
-                res.json({ success: true, runs: parsed });
-            } catch (parseErr) {
-                res.status(500).json({ success: false, error: 'Corrupt JSON data in runs', detail: parseErr.message });
-            }
-        });
-    });
-
     // Detailed run fetch with full records
     app.get('/api/audit-storage/reco-runs/detail/:runId', (req, res) => {
         const runId = String(req.params.runId || '').trim();
@@ -573,6 +544,36 @@ export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '
         });
     });
 
+    // List runs without heavy matched_records
+    app.get('/api/audit-storage/reco-runs/:gstin/:fy', (req, res) => {
+        const client_gstin = String(req.params.gstin || '').trim().toUpperCase();
+        const fy = String(req.params.fy || '').trim();
+
+        const sql = `
+            SELECT run_id, client_gstin, fy, run_date, summary_json, metadata, updated_at
+            FROM gst_reconciliation_runs
+            WHERE client_gstin = ? AND fy = ?
+            ORDER BY run_date DESC
+        `;
+        activeDb.all(sql, [client_gstin, fy], (err, rows) => {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            try {
+                const parsed = (rows || []).map(r => ({
+                    run_id: r.run_id,
+                    client_gstin: r.client_gstin,
+                    fy: r.fy,
+                    run_date: r.run_date,
+                    summary: r.summary_json ? JSON.parse(r.summary_json) : null,
+                    metadata: r.metadata ? JSON.parse(r.metadata) : null,
+                    updated_at: r.updated_at
+                }));
+                res.json({ success: true, runs: parsed });
+            } catch (parseErr) {
+                res.status(500).json({ success: false, error: 'Corrupt JSON data in runs', detail: parseErr.message });
+            }
+        });
+    });
+
     // Delete a run
     app.delete('/api/audit-storage/reco-runs/:runId', (req, res) => {
         const runId = String(req.params.runId || '').trim();
@@ -585,3 +586,5 @@ export default function setupAuditStorageRoutes(app, db, defaultUserDataPath = '
         });
     });
 }
+
+export default setupAuditStorageRoutes;
