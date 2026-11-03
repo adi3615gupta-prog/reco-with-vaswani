@@ -67,6 +67,7 @@ import setupReturnsStorageRoutes from './returns_storage_routes.js';
 import setupAuditTrailRoutes from './audit_trail_routes.js';
 import setupNoticesRoutes from './notices_routes.js';
 import setupMonthlyAuditRoutes from './monthly_audit_routes.js';
+import setupAuditStorageRoutes from './audit_storage_routes.js';
 import setupGeminiRoutes, { syncCloudGeminiKey } from './gemini_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 
@@ -152,7 +153,11 @@ function findDistPath() {
                 console.log(`[Frontend Path] Located valid dist folder at: ${p}`);
                 return p;
             }
-        } catch (e) {}
+        } catch (e) {
+            if (e && e.code !== 'unavailable') {
+                console.warn('[Frontend Path Warning]:', e.message);
+            }
+        }
     }
     const fallback = typeof __dirname !== 'undefined' ? path.join(__dirname, 'dist') : path.join(process.cwd(), 'dist');
     console.warn(`[Frontend Path] Warning: could not locate index.html. Defaulting to: ${fallback}`);
@@ -200,7 +205,11 @@ app.use(cors({
             ) {
                 return callback(null, true);
             }
-        } catch (e) {}
+        } catch (e) {
+            if (e && e.code !== 'unavailable') {
+                console.warn('[CORS Security Warning]:', e.message);
+            }
+        }
 
         callback(new Error('Blocked by Vaswani Enterprise CORS security policy'));
     },
@@ -252,7 +261,11 @@ function ensureProductionDatabase(targetDbPath, userDataDir) {
                         break;
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                if (e && e.code !== 'unavailable') {
+                    console.warn('[Database Seed Warning]:', e.message);
+                }
+            }
         }
 
         if (!masterSeedPath) return;
@@ -332,7 +345,7 @@ db.serialize(() => {
 });
 
 // 3. Initialize TDS Routes
-setupTdsRoutes(app, db);
+setupTdsRoutes(app, db, authenticateToken);
 
 // 4. Initialize Tax Routes
 setupTaxRoutes(app, db);
@@ -344,18 +357,19 @@ setupGDriveRoutes(app, authenticateToken);
 setupImsRoutes(app, db, userDataPath, authenticateToken);
 
 // 7. Initialize GSTR-2B Auto Downloader Routes
-setupGstr2bRoutes(app, db);
+setupGstr2bRoutes(app, db, authenticateToken);
 
 // 8. Initialize GSTR-1 Auto Downloader Routes
-setupGstr1Routes(app, db);
+setupGstr1Routes(app, db, authenticateToken);
 
 // 9. Initialize Returns Server Shared Storage Routes (Multi-PC LAN Access)
-setupReturnsStorageRoutes(app, db, userDataPath);
+setupReturnsStorageRoutes(app, db, userDataPath, authenticateToken);
 
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
 setupAuditTrailRoutes(app, db, userDataPath);
 setupNoticesRoutes(app, db);
-setupMonthlyAuditRoutes(app, db, userDataPath);
+setupMonthlyAuditRoutes(app, db, userDataPath, authenticateToken);
+setupAuditStorageRoutes(app, db, userDataPath);
 setupGeminiRoutes(app, db, firestore, authenticateToken);
 
 const saveUserToLocalDb = (user) => {
@@ -498,7 +512,11 @@ const setupLicenseMonitoring = (officeId) => {
                     await updateDoc(docSnap.ref, { status: expectedStatus });
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            if (e && e.code !== 'unavailable') {
+                console.warn('[Frontend Path Warning]:', e.message);
+            }
+        }
     }, 60000);
 };
 
@@ -1035,10 +1053,18 @@ app.post('/api/logout', async (req, res) => {
                                 if (userDoc) {
                                     await updateDoc(userDoc.ref, { status: 'offline', last_active_at: null });
                                 }
-                            } catch (e) {}
+                            } catch (e) {
+                if (e && e.code !== 'unavailable') {
+                    console.warn('[Database Seed Warning]:', e.message);
+                }
+            }
                             db.run("UPDATE network_users SET device_id = NULL WHERE username = ?", [user.username.toLowerCase().trim()]);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                if (e && e.code !== 'unavailable') {
+                    console.warn('[Database Seed Warning]:', e.message);
+                }
+            }
                 }
             });
         }
@@ -1432,8 +1458,9 @@ app.post('/audit', authenticateToken, (req, res) => {
 });
 
 // Tally XML API Proxy for Web Clients
-app.post('/api/tally-proxy', express.text({ type: '*/*' }), async (req, res) => {
-    const port = req.headers['x-tally-port'] || 9000;
+app.post('/api/tally-proxy', authenticateToken, express.text({ type: '*/*' }), async (req, res) => {
+    const rawPort = parseInt(req.headers['x-tally-port'], 10);
+    const port = (!isNaN(rawPort) && rawPort >= 9000 && rawPort <= 9010) ? rawPort : 9000;
     try {
         const fetch = (await import('node-fetch')).default || global.fetch;
         const response = await fetch(`http://127.0.0.1:${port}`, {
@@ -1459,7 +1486,11 @@ function resolvePythonExecutable() {
         try {
             execSync('py --version', { stdio: 'ignore' });
             return 'py';
-        } catch (e) {}
+        } catch (e) {
+            if (e && e.code !== 'unavailable') {
+                console.warn('[Frontend Path Warning]:', e.message);
+            }
+        }
 
         const userProfile = process.env.USERPROFILE || 'C:\\Users\\' + (process.env.USERNAME || 'PC-10');
         const localPrograms = path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python');
@@ -1470,7 +1501,11 @@ function resolvePythonExecutable() {
                     const candidate = path.join(localPrograms, dir, 'python.exe');
                     if (fs.existsSync(candidate)) return candidate;
                 }
-            } catch (e) {}
+            } catch (e) {
+                if (e && e.code !== 'unavailable') {
+                    console.warn('[Database Seed Warning]:', e.message);
+                }
+            }
         }
 
         const standardPaths = [
@@ -1489,7 +1524,11 @@ function resolvePythonExecutable() {
             try {
                 execSync(`${cmd} --version`, { stdio: 'ignore' });
                 return cmd;
-            } catch (e) {}
+            } catch (e) {
+                if (e && e.code !== 'unavailable') {
+                    console.warn('[Database Seed Warning]:', e.message);
+                }
+            }
         }
     }
     return null;

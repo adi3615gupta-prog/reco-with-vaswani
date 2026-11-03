@@ -8796,11 +8796,11 @@ var require_mime_types = __commonJS({
       }
       return exts[0];
     }
-    function lookup(path19) {
-      if (!path19 || typeof path19 !== "string") {
+    function lookup(path20) {
+      if (!path20 || typeof path20 !== "string") {
         return false;
       }
-      var extension2 = extname("x." + path19).toLowerCase().substr(1);
+      var extension2 = extname("x." + path20).toLowerCase().substr(1);
       if (!extension2) {
         return false;
       }
@@ -9315,19 +9315,19 @@ var require_utils = __commonJS({
       if (decode)
         return decode(data, hint);
     }
-    function basename(path19) {
-      if (typeof path19 !== "string")
+    function basename(path20) {
+      if (typeof path20 !== "string")
         return "";
-      for (let i = path19.length - 1; i >= 0; --i) {
-        switch (path19.charCodeAt(i)) {
+      for (let i = path20.length - 1; i >= 0; --i) {
+        switch (path20.charCodeAt(i)) {
           case 47:
           // '/'
           case 92:
-            path19 = path19.slice(i + 1);
-            return path19 === ".." || path19 === "." ? "" : path19;
+            path20 = path20.slice(i + 1);
+            return path20 === ".." || path20 === "." ? "" : path20;
         }
       }
-      return path19 === ".." || path19 === "." ? "" : path19;
+      return path20 === ".." || path20 === "." ? "" : path20;
     }
     var TOKEN = [
       0,
@@ -13312,7 +13312,7 @@ var require_disk = __commonJS({
   "node_modules/multer/storage/disk.js"(exports2, module2) {
     var fs19 = require("fs");
     var os12 = require("os");
-    var path19 = require("path");
+    var path20 = require("path");
     var crypto4 = require("crypto");
     var pipeline = require("stream").pipeline;
     var MulterError = require_multer_error();
@@ -13351,7 +13351,7 @@ var require_disk = __commonJS({
         if (err) return cb(err);
         that.getFilename(req, file, function(err2, filename) {
           if (err2) return cb(err2);
-          var finalPath = path19.join(destination, filename);
+          var finalPath = path20.join(destination, filename);
           if (file.stream.destroyed) return cb(new MulterError("STREAM_DESTROYED"));
           var outStream = fs19.createWriteStream(finalPath);
           file.path = finalPath;
@@ -13392,15 +13392,15 @@ var require_disk = __commonJS({
       });
     };
     DiskStorage.prototype._removeFile = function _removeFile(req, file, cb) {
-      var path20 = file.path;
+      var path21 = file.path;
       delete file.destination;
       delete file.filename;
       delete file.path;
       function unlink() {
         var flush = flushingFiles.get(file);
-        if (!flush) return fs19.unlink(path20, cb);
+        if (!flush) return fs19.unlink(path21, cb);
         flush.onClosed = function() {
-          fs19.unlink(path20, cb);
+          fs19.unlink(path21, cb);
         };
       }
       var outStream = openStreams.get(file);
@@ -16391,7 +16391,7 @@ var require_form_data = __commonJS({
     "use strict";
     var CombinedStream = require_combined_stream();
     var util = require("util");
-    var path19 = require("path");
+    var path20 = require("path");
     var http = require("http");
     var https = require("https");
     var parseUrl = require("url").parse;
@@ -16522,11 +16522,11 @@ var require_form_data = __commonJS({
     FormData.prototype._getContentDisposition = function(value, options) {
       var filename;
       if (typeof options.filepath === "string") {
-        filename = path19.normalize(options.filepath).replace(/\\/g, "/");
+        filename = path20.normalize(options.filepath).replace(/\\/g, "/");
       } else if (options.filename || value && (value.name || value.path)) {
-        filename = path19.basename(options.filename || value && (value.name || value.path));
+        filename = path20.basename(options.filename || value && (value.name || value.path));
       } else if (value && value.readable && hasOwn(value, "httpVersion")) {
-        filename = path19.basename(value.client._httpMessage.path || "");
+        filename = path20.basename(value.client._httpMessage.path || "");
       }
       if (filename) {
         return 'filename="' + escapeHeaderParam(filename) + '"';
@@ -22395,7 +22395,7 @@ var require_xlsx = __commonJS({
           }
           return o;
         }
-        function find(cfb, path19) {
+        function find(cfb, path20) {
           var UCFullPaths = cfb.FullPaths.map(function(x) {
             return x.toUpperCase();
           });
@@ -22404,11 +22404,11 @@ var require_xlsx = __commonJS({
             return y[y.length - (x.slice(-1) == "/" ? 2 : 1)];
           });
           var k = false;
-          if (path19.charCodeAt(0) === 47) {
+          if (path20.charCodeAt(0) === 47) {
             k = true;
-            path19 = UCFullPaths[0].slice(0, -1) + path19;
-          } else k = path19.indexOf("/") !== -1;
-          var UCPath = path19.toUpperCase();
+            path20 = UCFullPaths[0].slice(0, -1) + path20;
+          } else k = path20.indexOf("/") !== -1;
+          var UCPath = path20.toUpperCase();
           var w = k === true ? UCFullPaths.indexOf(UCPath) : UCPaths.indexOf(UCPath);
           if (w !== -1) return cfb.FileIndex[w];
           var m = !UCPath.match(chr1);
@@ -23389,11 +23389,11 @@ var require_xlsx = __commonJS({
         }
         throw new Error("cannot save file " + fname);
       }
-      function read_binary(path19) {
-        if (typeof _fs !== "undefined") return _fs.readFileSync(path19);
-        if (typeof Deno !== "undefined") return Deno.readFileSync(path19);
+      function read_binary(path20) {
+        if (typeof _fs !== "undefined") return _fs.readFileSync(path20);
+        if (typeof Deno !== "undefined") return Deno.readFileSync(path20);
         if (typeof $ !== "undefined" && typeof File !== "undefined" && typeof Folder !== "undefined") try {
-          var infile = File(path19);
+          var infile = File(path20);
           infile.open("r");
           infile.encoding = "binary";
           var data = infile.read();
@@ -23402,7 +23402,7 @@ var require_xlsx = __commonJS({
         } catch (e) {
           if (!e.message || !e.message.match(/onstruct/)) throw e;
         }
-        throw new Error("Cannot access file " + path19);
+        throw new Error("Cannot access file " + path20);
       }
       function keys(o) {
         var ks = Object.keys(o), o2 = [];
@@ -23679,16 +23679,16 @@ var require_xlsx = __commonJS({
         for (var i = 0; i < k.length; ++i) if (k[i].slice(-1) != "/") o.push(k[i].replace(/^Root Entry[\/]/, ""));
         return o.sort();
       }
-      function zip_add_file(zip, path19, content) {
+      function zip_add_file(zip, path20, content) {
         if (zip.FullPaths) {
           if (typeof content == "string") {
             var res;
             if (has_buf) res = Buffer_from(content);
             else res = utf8decode(content);
-            return CFB.utils.cfb_add(zip, path19, res);
+            return CFB.utils.cfb_add(zip, path20, res);
           }
-          CFB.utils.cfb_add(zip, path19, content);
-        } else zip.file(path19, content);
+          CFB.utils.cfb_add(zip, path20, content);
+        } else zip.file(path20, content);
       }
       function zip_new() {
         return CFB.utils.cfb_new();
@@ -23705,11 +23705,11 @@ var require_xlsx = __commonJS({
         }
         throw new Error("Unrecognized type " + o.type);
       }
-      function resolve_path(path19, base) {
-        if (path19.charAt(0) == "/") return path19.slice(1);
+      function resolve_path(path20, base) {
+        if (path20.charAt(0) == "/") return path20.slice(1);
         var result = base.split("/");
         if (base.slice(-1) != "/") result.pop();
-        var target = path19.split("/");
+        var target = path20.split("/");
         while (target.length !== 0) {
           var step = target.shift();
           if (step === "..") result.pop();
@@ -48364,19 +48364,19 @@ var require_xlsx = __commonJS({
         }
         return !wbrels || wbrels.length === 0 ? null : wbrels;
       }
-      function safe_parse_sheet(zip, path19, relsPath, sheet, idx, sheetRels, sheets, stype, opts, wb, themes, styles) {
+      function safe_parse_sheet(zip, path20, relsPath, sheet, idx, sheetRels, sheets, stype, opts, wb, themes, styles) {
         try {
-          sheetRels[sheet] = parse_rels(getzipstr(zip, relsPath, true), path19);
-          var data = getzipdata(zip, path19);
+          sheetRels[sheet] = parse_rels(getzipstr(zip, relsPath, true), path20);
+          var data = getzipdata(zip, path20);
           var _ws;
           switch (stype) {
             case "sheet":
-              _ws = parse_ws(data, path19, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ws(data, path20, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             case "chart":
-              _ws = parse_cs(data, path19, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_cs(data, path20, idx, opts, sheetRels[sheet], wb, themes, styles);
               if (!_ws || !_ws["!drawel"]) break;
-              var dfile = resolve_path(_ws["!drawel"].Target, path19);
+              var dfile = resolve_path(_ws["!drawel"].Target, path20);
               var drelsp = get_rels_path(dfile);
               var draw = parse_drawing(getzipstr(zip, dfile, true), parse_rels(getzipstr(zip, drelsp, true), dfile));
               var chartp = resolve_path(draw, dfile);
@@ -48384,10 +48384,10 @@ var require_xlsx = __commonJS({
               _ws = parse_chart(getzipstr(zip, chartp, true), chartp, opts, parse_rels(getzipstr(zip, crelsp, true), chartp), wb, _ws);
               break;
             case "macro":
-              _ws = parse_ms(data, path19, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ms(data, path20, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             case "dialog":
-              _ws = parse_ds(data, path19, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ds(data, path20, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             default:
               throw new Error("Unrecognized sheet type " + stype);
@@ -48397,13 +48397,13 @@ var require_xlsx = __commonJS({
           if (sheetRels && sheetRels[sheet]) keys(sheetRels[sheet]).forEach(function(n) {
             var dfile2 = "";
             if (sheetRels[sheet][n].Type == RELS.CMNT) {
-              dfile2 = resolve_path(sheetRels[sheet][n].Target, path19);
+              dfile2 = resolve_path(sheetRels[sheet][n].Target, path20);
               var comments = parse_cmnt(getzipdata(zip, dfile2, true), dfile2, opts);
               if (!comments || !comments.length) return;
               sheet_insert_comments(_ws, comments, false);
             }
             if (sheetRels[sheet][n].Type == RELS.TCMNT) {
-              dfile2 = resolve_path(sheetRels[sheet][n].Target, path19);
+              dfile2 = resolve_path(sheetRels[sheet][n].Target, path20);
               tcomments = tcomments.concat(parse_tcmnt_xml(getzipdata(zip, dfile2, true), opts));
             }
           });
@@ -48507,7 +48507,7 @@ var require_xlsx = __commonJS({
         if (opts.bookDeps && dir.calcchain) deps = parse_cc(getzipdata(zip, strip_front_slash(dir.calcchain)), dir.calcchain, opts);
         var i = 0;
         var sheetRels = {};
-        var path19, relsPath;
+        var path20, relsPath;
         {
           var wbsheets = wb.Sheets;
           props.Worksheets = wbsheets.length;
@@ -48532,15 +48532,15 @@ var require_xlsx = __commonJS({
         wsloop: for (i = 0; i != props.Worksheets; ++i) {
           var stype = "sheet";
           if (wbrels && wbrels[i]) {
-            path19 = "xl/" + wbrels[i][1].replace(/[\/]?xl\//, "");
-            if (!safegetzipfile(zip, path19)) path19 = wbrels[i][1];
-            if (!safegetzipfile(zip, path19)) path19 = wbrelsfile.replace(/_rels\/.*$/, "") + wbrels[i][1];
+            path20 = "xl/" + wbrels[i][1].replace(/[\/]?xl\//, "");
+            if (!safegetzipfile(zip, path20)) path20 = wbrels[i][1];
+            if (!safegetzipfile(zip, path20)) path20 = wbrelsfile.replace(/_rels\/.*$/, "") + wbrels[i][1];
             stype = wbrels[i][2];
           } else {
-            path19 = "xl/worksheets/sheet" + (i + 1 - nmode) + "." + wbext;
-            path19 = path19.replace(/sheet0\./, "sheet.");
+            path20 = "xl/worksheets/sheet" + (i + 1 - nmode) + "." + wbext;
+            path20 = path20.replace(/sheet0\./, "sheet.");
           }
-          relsPath = path19.replace(/^(.*)(\/)([^\/]*)$/, "$1/_rels/$3.rels");
+          relsPath = path20.replace(/^(.*)(\/)([^\/]*)$/, "$1/_rels/$3.rels");
           if (opts && opts.sheets != null) switch (typeof opts.sheets) {
             case "number":
               if (i != opts.sheets) continue wsloop;
@@ -48558,7 +48558,7 @@ var require_xlsx = __commonJS({
                 if (!snjseen) continue wsloop;
               }
           }
-          safe_parse_sheet(zip, path19, relsPath, props.SheetNames[i], i, sheetRels, sheets, stype, opts, wb, themes, styles);
+          safe_parse_sheet(zip, path20, relsPath, props.SheetNames[i], i, sheetRels, sheets, stype, opts, wb, themes, styles);
         }
         out = {
           Directory: dir,
@@ -52801,8 +52801,8 @@ var require_utils2 = __commonJS({
       var result = transform[inputType][outputType](input);
       return result;
     };
-    exports2.resolve = function(path19) {
-      var parts = path19.split("/");
+    exports2.resolve = function(path20) {
+      var parts = path20.split("/");
       var result = [];
       for (var index = 0; index < parts.length; index++) {
         var part = parts[index];
@@ -58655,18 +58655,18 @@ var require_object = __commonJS({
       var object = new ZipObject(name, zipObjectContent, o);
       this.files[name] = object;
     };
-    var parentFolder = function(path19) {
-      if (path19.slice(-1) === "/") {
-        path19 = path19.substring(0, path19.length - 1);
+    var parentFolder = function(path20) {
+      if (path20.slice(-1) === "/") {
+        path20 = path20.substring(0, path20.length - 1);
       }
-      var lastSlash = path19.lastIndexOf("/");
-      return lastSlash > 0 ? path19.substring(0, lastSlash) : "";
+      var lastSlash = path20.lastIndexOf("/");
+      return lastSlash > 0 ? path20.substring(0, lastSlash) : "";
     };
-    var forceTrailingSlash = function(path19) {
-      if (path19.slice(-1) !== "/") {
-        path19 += "/";
+    var forceTrailingSlash = function(path20) {
+      if (path20.slice(-1) !== "/") {
+        path20 += "/";
       }
-      return path19;
+      return path20;
     };
     var folderAdd = function(name, createFolders) {
       createFolders = typeof createFolders !== "undefined" ? createFolders : defaults.createFolders;
@@ -59870,9 +59870,9 @@ var import_cors = __toESM(require("cors"), 1);
 var import_fs18 = __toESM(require("fs"), 1);
 var import_child_process8 = require("child_process");
 var import_os11 = __toESM(require("os"), 1);
-var import_path18 = __toESM(require("path"), 1);
+var import_path19 = __toESM(require("path"), 1);
 var import_url2 = require("url");
-var import_sqlite3 = __toESM(require("sqlite3"), 1);
+var import_sqlite32 = __toESM(require("sqlite3"), 1);
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_crypto10 = __toESM(require("crypto"), 1);
@@ -59883,7 +59883,7 @@ var import_crypto = require("crypto");
 var import_fs = __toESM(require("fs"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path = __toESM(require("path"), 1);
-function setupTdsRoutes(app2, db2) {
+function setupTdsRoutes(app2, db2, authenticateToken2 = (req, res, next) => next()) {
   db2.serialize(() => {
     db2.run(`CREATE TABLE IF NOT EXISTS TDS_Rules (
             id TEXT PRIMARY KEY,
@@ -60038,15 +60038,15 @@ function setupTdsRoutes(app2, db2) {
     return null;
   }
   function getLedgerHierarchy(l) {
-    const path19 = [];
-    if (l.parent_group) path19.push(l.parent_group.toUpperCase().trim());
+    const path20 = [];
+    if (l.parent_group) path20.push(l.parent_group.toUpperCase().trim());
     if (l.parent_group_path) {
       l.parent_group_path.split(",").forEach((g) => {
         const clean = g.trim().toUpperCase();
-        if (clean && !path19.includes(clean)) path19.push(clean);
+        if (clean && !path20.includes(clean)) path20.push(clean);
       });
     }
-    return path19;
+    return path20;
   }
   function matchesGroupMapping(hierarchy, m) {
     const normalize = (s) => (s || "").toUpperCase().trim();
@@ -60106,8 +60106,8 @@ function setupTdsRoutes(app2, db2) {
         const name = r.ledger_name;
         const nameUpper = name.toUpperCase().trim();
         const parent = (r.parent_group || "").toUpperCase().trim();
-        const path19 = (r.parent_group_path || "").toUpperCase().trim();
-        const isExpenseGroup = parent.includes("EXPENSE") || parent.includes("PURCHASE") || path19.includes("EXPENSE") || path19.includes("PURCHASE") || parent.includes("DIRECT") || parent.includes("INDIRECT") || path19.includes("DIRECT") || path19.includes("INDIRECT");
+        const path20 = (r.parent_group_path || "").toUpperCase().trim();
+        const isExpenseGroup = parent.includes("EXPENSE") || parent.includes("PURCHASE") || path20.includes("EXPENSE") || path20.includes("PURCHASE") || parent.includes("DIRECT") || parent.includes("INDIRECT") || path20.includes("DIRECT") || path20.includes("INDIRECT");
         if (!isExpenseGroup) return;
         let suggestedSection = null;
         let confidence = false;
@@ -61128,7 +61128,13 @@ function setupTdsRoutes(app2, db2) {
       }
     );
   });
-  app2.post("/api/tds/reset", (req, res) => {
+  app2.post("/api/tds/reset", authenticateToken2, (req, res) => {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ success: false, error: "Unauthorized: Admin role required to reset TDS data" });
+    }
+    if (req.body?.confirm !== "RESET_ALL_TDS_DATA") {
+      return res.status(400).json({ success: false, error: 'Confirmation payload missing. Please provide confirm: "RESET_ALL_TDS_DATA"' });
+    }
     db2.serialize(() => {
       db2.run("DELETE FROM Recon_Results", (err) => {
         if (err) console.error("Reset Recon_Results error:", err);
@@ -61144,26 +61150,21 @@ function setupTdsRoutes(app2, db2) {
       });
       db2.run("DELETE FROM Party_Masters", [], (err) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+        res.json({ success: true, message: "All TDS module transaction tables reset successfully" });
       });
     });
   });
   app2.get("/api/tds/local-snapshots", (req, res) => {
-    db2.all("SELECT id, company_name, financial_year, created_at, machine_name, summary_json, payload_json FROM Local_Snapshots ORDER BY created_at DESC", [], (err, rows) => {
+    db2.all("SELECT id, company_name, financial_year, created_at, machine_name, summary_json FROM Local_Snapshots ORDER BY created_at DESC", [], (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json(rows.map((r) => {
         let summaryObj = null;
-        let payloadObj = null;
         try {
           summaryObj = r.summary_json ? JSON.parse(r.summary_json) : null;
         } catch (e) {
         }
-        try {
-          payloadObj = r.payload_json ? JSON.parse(r.payload_json) : null;
-        } catch (e) {
-        }
-        const modType = payloadObj?.moduleType || summaryObj?.moduleType || "gst-reco";
-        const modName = payloadObj?.moduleName || summaryObj?.moduleName || (modType === "tds-reco" ? "TDS Audit & Reco" : "GST 2B Reco");
+        const modType = summaryObj?.moduleType || "gst-reco";
+        const modName = summaryObj?.moduleName || (modType === "tds-reco" ? "TDS Audit & Reco" : "GST 2B Reco");
         return {
           id: r.id,
           name: `Snapshot_${(r.company_name || "Company").replace(/\s+/g, "_")}_${r.financial_year || ""}_${r.created_at ? r.created_at.substring(0, 10) : ""}.json`,
@@ -61178,7 +61179,29 @@ function setupTdsRoutes(app2, db2) {
       }));
     });
   });
-  app2.post("/api/tds/local-snapshots/save", (req, res) => {
+  function getActiveRecoHistoryDir() {
+    return new Promise((resolve) => {
+      db2.get("SELECT value FROM app_config WHERE key = 'reco_history_path'", [], (err, row) => {
+        if (!err && row && row.value) {
+          const customPath = import_path.default.resolve(String(row.value).trim().replace(/^["']|["']$/g, ""));
+          try {
+            if (!import_fs.default.existsSync(customPath)) import_fs.default.mkdirSync(customPath, { recursive: true });
+            return resolve(customPath);
+          } catch (e) {
+          }
+        }
+        const defaultPath = import_path.default.resolve(process.env.USER_DATA_PATH || ".", "reco_history");
+        if (!import_fs.default.existsSync(defaultPath)) {
+          try {
+            import_fs.default.mkdirSync(defaultPath, { recursive: true });
+          } catch (e) {
+          }
+        }
+        resolve(defaultPath);
+      });
+    });
+  }
+  app2.post("/api/tds/local-snapshots/save", async (req, res) => {
     try {
       const { payload } = req.body;
       if (!payload || !payload.companyName) {
@@ -61189,20 +61212,22 @@ function setupTdsRoutes(app2, db2) {
       const fy = payload.financialYear || "2024-25";
       const createdAt = payload.createdAt || (/* @__PURE__ */ new Date()).toISOString();
       const machineName = payload.machineName || import_os.default.hostname();
-      const summaryJson = JSON.stringify(payload.summary || {});
+      const summaryObj = { ...payload.summary || {} };
+      summaryObj.moduleType = payload.moduleType || summaryObj.moduleType || "gst-reco";
+      summaryObj.moduleName = payload.moduleName || summaryObj.moduleName || (summaryObj.moduleType === "tds-reco" ? "TDS Audit & Reco" : "GST 2B Reco");
+      const summaryJson = JSON.stringify(summaryObj);
       const payloadJson = JSON.stringify(payload);
       db2.run(
         `INSERT OR REPLACE INTO Local_Snapshots (id, company_name, financial_year, created_at, machine_name, summary_json, payload_json)
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [snapshotId, companyName, fy, createdAt, machineName, summaryJson, payloadJson],
-        function(err) {
+        async function(err) {
           if (err) {
             console.error("Save Local_Snapshot DB error:", err);
             return res.status(500).json({ error: err.message });
           }
           try {
-            const historyDir = import_path.default.join(process.env.USER_DATA_PATH || ".", "reco_history");
-            if (!import_fs.default.existsSync(historyDir)) import_fs.default.mkdirSync(historyDir, { recursive: true });
+            const historyDir = await getActiveRecoHistoryDir();
             const filePath = import_path.default.join(historyDir, `${snapshotId}.json`);
             import_fs.default.writeFileSync(filePath, payloadJson, "utf8");
           } catch (fsErr) {
@@ -61223,11 +61248,12 @@ function setupTdsRoutes(app2, db2) {
     }
   });
   app2.get("/api/tds/local-snapshots/:id", (req, res) => {
-    db2.get("SELECT payload_json FROM Local_Snapshots WHERE id = ?", [req.params.id], (err, row) => {
+    db2.get("SELECT payload_json FROM Local_Snapshots WHERE id = ?", [req.params.id], async (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!row || !row.payload_json) {
         try {
-          const filePath = import_path.default.join(process.env.USER_DATA_PATH || ".", "reco_history", `${req.params.id}.json`);
+          const historyDir = await getActiveRecoHistoryDir();
+          const filePath = import_path.default.join(historyDir, `${req.params.id}.json`);
           if (import_fs.default.existsSync(filePath)) {
             const fileContent = import_fs.default.readFileSync(filePath, "utf8");
             return res.json(JSON.parse(fileContent));
@@ -61244,10 +61270,11 @@ function setupTdsRoutes(app2, db2) {
     });
   });
   app2.delete("/api/tds/local-snapshots/:id", (req, res) => {
-    db2.run("DELETE FROM Local_Snapshots WHERE id = ?", [req.params.id], function(err) {
+    db2.run("DELETE FROM Local_Snapshots WHERE id = ?", [req.params.id], async function(err) {
       if (err) return res.status(500).json({ error: err.message });
       try {
-        const filePath = import_path.default.join(process.env.USER_DATA_PATH || ".", "reco_history", `${req.params.id}.json`);
+        const historyDir = await getActiveRecoHistoryDir();
+        const filePath = import_path.default.join(historyDir, `${req.params.id}.json`);
         if (import_fs.default.existsSync(filePath)) import_fs.default.unlinkSync(filePath);
       } catch (fErr) {
       }
@@ -66393,8 +66420,11 @@ function bulkSaveGstr2bInvoices(db2, clientGstin, returnPeriod, invoices, excelP
         const rowPeriod = inv.return_period && String(inv.return_period).trim().length >= 4 ? String(inv.return_period).trim() : returnPeriod;
         if (rowPeriod) affectedPeriods.add(rowPeriod);
       }
+      let txError = null;
       for (const p of affectedPeriods) {
-        db2.run("DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?", [clientGstin, p]);
+        db2.run("DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?", [clientGstin, p], (delErr) => {
+          if (delErr && !txError) txError = delErr;
+        });
       }
       const stmt = db2.prepare(`
                 INSERT INTO gstr2b_invoices (
@@ -66421,6 +66451,7 @@ function bulkSaveGstr2bInvoices(db2, clientGstin, returnPeriod, invoices, excelP
                     filing_date = excluded.filing_date
             `);
       for (const inv of invoices) {
+        if (txError) break;
         const rawSec = (inv.section || "B2B").toUpperCase();
         const normSec = rawSec.includes("CDNRA") ? "CDNRA" : rawSec.includes("CDNR") ? "CDNR" : rawSec.includes("B2BA") ? "B2BA" : rawSec.includes("B2B") ? "B2B" : rawSec;
         let normDate = String(inv.idt || "").trim().replace(/\//g, "-");
@@ -66458,11 +66489,18 @@ function bulkSaveGstr2bInvoices(db2, clientGstin, returnPeriod, invoices, excelP
           inv.source_period || null,
           inv.filing_date || null,
           now
-        ]);
+        ], (runErr) => {
+          if (runErr && !txError) txError = runErr;
+        });
       }
       stmt.finalize();
       db2.run("COMMIT", async (commitErr) => {
-        if (commitErr) return reject(commitErr);
+        if (txError || commitErr) {
+          const errToReport = txError || commitErr;
+          console.error("[GSTR-2B DB] Error during bulk insert, rolling back:", errToReport.message);
+          db2.run("ROLLBACK", () => reject(errToReport));
+          return;
+        }
         try {
           let lastMetrics = null;
           for (const p of affectedPeriods) {
@@ -69836,7 +69874,11 @@ function generateItcAllocationWorkbook({ clientGstin, returnPeriod, clientName =
 // gstr2b_routes.js
 var xlsxModule5 = __toESM(require_xlsx(), 1);
 var XLSX6 = xlsxModule5.default || xlsxModule5;
-function setupGstr2bRoutes(app2, db2) {
+function setupGstr2bRoutes(app2, db2, authenticateToken2 = (req, res, next) => next()) {
+  const auth = typeof authenticateToken2 === "function" ? authenticateToken2 : ((req, res, next) => next());
+  app2.use("/api/gstr2b", auth);
+  app2.use("/api/gstr3b/itc-allocations", auth);
+  app2.use("/api/gstr3b/export-itc-allocations", auth);
   const browserState = { current: null };
   const activeBrowsers = /* @__PURE__ */ new Map();
   initGstr2bDatabase(db2);
@@ -71631,13 +71673,20 @@ function formatGeneratedTimestamp2() {
   return `${day}-${mon}-${yr} ${hrs}:${mins}:${secs}`;
 }
 function getInvoiceMonthIndex(inv) {
-  const periodStr = String(inv.return_period || "").toLowerCase();
+  const periodStr = String(inv.return_period || "").trim().toLowerCase();
   for (let i = 0; i < MONTH_ORDER2.length; i++) {
     if (periodStr.includes(MONTH_ORDER2[i].toLowerCase())) return i;
   }
-  const origStr = String(inv.original_period || "").toLowerCase();
+  const origStr = String(inv.original_period || "").trim().toLowerCase();
   for (let i = 0; i < MONTH_ORDER2.length; i++) {
     if (origStr.includes(MONTH_ORDER2[i].toLowerCase())) return i;
+  }
+  const numPeriodMatch = periodStr.match(/^(\d{2})(\d{4})$/) || origStr.match(/^(\d{2})(\d{4})$/);
+  if (numPeriodMatch) {
+    const m = parseInt(numPeriodMatch[1], 10);
+    if (m >= 1 && m <= 12) {
+      return m >= 4 ? m - 4 : m + 8;
+    }
   }
   if (inv.idt) {
     const str = String(inv.idt);
@@ -74362,7 +74411,9 @@ async function runGstr1UploadAutopilot({
 // gstr1_routes.js
 var xlsxModule8 = __toESM(require_xlsx(), 1);
 var XLSX9 = xlsxModule8.default || xlsxModule8;
-function setupGstr1Routes(app2, db2) {
+function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => next()) {
+  const auth = typeof authenticateToken2 === "function" ? authenticateToken2 : ((req, res, next) => next());
+  app2.use("/api/gstr1", auth);
   const browserState = { current: null };
   const activeBrowsers = /* @__PURE__ */ new Map();
   initGstr1Database(db2);
@@ -76300,7 +76351,7 @@ var uploadMemory = (0, import_multer2.default)({
   storage: import_multer2.default.memoryStorage(),
   limits: { fileSize: 30 * 1024 * 1024 }
 });
-function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
+function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authenticateToken2 = (req, res, next) => next()) {
   const activeBrowsers = /* @__PURE__ */ new Map();
   const getClientBrowserState = (gstinKey2) => ({
     get current() {
@@ -76341,6 +76392,48 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (gstin, fy, month)
     )`);
+    db2.run(`CREATE TABLE IF NOT EXISTS gstr3b_monthly_returns (
+      id TEXT PRIMARY KEY,
+      gstin TEXT NOT NULL,
+      fy TEXT NOT NULL,
+      month TEXT NOT NULL,
+      client_name TEXT,
+      taxable_outward REAL DEFAULT 0,
+      igst_outward REAL DEFAULT 0,
+      cgst_outward REAL DEFAULT 0,
+      sgst_outward REAL DEFAULT 0,
+      cess_outward REAL DEFAULT 0,
+      taxable_rcm REAL DEFAULT 0,
+      tax_rcm REAL DEFAULT 0,
+      exempt_outward REAL DEFAULT 0,
+      itc_import_goods REAL DEFAULT 0,
+      itc_rcm REAL DEFAULT 0,
+      itc_all_other REAL DEFAULT 0,
+      itc_reversal_rule42_43 REAL DEFAULT 0,
+      itc_reversal_others REAL DEFAULT 0,
+      net_itc_available REAL DEFAULT 0,
+      ineligible_itc_17_5 REAL DEFAULT 0,
+      cash_tax_paid REAL DEFAULT 0,
+      cash_interest_paid REAL DEFAULT 0,
+      cash_late_fee_paid REAL DEFAULT 0,
+      itc_setoff_total REAL DEFAULT 0,
+      is_locked INTEGER DEFAULT 0,
+      source TEXT DEFAULT 'WORKING_SHEET',
+      updated_at INTEGER NOT NULL,
+      UNIQUE(gstin, fy, month)
+    )`);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_gstr3b_monthly_lookup ON gstr3b_monthly_returns(gstin, fy, month)`);
+    db2.run(`CREATE TABLE IF NOT EXISTS gstr3b_working_revisions (
+      id TEXT PRIMARY KEY,
+      gstin TEXT NOT NULL,
+      fy TEXT NOT NULL,
+      revision_number INTEGER NOT NULL,
+      summary_text TEXT,
+      created_at INTEGER NOT NULL,
+      saved_by TEXT DEFAULT 'User',
+      working_data_json TEXT NOT NULL
+    )`);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_gstr3b_revisions_lookup ON gstr3b_working_revisions(gstin, fy, created_at DESC)`);
   }
   let _cachedActiveDataPath = null;
   let _lastPathCheckTime = 0;
@@ -76397,6 +76490,94 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
         _lastPathCheckTime = Date.now();
         resolve(defaultPath);
       });
+    });
+  }
+  function getActiveRecoHistoryPath() {
+    const defaultPath = import_path14.default.resolve(defaultUserDataPath, "reco_history");
+    return new Promise((resolve) => {
+      if (!import_fs14.default.existsSync(defaultPath)) {
+        try {
+          import_fs14.default.mkdirSync(defaultPath, { recursive: true });
+        } catch (e) {
+        }
+      }
+      db2.get("SELECT value FROM app_config WHERE key = 'reco_history_path'", [], (err, row) => {
+        if (!err && row && row.value) {
+          const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
+          const candidate = import_path14.default.resolve(raw);
+          try {
+            if (import_fs14.default.existsSync(candidate)) return resolve(candidate);
+          } catch (e) {
+          }
+        }
+        resolve(defaultPath);
+      });
+    });
+  }
+  function getActiveMonthlyAuditPath() {
+    const defaultPath = import_path14.default.resolve(defaultUserDataPath, "monthly_audits");
+    return new Promise((resolve) => {
+      if (!import_fs14.default.existsSync(defaultPath)) {
+        try {
+          import_fs14.default.mkdirSync(defaultPath, { recursive: true });
+        } catch (e) {
+        }
+      }
+      db2.get("SELECT value FROM app_config WHERE key = 'monthly_audit_path'", [], (err, row) => {
+        if (!err && row && row.value) {
+          const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
+          const candidate = import_path14.default.resolve(raw);
+          try {
+            if (import_fs14.default.existsSync(candidate)) return resolve(candidate);
+          } catch (e) {
+          }
+        }
+        resolve(defaultPath);
+      });
+    });
+  }
+  function inspectDatabaseHealth() {
+    const dbPath = import_path14.default.resolve(defaultUserDataPath, "network_data.db");
+    const exists = import_fs14.default.existsSync(dbPath);
+    let sizeBytes = 0;
+    if (exists) {
+      try {
+        sizeBytes += import_fs14.default.statSync(dbPath).size;
+        const walPath = `${dbPath}-wal`;
+        if (import_fs14.default.existsSync(walPath)) {
+          sizeBytes += import_fs14.default.statSync(walPath).size;
+        }
+      } catch {
+      }
+    }
+    return new Promise((resolve) => {
+      let walMode = false;
+      if (db2 && typeof db2.get === "function") {
+        db2.get("PRAGMA journal_mode;", [], (err, row) => {
+          if (!err && row && row.journal_mode) {
+            walMode = String(row.journal_mode).toLowerCase() === "wal";
+          }
+          resolve({
+            name: "Master Relational SQLite Database",
+            path: dbPath,
+            directory: import_path14.default.dirname(dbPath),
+            exists,
+            sizeBytes,
+            walMode,
+            status: exists ? "Connected & Healthy" : "Initializing"
+          });
+        });
+      } else {
+        resolve({
+          name: "Master Relational SQLite Database",
+          path: dbPath,
+          directory: import_path14.default.dirname(dbPath),
+          exists,
+          sizeBytes,
+          walMode: false,
+          status: exists ? "Connected & Healthy" : "Unknown"
+        });
+      }
     });
   }
   function sanitizeFolderName(name) {
@@ -76484,7 +76665,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
     { key: "February", folder: "11 - February" },
     { key: "March", folder: "12 - March" }
   ];
-  function inspectStorageDirectory(dirPath) {
+  function inspectStorageDirectory(dirPath, isReturns = true) {
     if (!dirPath || typeof dirPath !== "string") {
       return { exists: false, isWritable: false, totalClientsWithData: 0, totalFiles: 0, sizeBytes: 0 };
     }
@@ -76505,7 +76686,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
         isWritable = false;
       }
     }
-    if (_cachedStats && Date.now() - _lastStatsTime < STATS_CACHE_TTL) {
+    if (isReturns && _cachedStats && Date.now() - _lastStatsTime < STATS_CACHE_TTL) {
       return { ..._cachedStats, exists: true, isWritable };
     }
     let totalClientsWithData = 0;
@@ -76515,14 +76696,23 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       const items = import_fs14.default.readdirSync(cleanPath, { withFileTypes: true });
       for (const item of items) {
         if (item.isDirectory()) {
-          const gstin = extractGstinFromDirName(item.name);
-          if (gstin) {
-            totalClientsWithData++;
+          if (isReturns) {
+            const gstin = extractGstinFromDirName(item.name);
+            if (gstin) totalClientsWithData++;
+          }
+        } else if (item.isFile()) {
+          totalFiles++;
+          try {
+            const st = import_fs14.default.statSync(import_path14.default.join(cleanPath, item.name));
+            sizeBytes += st.size;
+          } catch {
           }
         }
       }
-      _cachedStats = { exists: true, isWritable, totalClientsWithData, totalFiles, sizeBytes };
-      _lastStatsTime = Date.now();
+      if (isReturns) {
+        _cachedStats = { exists: true, isWritable, totalClientsWithData, totalFiles, sizeBytes };
+        _lastStatsTime = Date.now();
+      }
     } catch (e) {
       console.warn("[Returns Storage] Inspection note:", e.message);
     }
@@ -76531,9 +76721,17 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
   app2.get("/api/returns/storage-config", async (req, res) => {
     try {
       const dataPath = await getActiveDataPath();
-      const stats = inspectStorageDirectory(dataPath);
+      const stats = inspectStorageDirectory(dataPath, true);
       const serverIps = getServerNetworkIps();
       const serverHost = import_os10.default.hostname();
+      const defaultReturnsPath = import_path14.default.resolve(defaultUserDataPath, "gst_returns_data");
+      const defaultRecoPath = import_path14.default.resolve(defaultUserDataPath, "reco_history");
+      const defaultAuditPath = import_path14.default.resolve(defaultUserDataPath, "monthly_audits");
+      const recoHistoryPath = await getActiveRecoHistoryPath();
+      const recoStats = inspectStorageDirectory(recoHistoryPath, false);
+      const monthlyAuditPath = await getActiveMonthlyAuditPath();
+      const auditStats = inspectStorageDirectory(monthlyAuditPath, false);
+      const dbInfo = await inspectDatabaseHealth();
       res.json({
         success: true,
         dataPath,
@@ -76541,7 +76739,34 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
         serverIps,
         isLanReady: serverIps.length > 0,
         port: 3001,
-        ...stats
+        ...stats,
+        paths: {
+          returns: {
+            key: "returns_data_path",
+            name: "Returns Preparation Storage Directory",
+            path: dataPath,
+            defaultPath: defaultReturnsPath,
+            isCustom: dataPath !== defaultReturnsPath,
+            ...stats
+          },
+          recoHistory: {
+            key: "reco_history_path",
+            name: "GST Reco & TDS Runs History Directory",
+            path: recoHistoryPath,
+            defaultPath: defaultRecoPath,
+            isCustom: recoHistoryPath !== defaultRecoPath,
+            ...recoStats
+          },
+          monthlyAudit: {
+            key: "monthly_audit_path",
+            name: "Monthly Audit Working Papers Directory",
+            path: monthlyAuditPath,
+            defaultPath: defaultAuditPath,
+            isCustom: monthlyAuditPath !== defaultAuditPath,
+            ...auditStats
+          },
+          database: dbInfo
+        }
       });
     } catch (err) {
       console.error("[Returns Storage] Config GET error:", err);
@@ -76550,9 +76775,18 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
   });
   app2.post("/api/returns/storage-config", async (req, res) => {
     try {
-      const { dataPath } = req.body;
+      const { dataPath, pathType, key } = req.body || {};
       if (!dataPath || typeof dataPath !== "string" || !dataPath.trim()) {
         return res.status(400).json({ success: false, error: "Valid folder path is required" });
+      }
+      let targetKey = "returns_data_path";
+      let friendlyName = "Returns Preparation Storage";
+      if (pathType === "reco" || pathType === "recoHistory" || key === "reco_history_path") {
+        targetKey = "reco_history_path";
+        friendlyName = "GST Reco & TDS Runs History";
+      } else if (pathType === "audit" || pathType === "monthlyAudit" || key === "monthly_audit_path") {
+        targetKey = "monthly_audit_path";
+        friendlyName = "Monthly Audit Working Papers";
       }
       const cleanPath = dataPath.trim().replace(/^["']|["']$/g, "").trim();
       const normalized = import_path14.default.resolve(cleanPath);
@@ -76574,20 +76808,22 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
         }
       }
       db2.run(
-        `INSERT INTO app_config (key, value) VALUES ('returns_data_path', ?)
+        `INSERT INTO app_config (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = ?`,
-        [normalized, normalized],
+        [targetKey, normalized, normalized],
         (dbErr) => {
           if (dbErr) {
             console.error("[Returns Storage] DB save error:", dbErr);
             return res.status(500).json({ success: false, error: "Failed saving data path to database: " + dbErr.message });
           }
           invalidateDataPathCache();
-          console.log(`[Returns Storage] Server data path updated to: ${normalized}`);
+          console.log(`[Storage Config] ${friendlyName} (${targetKey}) updated to: ${normalized}`);
           res.json({
             success: true,
+            key: targetKey,
+            pathType: pathType || (targetKey === "returns_data_path" ? "returns" : targetKey === "reco_history_path" ? "recoHistory" : "monthlyAudit"),
             dataPath: normalized,
-            message: "Server storage path successfully configured and verified."
+            message: `${friendlyName} successfully configured and verified.`
           });
         }
       );
@@ -76598,14 +76834,32 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
   });
   app2.post("/api/returns/reset-default-storage", async (req, res) => {
     try {
-      const defaultPath = import_path14.default.resolve(defaultUserDataPath, "gst_returns_data");
+      const { pathType, key } = req.body || {};
+      let targetKey = "returns_data_path";
+      let defaultPath = import_path14.default.resolve(defaultUserDataPath, "gst_returns_data");
+      let friendlyName = "Returns Preparation Storage";
+      if (pathType === "reco" || pathType === "recoHistory" || key === "reco_history_path") {
+        targetKey = "reco_history_path";
+        defaultPath = import_path14.default.resolve(defaultUserDataPath, "reco_history");
+        friendlyName = "GST Reco & TDS Runs History";
+      } else if (pathType === "audit" || pathType === "monthlyAudit" || key === "monthly_audit_path") {
+        targetKey = "monthly_audit_path";
+        defaultPath = import_path14.default.resolve(defaultUserDataPath, "monthly_audits");
+        friendlyName = "Monthly Audit Working Papers";
+      }
       if (!import_fs14.default.existsSync(defaultPath)) {
         import_fs14.default.mkdirSync(defaultPath, { recursive: true });
       }
-      db2.run("DELETE FROM app_config WHERE key = 'returns_data_path'", [], (err) => {
+      db2.run("DELETE FROM app_config WHERE key = ?", [targetKey], (err) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
         invalidateDataPathCache();
-        res.json({ success: true, dataPath: defaultPath, message: "Reset to local application directory" });
+        res.json({
+          success: true,
+          key: targetKey,
+          pathType: pathType || (targetKey === "returns_data_path" ? "returns" : targetKey === "reco_history_path" ? "recoHistory" : "monthlyAudit"),
+          dataPath: defaultPath,
+          message: `${friendlyName} reset to local application default directory`
+        });
       });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
@@ -76616,8 +76870,19 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       let targetFolder = await getActiveDataPath();
       if (req.body && req.body.folderPath) {
         const customPath = import_path14.default.resolve(String(req.body.folderPath).trim().replace(/^["']|["']$/g, ""));
-        if (import_fs14.default.existsSync(customPath)) {
-          targetFolder = customPath;
+        const allowedBase = import_path14.default.resolve(targetFolder);
+        const allowedUser = import_path14.default.resolve(defaultUserDataPath);
+        const allowedCwd = import_path14.default.resolve(process.cwd());
+        const isSubdir = (parent, child) => {
+          const rel = import_path14.default.relative(parent, child);
+          return rel === "" || !rel.startsWith("..") && !import_path14.default.isAbsolute(rel);
+        };
+        if (isSubdir(allowedBase, customPath) || isSubdir(allowedUser, customPath) || isSubdir(allowedCwd, customPath)) {
+          if (import_fs14.default.existsSync(customPath)) {
+            targetFolder = customPath;
+          }
+        } else {
+          return res.status(403).json({ success: false, error: "Access denied: folder path outside authorized data directory" });
         }
       }
       if (!import_fs14.default.existsSync(targetFolder)) {
@@ -76636,8 +76901,8 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".") {
       res.status(500).json({ success: false, error: err.message });
     }
   };
-  app2.post("/api/returns/open-folder", handleOpenFolder);
-  app2.post("/api/returns/open-storage-folder", handleOpenFolder);
+  app2.post("/api/returns/open-folder", authenticateToken2, handleOpenFolder);
+  app2.post("/api/returns/open-storage-folder", authenticateToken2, handleOpenFolder);
   app2.post("/api/returns/browse-folder", (req, res) => {
     try {
       const clientIp = req.ip || req.connection?.remoteAddress || "";
@@ -76850,6 +77115,152 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           );
         }
       }
+      if (workingData.months && typeof workingData.months === "object" && db2 && typeof db2.run === "function") {
+        const now = Date.now();
+        for (const m of MONTH_MAP) {
+          const mData = workingData.months[m.key];
+          if (!mData) continue;
+          const recId = `${gstinClean}_${fyClean}_${m.key}`;
+          const taxable_outward = Number(mData.outward?.totalSaleWorking?.taxable || 0);
+          const igst_outward = Number(mData.outward?.totalSaleWorking?.igst || 0);
+          const cgst_outward = Number(mData.outward?.totalSaleWorking?.cgst || 0);
+          const sgst_outward = Number(mData.outward?.totalSaleWorking?.sgst || 0);
+          const cess_outward = Number(mData.outward?.totalSaleWorking?.cess || 0);
+          const taxable_rcm = Number(mData.outward?.rcmInward?.taxable || 0);
+          const tax_rcm = Number((mData.outward?.rcmInward?.igst || 0) + (mData.outward?.rcmInward?.cgst || 0) + (mData.outward?.rcmInward?.sgst || 0));
+          const exempt_outward = Number((mData.outward?.exempt?.taxable || 0) + (mData.outward?.nilRated?.taxable || 0));
+          const itc_import_goods = Number((mData.inward?.importGoods?.igst || 0) + (mData.inward?.importGoods?.cgst || 0) + (mData.inward?.importGoods?.sgst || 0));
+          const itc_rcm = Number((mData.inward?.rcmPaid?.igst || 0) + (mData.inward?.rcmPaid?.cgst || 0) + (mData.inward?.rcmPaid?.sgst || 0));
+          const itc_all_other = Number((mData.inward?.itc2b?.igst || 0) + (mData.inward?.itc2b?.cgst || 0) + (mData.inward?.itc2b?.sgst || 0));
+          const itc_reversal_rule42_43 = Number((mData.inward?.itcReversed?.igst || 0) + (mData.inward?.itcReversed?.cgst || 0) + (mData.inward?.itcReversed?.sgst || 0));
+          const itc_reversal_others = Number((mData.inward?.itcReversedOther?.igst || 0) + (mData.inward?.itcReversedOther?.cgst || 0) + (mData.inward?.itcReversedOther?.sgst || 0));
+          const net_itc_available = Number((mData.inward?.totalItcAvailable?.igst || 0) + (mData.inward?.totalItcAvailable?.cgst || 0) + (mData.inward?.totalItcAvailable?.sgst || 0));
+          const ineligible_itc_17_5 = 0;
+          const cash_tax_paid = Number((mData.settlement?.gstPaidThroughCash?.igst || 0) + (mData.settlement?.gstPaidThroughCash?.cgst || 0) + (mData.settlement?.gstPaidThroughCash?.sgst || 0) + (mData.settlement?.gstPaidThroughCash?.cess || 0));
+          const cash_interest_paid = Number((mData.settlement?.interest?.igst || 0) + (mData.settlement?.interest?.cgst || 0) + (mData.settlement?.interest?.sgst || 0));
+          const cash_late_fee_paid = Number((mData.settlement?.lateFees?.cgst || 0) + (mData.settlement?.lateFees?.sgst || 0));
+          const itc_setoff_total = Number((mData.setoff?.adjustment?.igst || 0) + (mData.setoff?.adjustment?.cgst || 0) + (mData.setoff?.adjustment?.sgst || 0));
+          const is_locked = workingData.lockedMonths && workingData.lockedMonths[m.key] ? 1 : 0;
+          db2.run(`
+            INSERT INTO gstr3b_monthly_returns (
+              id, gstin, fy, month, client_name,
+              taxable_outward, igst_outward, cgst_outward, sgst_outward, cess_outward,
+              taxable_rcm, tax_rcm, exempt_outward,
+              itc_import_goods, itc_rcm, itc_all_other, itc_reversal_rule42_43, itc_reversal_others,
+              net_itc_available, ineligible_itc_17_5,
+              cash_tax_paid, cash_interest_paid, cash_late_fee_paid, itc_setoff_total,
+              is_locked, source, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(gstin, fy, month) DO UPDATE SET
+              client_name = excluded.client_name,
+              taxable_outward = excluded.taxable_outward,
+              igst_outward = excluded.igst_outward,
+              cgst_outward = excluded.cgst_outward,
+              sgst_outward = excluded.sgst_outward,
+              cess_outward = excluded.cess_outward,
+              taxable_rcm = excluded.taxable_rcm,
+              tax_rcm = excluded.tax_rcm,
+              exempt_outward = excluded.exempt_outward,
+              itc_import_goods = excluded.itc_import_goods,
+              itc_rcm = excluded.itc_rcm,
+              itc_all_other = excluded.itc_all_other,
+              itc_reversal_rule42_43 = excluded.itc_reversal_rule42_43,
+              itc_reversal_others = excluded.itc_reversal_others,
+              net_itc_available = excluded.net_itc_available,
+              ineligible_itc_17_5 = excluded.ineligible_itc_17_5,
+              cash_tax_paid = excluded.cash_tax_paid,
+              cash_interest_paid = excluded.cash_interest_paid,
+              cash_late_fee_paid = excluded.cash_late_fee_paid,
+              itc_setoff_total = excluded.itc_setoff_total,
+              is_locked = excluded.is_locked,
+              updated_at = excluded.updated_at
+          `, [
+            recId,
+            gstinClean,
+            fyClean,
+            m.key,
+            firmName,
+            taxable_outward,
+            igst_outward,
+            cgst_outward,
+            sgst_outward,
+            cess_outward,
+            taxable_rcm,
+            tax_rcm,
+            exempt_outward,
+            itc_import_goods,
+            itc_rcm,
+            itc_all_other,
+            itc_reversal_rule42_43,
+            itc_reversal_others,
+            net_itc_available,
+            ineligible_itc_17_5,
+            cash_tax_paid,
+            cash_interest_paid,
+            cash_late_fee_paid,
+            itc_setoff_total,
+            is_locked,
+            "WORKING_SHEET",
+            now
+          ], () => {
+          });
+          const trackingId = `${gstinClean}_${fyClean}_${m.key}`;
+          const totalLiability = Number(mData.outward?.totalSaleWorking?.total || 0);
+          const totalItc = Number(mData.inward?.totalItcAvailable?.total || 0);
+          db2.run(`
+            INSERT INTO returns_tracking_records (
+              id, gstin, client_name, financial_year, period,
+              gstr3b_liability, gstr3b_itc, gstr3b_cash_paid, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(gstin, financial_year, period) DO UPDATE SET
+              client_name = COALESCE(excluded.client_name, returns_tracking_records.client_name),
+              gstr3b_liability = excluded.gstr3b_liability,
+              gstr3b_itc = excluded.gstr3b_itc,
+              gstr3b_cash_paid = excluded.gstr3b_cash_paid,
+              updated_at = excluded.updated_at
+          `, [
+            trackingId,
+            gstinClean,
+            firmName,
+            fyClean,
+            m.key,
+            totalLiability,
+            totalItc,
+            cash_tax_paid,
+            now
+          ], () => {
+          });
+        }
+      }
+      if ((req.body.createRevision || req.body.isManualSave) && db2 && typeof db2.run === "function") {
+        const revTime = Date.now();
+        const revId = `rev_${gstinClean}_${fyClean}_${revTime}`;
+        const savedBy = req.body.savedBy || "User";
+        const summaryText = req.body.summaryText || `Working Snapshot: ${new Date(revTime).toLocaleString("en-IN")}`;
+        db2.get(
+          `SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRev FROM gstr3b_working_revisions WHERE gstin = ? AND fy = ?`,
+          [gstinClean, fyClean],
+          (err, row) => {
+            const revNum = row ? row.nextRev : 1;
+            db2.run(
+              `INSERT INTO gstr3b_working_revisions (id, gstin, fy, revision_number, summary_text, created_at, saved_by, working_data_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [revId, gstinClean, fyClean, revNum, summaryText, revTime, savedBy, JSON.stringify(workingData)],
+              () => {
+                db2.run(
+                  `DELETE FROM gstr3b_working_revisions 
+                   WHERE gstin = ? AND fy = ? AND id NOT IN (
+                     SELECT id FROM gstr3b_working_revisions WHERE gstin = ? AND fy = ? ORDER BY created_at DESC LIMIT 5
+                   )`,
+                  [gstinClean, fyClean, gstinClean, fyClean],
+                  () => {
+                  }
+                );
+              }
+            );
+          }
+        );
+      }
       res.json({
         success: true,
         filePath: annualFile,
@@ -76862,6 +77273,88 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       });
     } catch (err) {
       console.error("[Returns Storage] Working data POST error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app2.get("/api/returns/revisions", (req, res) => {
+    try {
+      const { gstin, fy } = req.query;
+      if (!gstin) return res.status(400).json({ success: false, error: "gstin is required" });
+      const gstinClean = String(gstin).trim().toUpperCase();
+      const fyClean = String(fy || "2025-26").trim();
+      if (!db2 || typeof db2.all !== "function") {
+        return res.json({ success: true, revisions: [] });
+      }
+      db2.all(
+        `SELECT id, gstin, fy, revision_number, summary_text, created_at, saved_by 
+         FROM gstr3b_working_revisions 
+         WHERE gstin = ? AND fy = ? 
+         ORDER BY created_at DESC LIMIT 5`,
+        [gstinClean, fyClean],
+        (err, rows) => {
+          if (err) return res.status(500).json({ success: false, error: err.message });
+          res.json({ success: true, revisions: rows || [] });
+        }
+      );
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app2.get("/api/returns/revisions/:id", (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!db2 || typeof db2.get !== "function") {
+        return res.status(500).json({ success: false, error: "Database not initialized" });
+      }
+      db2.get(
+        `SELECT * FROM gstr3b_working_revisions WHERE id = ?`,
+        [id],
+        (err, row) => {
+          if (err) return res.status(500).json({ success: false, error: err.message });
+          if (!row) return res.status(404).json({ success: false, error: "Revision not found" });
+          let workingData = null;
+          try {
+            workingData = JSON.parse(row.working_data_json);
+          } catch (parseErr) {
+            return res.status(500).json({ success: false, error: "Corrupt revision payload" });
+          }
+          res.json({
+            success: true,
+            revision: {
+              id: row.id,
+              gstin: row.gstin,
+              fy: row.fy,
+              revision_number: row.revision_number,
+              summary_text: row.summary_text,
+              created_at: row.created_at,
+              saved_by: row.saved_by
+            },
+            workingData
+          });
+        }
+      );
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app2.get("/api/returns/monthly-index", (req, res) => {
+    try {
+      const { gstin, fy } = req.query;
+      if (!gstin) return res.status(400).json({ success: false, error: "gstin is required" });
+      const gstinClean = String(gstin).trim().toUpperCase();
+      const fyClean = String(fy || "2025-26").trim();
+      if (!db2 || typeof db2.all !== "function") {
+        return res.json({ success: true, records: [] });
+      }
+      db2.all(
+        `SELECT * FROM gstr3b_monthly_returns WHERE gstin = ? AND fy = ? ORDER BY id ASC`,
+        [gstinClean, fyClean],
+        (err, rows) => {
+          if (err) return res.status(500).json({ success: false, error: err.message });
+          res.json({ success: true, gstin: gstinClean, fy: fyClean, records: rows || [] });
+        }
+      );
+    } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -77060,26 +77553,20 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           const colCount = Math.max(1, headers.length);
           const r1 = ws.addRow([`${clientUpper} \u2014 ${sheetName.toUpperCase()}${monthFy ? ` (${monthFy})` : ""}`]);
           r1.height = 19;
-          if (colCount > 1) {
-            ws.mergeCells(1, 1, 1, colCount);
-          }
           for (let c = 1; c <= colCount; c++) {
             const cell = r1.getCell(c);
             cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FFFFFF" } };
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: primaryNavy } };
-            cell.alignment = { vertical: "middle", horizontal: "center" };
+            cell.alignment = { vertical: "middle", horizontal: c === 1 ? "left" : "center" };
           }
           const gstinText = meta.gstin ? `GSTIN: ${meta.gstin} | ` : "";
           const r2 = ws.addRow([`${gstinText}Return Period: ${monthFy || "Current Period"} | Statutory Audit Grade Schedule`]);
           r2.height = 14;
-          if (colCount > 1) {
-            ws.mergeCells(2, 1, 2, colCount);
-          }
           for (let c = 1; c <= colCount; c++) {
             const cell = r2.getCell(c);
             cell.font = { name: "Segoe UI", size: 8, bold: false, color: { argb: "94A3B8" } };
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: subNavy } };
-            cell.alignment = { vertical: "middle", horizontal: "center" };
+            cell.alignment = { vertical: "middle", horizontal: c === 1 ? "left" : "center" };
           }
           const r3 = ws.addRow([]);
           r3.height = 3;
@@ -77161,6 +77648,11 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             return { width: Math.min(24, Math.max(12, Math.ceil(colWidths[colIdx] * 0.9) + 1)) };
           });
         }
+        wb.eachSheet((sheet) => {
+          if (sheet.model) {
+            sheet.model.merges = [];
+          }
+        });
         const parentDir = import_path14.default.dirname(targetPath);
         if (!import_fs14.default.existsSync(parentDir)) {
           import_fs14.default.mkdirSync(parentDir, { recursive: true });
@@ -77994,13 +78486,13 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       ${customNote ? `
       <div class="note-box">
         <strong>Auditor's / Consultant's Note:</strong><br>
-        ${String(customNote).replace(/\n/g, "<br>")}
+        ${String(customNote || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[m]).replace(/\n/g, "<br>")}
       </div>` : ""}
 
       <div class="attachments-list">
         <strong style="color: #0f172a;">\u{1F4CE} Attached Compliance Documents:</strong>
         <ul style="margin: 8px 0 0; padding-left: 20px; color: #475569;">
-          ${attachments.map((a) => `<li><strong>${a.filename}</strong></li>`).join("")}
+          ${attachments.map((a) => `<li><strong>${String(a.filename || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[m])}</strong></li>`).join("")}
         </ul>
       </div>
 
@@ -80249,12 +80741,54 @@ function initMonthlyAuditDatabase(db2) {
     db2.run(`CREATE INDEX IF NOT EXISTS idx_pending_points_origin ON audit_pending_points (origin_audit_id);`);
   });
 }
-function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
+function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authenticateToken2 = (req, res, next) => next()) {
+  const auth = typeof authenticateToken2 === "function" ? authenticateToken2 : ((req, res, next) => next());
+  app2.use("/api/monthly-audits", auth);
+  app2.use("/api/audit-pending-points", auth);
   initMonthlyAuditDatabase(db2);
   const safePathSegment = (str) => {
     if (!str) return "UNKNOWN";
     return String(str).replace(/[<>:"/\\|?*]+/g, "_").trim();
   };
+  function resolveMonthlyAuditFolder(clientName, gstin, fy, month, subFolder = "Audit Working") {
+    return new Promise((resolve) => {
+      const cName = safePathSegment(clientName || "Client");
+      const cGstin = safePathSegment(gstin || "GSTIN");
+      const cFy = safePathSegment(fy || "FY");
+      const cMonth = safePathSegment(month || "Month");
+      const folderName = `${cName} - ${cGstin}`;
+      db2.get("SELECT value FROM app_config WHERE key = 'monthly_audit_path'", [], (err, row) => {
+        let baseDir = null;
+        if (!err && row && row.value) {
+          const candidate = import_path17.default.resolve(String(row.value).trim().replace(/^["']|["']$/g, ""));
+          try {
+            if (!import_fs17.default.existsSync(candidate)) import_fs17.default.mkdirSync(candidate, { recursive: true });
+            baseDir = candidate;
+          } catch (e) {
+          }
+        }
+        if (!baseDir) {
+          baseDir = import_path17.default.resolve(defaultUserDataPath, "monthly_audits");
+          try {
+            if (!import_fs17.default.existsSync(baseDir)) import_fs17.default.mkdirSync(baseDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+        try {
+          const target = import_path17.default.join(baseDir, folderName, cFy, cMonth, subFolder);
+          if (!import_fs17.default.existsSync(target)) import_fs17.default.mkdirSync(target, { recursive: true });
+          resolve(target);
+        } catch (e) {
+          const fallback = import_path17.default.resolve(defaultUserDataPath, "gst_returns_data", folderName, cFy, cMonth, subFolder);
+          try {
+            if (!import_fs17.default.existsSync(fallback)) import_fs17.default.mkdirSync(fallback, { recursive: true });
+          } catch (fbErr) {
+          }
+          resolve(fallback);
+        }
+      });
+    });
+  }
   app2.get("/api/monthly-audits", (req, res) => {
     const gstin = req.query.gstin || req.query.client_gstin || req.query.clientGstin;
     const fy = req.query.fy;
@@ -80404,7 +80938,12 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
     const preparedBy = req.body.preparedBy || req.body.prepared_by;
     const reviewedBy = req.body.reviewedBy || req.body.reviewed_by;
     const notes = req.body.notes || req.body.general_summary;
+    const clientGstin = req.body.clientGstin || req.body.client_gstin;
+    const fy = req.body.fy;
+    const month = req.body.month;
     const now = Date.now();
+    const altId1 = id.startsWith("audit_") ? id.replace("audit_", "") : `audit_${id}`;
+    const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
     const sql = `
             UPDATE monthly_audits SET
                 audit_status = 'SUBMITTED_FOR_REVIEW',
@@ -80414,11 +80953,23 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
                 prepared_at = ?,
                 general_summary = CASE WHEN ? THEN ? ELSE general_summary END,
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
         `;
-    db2.run(sql, [preparedBy || null, reviewedBy || null, now, notes ? 1 : 0, notes || "", now, id], function(err) {
+    db2.run(sql, [
+      preparedBy || null,
+      reviewedBy || null,
+      now,
+      notes ? 1 : 0,
+      notes || "",
+      now,
+      id,
+      altId1,
+      altId2,
+      clientGstin || "",
+      fy || "",
+      month || ""
+    ], function(err) {
       if (err) return res.status(500).json({ success: false, error: err.message });
-      if (this.changes === 0) return res.status(404).json({ success: false, error: "Audit not found" });
       res.json({
         success: true,
         message: "Audit submitted for senior review successfully",
@@ -80432,6 +80983,9 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
     const action = req.body.action;
     const reviewedBy = req.body.reviewedBy || req.body.reviewed_by;
     const reviewNotes = req.body.reviewNotes || req.body.seniorReviewNotes || req.body.senior_review_notes;
+    const clientGstin = req.body.clientGstin || req.body.client_gstin;
+    const fy = req.body.fy;
+    const month = req.body.month;
     const now = Date.now();
     const isApprove = action === "APPROVE";
     const isRevise = action === "REQUEST_REVISION" || action === "REVISE";
@@ -80440,6 +80994,8 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
     }
     const newAuditStatus = isApprove ? "APPROVED" : "REVISION_REQUESTED";
     const newStatus = isApprove ? "Completed" : "Draft";
+    const altId1 = id.startsWith("audit_") ? id.replace("audit_", "") : `audit_${id}`;
+    const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
     const sql = `
             UPDATE monthly_audits SET
                 audit_status = ?,
@@ -80448,11 +81004,23 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
                 reviewed_at = ?,
                 senior_review_notes = COALESCE(?, senior_review_notes),
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
         `;
-    db2.run(sql, [newAuditStatus, newStatus, reviewedBy || null, now, reviewNotes || null, now, id], function(err) {
+    db2.run(sql, [
+      newAuditStatus,
+      newStatus,
+      reviewedBy || null,
+      now,
+      reviewNotes || null,
+      now,
+      id,
+      altId1,
+      altId2,
+      clientGstin || "",
+      fy || "",
+      month || ""
+    ], function(err) {
       if (err) return res.status(500).json({ success: false, error: err.message });
-      if (this.changes === 0) return res.status(404).json({ success: false, error: "Audit not found" });
       res.json({ success: true, audit_status: newAuditStatus, message: isApprove ? "Audit approved and signed off" : "Revision requested from junior" });
     });
   });
@@ -80460,7 +81028,16 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
     const { id } = req.params;
     const { releasedBy, channel, workbookBase64, filename, clientName, gstin, fy, month } = req.body;
     const now = Date.now();
-    db2.get(`SELECT * FROM monthly_audits WHERE id = ?`, [id], (err, audit) => {
+    const altId1 = id.startsWith("audit_") ? id.replace("audit_", "") : `audit_${id}`;
+    const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    db2.get(`SELECT * FROM monthly_audits WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)`, [
+      id,
+      altId1,
+      altId2,
+      gstin || "",
+      fy || "",
+      month || ""
+    ], async (err, audit) => {
       if (err) return res.status(500).json({ success: false, error: err.message });
       if (!audit) return res.status(404).json({ success: false, error: "Audit not found" });
       if (audit.audit_status !== "APPROVED") {
@@ -80469,13 +81046,7 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
       let savedPath = null;
       if (workbookBase64 && filename) {
         try {
-          const cName = safePathSegment(clientName || audit.client_name);
-          const cGstin = safePathSegment(gstin || audit.client_gstin);
-          const cFy = safePathSegment(fy || audit.fy);
-          const cMonth = safePathSegment(month || audit.month);
-          const folderName = `${cName} - ${cGstin}`;
-          const targetDir = import_path17.default.resolve(defaultUserDataPath, "gst_returns_data", folderName, cFy, cMonth, "Released to Client");
-          import_fs17.default.mkdirSync(targetDir, { recursive: true });
+          const targetDir = await resolveMonthlyAuditFolder(clientName || audit.client_name, gstin || audit.client_gstin, fy || audit.fy, month || audit.month, "Released to Client");
           const safeFile = safePathSegment(filename);
           const fullFilePath = import_path17.default.join(targetDir, safeFile);
           import_fs17.default.writeFileSync(fullFilePath, Buffer.from(workbookBase64, "base64"));
@@ -80496,9 +81067,20 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
                     released_at = ?,
                     release_channel = ?,
                     updated_at = ?
-                WHERE id = ?
+                WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
             `;
-      db2.run(sql, [releasedBy || "Auditor", now, channel || "DIRECTORY", now, id], function(updateErr) {
+      db2.run(sql, [
+        releasedBy || "Auditor",
+        now,
+        channel || "DIRECTORY",
+        now,
+        audit.id,
+        id,
+        altId1,
+        audit.client_gstin,
+        audit.fy,
+        audit.month
+      ], function(updateErr) {
         if (updateErr) return res.status(500).json({ success: false, error: updateErr.message });
         res.json({
           success: true,
@@ -80773,20 +81355,14 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
       res.json({ success: true, message: "Verification data cached successfully" });
     });
   });
-  app2.post("/api/monthly-audits/:id/save-directory", (req, res) => {
+  app2.post("/api/monthly-audits/:id/save-directory", async (req, res) => {
     const { id } = req.params;
     const { workbookBase64, filename, clientName, gstin, fy, month } = req.body;
     if (!workbookBase64 || !filename) {
       return res.status(400).json({ success: false, error: "workbookBase64 and filename are required" });
     }
     try {
-      const cName = safePathSegment(clientName || "Client");
-      const cGstin = safePathSegment(gstin || "GSTIN");
-      const cFy = safePathSegment(fy || "FY");
-      const cMonth = safePathSegment(month || "Month");
-      const folderName = `${cName} - ${cGstin}`;
-      const targetDir = import_path17.default.resolve(defaultUserDataPath, "gst_returns_data", folderName, cFy, cMonth, "Audit Working");
-      import_fs17.default.mkdirSync(targetDir, { recursive: true });
+      const targetDir = await resolveMonthlyAuditFolder(clientName, gstin, fy, month, "Audit Working");
       const safeFilename = safePathSegment(filename);
       const fullPath = import_path17.default.join(targetDir, safeFilename);
       const buffer = Buffer.from(workbookBase64, "base64");
@@ -80823,18 +81399,18 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
       const sheetName = wb.SheetNames[0];
       const ws = wb.Sheets[sheetName];
       const rawRows = import_xlsx.default.utils.sheet_to_json(ws, { header: 1 });
-      let companyName = "DYP INFRAPROJECTS PRIVATE LIMITED";
-      let cin = "U45309PN2017PTC173221";
-      let registeredAddress = "Kohinoor Majestic, 1st Floor, Office No. 126 & 127,Plot No. 85/186, Chinchwad, Pune - 411019. Maharashtra (India).";
-      let periodEndedDate = "31-March-2026";
-      let revenueFromOperations = 234202771;
-      let otherIncome = 2034582;
-      let costOfMaterialsConsumed = 179319171;
-      let changeInInventories = -6873231;
-      let employeeBenefitExpenses = 36176399;
-      let financeCosts = 4614888;
-      let depreciationAmortization = 2488741;
-      let otherExpenses = 8727832;
+      let companyName = "";
+      let cin = "";
+      let registeredAddress = "";
+      let periodEndedDate = "";
+      let revenueFromOperations = 0;
+      let otherIncome = 0;
+      let costOfMaterialsConsumed = 0;
+      let changeInInventories = 0;
+      let employeeBenefitExpenses = 0;
+      let financeCosts = 0;
+      let depreciationAmortization = 0;
+      let otherExpenses = 0;
       for (let r = 0; r < rawRows.length; r++) {
         const row = rawRows[r];
         if (!Array.isArray(row) || row.length === 0) continue;
@@ -80927,6 +81503,510 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".") {
       console.error("[Monthly Audit API] Error reading profitability from file:", err);
       res.status(500).json({ success: false, error: err.message });
     }
+  });
+}
+
+// audit_storage_routes.js
+var import_path18 = __toESM(require("path"), 1);
+var import_sqlite3 = __toESM(require("sqlite3"), 1);
+function initAuditStorageDatabase(db2) {
+  db2.serialize(() => {
+    db2.run(`PRAGMA foreign_keys = ON;`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS audit_clause44_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                spend_data_json TEXT,
+                summary_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(client_gstin, fy)
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_clause44_client_fy ON audit_clause44_records(client_gstin, fy);`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS audit_depreciation_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                assets_data_json TEXT,
+                dta_dtl_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(client_gstin, fy)
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_depreciation_client_fy ON audit_depreciation_assets(client_gstin, fy);`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS audit_sa530_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                audit_area TEXT NOT NULL,
+                sample_vouchers_json TEXT,
+                parameters_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_sa530_client_fy ON audit_sa530_samples(client_gstin, fy);`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS cma_appraisals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                projection_data_json TEXT,
+                mpbf_outputs_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(client_gstin, fy)
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_cma_client_fy ON cma_appraisals(client_gstin, fy);`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS financial_statements_workspaces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                taxonomy_type TEXT NOT NULL,
+                workspace_data_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(client_gstin, fy, taxonomy_type)
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_fin_statements_client_fy ON financial_statements_workspaces(client_gstin, fy, taxonomy_type);`);
+    db2.run(`
+            CREATE TABLE IF NOT EXISTS gst_reconciliation_runs (
+                run_id TEXT PRIMARY KEY,
+                client_gstin TEXT NOT NULL,
+                fy TEXT NOT NULL,
+                run_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                summary_json TEXT,
+                matched_records_json TEXT,
+                vendor_disputes_json TEXT,
+                metadata TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+    db2.run(`CREATE INDEX IF NOT EXISTS idx_reco_runs_client_fy ON gst_reconciliation_runs(client_gstin, fy);`);
+  });
+}
+function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".") {
+  let activeDb = db2;
+  if (!activeDb) {
+    const dbPath = import_path18.default.join(defaultUserDataPath || process.cwd(), "network_data.db");
+    activeDb = new import_sqlite3.default.Database(dbPath);
+  }
+  initAuditStorageDatabase(activeDb);
+  app2.get("/api/audit-storage/health", (req, res) => {
+    activeDb.all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (
+                'audit_clause44_records', 'audit_depreciation_assets', 'audit_sa530_samples',
+                'cma_appraisals', 'financial_statements_workspaces', 'gst_reconciliation_runs'
+            )`,
+      [],
+      (err, rows) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({
+          success: true,
+          status: "ok",
+          initialized_tables: (rows || []).map((r) => r.name),
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+    );
+  });
+  app2.post("/api/audit-storage/clause44/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const spend_data_json = typeof b.spend_data === "object" ? JSON.stringify(b.spend_data) : b.spend_data_json || b.spend_data || null;
+    const summary_json = typeof b.summary === "object" ? JSON.stringify(b.summary) : b.summary_json || b.summary || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO audit_clause44_records (client_gstin, fy, spend_data_json, summary_json, metadata, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(client_gstin, fy) DO UPDATE SET
+                spend_data_json = excluded.spend_data_json,
+                summary_json = excluded.summary_json,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+    activeDb.run(sql, [client_gstin, fy, spend_data_json, summary_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        message: "Clause 44 working paper saved successfully",
+        client_gstin,
+        fy,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/clause44/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const sql = `SELECT * FROM audit_clause44_records WHERE client_gstin = ? AND fy = ? LIMIT 1`;
+    activeDb.get(sql, [client_gstin, fy], (err, row) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (!row) return res.json({ success: true, data: null });
+      try {
+        res.json({
+          success: true,
+          data: {
+            id: row.id,
+            client_gstin: row.client_gstin,
+            fy: row.fy,
+            spend_data: row.spend_data_json ? JSON.parse(row.spend_data_json) : null,
+            summary: row.summary_json ? JSON.parse(row.summary_json) : null,
+            metadata: row.metadata ? JSON.parse(row.metadata) : null,
+            updated_at: row.updated_at
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON data in record", detail: parseErr.message });
+      }
+    });
+  });
+  app2.post("/api/audit-storage/depreciation/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const assets_data_json = typeof b.assets_data === "object" ? JSON.stringify(b.assets_data) : b.assets_data_json || b.assets_data || null;
+    const dta_dtl_json = typeof b.dta_dtl === "object" ? JSON.stringify(b.dta_dtl) : b.dta_dtl_json || b.dta_dtl || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO audit_depreciation_assets (client_gstin, fy, assets_data_json, dta_dtl_json, metadata, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(client_gstin, fy) DO UPDATE SET
+                assets_data_json = excluded.assets_data_json,
+                dta_dtl_json = excluded.dta_dtl_json,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+    activeDb.run(sql, [client_gstin, fy, assets_data_json, dta_dtl_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        message: "Depreciation schedule saved successfully",
+        client_gstin,
+        fy,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/depreciation/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const sql = `SELECT * FROM audit_depreciation_assets WHERE client_gstin = ? AND fy = ? LIMIT 1`;
+    activeDb.get(sql, [client_gstin, fy], (err, row) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (!row) return res.json({ success: true, data: null });
+      try {
+        res.json({
+          success: true,
+          data: {
+            id: row.id,
+            client_gstin: row.client_gstin,
+            fy: row.fy,
+            assets_data: row.assets_data_json ? JSON.parse(row.assets_data_json) : null,
+            dta_dtl: row.dta_dtl_json ? JSON.parse(row.dta_dtl_json) : null,
+            metadata: row.metadata ? JSON.parse(row.metadata) : null,
+            updated_at: row.updated_at
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON data in record", detail: parseErr.message });
+      }
+    });
+  });
+  app2.post("/api/audit-storage/sa530/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    const audit_area = String(b.audit_area || b.auditArea || "General Sampling").trim();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const sample_vouchers_json = typeof b.sample_vouchers === "object" ? JSON.stringify(b.sample_vouchers) : b.sample_vouchers_json || b.sample_vouchers || null;
+    const parameters_json = typeof b.parameters === "object" ? JSON.stringify(b.parameters) : b.parameters_json || b.parameters || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO audit_sa530_samples (client_gstin, fy, audit_area, sample_vouchers_json, parameters_json, metadata, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `;
+    activeDb.run(sql, [client_gstin, fy, audit_area, sample_vouchers_json, parameters_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        id: this.lastID,
+        message: "SA 530 sample paper saved successfully",
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/sa530/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const sql = `SELECT * FROM audit_sa530_samples WHERE client_gstin = ? AND fy = ? ORDER BY id DESC`;
+    activeDb.all(sql, [client_gstin, fy], (err, rows) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      try {
+        const parsed = (rows || []).map((r) => ({
+          id: r.id,
+          client_gstin: r.client_gstin,
+          fy: r.fy,
+          audit_area: r.audit_area,
+          sample_vouchers: r.sample_vouchers_json ? JSON.parse(r.sample_vouchers_json) : [],
+          parameters: r.parameters_json ? JSON.parse(r.parameters_json) : null,
+          metadata: r.metadata ? JSON.parse(r.metadata) : null,
+          updated_at: r.updated_at
+        }));
+        res.json({ success: true, samples: parsed });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON data in records", detail: parseErr.message });
+      }
+    });
+  });
+  app2.post("/api/audit-storage/cma/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const projection_data_json = typeof b.projection_data === "object" ? JSON.stringify(b.projection_data) : b.projection_data_json || b.projection_data || null;
+    const mpbf_outputs_json = typeof b.mpbf_outputs === "object" ? JSON.stringify(b.mpbf_outputs) : b.mpbf_outputs_json || b.mpbf_outputs || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO cma_appraisals (client_gstin, fy, projection_data_json, mpbf_outputs_json, metadata, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(client_gstin, fy) DO UPDATE SET
+                projection_data_json = excluded.projection_data_json,
+                mpbf_outputs_json = excluded.mpbf_outputs_json,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+    activeDb.run(sql, [client_gstin, fy, projection_data_json, mpbf_outputs_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        message: "CMA appraisal saved successfully",
+        client_gstin,
+        fy,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/cma/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const sql = `SELECT * FROM cma_appraisals WHERE client_gstin = ? AND fy = ? LIMIT 1`;
+    activeDb.get(sql, [client_gstin, fy], (err, row) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (!row) return res.json({ success: true, data: null });
+      try {
+        res.json({
+          success: true,
+          data: {
+            id: row.id,
+            client_gstin: row.client_gstin,
+            fy: row.fy,
+            projection_data: row.projection_data_json ? JSON.parse(row.projection_data_json) : null,
+            mpbf_outputs: row.mpbf_outputs_json ? JSON.parse(row.mpbf_outputs_json) : null,
+            metadata: row.metadata ? JSON.parse(row.metadata) : null,
+            updated_at: row.updated_at
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON data in record", detail: parseErr.message });
+      }
+    });
+  });
+  app2.post("/api/audit-storage/fin-statements/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    const taxonomy_type = String(b.taxonomy_type || b.taxonomyType || b.taxonomy || "company").trim().toLowerCase();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const workspace_data_json = typeof b.workspace_data === "object" ? JSON.stringify(b.workspace_data) : b.workspace_data_json || b.workspace_data || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO financial_statements_workspaces (client_gstin, fy, taxonomy_type, workspace_data_json, metadata, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(client_gstin, fy, taxonomy_type) DO UPDATE SET
+                workspace_data_json = excluded.workspace_data_json,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+    activeDb.run(sql, [client_gstin, fy, taxonomy_type, workspace_data_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        message: "Financial statements workspace saved successfully",
+        client_gstin,
+        fy,
+        taxonomy_type,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/fin-statements/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const taxonomy_type = req.query.taxonomy ? String(req.query.taxonomy).trim().toLowerCase() : null;
+    let sql = `SELECT * FROM financial_statements_workspaces WHERE client_gstin = ? AND fy = ?`;
+    const params = [client_gstin, fy];
+    if (taxonomy_type) {
+      sql += ` AND taxonomy_type = ? LIMIT 1`;
+      params.push(taxonomy_type);
+      activeDb.get(sql, params, (err, row) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        if (!row) return res.json({ success: true, data: null });
+        try {
+          res.json({
+            success: true,
+            data: {
+              id: row.id,
+              client_gstin: row.client_gstin,
+              fy: row.fy,
+              taxonomy_type: row.taxonomy_type,
+              workspace_data: row.workspace_data_json ? JSON.parse(row.workspace_data_json) : null,
+              metadata: row.metadata ? JSON.parse(row.metadata) : null,
+              updated_at: row.updated_at
+            }
+          });
+        } catch (parseErr) {
+          res.status(500).json({ success: false, error: "Corrupt JSON data in record", detail: parseErr.message });
+        }
+      });
+    } else {
+      sql += ` ORDER BY id DESC`;
+      activeDb.all(sql, params, (err, rows) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        try {
+          const parsed = (rows || []).map((r) => ({
+            id: r.id,
+            client_gstin: r.client_gstin,
+            fy: r.fy,
+            taxonomy_type: r.taxonomy_type,
+            workspace_data: r.workspace_data_json ? JSON.parse(r.workspace_data_json) : null,
+            metadata: r.metadata ? JSON.parse(r.metadata) : null,
+            updated_at: r.updated_at
+          }));
+          res.json({ success: true, workspaces: parsed });
+        } catch (parseErr) {
+          res.status(500).json({ success: false, error: "Corrupt JSON data in records", detail: parseErr.message });
+        }
+      });
+    }
+  });
+  app2.post("/api/audit-storage/reco-runs/save", (req, res) => {
+    const b = req.body || {};
+    const client_gstin = String(b.client_gstin || b.clientGstin || "").trim().toUpperCase();
+    const fy = String(b.fy || "").trim();
+    const run_id = String(b.run_id || b.runId || `reco_${client_gstin}_${fy}_${Date.now()}`).trim();
+    if (!client_gstin || !fy) {
+      return res.status(400).json({ success: false, error: "client_gstin and fy are required" });
+    }
+    const summary_json = typeof b.summary === "object" ? JSON.stringify(b.summary) : b.summary_json || b.summary || null;
+    const matched_records_json = typeof b.matched_records === "object" ? JSON.stringify(b.matched_records) : b.matched_records_json || b.matched_records || null;
+    const vendor_disputes_json = typeof b.vendor_disputes === "object" ? JSON.stringify(b.vendor_disputes) : b.vendor_disputes_json || b.vendor_disputes || null;
+    const metadata = typeof b.metadata === "object" ? JSON.stringify(b.metadata) : b.metadata || null;
+    const sql = `
+            INSERT INTO gst_reconciliation_runs (
+                run_id, client_gstin, fy, run_date, summary_json, matched_records_json, vendor_disputes_json, metadata, updated_at
+            ) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(run_id) DO UPDATE SET
+                summary_json = excluded.summary_json,
+                matched_records_json = excluded.matched_records_json,
+                vendor_disputes_json = excluded.vendor_disputes_json,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+    activeDb.run(sql, [run_id, client_gstin, fy, summary_json, matched_records_json, vendor_disputes_json, metadata], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      res.json({
+        success: true,
+        run_id,
+        message: "GST reconciliation run saved successfully",
+        client_gstin,
+        fy,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+  });
+  app2.get("/api/audit-storage/reco-runs/:gstin/:fy", (req, res) => {
+    const client_gstin = String(req.params.gstin || "").trim().toUpperCase();
+    const fy = String(req.params.fy || "").trim();
+    const sql = `
+            SELECT run_id, client_gstin, fy, run_date, summary_json, metadata, updated_at
+            FROM gst_reconciliation_runs
+            WHERE client_gstin = ? AND fy = ?
+            ORDER BY run_date DESC
+        `;
+    activeDb.all(sql, [client_gstin, fy], (err, rows) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      try {
+        const parsed = (rows || []).map((r) => ({
+          run_id: r.run_id,
+          client_gstin: r.client_gstin,
+          fy: r.fy,
+          run_date: r.run_date,
+          summary: r.summary_json ? JSON.parse(r.summary_json) : null,
+          metadata: r.metadata ? JSON.parse(r.metadata) : null,
+          updated_at: r.updated_at
+        }));
+        res.json({ success: true, runs: parsed });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON data in runs", detail: parseErr.message });
+      }
+    });
+  });
+  app2.get("/api/audit-storage/reco-runs/detail/:runId", (req, res) => {
+    const runId = String(req.params.runId || "").trim();
+    const sql = `SELECT * FROM gst_reconciliation_runs WHERE run_id = ? LIMIT 1`;
+    activeDb.get(sql, [runId], (err, row) => {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (!row) return res.status(404).json({ success: false, error: "Reconciliation run not found" });
+      try {
+        res.json({
+          success: true,
+          data: {
+            run_id: row.run_id,
+            client_gstin: row.client_gstin,
+            fy: row.fy,
+            run_date: row.run_date,
+            summary: row.summary_json ? JSON.parse(row.summary_json) : null,
+            matched_records: row.matched_records_json ? JSON.parse(row.matched_records_json) : [],
+            vendor_disputes: row.vendor_disputes_json ? JSON.parse(row.vendor_disputes_json) : [],
+            metadata: row.metadata ? JSON.parse(row.metadata) : null,
+            updated_at: row.updated_at
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ success: false, error: "Corrupt JSON in reconciliation run details", detail: parseErr.message });
+      }
+    });
+  });
+  app2.delete("/api/audit-storage/reco-runs/:runId", (req, res) => {
+    const runId = String(req.params.runId || "").trim();
+    const sql = `DELETE FROM gst_reconciliation_runs WHERE run_id = ?`;
+    activeDb.run(sql, [runId], function(err) {
+      if (err) return res.status(500).json({ success: false, error: err.message });
+      if (this.changes === 0) return res.status(404).json({ success: false, error: "Run not found" });
+      res.json({ success: true, message: "Reconciliation run deleted successfully", run_id: runId });
+    });
   });
 }
 
@@ -82779,7 +83859,7 @@ function setupGeminiRoutes(app2, db2, firestore2 = null, authenticateToken2 = nu
   });
 }
 function buildSystemPrompt(context = {}, matchedClients = [], practiceStats = {}) {
-  const { clientName = "", gstin = "", fy = "", module: activeModule = "" } = context;
+  const { clientName = "", gstin = "", fy = "", module: activeModule = "", userName = "" } = context;
   const practiceBlock = practiceStats && practiceStats.total_clients > 0 ? `
 ### Live Software Database Snapshot:
 - **Total Registered Clients:** ${practiceStats.total_clients}
@@ -82789,7 +83869,8 @@ function buildSystemPrompt(context = {}, matchedClients = [], practiceStats = {}
 ### Matched Registered Clients in Office Database for this query:
 ${matchedClients.map((c) => `- ${c.name} | GSTIN: ${c.gstin}`).join("\n")}
 ` : "";
-  return `You are Sourav, an elite AI Chartered Accountant, Chief Compliance Officer, and autonomous software co-pilot for AUDIT WITH VASWANI \u2014 the flagship enterprise desktop suite developed by Sourav Vaswani (CA firm, India).
+  const personaName = userName && userName.trim() ? userName.trim() : "Vaswani AI";
+  return `You are ${personaName}, an elite AI Chartered Accountant, Chief Compliance Officer, and autonomous software co-pilot for AUDIT WITH VASWANI \u2014 the flagship enterprise desktop suite developed by Sourav Vaswani (CA firm, India).
 
 You possess authoritative, top-notch mastery of Indian taxation laws (CGST/SGST/IGST Acts, Income Tax Act 1961, Companies Act 2013, ICAI Guidance Notes, RBI CMA Guidelines, and landmark Supreme Court / High Court tax rulings).
 
@@ -83081,7 +84162,7 @@ var app = (0, import_express.default)();
 app.use((0, import_helmet.default)({ contentSecurityPolicy: false }));
 var PORT = 3001;
 var userDataPath2 = process.env.USER_DATA_PATH || ".";
-var CONFIG_PATH = import_path18.default.join(userDataPath2, "server_config.json");
+var CONFIG_PATH = import_path19.default.join(userDataPath2, "server_config.json");
 var JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   if (import_fs18.default.existsSync(CONFIG_PATH)) {
@@ -83113,29 +84194,32 @@ var authenticateToken = (req, res, next) => {
     next();
   });
 };
-app.use("/updates", import_express.default.static(import_path18.default.join(__dirname2, "updates")));
-app.use("/super-admin", import_express.default.static(import_path18.default.join(__dirname2, "admin-web", "dist")));
+app.use("/updates", import_express.default.static(import_path19.default.join(__dirname2, "updates")));
+app.use("/super-admin", import_express.default.static(import_path19.default.join(__dirname2, "admin-web", "dist")));
 function findDistPath() {
   const candidates = [
-    import_path18.default.join(import_path18.default.dirname(process.execPath), "resources", "app.asar.unpacked", "dist"),
-    import_path18.default.join(import_path18.default.dirname(process.execPath), "resources", "app.asar", "dist"),
-    import_path18.default.join(import_path18.default.dirname(process.execPath), "resources", "app", "dist"),
-    import_path18.default.join(process.cwd(), "resources", "app.asar.unpacked", "dist"),
-    import_path18.default.join(process.cwd(), "resources", "app.asar", "dist"),
-    typeof __dirname2 !== "undefined" ? import_path18.default.join(__dirname2, "dist") : null,
-    import_path18.default.join(process.cwd(), "dist"),
-    import_path18.default.join(import_path18.default.dirname(process.execPath), "dist")
+    import_path19.default.join(import_path19.default.dirname(process.execPath), "resources", "app.asar.unpacked", "dist"),
+    import_path19.default.join(import_path19.default.dirname(process.execPath), "resources", "app.asar", "dist"),
+    import_path19.default.join(import_path19.default.dirname(process.execPath), "resources", "app", "dist"),
+    import_path19.default.join(process.cwd(), "resources", "app.asar.unpacked", "dist"),
+    import_path19.default.join(process.cwd(), "resources", "app.asar", "dist"),
+    typeof __dirname2 !== "undefined" ? import_path19.default.join(__dirname2, "dist") : null,
+    import_path19.default.join(process.cwd(), "dist"),
+    import_path19.default.join(import_path19.default.dirname(process.execPath), "dist")
   ].filter(Boolean);
   for (const p of candidates) {
     try {
-      if (import_fs18.default.existsSync(import_path18.default.join(p, "index.html"))) {
+      if (import_fs18.default.existsSync(import_path19.default.join(p, "index.html"))) {
         console.log(`[Frontend Path] Located valid dist folder at: ${p}`);
         return p;
       }
     } catch (e) {
+      if (e && e.code !== "unavailable") {
+        console.warn("[Frontend Path Warning]:", e.message);
+      }
     }
   }
-  const fallback = typeof __dirname2 !== "undefined" ? import_path18.default.join(__dirname2, "dist") : import_path18.default.join(process.cwd(), "dist");
+  const fallback = typeof __dirname2 !== "undefined" ? import_path19.default.join(__dirname2, "dist") : import_path19.default.join(process.cwd(), "dist");
   console.warn(`[Frontend Path] Warning: could not locate index.html. Defaulting to: ${fallback}`);
   return fallback;
 }
@@ -83168,6 +84252,9 @@ app.use((0, import_cors.default)({
         return callback(null, true);
       }
     } catch (e) {
+      if (e && e.code !== "unavailable") {
+        console.warn("[CORS Security Warning]:", e.message);
+      }
     }
     callback(new Error("Blocked by Vaswani Enterprise CORS security policy"));
   },
@@ -83177,9 +84264,9 @@ app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/ping", (req, res) => res.json({ success: true, status: "ok", isServer: true, pcName: import_os11.default.hostname(), timestamp: Date.now() }));
 app.get("/api/health", (req, res) => res.json({ status: "ok", timestamp: Date.now() }));
-var BANNED_PATH = import_path18.default.join(userDataPath2, "banned_users.json");
-var AUDIT_PATH = import_path18.default.join(userDataPath2, "audit_logs.json");
-var DB_PATH = import_path18.default.join(userDataPath2, "network_data.db");
+var BANNED_PATH = import_path19.default.join(userDataPath2, "banned_users.json");
+var AUDIT_PATH = import_path19.default.join(userDataPath2, "audit_logs.json");
+var DB_PATH = import_path19.default.join(userDataPath2, "network_data.db");
 var activeSessions = {};
 var screenFrames = {};
 var screenRequests = {};
@@ -83200,16 +84287,16 @@ function ensureProductionDatabase(targetDbPath, userDataDir) {
       import_fs18.default.mkdirSync(userDataDir, { recursive: true });
     }
     const candidateMasters = [
-      import_path18.default.join(import_path18.default.dirname(process.execPath), "resources", "network_data.db"),
-      import_path18.default.join(process.cwd(), "resources", "network_data.db"),
-      typeof __dirname2 !== "undefined" ? import_path18.default.join(__dirname2, "network_data.db") : null,
-      import_path18.default.join(process.cwd(), "network_data.db"),
-      import_path18.default.join(import_path18.default.dirname(process.execPath), "network_data.db")
+      import_path19.default.join(import_path19.default.dirname(process.execPath), "resources", "network_data.db"),
+      import_path19.default.join(process.cwd(), "resources", "network_data.db"),
+      typeof __dirname2 !== "undefined" ? import_path19.default.join(__dirname2, "network_data.db") : null,
+      import_path19.default.join(process.cwd(), "network_data.db"),
+      import_path19.default.join(import_path19.default.dirname(process.execPath), "network_data.db")
     ].filter(Boolean);
     let masterSeedPath = null;
     for (const candidate of candidateMasters) {
       try {
-        if (import_fs18.default.existsSync(candidate) && import_path18.default.resolve(candidate) !== import_path18.default.resolve(targetDbPath)) {
+        if (import_fs18.default.existsSync(candidate) && import_path19.default.resolve(candidate) !== import_path19.default.resolve(targetDbPath)) {
           const stats = import_fs18.default.statSync(candidate);
           if (stats.size > 5e4) {
             masterSeedPath = candidate;
@@ -83217,6 +84304,9 @@ function ensureProductionDatabase(targetDbPath, userDataDir) {
           }
         }
       } catch (e) {
+        if (e && e.code !== "unavailable") {
+          console.warn("[Database Seed Warning]:", e.message);
+        }
       }
     }
     if (!masterSeedPath) return;
@@ -83232,7 +84322,7 @@ function ensureProductionDatabase(targetDbPath, userDataDir) {
   }
 }
 ensureProductionDatabase(DB_PATH, userDataPath2);
-var db = new import_sqlite3.default.Database(DB_PATH, (err) => {
+var db = new import_sqlite32.default.Database(DB_PATH, (err) => {
   if (err) {
     console.error("Database connection error:", err);
   } else {
@@ -83296,16 +84386,17 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_clients_gstin_deleted ON clients (gstin, is_deleted)`, (err) => {
   });
 });
-setupTdsRoutes(app, db);
+setupTdsRoutes(app, db, authenticateToken);
 setupTaxRoutes(app, db);
 setupGDriveRoutes(app, authenticateToken);
 setupImsRoutes(app, db, userDataPath2, authenticateToken);
-gstr2b_routes_default(app, db);
-setupGstr1Routes(app, db);
-setupReturnsStorageRoutes(app, db, userDataPath2);
+gstr2b_routes_default(app, db, authenticateToken);
+setupGstr1Routes(app, db, authenticateToken);
+setupReturnsStorageRoutes(app, db, userDataPath2, authenticateToken);
 setupAuditTrailRoutes(app, db, userDataPath2);
 notices_routes_default(app, db);
-setupMonthlyAuditRoutes(app, db, userDataPath2);
+setupMonthlyAuditRoutes(app, db, userDataPath2, authenticateToken);
+setupAuditStorageRoutes(app, db, userDataPath2);
 setupGeminiRoutes(app, db, firestore, authenticateToken);
 var saveUserToLocalDb = (user) => {
   db.run(
@@ -83437,6 +84528,9 @@ var setupLicenseMonitoring = (officeId) => {
         }
       }
     } catch (e) {
+      if (e && e.code !== "unavailable") {
+        console.warn("[Frontend Path Warning]:", e.message);
+      }
     }
   }, 6e4);
 };
@@ -83898,10 +84992,16 @@ app.post("/api/logout", async (req, res) => {
                   await (0, import_firestore2.updateDoc)(userDoc.ref, { status: "offline", last_active_at: null });
                 }
               } catch (e) {
+                if (e && e.code !== "unavailable") {
+                  console.warn("[Database Seed Warning]:", e.message);
+                }
               }
               db.run("UPDATE network_users SET device_id = NULL WHERE username = ?", [user.username.toLowerCase().trim()]);
             }
           } catch (e) {
+            if (e && e.code !== "unavailable") {
+              console.warn("[Database Seed Warning]:", e.message);
+            }
           }
         }
       });
@@ -84268,8 +85368,9 @@ app.post("/audit", authenticateToken, (req, res) => {
   import_fs18.default.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
   res.json({ success: true });
 });
-app.post("/api/tally-proxy", import_express.default.text({ type: "*/*" }), async (req, res) => {
-  const port = req.headers["x-tally-port"] || 9e3;
+app.post("/api/tally-proxy", authenticateToken, import_express.default.text({ type: "*/*" }), async (req, res) => {
+  const rawPort = parseInt(req.headers["x-tally-port"], 10);
+  const port = !isNaN(rawPort) && rawPort >= 9e3 && rawPort <= 9010 ? rawPort : 9e3;
   try {
     const fetch2 = (await import("node-fetch")).default || global.fetch;
     const response = await fetch2(`http://127.0.0.1:${port}`, {
@@ -84295,17 +85396,23 @@ function resolvePythonExecutable() {
       (0, import_child_process8.execSync)("py --version", { stdio: "ignore" });
       return "py";
     } catch (e) {
+      if (e && e.code !== "unavailable") {
+        console.warn("[Frontend Path Warning]:", e.message);
+      }
     }
     const userProfile = process.env.USERPROFILE || "C:\\Users\\" + (process.env.USERNAME || "PC-10");
-    const localPrograms = import_path18.default.join(userProfile, "AppData", "Local", "Programs", "Python");
+    const localPrograms = import_path19.default.join(userProfile, "AppData", "Local", "Programs", "Python");
     if (import_fs18.default.existsSync(localPrograms)) {
       try {
         const subdirs = import_fs18.default.readdirSync(localPrograms).filter((d) => d.toLowerCase().startsWith("python"));
         for (const dir of subdirs.reverse()) {
-          const candidate = import_path18.default.join(localPrograms, dir, "python.exe");
+          const candidate = import_path19.default.join(localPrograms, dir, "python.exe");
           if (import_fs18.default.existsSync(candidate)) return candidate;
         }
       } catch (e) {
+        if (e && e.code !== "unavailable") {
+          console.warn("[Database Seed Warning]:", e.message);
+        }
       }
     }
     const standardPaths = [
@@ -84313,8 +85420,8 @@ function resolvePythonExecutable() {
       "C:\\Python312\\python.exe",
       "C:\\Python311\\python.exe",
       "C:\\Python310\\python.exe",
-      import_path18.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python313", "python.exe"),
-      import_path18.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "python.exe")
+      import_path19.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python313", "python.exe"),
+      import_path19.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "python.exe")
     ];
     for (const p of standardPaths) {
       if (p && import_fs18.default.existsSync(p)) return p;
@@ -84325,6 +85432,9 @@ function resolvePythonExecutable() {
         (0, import_child_process8.execSync)(`${cmd} --version`, { stdio: "ignore" });
         return cmd;
       } catch (e) {
+        if (e && e.code !== "unavailable") {
+          console.warn("[Database Seed Warning]:", e.message);
+        }
       }
     }
   }
@@ -84333,8 +85443,8 @@ function resolvePythonExecutable() {
 app.post("/api/cma/generate", authenticateToken, async (req, res) => {
   try {
     const payload = req.body;
-    const tempJsonPath = import_path18.default.join(__dirname2, `temp_cma_${Date.now()}.json`);
-    const tempExcelPath = import_path18.default.join(__dirname2, `CMA_Report_${Date.now()}.xlsx`);
+    const tempJsonPath = import_path19.default.join(__dirname2, `temp_cma_${Date.now()}.json`);
+    const tempExcelPath = import_path19.default.join(__dirname2, `CMA_Report_${Date.now()}.xlsx`);
     import_fs18.default.writeFileSync(tempJsonPath, JSON.stringify(payload));
     const pythonCmd = resolvePythonExecutable();
     if (!pythonCmd) {
@@ -84344,7 +85454,7 @@ app.post("/api/cma/generate", authenticateToken, async (req, res) => {
       }
       return res.status(503).json({ error: "Python runtime is not detected on this system. Please install Python to generate CMA Excel reports." });
     }
-    const generatorScript = import_path18.default.join(__dirname2, "scripts", "cma", "cma_generator.py");
+    const generatorScript = import_path19.default.join(__dirname2, "scripts", "cma", "cma_generator.py");
     const child = (0, import_child_process8.spawn)(pythonCmd, [generatorScript, tempJsonPath, tempExcelPath]);
     let stderrData = "";
     child.stderr.on("data", (data) => {
@@ -84375,12 +85485,12 @@ app.use("/api", (req, res) => {
   return res.status(404).json({ success: false, error: "API route not found: " + req.method + " " + req.path });
 });
 app.get(/(.*)/, (req, res) => {
-  res.sendFile(import_path18.default.join(DIST_PATH, "index.html"));
+  res.sendFile(import_path19.default.join(DIST_PATH, "index.html"));
 });
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Network Server API running on port ${PORT}`);
   try {
-    const pythonScriptPath = import_path18.default.join(__dirname2, "LevitateExtract", "main.py");
+    const pythonScriptPath = import_path19.default.join(__dirname2, "LevitateExtract", "main.py");
     if (!import_fs18.default.existsSync(pythonScriptPath)) {
       console.log("[LevitateExtract] Microservice script not found, skipping launch.");
       return;
@@ -84398,10 +85508,10 @@ app.listen(PORT, "0.0.0.0", () => {
     env.NUMEXPR_NUM_THREADS = "1";
     env.PYTHONDONTWRITEBYTECODE = "1";
     const logBaseDir = userDataPath2 || process.cwd();
-    const outLog = import_fs18.default.openSync(import_path18.default.join(logBaseDir, "programmatic_out.log"), "a");
-    const errLog = import_fs18.default.openSync(import_path18.default.join(logBaseDir, "programmatic_err.log"), "a");
+    const outLog = import_fs18.default.openSync(import_path19.default.join(logBaseDir, "programmatic_out.log"), "a");
+    const errLog = import_fs18.default.openSync(import_path19.default.join(logBaseDir, "programmatic_err.log"), "a");
     const pythonProcess = (0, import_child_process8.spawn)(pythonExe, [pythonScriptPath], {
-      cwd: import_path18.default.join(__dirname2, "LevitateExtract"),
+      cwd: import_path19.default.join(__dirname2, "LevitateExtract"),
       env,
       detached: true,
       stdio: ["ignore", outLog, errLog]
