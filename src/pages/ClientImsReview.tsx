@@ -6,6 +6,7 @@ import {
   HelpCircle, RefreshCw, Send, CheckCheck, Sparkles, AlertTriangle
 } from 'lucide-react';
 import { getApiBase } from '@/lib/api';
+import { toast } from 'sonner';
 import type { ImsInvoice, ImsAction } from '@/lib/imsEngine';
 
 export default function ClientImsReview() {
@@ -108,7 +109,7 @@ export default function ClientImsReview() {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.error || 'Submission failed. Please try again.');
+        toast.error(data.error || 'Submission failed. Please try again.');
         setSubmitting(false);
         return;
       }
@@ -116,7 +117,7 @@ export default function ClientImsReview() {
       setSubmitted(true);
       setShowConfirmModal(false);
     } catch (err) {
-      alert('Network error while submitting. Please check connection and try again.');
+      toast.error('Network error while submitting. Please check connection and try again.');
     } finally {
       setSubmitting(false);
     }
