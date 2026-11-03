@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Search, Download, AlertTriangle, CheckCircle2,
   Zap, FileText, RefreshCw, Server, WifiOff, Wifi,
-  ChevronDown, ChevronUp, Info, Shield, Upload
+  ChevronDown, ChevronUp, Info, Shield, Upload, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -33,6 +33,74 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
 
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<Clause44Result | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+
+  // Auto-load existing Clause 44 working paper on mount
+  useEffect(() => {
+    const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+    const fy = `${fyStart}-${(fyStart + 1).toString().slice(-2)}`;
+    if (clientGstin) {
+      fetch(`/api/audit-storage/clause44/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.data && data.data.spend_data) {
+            const sd = data.data.spend_data;
+            if (sd.result) setResult(sd.result);
+            if (sd.taxLedgersInput) setTaxLedgersInput(sd.taxLedgersInput);
+            if (sd.fromDate) setFromDate(sd.fromDate);
+            if (sd.toDate) setToDate(sd.toDate);
+            setLastSaved(new Date(data.data.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+          }
+        })
+        .catch(err => {
+          console.warn('Clause 44 auto-load deferred:', err);
+        });
+    }
+  }, [fyStart]);
+
+  const handleSaveClause44WorkingPaper = async () => {
+    if (!result) {
+      toast.error('No Clause 44 computation available. Run audit extraction from Tally or load existing paper first.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+      const fy = `${fyStart}-${(fyStart + 1).toString().slice(-2)}`;
+      const res = await fetch('/api/audit-storage/clause44/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_gstin: clientGstin,
+          fy,
+          spend_data: {
+            result,
+            taxLedgersInput,
+            fromDate,
+            toDate
+          },
+          summary: {
+            totalExpense,
+            gstTotal,
+            nonGstTotal,
+            reviewTotal
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLastSaved(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+        toast.success('Form 3CD Clause 44 Working Paper saved to central database!');
+      } else {
+        toast.error(data.error || 'Failed to save working paper');
+      }
+    } catch (err: any) {
+      toast.error('Local database connection error: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<'consolidated' | 'review'>('consolidated');
   const [searchConsolidated, setSearchConsolidated] = useState('');
@@ -520,38 +588,63 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
   const reviewTotal = (result?.manualReview || []).reduce((s, r) => s + r.expenseLedgers.reduce((ss, e) => ss + e.amount, 0), 0);
 
   const connBadge = {
-    disconnected: { color: 'text-slate-400', bg: 'bg-slate-800', icon: <WifiOff className="w-3 h-3" />, label: 'Not Connected' },
-    connecting:   { color: 'text-yellow-400', bg: 'bg-yellow-500/10', icon: <RefreshCw className="w-3 h-3 animate-spin" />, label: 'Connecting...' },
-    connected:    { color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: <Wifi className="w-3 h-3" />, label: 'Connected' },
-    error:        { color: 'text-red-400', bg: 'bg-red-500/10', icon: <WifiOff className="w-3 h-3" />, label: 'Connection Failed' },
+    disconnected: { color: 'text-slate-600 font-bold', bg: 'bg-slate-100 border border-slate-200', icon: <WifiOff className="w-3 h-3" />, label: 'Not Connected' },
+    connecting:   { color: 'text-amber-700 font-bold', bg: 'bg-amber-50 border border-amber-200', icon: <RefreshCw className="w-3 h-3 animate-spin" />, label: 'Connecting...' },
+    connected:    { color: 'text-emerald-700 font-bold', bg: 'bg-emerald-50 border border-emerald-200', icon: <Wifi className="w-3 h-3 text-emerald-600" />, label: 'Connected' },
+    error:        { color: 'text-rose-700 font-bold', bg: 'bg-rose-50 border border-rose-200', icon: <WifiOff className="w-3 h-3" />, label: 'Connection Failed' },
   }[connectionStatus];
 
   return (
-    <div className="w-full text-slate-100 space-y-6">
-      {/* Header */}
-      <div className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#0d1421]/90 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <div className="w-full text-slate-900 space-y-3.5 p-2 sm:p-4">
+      {/* ─── TOP ELEVATED HEADER BAR (Suite 05 · Live) ─── */}
+      <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80 relative">
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+            className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+            title="Return to Master Central Hub"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
           </button>
+          <div className="w-10 h-10 rounded-xl bg-violet-50 border border-violet-200/70 flex items-center justify-center text-violet-600 shrink-0 shadow-2xs">
+            <Shield className="w-5 h-5" />
+          </div>
           <div>
-            <h1 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-              <Shield className="w-5 h-5 text-violet-400" />
-              Tax Audit Form 3CD Clause 44
-            </h1>
-            <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mt-0.5">
-              Expenditure Break-Up Under GST &nbsp;|&nbsp; Winman Ready Output
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                Tax Audit Form 3CD Clause 44
+              </h1>
+              <span className="text-[10px] font-mono font-bold bg-violet-50 text-violet-700 px-2 py-0.5 rounded border border-violet-200 uppercase tracking-wider">
+                Suite 05 · Live
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-mono">
+              Expenditure Break-Up Under GST &nbsp;|&nbsp; Winman Ready Output & 3CD Working
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {lastSaved && (
+            <span className="text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              Saved: {lastSaved}
+            </span>
+          )}
+          {result && (
+            <button
+              onClick={handleSaveClause44WorkingPaper}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs disabled:opacity-50"
+              title="Save Clause 44 working paper to central SQLite database"
+            >
+              <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin' : ''}`} />
+              {isSaving ? 'Saving...' : 'Save Paper'}
+            </button>
+          )}
           {result && (
             <button
               onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider transition-all"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-500/30 text-xs font-bold uppercase tracking-wider transition-all shadow-xs"
             >
               <Download className="w-3.5 h-3.5" /> Export Excel
             </button>
@@ -560,7 +653,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
             {connBadge.icon} {connBadge.label}
           </div>
         </div>
-      </div>
+      </header>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
@@ -568,39 +661,39 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-5"
+          className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 space-y-5"
         >
           <div className="flex items-center gap-2 mb-2">
             <Server className="w-4 h-4 text-violet-400" />
-            <span className="text-sm font-bold text-white">Configuration</span>
+            <span className="text-sm font-bold text-slate-900">Configuration</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">From Date (FY Start)</label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">From Date (FY Start)</label>
               <input
                 type="date"
                 value={fromDate}
                 onChange={e => setFromDate(e.target.value)}
-                className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 text-sm text-white focus:border-violet-500 outline-none transition-colors"
+                className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-slate-900 focus:border-violet-500 outline-none transition-colors"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">To Date (FY End)</label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">To Date (FY End)</label>
               <input
                 type="date"
                 value={toDate}
                 onChange={e => setToDate(e.target.value)}
-                className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 text-sm text-white focus:border-violet-500 outline-none transition-colors"
+                className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-slate-900 focus:border-violet-500 outline-none transition-colors"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Tally Port</label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">Tally Port</label>
               <input
                 type="number"
                 value={tallyPort}
                 onChange={e => setTallyPort(Number(e.target.value))}
-                className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 text-sm text-white focus:border-violet-500 outline-none transition-colors"
+                className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-slate-900 focus:border-violet-500 outline-none transition-colors"
               />
             </div>
             <div className="flex items-end">
@@ -622,7 +715,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
           {/* Tax Ledger Template */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
                 Duties &amp; Taxes Ledger Template
                 <span className="ml-2 text-violet-400 normal-case font-medium tracking-normal">
                   (comma-separated, exact names from Tally Chart of Accounts)
@@ -631,14 +724,14 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleImportTemplate}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-bold uppercase transition-colors border border-slate-700"
+                  className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded text-[10px] font-bold uppercase transition-colors border border-slate-200"
                   title="Import from Excel file"
                 >
                   <Upload className="w-3 h-3" /> Import Template
                 </button>
                 <button
                   onClick={handleExportTemplate}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-bold uppercase transition-colors border border-slate-700"
+                  className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded text-[10px] font-bold uppercase transition-colors border border-slate-200"
                   title="Export to Excel file"
                 >
                   <Download className="w-3 h-3" /> Export
@@ -650,7 +743,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
               onChange={e => setTaxLedgersInput(e.target.value)}
               rows={3}
               placeholder="CGST Input, SGST Input, IGST @ 18%, RCM CGST, RCM SGST, IGST @ 5%"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:border-violet-500 outline-none transition-colors resize-none placeholder:text-slate-600 font-mono"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:border-violet-500 outline-none transition-colors resize-none placeholder:text-slate-600 font-mono"
             />
             <div className="flex items-start gap-1.5 mt-2">
               <Info className="w-3 h-3 text-slate-500 mt-0.5 flex-shrink-0" />
@@ -667,7 +760,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
             className={`w-full h-12 rounded-xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
               isRunning || connectionStatus !== 'connected'
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-900/30'
+                : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-slate-900 shadow-lg shadow-violet-900/30'
             }`}
           >
             {isRunning
@@ -723,7 +816,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
 
               {/* Tab bar & Export button */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800 w-fit">
+                <div className="flex gap-1 p-1 bg-white rounded-xl border border-slate-200 w-fit">
                   {([
                     { id: 'consolidated', label: `Consolidated Expenditure (${consolidatedRows.length})`, color: 'violet' },
                     { id: 'review',       label: `Table C — Manual Review (${result.manualReview.length})`, color: 'amber' },
@@ -735,7 +828,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                         activeTab === tab.id
                           ? tab.color === 'violet' ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30'
                             : 'bg-amber-600/30 text-amber-300 border border-amber-500/30'
-                          : 'text-slate-500 hover:text-slate-300'
+                          : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
                       {tab.label}
@@ -744,7 +837,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                 </div>
                 <button
                   onClick={handleExport}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-950/20 border border-emerald-500/30"
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-950/20 border border-emerald-500/30"
                 >
                   <Download className="w-4 h-4" /> Export Excel
                 </button>
@@ -770,9 +863,9 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                   key="review-tab"
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-slate-900/60 border border-amber-500/20 rounded-2xl overflow-hidden"
+                  className="bg-white/60 border border-amber-500/20 rounded-2xl overflow-hidden"
                 >
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
                     <div>
                       <h3 className="font-bold text-amber-300 text-sm">Table C — Composite Vouchers: Manual Review Required</h3>
                       <p className="text-[10px] text-slate-500 mt-0.5">
@@ -785,7 +878,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                         value={searchReview}
                         onChange={e => setSearchReview(e.target.value)}
                         placeholder="Search voucher / ledger..."
-                        className="pl-8 pr-3 h-9 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:border-amber-500 outline-none w-52"
+                        className="pl-8 pr-3 h-9 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:border-amber-500 outline-none w-52"
                       />
                     </div>
                   </div>
@@ -793,7 +886,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                   {reviewFiltered.length === 0 ? (
                     <div className="py-16 text-center">
                       <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
-                      <p className="text-slate-400 font-semibold text-sm">
+                      <p className="text-slate-600 font-semibold text-sm">
                         {(result.manualReview || []).length === 0 ? 'No composite vouchers found — clean pass!' : 'No results for your search.'}
                       </p>
                     </div>
@@ -808,9 +901,9 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                             <div className="flex items-center gap-4">
                               <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                               <div>
-                                <span className="text-sm font-bold text-white">{r.voucherNumber || 'No Number'}</span>
+                                <span className="text-sm font-bold text-slate-900">{r.voucherNumber || 'No Number'}</span>
                                 <span className="mx-2 text-slate-600">·</span>
-                                <span className="text-xs text-slate-400">{r.date}</span>
+                                <span className="text-xs text-slate-600">{r.date}</span>
                                 <span className="mx-2 text-slate-600">·</span>
                                 <span className="text-xs text-slate-500 uppercase">{r.voucherType}</span>
                               </div>
@@ -823,7 +916,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                                 </span>
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-400">
+                            <div className="flex items-center gap-3 text-xs text-slate-600">
                               <span className="font-mono font-bold">
                                 Rs.{fmt(r.expenseLedgers.reduce((s, e) => s + e.amount, 0))}
                               </span>
@@ -842,16 +935,16 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
                               >
                                 <div className="mt-4 ml-6 space-y-3">
                                   <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800">
+                                    <div className="bg-slate-50/60 rounded-xl p-3 border border-slate-200">
                                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Expense Ledgers in Voucher</p>
                                       {r.expenseLedgers.map((e, j) => (
-                                        <div key={j} className="flex justify-between items-center py-1 text-xs border-b border-slate-800/50 last:border-0">
-                                          <span className="text-slate-300">{e.name}</span>
-                                          <span className="font-mono text-slate-400">Rs.{fmt(e.amount)}</span>
+                                        <div key={j} className="flex justify-between items-center py-1 text-xs border-b border-slate-200/50 last:border-0">
+                                          <span className="text-slate-700">{e.name}</span>
+                                          <span className="font-mono text-slate-600">Rs.{fmt(e.amount)}</span>
                                         </div>
                                       ))}
                                     </div>
-                                    <div className="bg-slate-950/60 rounded-xl p-3 border border-amber-500/10">
+                                    <div className="bg-slate-50/60 rounded-xl p-3 border border-amber-500/10">
                                       <p className="text-[10px] font-bold text-amber-500/70 uppercase tracking-wider mb-2">Tax Ledgers Found</p>
                                       {r.taxLedgersFound.map((t, j) => (
                                         <div key={j} className="py-1 text-xs text-amber-300">{t}</div>
@@ -901,7 +994,7 @@ function SummaryCard({ color, icon, label, value, sub }: {
         {icon}
         <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">{label}</span>
       </div>
-      <div className="text-2xl font-black text-white tracking-tight">{value}</div>
+      <div className="text-2xl font-black text-slate-900 tracking-tight">{value}</div>
       <div className="text-[11px] text-slate-500 mt-1 font-medium">{sub}</div>
     </motion.div>
   );
@@ -941,9 +1034,9 @@ function ConsolidatedResultTable({
       key={tableLabel}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-slate-900/60 border border-violet-500/20 rounded-2xl overflow-hidden shadow-2xl"
+      className="bg-white border border-slate-200/80 shadow-xs rounded-2xl overflow-hidden shadow-2xl"
     >
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
         <h3 className="font-bold text-sm text-violet-400">{tableLabel}</h3>
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -951,7 +1044,7 @@ function ConsolidatedResultTable({
             value={search}
             onChange={e => onSearch(e.target.value)}
             placeholder="Filter ledger or group..."
-            className="pl-8 pr-3 h-9 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:border-violet-500 outline-none w-52"
+            className="pl-8 pr-3 h-9 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:border-violet-500 outline-none w-52"
           />
         </div>
       </div>
@@ -963,7 +1056,7 @@ function ConsolidatedResultTable({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-2 bg-slate-950/40 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800">
+          <div className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-2 bg-slate-50/40 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-200">
             <span>Primary Group</span>
             <span>Sub-Grouping 1</span>
             <span>Sub-Grouping 2</span>
@@ -979,26 +1072,26 @@ function ConsolidatedResultTable({
                 initial={{ opacity: 0, x: -4 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.01, duration: 0.15 }}
-                className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-3 hover:bg-slate-800/30 transition-colors items-center text-xs"
+                className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-3 hover:bg-slate-100/30 transition-colors items-center text-xs"
               >
-                <span className="text-violet-400 font-bold truncate pr-3 font-sans">{r.primaryGroup}</span>
-                <span className="text-slate-400 truncate pr-3 font-sans">{r.subGroup1 || '-'}</span>
-                <span className="text-slate-500 truncate pr-3 font-sans">{r.subGroup2 || '-'}</span>
-                <span className="text-slate-200 font-semibold truncate pr-3 font-sans">{r.ledgerName}</span>
-                <span className="text-right text-emerald-400 font-bold">{fmt(r.totalAmount)}</span>
-                <span className="text-right text-violet-300">{fmt(r.gstAmount)}</span>
-                <span className="text-right text-blue-300">{fmt(r.nonGstAmount)}</span>
+                <span className="text-violet-700 font-bold truncate pr-3 font-sans">{r.primaryGroup}</span>
+                <span className="text-slate-700 truncate pr-3 font-sans">{r.subGroup1 || '-'}</span>
+                <span className="text-slate-600 truncate pr-3 font-sans">{r.subGroup2 || '-'}</span>
+                <span className="text-slate-900 font-bold truncate pr-3 font-sans">{r.ledgerName}</span>
+                <span className="text-right text-emerald-700 font-bold">{fmt(r.totalAmount)}</span>
+                <span className="text-right text-violet-700 font-bold">{fmt(r.gstAmount)}</span>
+                <span className="text-right text-blue-700 font-bold">{fmt(r.nonGstAmount)}</span>
               </motion.div>
             ))}
           </div>
-          <div className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-4 border-t border-slate-700 bg-slate-950/60 font-bold items-center font-mono">
-            <span className="text-sm text-white uppercase tracking-wider font-sans">TOTAL</span>
+          <div className="grid grid-cols-[150px_150px_150px_1fr_120px_120px_120px] px-6 py-4 border-t-2 border-slate-300 bg-slate-100 font-bold items-center font-mono">
+            <span className="text-sm text-slate-900 uppercase tracking-wider font-sans font-bold">TOTAL</span>
             <span></span>
             <span></span>
             <span></span>
-            <span className="text-sm font-black text-right text-emerald-400">{fmt(totalExp)}</span>
-            <span className="text-sm font-black text-right text-violet-300">{fmt(totalGst)}</span>
-            <span className="text-sm font-black text-right text-blue-300">{fmt(totalNonGst)}</span>
+            <span className="text-sm font-black text-right text-emerald-700">{fmt(totalExp)}</span>
+            <span className="text-sm font-black text-right text-violet-700">{fmt(totalGst)}</span>
+            <span className="text-sm font-black text-right text-blue-700">{fmt(totalNonGst)}</span>
           </div>
         </>
       )}

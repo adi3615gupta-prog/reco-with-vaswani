@@ -5,7 +5,7 @@ import {
   Mail, Phone, ShieldAlert, FileSpreadsheet, Layers,
   PieChart, ArrowRight, Clock, Plus, Users, ChevronDown, ChevronUp, Sparkles, Check,
   FileText, MessageSquare, Copy, Activity, Building2, ExternalLink, Share2,
-  Zap, Lock, Calculator
+  Zap, Lock, Calculator, Save, History, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -51,6 +51,7 @@ import {
 } from '@/lib/auditEngine';
 import ForensicAudit from './ForensicAudit';
 import DepreciationAuditor from './DepreciationAuditor';
+import MonthlyAuditSuite from './MonthlyAuditSuite';
 
 interface AuditModuleProps {
   onBack: () => void;
@@ -69,7 +70,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
   // --- View tabs ---
   const [activeTab, setActiveTab] = useState<'debtors' | 'creditors' | 'insights'>('debtors');
-  const [selectedSubModule, setSelectedSubModule] = useState<'menu' | 'debtors-creditors' | 'cash-auditor' | 'analytical-procedures' | 'forensic-audit' | 'depreciation-auditor' | 'direct-expenses' | 'audit-sampling' | 'creditor-finalisation'>('menu');
+  const [selectedSubModule, setSelectedSubModule] = useState<'menu' | 'debtors-creditors' | 'cash-auditor' | 'analytical-procedures' | 'forensic-audit' | 'depreciation-auditor' | 'direct-expenses' | 'audit-sampling' | 'creditor-finalisation' | 'monthly-audit'>('menu');
   const [cashTab, setCashTab] = useState<'All' | 'Disallowed Payments' | 'Loan Violations' | 'Negative Balance'>('All');
 
   // --- Creditor & Debtor Finalisation Scrutiny states ---
@@ -169,6 +170,105 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
       localStorage.setItem(key, JSON.stringify(updated));
       return updated;
     });
+  };
+
+  // --- SA 530 SQLite Persistence States ---
+  const [isSavingSample, setIsSavingSample] = useState(false);
+  const [lastSavedSample, setLastSavedSample] = useState<string | null>(null);
+  const [savedSampleHistory, setSavedSampleHistory] = useState<any[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  const getAuditFy = () => {
+    try {
+      const year = new Date(fromDate).getFullYear();
+      if (!isNaN(year)) {
+        return `${year}-${(year + 1).toString().slice(-2)}`;
+      }
+    } catch (e) {}
+    return '2024-25';
+  };
+
+  const loadSa530History = async () => {
+    const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+    const fy = getAuditFy();
+    try {
+      const res = await fetch(`/api/audit-storage/sa530/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.samples)) {
+        setSavedSampleHistory(data.samples);
+        if (data.samples.length > 0 && Object.keys(samplingWorkingPapers).length === 0) {
+          const latest = data.samples[0];
+          if (latest.metadata?.samplingWorkingPapers) {
+            setSamplingWorkingPapers(latest.metadata.samplingWorkingPapers);
+          }
+          if (latest.parameters) {
+            setSamplingConfig(latest.parameters);
+          }
+          setLastSavedSample(new Date(latest.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+        }
+      }
+    } catch (err) {
+      console.warn('SA 530 auto-load deferred:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadSa530History();
+  }, [fromDate, evaluationDate]);
+
+  const handleSaveSamplingPaper = async () => {
+    if (sampledItems.length === 0) {
+      toast.warning('No sampled vouchers generated. Connect to Tally or run simulation first.');
+      return;
+    }
+    setIsSavingSample(true);
+    try {
+      const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+      const fy = getAuditFy();
+      const res = await fetch('/api/audit-storage/sa530/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_gstin: clientGstin,
+          fy,
+          audit_area: 'Statutory Audit - Monetary Unit Sampling (SA 530)',
+          sample_vouchers: sampledItems,
+          parameters: samplingConfig,
+          metadata: {
+            companyName,
+            fromDate,
+            evaluationDate,
+            samplingWorkingPapers,
+            totalPopulation: allVouchersList.length,
+            sampleSize: sampledItems.length
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLastSavedSample(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+        toast.success('SA 530 Sampling Workpaper saved to SQLite database successfully!');
+        loadSa530History();
+      } else {
+        toast.error(`Save failed: ${data.error || 'Server error'}`);
+      }
+    } catch (err: any) {
+      toast.error(`Save error: ${err.message || 'Network unavailable'}`);
+    } finally {
+      setIsSavingSample(false);
+    }
+  };
+
+  const handleLoadSpecificPaper = (paper: any) => {
+    if (paper.metadata?.samplingWorkingPapers) {
+      setSamplingWorkingPapers(paper.metadata.samplingWorkingPapers);
+    }
+    if (paper.parameters) {
+      setSamplingConfig(paper.parameters);
+    }
+    setLastSavedSample(new Date(paper.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+    setShowHistoryModal(false);
+    toast.success(`Loaded sampling paper from ${new Date(paper.updated_at).toLocaleString('en-IN')}`);
   };
 
   // --- Search & Filter states ---
@@ -1653,38 +1753,92 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     }).sort((a, b) => b.ageDays - a.ageDays);
   }, [allDetailedBills, searchQuery, riskFilter]);
 
+  if (selectedSubModule === 'monthly-audit') {
+    return <MonthlyAuditSuite onBack={() => setSelectedSubModule('menu')} />;
+  }
+
   if (selectedSubModule === 'menu') {
     return (
-      <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-indigo-500/30">
-        <div className="max-w-4xl mx-auto space-y-12">
+      <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-2 sm:p-4 font-sans">
+        <div className="max-w-4xl mx-auto space-y-6">
 
-          {/* Header */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onBack}
-              className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-wider mb-2">
-                <Sparkles className="w-3 h-3 text-indigo-400" /> Audit Control Workspace
+          {/* ─── TOP ELEVATED HEADER BAR (Suite 05 · Live) ─── */}
+          <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+                title="Return to Master Central Hub"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+              </button>
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                <Building2 className="w-5 h-5" />
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-white uppercase">
-                Audit Workspace Suite
-              </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Select an integrated ledger audit module to perform analytical compliance scans.
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                    Statutory &amp; Tax Audit Workbench
+                  </h1>
+                  <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 uppercase tracking-wider">
+                    Suite 05 · Live
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-mono">
+                  Sampling, Analytical Procedures (SA 520), Debtors/Creditors Ageing &amp; Cash Compliance
+                </p>
+              </div>
             </div>
-          </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold font-mono px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Active Engagement
+              </span>
+            </div>
+          </header>
 
           {/* Symmetrical cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            {/* Card: Suite 08 Monthly Audit Working Paper & Verification Suite */}
+            <div
+              onClick={() => setSelectedSubModule('monthly-audit')}
+              className="bg-white border border-slate-200/80 hover:border-indigo-400 hover:shadow-md rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-white/80 shadow-2xl transition-all relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/10 rounded-full blur-2xl pointer-events-none"></div>
+              <div>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="w-12 h-12 bg-violet-500/20 border border-violet-500/30 text-violet-300 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-lg shadow-violet-950">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <span className="text-[9px] font-black bg-violet-500/20 text-violet-300 border border-violet-500/30 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">Suite 08 · Standardized Firm Format</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-violet-300 transition-colors flex items-center gap-2">
+                  Monthly Audit Working Paper &amp; Verification Suite
+                </h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  Modeled on CA firm format (Monthly Audit Format.docx) &amp; Work Pending List. Features Maker-Checker 4-eye sign-off, live Tally Port 9000 &amp; GST auto-population, 8-sheet Zero-Merge Excel export, and direct folder auto-save.
+                </p>
+                <div className="mt-4 space-y-1.5">
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-violet-400" /> 5 Core Sections &amp; 8 Standard Verification Areas
+                  </div>
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-violet-400" /> Maker-Checker Review Stepper (Draft &rarr; Approved &rarr; Released)
+                  </div>
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
+                    <Check className="w-3 h-3 text-violet-400" /> Strict Zero-Merge 8-Sheet Analytical Excel Export
+                  </div>
+                </div>
+              </div>
+              <button className="w-full mt-6 py-2 px-4 bg-violet-600 hover:bg-violet-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-lg shadow-violet-900/40">
+                Launch Monthly Audit Suite <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
             {/* Card 0: Creditor & Debtor Finalisation Scrutiny (Live Tally) */}
             <div
               onClick={() => setSelectedSubModule('creditor-finalisation')}
-              className="bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-900/40 border border-indigo-500/30 hover:border-indigo-400/50 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-slate-900/80 shadow-2xl transition-all relative overflow-hidden"
+              className="bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-900/40 border border-indigo-500/30 hover:border-indigo-400/50 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-white/80 shadow-2xl transition-all relative overflow-hidden"
             >
               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
               <div>
@@ -1694,32 +1848,32 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">Live Tally Engine</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
                   Creditor &amp; Debtor Finalisation Scrutiny
                 </h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Scans live Tally vouchers against 12 CA Finalisation Rules (Modeled after Queries for Finalisation). Detects Sec 40A(3) cash risk, 194C(6) Transporter declarations, 194Q TDS, 194I(a) hire charges, duplicate bills &amp; advance shortfalls.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-indigo-400" /> Direct Tally XML Port 9000 Integration
                   </div>
-                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-indigo-400" /> 12 CA Finalisation Scrutiny Rules
                   </div>
-                  <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-700 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-indigo-400" /> Export Excel matching Queries for Finalisation 1.xlsx
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-lg shadow-indigo-900/40">
+              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-lg shadow-indigo-900/40">
                 Launch Finalisation Scrutiny <ArrowRight className="w-3 h-3" />
               </button>
             </div>
             {/* Card 1: Debtors and Creditors Audit */}
             <div
               onClick={() => { setSelectedSubModule('debtors-creditors'); setActiveTab('debtors'); }}
-              className="bg-slate-900/40 border border-slate-800 hover:border-indigo-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-slate-900/60 shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-indigo-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-white shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -1728,23 +1882,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded uppercase tracking-wider">Active</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">Debtors &amp; Creditors Ledger Auditor</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-400 transition-colors">Debtors &amp; Creditors Ledger Auditor</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   FIFO Ageing logs, unbilled advances checking, dormant balance movement audits, missing GSTIN compliance logs, and export of 7-sheet styled audits.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Chronological FIFO Ageing
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Anomalies &amp; Exception dashboard
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Double observations sheets export
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch Audit Scanner <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1752,7 +1906,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {/* Card 2: Cash Transaction Auditor */}
             <div
               onClick={handleLaunchCashAuditor}
-              className="bg-slate-900/40 border border-slate-800 hover:border-emerald-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-slate-900/60 shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-emerald-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-white shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -1761,23 +1915,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded uppercase tracking-wider">Active</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">Cash Transaction Auditor</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-400 transition-colors">Cash Transaction Auditor</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Compliance scanning for disallowed cash payments (Sec 40A(3)), cash loan acceptances and repayments (Sec 269SS/T), and negative cash balance tracking.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Sec 40A(3) ₹10k Daily Limit Check
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Sec 269SS/T ₹20k Loan Auditor
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Chronological Daily Balance Tracer
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch Cash Auditor <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1785,7 +1939,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {/* Card 3: Advanced Analytical Procedures (SA 520) */}
             <div
               onClick={() => { setSelectedSubModule('analytical-procedures'); setAnalyticalTab('mom'); }}
-              className="bg-slate-900/40 border border-slate-800 hover:border-purple-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-slate-900/60 shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-purple-500/30 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] hover:bg-white shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -1794,23 +1948,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded uppercase tracking-wider">SA 520</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-purple-400 transition-colors">Advanced Analytical Procedures</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-purple-400 transition-colors">Advanced Analytical Procedures</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   High-level comparative analysis to identify risks. Compare key P&L fluctuations month-on-month, calculate financial ratio comparatives, and perform natural-balance ledger scrutiny.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> MoM Fluctuation analysis
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Financial Ratio Comparatives
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Natural Balance Ledger Scrutiny
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-purple-600 hover:bg-purple-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch SA 520 Scanner <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1824,12 +1978,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 }
                 handleLaunchForensicAuditor();
               }}
-              className={`bg-slate-900/40 border border-slate-800 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all relative ${
-                isForensicAuthorized ? 'hover:border-rose-500/30 hover:bg-slate-900/60' : 'opacity-60 cursor-not-allowed hover:border-slate-800'
+              className={`bg-white border border-slate-200 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all relative ${
+                isForensicAuthorized ? 'hover:border-rose-500/30 hover:bg-white' : 'opacity-60 cursor-not-allowed hover:border-slate-200'
               }`}
             >
               {!isForensicAuthorized && (
-                <div className="absolute top-4 right-4 bg-slate-950/80 border border-slate-800 p-1.5 rounded-lg text-rose-500 shadow-md">
+                <div className="absolute top-4 right-4 bg-slate-50/80 border border-slate-200 p-1.5 rounded-lg text-rose-500 shadow-md">
                   <Lock className="w-3.5 h-3.5" />
                 </div>
               )}
@@ -1841,27 +1995,27 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     <Zap className="w-6 h-6" />
                   </div>
                   <span className={`text-[9px] font-black border px-2 py-0.5 rounded uppercase tracking-wider ${
-                    isForensicAuthorized ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-slate-850 text-slate-500 border-slate-800'
+                    isForensicAuthorized ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-slate-850 text-slate-500 border-slate-200'
                   }`}>
                     Forensic
                   </span>
                 </div>
                 <h3 className={`text-lg font-bold transition-colors ${
-                  isForensicAuthorized ? 'text-white group-hover:text-rose-400' : 'text-slate-400'
+                  isForensicAuthorized ? 'text-slate-900 group-hover:text-rose-400' : 'text-slate-600'
                 }`}>
                   Data Integrity &amp; Forensic Audit
                 </h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Detect potential fraud, errors, or data manipulation. Scan for voucher numbering gaps, apply Benford's Law to find unusual patterns, and analyze journal entries for anomalies.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Gap Detection in Voucher Numbering
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Benford's Law Statistical Analysis
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Journal Entry Anomaly Scanner
                   </div>
                 </div>
@@ -1869,7 +2023,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               <button
                 disabled={!isForensicAuthorized}
                 className={`w-full mt-6 py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                  isForensicAuthorized ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/30'
+                  isForensicAuthorized ? 'bg-rose-600 hover:bg-rose-500 text-slate-900 cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-200/30'
                 }`}
               >
                 {isForensicAuthorized ? (
@@ -1884,7 +2038,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {/* Card 4: Fixed Assets Depreciation Auditor */}
             <div
               onClick={() => setSelectedSubModule('depreciation-auditor')}
-              className="bg-slate-900/40 border border-slate-800 hover:border-rose-500/30 hover:bg-slate-900/60 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-rose-500/30 hover:bg-white rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -1893,23 +2047,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded uppercase tracking-wider">Active</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-rose-400 transition-colors">Fixed Asset Depreciation Auditor</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-rose-400 transition-colors">Fixed Asset Depreciation Auditor</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Companies Act Schedule II &amp; Income Tax Section 32 dual depreciation schedules. Fully integrated with Tally asset registers.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Companies Act vs Income Tax Rates
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> 180-Day Rule compliance tracker
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Deferral Tax Asset (DTA/DTL) estimator
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-rose-600 hover:bg-rose-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch Depreciation Planner <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1917,32 +2071,32 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {/* Card 6: Direct Expense Payment Auditor */}
             <div
               onClick={() => setSelectedSubModule('direct-expenses')}
-              className="bg-slate-900/40 border border-slate-800 hover:border-cyan-500/30 hover:bg-slate-900/60 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-cyan-500/30 hover:bg-white rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
+                  <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 text-blue-700 font-bold rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
                     <FileText className="w-6 h-6" />
                   </div>
-                  <span className="text-[9px] font-black bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded uppercase tracking-wider">Active</span>
+                  <span className="text-[9px] font-black bg-cyan-500/10 text-blue-700 font-bold border border-cyan-500/20 px-2 py-0.5 rounded uppercase tracking-wider">Active</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">Direct Expense Payment Auditor</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-700 font-bold transition-colors">Direct Expense Payment Auditor</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Scrutinize Direct/Indirect expenses paid directly via Bank/Cash without creating vendor creditor ledgers. Flag control bypasses, TDS audit gaps, and cash limits (Sec 40A(3)).
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Bypassed Creditors detection
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Section 40A(3) cash disallowance check
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Direct-to-Excel audit report
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-cyan-600 hover:bg-cyan-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch Expense Auditor <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1950,7 +2104,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {/* Card 7: SA 530 Audit Sampling Hub */}
             <div
               onClick={() => setSelectedSubModule('audit-sampling')}
-              className="bg-slate-900/40 border border-slate-800 hover:border-indigo-500/30 hover:bg-slate-900/60 rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
+              className="bg-white border border-slate-200 hover:border-indigo-500/30 hover:bg-white rounded-2xl p-6 cursor-pointer group flex flex-col justify-between min-h-[260px] shadow-xl transition-all"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -1959,23 +2113,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   </div>
                   <span className="text-[9px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded uppercase tracking-wider">SA 530</span>
                 </div>
-                <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">SA 530 Audit Sampling Hub</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-400 transition-colors">SA 530 Audit Sampling Hub</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Generate representative voucher samples using High-Value, Random, Systematic, or Stratified methods. Complete verification logs and compile compliant audit working papers.
                 </p>
                 <div className="mt-4 space-y-1.5">
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Statistical &amp; Judgemental methods
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Auto-saved review working papers
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-emerald-400" /> Compliant Excel reports
                   </div>
                 </div>
               </div>
-              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+              <button className="w-full mt-6 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
                 Launch Sampling Hub <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -2089,7 +2243,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     };
 
     return (
-      <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-4 sm:p-8 font-sans">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Header */}
@@ -2097,7 +2251,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSelectedSubModule('menu')}
-                className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
+                className="w-10 h-10 bg-slate-800/80 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -2107,7 +2261,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     Advanced Analytical Procedures (SA 520)
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                <p className="text-xs text-slate-600 mt-1 flex items-center gap-2">
                   <span>Substantive Analytical Audit &amp; High-Level Fluctuation Scans</span>
                   <span className="px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[9px] font-bold uppercase tracking-wider animate-pulse">
                     Standard SA 520
@@ -2128,10 +2282,10 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 </p>
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
                   <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/20 text-purple-300 rounded-lg font-mono">
-                    Current Period (CY): <strong className="text-white font-bold">{cyFyLabel}</strong> ({fromDate} to {evaluationDate})
+                    Current Period (CY): <strong className="text-slate-900 font-bold">{cyFyLabel}</strong> ({fromDate} to {evaluationDate})
                   </span>
-                  <span className="px-3 py-1 bg-slate-800/80 border border-slate-700 text-slate-300 rounded-lg font-mono">
-                    Prior Period (PY): <strong className="text-white font-bold">{pyFyLabel}</strong> (1 Year Prior Comparison)
+                  <span className="px-3 py-1 bg-slate-800/80 border border-slate-200 text-slate-700 rounded-lg font-mono">
+                    Prior Period (PY): <strong className="text-slate-900 font-bold">{pyFyLabel}</strong> (1 Year Prior Comparison)
                   </span>
                 </div>
               </div>
@@ -2140,7 +2294,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-3 self-start md:self-end">
               <button
                 onClick={handleExportSa520}
-                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-650 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg transition-all border border-purple-500/20"
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-650 text-slate-900 text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg transition-all border border-purple-500/20"
               >
                 <Download className="w-4 h-4" />
                 Export Analytical Papers
@@ -2151,31 +2305,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           {/* Tally Integration & Configuration Panel */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Tally Connection Controls */}
-            <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+            <div className="lg:col-span-2 bg-white backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-8 h-8 bg-purple-500/10 border border-purple-500/20 rounded-lg flex items-center justify-center">
                     <Server className="w-4 h-4 text-purple-400" />
                   </div>
-                  <h2 className="text-sm font-bold text-white uppercase tracking-wider">Tally ERP 9 / Prime Live Connector</h2>
+                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tally ERP 9 / Prime Live Connector</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
                   <div>
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5 block">Tally Server Port</label>
+                    <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1.5 block">Tally Server Port</label>
                     <input
                       type="number"
                       value={tallyPort}
                       onChange={(e) => setTallyPort(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500/50 transition-all font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-purple-500/50 transition-all font-mono"
                     />
                   </div>
                   <div>
                     <button
                       onClick={connectToTally}
                       disabled={connectionStatus === 'connecting'}
-                      className="w-full h-[32px] px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg border border-slate-700 transition-all flex items-center justify-center gap-2"
+                      className="w-full h-[32px] px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-900 text-xs font-semibold rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-2"
                     >
-                      {connectionStatus === 'connecting' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-red-400" />)}
+                      {connectionStatus === 'connecting' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-rose-600 font-bold" />)}
                       {connectionStatus === 'connected' ? 'Connected' : 'Test Link'}
                     </button>
                   </div>
@@ -2183,7 +2337,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     <button
                       onClick={handleFetchTallyData}
                       disabled={connectionStatus !== 'connected' || isFetching}
-                      className="w-full h-[32px] px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800/80 disabled:text-slate-550 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-650/15"
+                      className="w-full h-[32px] px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800/80 disabled:text-slate-550 text-slate-900 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-650/15"
                     >
                       {isFetching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Sync Tally Database'}
                     </button>
@@ -2200,30 +2354,30 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             </div>
 
             {/* Audit Parameters Controls */}
-            <div className="bg-slate-900/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="bg-white backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center">
                   <Clock className="w-4 h-4 text-indigo-400" />
                 </div>
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">Audit Schedule Settings</h2>
+                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Audit Schedule Settings</h2>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Books From</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Books From</label>
                   <input
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-purple-500/50 [color-scheme:dark]"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-purple-500/50 [color-scheme:dark]"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Audit Cut-Off</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Audit Cut-Off</label>
                   <input
                     type="date"
                     value={evaluationDate}
                     onChange={(e) => setEvaluationDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-purple-500/50 [color-scheme:dark]"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-purple-500/50 [color-scheme:dark]"
                   />
                 </div>
               </div>
@@ -2231,7 +2385,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           </div>
 
           {/* Sub-tabs menu */}
-          <div className="flex border-b border-white/5 bg-slate-950/50 rounded-xl overflow-hidden p-1 gap-1">
+          <div className="flex border-b border-slate-200/80 bg-slate-50/50 rounded-xl overflow-hidden p-1 gap-1">
             <button
               onClick={() => setAnalyticalTab('mom')}
               className={`flex-1 py-3 text-xs font-bold tracking-wide uppercase transition-all rounded-lg flex items-center justify-center gap-2 ${analyticalTab === 'mom' ? 'text-purple-400 bg-purple-500/10 border border-purple-500/20' : 'text-slate-500 hover:text-slate-350 hover:bg-white/5'}`}
@@ -2263,19 +2417,19 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   exit={{ opacity: 0, y: -10 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 shadow-xl space-y-6">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4">
+                  <div className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 shadow-xl space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-4">
                       <div>
-                        <h3 className="text-white font-bold text-base">Key Account Month-on-Month Trends</h3>
-                        <p className="text-xs text-slate-400 mt-1">Select account and adjust sensitivity threshold to flag variances</p>
+                        <h3 className="text-slate-900 font-bold text-base">Key Account Month-on-Month Trends</h3>
+                        <p className="text-xs text-slate-600 mt-1">Select account and adjust sensitivity threshold to flag variances</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-4">
                         <div>
-                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Account Ledger</label>
+                          <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Account Ledger</label>
                           <select
                             value={selectedPlAccount}
                             onChange={(e) => setSelectedPlAccount(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500 max-w-[240px]"
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-purple-500 max-w-[240px]"
                           >
                             {plGroupsList.map((g) => (
                               <option key={g} value={g}>
@@ -2285,7 +2439,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Variance Threshold: {varianceThreshold}%</label>
+                          <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Variance Threshold: {varianceThreshold}%</label>
                           <input
                             type="range"
                             min="5"
@@ -2293,18 +2447,18 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             step="5"
                             value={varianceThreshold}
                             onChange={(e) => setVarianceThreshold(Number(e.target.value))}
-                            className="w-40 accent-purple-500 h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer"
+                            className="w-40 accent-purple-500 h-1.5 bg-slate-50 rounded-lg appearance-none cursor-pointer"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Comparative Vertical Bar Chart */}
-                    <div className="bg-slate-950/60 rounded-2xl p-6 border border-slate-850">
-                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 text-center">
+                    <div className="bg-slate-50/60 rounded-2xl p-6 border border-slate-850">
+                      <h4 className="text-xs font-black text-slate-600 uppercase tracking-wider mb-6 text-center">
                         Monthly Fluctuation Graph — Previous Year ({pyFyLabel}) vs Current Year ({cyFyLabel})
                       </h4>
-                      <div className="h-64 flex items-end justify-between gap-1 sm:gap-2 px-2 border-b border-slate-800 pb-2">
+                      <div className="h-64 flex items-end justify-between gap-1 sm:gap-2 px-2 border-b border-slate-200 pb-2">
                         {(() => {
                           const dataList = computedMomData[selectedPlAccount] || [];
                           const maxVal = Math.max(...dataList.flatMap(d => [d.py, d.cy]));
@@ -2318,11 +2472,11 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             return (
                               <div key={idx} className="flex-1 flex flex-col items-center group relative">
                                 {/* Tooltip */}
-                                <div className="absolute bottom-full mb-2 bg-slate-900 border border-slate-700 text-[10px] p-2 rounded shadow-xl hidden group-hover:block z-50 w-28 text-center pointer-events-none">
-                                  <div className="font-bold text-white border-b border-slate-800 pb-1 mb-1">{d.month}</div>
-                                  <div className="text-slate-400">{cyFyLabel}: ₹{(d.cy / 1000).toFixed(0)}k</div>
-                                  <div className="text-slate-400">{pyFyLabel}: ₹{(d.py / 1000).toFixed(0)}k</div>
-                                  <div className={`font-bold mt-1 ${changePct > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                <div className="absolute bottom-full mb-2 bg-white border border-slate-200 text-[10px] p-2 rounded shadow-xl hidden group-hover:block z-50 w-28 text-center pointer-events-none">
+                                  <div className="font-bold text-slate-900 border-b border-slate-200 pb-1 mb-1">{d.month}</div>
+                                  <div className="text-slate-600">{cyFyLabel}: ₹{(d.cy / 1000).toFixed(0)}k</div>
+                                  <div className="text-slate-600">{pyFyLabel}: ₹{(d.py / 1000).toFixed(0)}k</div>
+                                  <div className={`font-bold mt-1 ${changePct > 0 ? 'text-emerald-400' : 'text-rose-600 font-bold'}`}>
                                     {changePct > 0 ? '+' : ''}{changePct.toFixed(1)}%
                                   </div>
                                 </div>
@@ -2351,9 +2505,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     </div>
 
                     {/* Detailed Data Table */}
-                    <div className="overflow-x-auto rounded-xl border border-white/5">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/80">
                       <table className="w-full text-xs text-left">
-                        <thead className="bg-slate-950 text-[10px] text-slate-400 uppercase tracking-wider">
+                        <thead className="bg-slate-50 text-[10px] text-slate-600 uppercase tracking-wider">
                           <tr>
                             <th className="px-4 py-3">Month</th>
                             <th className="px-4 py-3 text-right">Previous Year (PY — {pyFyLabel})</th>
@@ -2372,19 +2526,19 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                               const isAnomalous = Math.abs(pct) > varianceThreshold;
 
                               return (
-                                <tr key={idx} className={`hover:bg-white/[0.02] ${isAnomalous ? 'bg-rose-500/[0.02]' : ''}`}>
-                                  <td className="px-4 py-3 font-bold text-slate-300">{row.month}</td>
-                                  <td className="px-4 py-3 text-right text-slate-400 font-mono">₹{row.py.toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-right text-white font-mono">₹{row.cy.toLocaleString('en-IN')}</td>
-                                  <td className={`px-4 py-3 text-right font-mono font-bold ${change > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                <tr key={idx} className={`hover:bg-slate-50 ${isAnomalous ? 'bg-rose-500/[0.02]' : ''}`}>
+                                  <td className="px-4 py-3 font-bold text-slate-700">{row.month}</td>
+                                  <td className="px-4 py-3 text-right text-slate-600 font-mono">₹{row.py.toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-right text-slate-900 font-mono">₹{row.cy.toLocaleString('en-IN')}</td>
+                                  <td className={`px-4 py-3 text-right font-mono font-bold ${change > 0 ? 'text-emerald-400' : 'text-rose-600 font-bold'}`}>
                                     {change > 0 ? '+' : ''}₹{change.toLocaleString('en-IN')}
                                   </td>
-                                  <td className={`px-4 py-3 text-right font-mono font-bold ${isAnomalous ? 'text-red-400' : 'text-slate-400'}`}>
+                                  <td className={`px-4 py-3 text-right font-mono font-bold ${isAnomalous ? 'text-rose-600 font-bold' : 'text-slate-600'}`}>
                                     {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
                                   </td>
                                   <td className="px-4 py-3 text-center">
                                     {isAnomalous ? (
-                                      <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 font-bold uppercase text-[9px] animate-pulse">
+                                      <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-rose-600 font-bold font-bold uppercase text-[9px] animate-pulse">
                                         🚨 Exceeds {varianceThreshold}% Limit
                                       </span>
                                     ) : (
@@ -2416,22 +2570,22 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     {computedRatios.map((r, idx) => {
                       const changePct = r.pyValue > 0 ? ((r.cyValue - r.pyValue) / r.pyValue) * 100 : 0;
                       return (
-                        <div key={idx} className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-4">
+                        <div key={idx} className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-4">
                           <div className="flex justify-between items-start">
                             <div>
-                              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{r.name}</h3>
+                              <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider">{r.name}</h3>
                               <p className="text-[10px] text-slate-500 mt-0.5">Comparative Financial Audit Metrics</p>
                             </div>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${r.status === 'Good' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20'}`}>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${r.status === 'Good' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-yellow-500/15 text-amber-700 font-bold border border-yellow-500/20'}`}>
                               {r.status}
                             </span>
                           </div>
 
                           <div className="flex items-baseline gap-4">
-                            <span className="text-3xl font-black text-white font-mono">{r.cyValue}{r.suffix}</span>
+                            <span className="text-3xl font-black text-slate-900 font-mono">{r.cyValue}{r.suffix}</span>
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-slate-550">PY: {r.pyValue}{r.suffix}</span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${changePct > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${changePct > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-rose-600 font-bold'}`}>
                                 {changePct > 0 ? '▲' : '▼'} {Math.abs(changePct).toFixed(1)}%
                               </span>
                             </div>
@@ -2443,13 +2597,13 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                               <span>Previous Year</span>
                               <span>Current Year</span>
                             </div>
-                            <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden flex">
+                            <div className="h-2 w-full bg-slate-50 rounded-full overflow-hidden flex">
                               <div style={{ width: `${(r.pyValue / (r.pyValue + r.cyValue)) * 100}%` }} className="bg-slate-800 border-r border-slate-900 h-full" />
                               <div style={{ width: `${(r.cyValue / (r.pyValue + r.cyValue)) * 100}%` }} className="bg-indigo-600 h-full" />
                             </div>
                           </div>
 
-                          <div className="bg-slate-950/60 border border-slate-850 p-3.5 rounded-xl text-slate-300 text-xs leading-relaxed space-y-1">
+                          <div className="bg-slate-50/60 border border-slate-850 p-3.5 rounded-xl text-slate-700 text-xs leading-relaxed space-y-1">
                             <span className="font-black text-[9px] text-indigo-400 uppercase block tracking-wider">SA 520 Auditor Verdict:</span>
                             {r.interpretation}
                           </div>
@@ -2468,19 +2622,19 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   exit={{ opacity: 0, y: -10 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 shadow-xl space-y-4">
+                  <div className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 shadow-xl space-y-4">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-850 pb-4">
                       <div>
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
+                        <h3 className="text-slate-900 font-bold text-base flex items-center gap-2">
                           <AlertTriangle className="w-5 h-5 text-rose-450 animate-pulse" /> Natural Balance Audit Exceptions
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">Identifies ledger accounts having closing balances opposite to their natural account rules</p>
+                        <p className="text-xs text-slate-600 mt-1">Identifies ledger accounts having closing balances opposite to their natural account rules</p>
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-white/5">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/80">
                       <table className="w-full text-xs text-left">
-                        <thead className="bg-slate-950 text-[10px] text-slate-400 uppercase tracking-wider">
+                        <thead className="bg-slate-50 text-[10px] text-slate-600 uppercase tracking-wider">
                           <tr>
                             <th className="px-4 py-3">Ledger Name</th>
                             <th className="px-4 py-3">Group Parent</th>
@@ -2493,8 +2647,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         <tbody className="divide-y divide-white/5 font-sans">
                           {computedLedgerScrutiny.map((row, idx) => (
                             <tr key={idx} className="hover:bg-white/[0.01] transition-colors">
-                              <td className="px-4 py-3 font-bold text-white">{row.name}</td>
-                              <td className="px-4 py-3 text-slate-400">{row.parentGroup}</td>
+                              <td className="px-4 py-3 font-bold text-slate-900">{row.name}</td>
+                              <td className="px-4 py-3 text-slate-600">{row.parentGroup}</td>
                               <td className="px-4 py-3 text-center">
                                 <span className="px-2 py-0.5 rounded bg-slate-800 text-[9px] font-bold uppercase tracking-wider text-slate-350">
                                   {row.naturalBalance}
@@ -2502,12 +2656,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                               </td>
                               <td className="px-4 py-3 text-right text-rose-400 font-mono font-black">{row.actualText}</td>
                               <td className="px-4 py-3 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${row.severity === 'High' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : (row.severity === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20')}`}>
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${row.severity === 'High' ? 'bg-red-500/10 text-rose-600 font-bold border border-red-500/20' : (row.severity === 'Medium' ? 'bg-yellow-500/10 text-amber-700 font-bold border border-yellow-500/20' : 'bg-cyan-500/10 text-blue-700 font-bold border border-cyan-500/20')}`}>
                                   {row.severity}
                                 </span>
                               </td>
                               <td className="px-4 py-3 max-w-sm">
-                                <div className="text-slate-300 font-medium leading-relaxed">{row.recommendation}</div>
+                                <div className="text-slate-700 font-medium leading-relaxed">{row.recommendation}</div>
                               </td>
                             </tr>
                           ))}
@@ -2527,7 +2681,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
   if (selectedSubModule === 'cash-auditor') {
     return (
-      <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-4 sm:p-8 font-sans">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Header */}
@@ -2535,7 +2689,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSelectedSubModule('menu')}
-                className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
+                className="w-10 h-10 bg-slate-800/80 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -2545,7 +2699,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     Cash Transaction Auditor
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                <p className="text-xs text-slate-600 mt-1 flex items-center gap-2">
                   <span>Income Tax Compliance Auditor (Sec 40A(3) / 269SS / 269T)</span>
                   {isDemoData && (
                     <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase tracking-wider animate-pulse">
@@ -2560,7 +2714,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               <button
                 onClick={handleCashExport}
                 disabled={cashAuditObservations.length === 0}
-                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all border border-emerald-500/20"
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-slate-900 text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all border border-emerald-500/20"
               >
                 <Download className="w-4 h-4" />
                 Export Report
@@ -2571,31 +2725,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           {/* Top Controls: Tally Connection & Configuration */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             {/* Tally Integration */}
-            <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+            <div className="lg:col-span-2 bg-white/50 backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-8 h-8 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-center">
                     <Server className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <h2 className="text-lg font-bold text-white">Tally Sync Integration</h2>
+                  <h2 className="text-lg font-bold text-slate-900">Tally Sync Integration</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
                   <div>
-                    <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1.5 block">Tally Port</label>
+                    <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1.5 block">Tally Port</label>
                     <input
                       type="number"
                       value={tallyPort}
                       onChange={(e) => setTallyPort(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50 transition-all"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-emerald-500/50 transition-all"
                     />
                   </div>
                   <div>
                     <button
                       onClick={connectToTally}
                       disabled={connectionStatus === 'connecting'}
-                      className="w-full h-[38px] px-4 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg border border-slate-700 transition-all flex items-center justify-center gap-2"
+                      className="w-full h-[38px] px-4 bg-slate-800 hover:bg-slate-700 text-slate-900 text-sm font-semibold rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-2"
                     >
-                      {connectionStatus === 'connecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-red-400" />)}
+                      {connectionStatus === 'connecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-rose-600 font-bold" />)}
                       {connectionStatus === 'connected' ? 'Connected' : 'Test Connection'}
                     </button>
                   </div>
@@ -2603,7 +2757,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     <button
                       onClick={handleFetchTallyData}
                       disabled={connectionStatus !== 'connected' || isFetching}
-                      className="w-full h-[38px] px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800/80 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/15"
+                      className="w-full h-[38px] px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800/80 disabled:text-slate-500 text-slate-900 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/15"
                     >
                       {isFetching ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Sync & Audit Live Tally Data'}
                     </button>
@@ -2620,31 +2774,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             </div>
 
             {/* Parameters */}
-            <div className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="bg-white/50 backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-cyan-500/10 border border-cyan-500/20 rounded-lg flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-cyan-400" />
+                  <Clock className="w-4 h-4 text-blue-700 font-bold" />
                 </div>
-                <h2 className="text-lg font-bold text-white">Parameters</h2>
+                <h2 className="text-lg font-bold text-slate-900">Parameters</h2>
               </div>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1 block">Scan From</label>
+                    <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1 block">Scan From</label>
                     <input
                       type="date"
                       value={fromDate}
                       onChange={(e) => setFromDate(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500/50 [color-scheme:dark]"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-500/50 [color-scheme:dark]"
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1 block">Scan To / Valuation</label>
+                    <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1 block">Scan To / Valuation</label>
                     <input
                       type="date"
                       value={evaluationDate}
                       onChange={(e) => setEvaluationDate(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500/50 [color-scheme:dark]"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-500/50 [color-scheme:dark]"
                     />
                   </div>
                 </div>
@@ -2655,17 +2809,17 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           {/* Metric Dashboard Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Metric 1: Sec 40A(3) */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 relative overflow-hidden shadow-xl">
               <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl" />
               <div className="flex justify-between items-start mb-4">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sec 40A(3) Violations</span>
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Sec 40A(3) Violations</span>
                 <span className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold">
                   Limit: ₹10,000 / Day
                 </span>
               </div>
               <div className="space-y-1">
                 <h3 className="text-3xl font-black text-rose-400">{cashMetrics.sec40aCount} Cases</h3>
-                <p className="text-xs text-slate-400 font-mono">
+                <p className="text-xs text-slate-600 font-mono">
                   Impacted Sum: ₹{cashMetrics.sec40aAmt.toLocaleString('en-IN')}
                 </p>
               </div>
@@ -2675,17 +2829,17 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             </div>
 
             {/* Metric 2: Sec 269SS/T */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 relative overflow-hidden shadow-xl">
               <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-2xl" />
               <div className="flex justify-between items-start mb-4">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sec 269SS/T Violations</span>
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Sec 269SS/T Violations</span>
                 <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold">
                   Limit: ₹20,000 Cash Loan
                 </span>
               </div>
               <div className="space-y-1">
                 <h3 className="text-3xl font-black text-amber-400">{cashMetrics.sec269Count} Cases</h3>
-                <p className="text-xs text-slate-400 font-mono">
+                <p className="text-xs text-slate-600 font-mono">
                   Penal Amount: ₹{cashMetrics.sec269Amt.toLocaleString('en-IN')}
                 </p>
               </div>
@@ -2695,17 +2849,17 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             </div>
 
             {/* Metric 3: Negative Cash Balances */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 relative overflow-hidden shadow-xl">
               <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-2xl" />
               <div className="flex justify-between items-start mb-4">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Negative Cash Balances</span>
-                <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold">
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Negative Cash Balances</span>
+                <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-blue-700 font-bold text-[10px] font-bold">
                   Physical Balance Check
                 </span>
               </div>
               <div className="space-y-1">
-                <h3 className="text-3xl font-black text-cyan-400">{cashMetrics.negCashCount} Days</h3>
-                <p className="text-xs text-slate-400 font-mono">
+                <h3 className="text-3xl font-black text-blue-700 font-bold">{cashMetrics.negCashCount} Days</h3>
+                <p className="text-xs text-slate-600 font-mono">
                   Deepest Negative: -₹{cashMetrics.maxNegCash.toLocaleString('en-IN')}
                 </p>
               </div>
@@ -2716,7 +2870,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           </div>
 
           {/* Exceptions Table Panel */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               {/* Category tabs */}
               <div className="flex flex-wrap gap-2">
@@ -2731,11 +2885,11 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     onClick={() => setCashTab(tab.key as any)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${cashTab === tab.key
                       ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400'
-                      : 'bg-slate-850 border border-slate-800 text-slate-400 hover:text-white'
+                      : 'bg-slate-850 border border-slate-200 text-slate-600 hover:text-slate-900'
                       }`}
                   >
                     <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${cashTab === tab.key ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-900 text-slate-500'
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${cashTab === tab.key ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white text-slate-500'
                       }`}>
                       {tab.count}
                     </span>
@@ -2751,21 +2905,21 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   placeholder="Search party or details..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/40"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-emerald-500/40"
                 />
               </div>
             </div>
 
             {/* Exceptions logs list */}
             {filteredCashObservations.length === 0 ? (
-              <div className="text-center py-12 bg-slate-950/40 border border-slate-850 rounded-xl">
+              <div className="text-center py-12 bg-slate-50/40 border border-slate-850 rounded-xl">
                 <p className="text-sm text-slate-500">No matching cash compliance exceptions found.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                    <tr className="border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                       <th className="text-left py-3 px-4">Date</th>
                       <th className="text-left py-3 px-4">Violation Type</th>
                       <th className="text-left py-3 px-4">Party Account</th>
@@ -2778,30 +2932,30 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     {filteredCashObservations.map(obs => (
                       <tr
                         key={`${obs.date}-${obs.voucherNumber}-${obs.partyName}`}
-                        className="border-b border-slate-850 hover:bg-slate-900/30 transition-all text-xs font-sans"
+                        className="border-b border-slate-850 hover:bg-white/30 transition-all text-xs font-sans"
                       >
-                        <td className="py-4 px-4 text-slate-400 font-mono">{obs.date}</td>
+                        <td className="py-4 px-4 text-slate-600 font-mono">{obs.date}</td>
                         <td className="py-4 px-4 font-bold">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obs.type === 'Disallowed Payment (40A(3))'
                             ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
                             : obs.type === 'Loan Violation (269SS/T)'
                               ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
-                              : 'bg-cyan-500/10 border border-cyan-500/20 text-cyan-400'
+                              : 'bg-cyan-500/10 border border-cyan-500/20 text-blue-700 font-bold'
                             }`}>
                             {obs.type}
                           </span>
                         </td>
-                        <td className="py-4 px-4 font-bold text-white">{obs.partyName} ({obs.voucherNumber})</td>
+                        <td className="py-4 px-4 font-bold text-slate-900">{obs.partyName} ({obs.voucherNumber})</td>
                         <td className="py-4 px-4 max-w-sm space-y-1">
-                          <div className="text-slate-300 font-semibold">{obs.description}</div>
-                          <div className="text-[11px] text-slate-400">{obs.description}</div>
+                          <div className="text-slate-700 font-semibold">{obs.description}</div>
+                          <div className="text-[11px] text-slate-600">{obs.description}</div>
                           <div className="text-[10px] text-emerald-400 italic mt-1">💡 Rec: {obs.recommendation}</div>
                         </td>
-                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-200">
+                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">
                           ₹{obs.amount.toLocaleString('en-IN')}
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obs.severity === 'High' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obs.severity === 'High' ? 'bg-red-500/20 text-rose-600 font-bold' : 'bg-yellow-500/20 text-amber-700 font-bold'
                             }`}>
                             {obs.severity}
                           </span>
@@ -2850,7 +3004,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     };
 
     return (
-      <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-4 sm:p-8 font-sans">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Header */}
@@ -2858,7 +3012,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSelectedSubModule('menu')}
-                className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
+                className="w-10 h-10 bg-slate-800/80 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -2868,7 +3022,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     SA 530 Audit Sampling Hub
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                <p className="text-xs text-slate-600 mt-1 flex items-center gap-2">
                   <span>Statistical &amp; Judgemental Sampling Verification Board</span>
                   {isDemoData && (
                     <span className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-bold uppercase tracking-wider animate-pulse">
@@ -2879,7 +3033,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 self-start md:self-end">
+            <div className="flex flex-wrap items-center gap-3 self-start md:self-end">
+              {lastSavedSample && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Saved {lastSavedSample}
+                </span>
+              )}
+              {savedSampleHistory.length > 0 && (
+                <button
+                  onClick={() => setShowHistoryModal(true)}
+                  className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 shadow-2xs"
+                  title="View & load previously saved audit samples"
+                >
+                  <History className="w-4 h-4 text-slate-500" />
+                  Saved Papers ({savedSampleHistory.length})
+                </button>
+              )}
+              <button
+                onClick={handleSaveSamplingPaper}
+                disabled={isSavingSample}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-900/20 hover:scale-[1.02] disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {isSavingSample ? 'Saving...' : 'Save SA 530 Paper'}
+              </button>
               <button
                 onClick={handleExportSampling}
                 className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-900/30 hover:scale-[1.02]"
@@ -2892,24 +3070,24 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           {/* Top Controls: Tally Connection & Configuration */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Tally Integration */}
-            <div className="lg:col-span-2 bg-slate-900/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="lg:col-span-2 bg-white/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${connectionStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${connectionStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500 border border-slate-200'}`}>
                     <Server className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Tally Prime Port Setup</h2>
+                    <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Tally Prime Port Setup</h2>
                     <p className="text-[10px] text-slate-500">Live Client Integration</p>
                   </div>
                 </div>
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1">
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-2">Port:</span>
                   <input
                     type="number"
                     value={tallyPort}
                     onChange={(e) => setTallyPort(Number(e.target.value))}
-                    className="w-16 bg-transparent text-xs text-white focus:outline-none font-bold"
+                    className="w-16 bg-transparent text-xs text-slate-900 focus:outline-none font-bold"
                   />
                 </div>
                 <button
@@ -2917,7 +3095,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                     connectionStatus === 'connected'
                       ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                      : 'bg-slate-800 border-slate-750 text-slate-300 hover:bg-slate-700 hover:text-white'
+                      : 'bg-slate-800 border-slate-750 text-slate-700 hover:bg-slate-700 hover:text-slate-900'
                   }`}
                 >
                   {connectionStatus === 'connecting' ? 'Connecting...' : (connectionStatus === 'connected' ? 'Connected' : 'Connect')}
@@ -2935,31 +3113,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               {/* Company Info */}
               <div className="text-right flex items-center gap-3 self-start md:self-center">
                 <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-                <span className="text-xs text-slate-400 font-semibold font-mono whitespace-nowrap">
-                  Entity: <span className="text-white font-bold">{companyName}</span>
+                <span className="text-xs text-slate-600 font-semibold font-mono whitespace-nowrap">
+                  Entity: <span className="text-slate-900 font-bold">{companyName}</span>
                 </span>
               </div>
             </div>
 
             {/* Date Parameters */}
-            <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-center space-y-3">
+            <div className="bg-white/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-center space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Scan From</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Scan From</label>
                   <input
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-indigo-500/50 [color-scheme:dark] font-mono"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-indigo-500/50 [color-scheme:dark] font-mono"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Scan To</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Scan To</label>
                   <input
                     type="date"
                     value={evaluationDate}
                     onChange={(e) => setEvaluationDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-indigo-500/50 [color-scheme:dark] font-mono"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-indigo-500/50 [color-scheme:dark] font-mono"
                   />
                 </div>
               </div>
@@ -2971,20 +3149,20 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
             {/* Left Column: Config Panel */}
             <div className="space-y-6">
-              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xl space-y-5">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
                   <Filter className="w-4.5 h-4.5 text-indigo-400" />
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">Sampling Method</h3>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Sampling Method</h3>
                 </div>
 
                 <div className="space-y-4">
                   {/* Method Select */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase">Selection Type</label>
+                    <label className="text-[10px] text-slate-600 font-bold uppercase">Selection Type</label>
                     <select
                       value={samplingConfig.method}
                       onChange={(e) => setSamplingConfig(prev => ({ ...prev, method: e.target.value as any }))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500/50"
                     >
                       <option value="high-value">High-Value Focus (Judgemental)</option>
                       <option value="random">Random Sampling (Statistical)</option>
@@ -2996,12 +3174,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   {/* High Value Fields */}
                   {samplingConfig.method === 'high-value' && (
                     <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase">Voucher Value Threshold (₹)</label>
+                      <label className="text-[10px] text-slate-600 font-bold uppercase">Voucher Value Threshold (₹)</label>
                       <input
                         type="number"
                         value={samplingConfig.highValueThreshold}
                         onChange={(e) => setSamplingConfig(prev => ({ ...prev, highValueThreshold: Number(e.target.value) }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
                       />
                     </div>
                   )}
@@ -3009,12 +3187,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   {/* Random Fields */}
                   {samplingConfig.method === 'random' && (
                     <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase">Sample Count Limit</label>
+                      <label className="text-[10px] text-slate-600 font-bold uppercase">Sample Count Limit</label>
                       <input
                         type="number"
                         value={samplingConfig.randomCount}
                         onChange={(e) => setSamplingConfig(prev => ({ ...prev, randomCount: Number(e.target.value) }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
                       />
                     </div>
                   )}
@@ -3022,20 +3200,20 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   {/* Systematic Fields */}
                   {samplingConfig.method === 'systematic' && (
                     <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase">Voucher Interval Step (N-th)</label>
+                      <label className="text-[10px] text-slate-600 font-bold uppercase">Voucher Interval Step (N-th)</label>
                       <input
                         type="number"
                         value={samplingConfig.systematicInterval}
                         onChange={(e) => setSamplingConfig(prev => ({ ...prev, systematicInterval: Number(e.target.value) }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500/50 font-bold font-mono"
                       />
                     </div>
                   )}
 
                   {/* Stratified Fields */}
                   {samplingConfig.method === 'stratified' && (
-                    <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-850">
-                      <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-1">Stratum Selection Rates</div>
+                    <div className="space-y-3 bg-slate-50/60 p-4 rounded-xl border border-slate-850">
+                      <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider mb-1">Stratum Selection Rates</div>
                       
                       <div className="grid grid-cols-3 gap-2">
                         <div className="space-y-1">
@@ -3044,7 +3222,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             type="number"
                             value={samplingConfig.stratifiedPercentHigh}
                             onChange={(e) => setSamplingConfig(prev => ({ ...prev, stratifiedPercentHigh: Number(e.target.value) }))}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono text-center font-bold"
+                            className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-mono text-center font-bold"
                           />
                           <span className="text-[8px] text-slate-600 block text-center">%</span>
                         </div>
@@ -3054,7 +3232,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             type="number"
                             value={samplingConfig.stratifiedPercentMedium}
                             onChange={(e) => setSamplingConfig(prev => ({ ...prev, stratifiedPercentMedium: Number(e.target.value) }))}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono text-center font-bold"
+                            className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-mono text-center font-bold"
                           />
                           <span className="text-[8px] text-slate-600 block text-center">%</span>
                         </div>
@@ -3064,7 +3242,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             type="number"
                             value={samplingConfig.stratifiedPercentLow}
                             onChange={(e) => setSamplingConfig(prev => ({ ...prev, stratifiedPercentLow: Number(e.target.value) }))}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono text-center font-bold"
+                            className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-mono text-center font-bold"
                           />
                           <span className="text-[8px] text-slate-600 block text-center">%</span>
                         </div>
@@ -3073,7 +3251,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   )}
 
                   {/* Standard Guidance Info */}
-                  <div className="bg-indigo-950/20 border border-indigo-500/10 p-3.5 rounded-xl text-[11px] text-slate-400 leading-relaxed font-sans">
+                  <div className="bg-indigo-950/20 border border-indigo-500/10 p-3.5 rounded-xl text-[11px] text-slate-600 leading-relaxed font-sans">
                     <span className="font-bold text-indigo-400 uppercase tracking-wider block mb-1 font-mono">💡 SA 530 Compliance Guidance</span>
                     {samplingConfig.method === 'high-value' && 'Judgemental focus scans 100% of large financial items, covering maximum statement value while bypassing low-risk transactions.'}
                     {samplingConfig.method === 'random' && 'Statistical random sampling selects an unbiased cross-section of vouchers, enabling mathematical projections of error ratios.'}
@@ -3089,39 +3267,39 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
               {/* Stats Row */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
                   <div className="text-[9.5px] text-slate-500 font-bold uppercase tracking-wider font-mono">Voucher Population</div>
-                  <h4 className="text-xl font-bold text-white font-mono">{totalPopulation}</h4>
+                  <h4 className="text-xl font-bold text-slate-900 font-mono">{totalPopulation}</h4>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
                   <div className="text-[9.5px] text-slate-500 font-bold uppercase tracking-wider font-mono">Sample Size</div>
                   <h4 className="text-xl font-bold text-indigo-400 font-mono">{sampleSize} <span className="text-[10px] text-slate-500 font-normal">({totalPopulation > 0 ? ((sampleSize / totalPopulation) * 100).toFixed(1) : 0}%)</span></h4>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
                   <div className="text-[9.5px] text-slate-500 font-bold uppercase tracking-wider font-mono">Verified Samples</div>
                   <h4 className="text-xl font-bold text-emerald-400 font-mono">{stats.verified} <span className="text-[10px] text-slate-500 font-normal">({sampleSize > 0 ? ((stats.verified / sampleSize) * 100).toFixed(0) : 0}%)</span></h4>
                 </div>
 
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow shadow-slate-950 space-y-2">
                   <div className="text-[9.5px] text-slate-500 font-bold uppercase tracking-wider font-mono">Outstanding Queries</div>
                   <h4 className="text-xl font-bold text-rose-450 font-mono">{stats.missing + stats.queries}</h4>
                 </div>
               </div>
 
               {/* Working Papers Grid Panel */}
-              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-6">
 
                 {/* Filter and Search controls */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+                    <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-2">Audit Status:</span>
                       <select
                         value={samplingStatusFilter}
                         onChange={(e) => setSamplingStatusFilter(e.target.value as any)}
-                        className="bg-transparent text-white font-bold focus:outline-none select-dark"
+                        className="bg-transparent text-slate-900 font-bold focus:outline-none select-dark"
                       >
                         <option value="All">All Vouchers</option>
                         <option value="Verified">Verified Only</option>
@@ -3139,20 +3317,20 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       placeholder="Search ledger or number..."
                       value={samplingSearchQuery}
                       onChange={(e) => setSamplingSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/40"
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-indigo-500/40"
                     />
                   </div>
                 </div>
 
                 {filteredSamples.length === 0 ? (
-                  <div className="text-center py-16 bg-slate-950/20 border border-slate-850 rounded-2xl">
+                  <div className="text-center py-16 bg-slate-50/20 border border-slate-850 rounded-2xl">
                     <p className="text-sm text-slate-500 font-medium">No sampled vouchers match the current filters.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                        <tr className="border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                           <th className="text-left py-3 px-3">Date</th>
                           <th className="text-left py-3 px-3">Voucher Details</th>
                           <th className="text-left py-3 px-3">Account Name</th>
@@ -3171,18 +3349,18 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                           return (
                             <tr
                               key={item.id}
-                              className="border-b border-slate-850 hover:bg-slate-900/20 transition-all text-xs font-sans"
+                              className="border-b border-slate-850 hover:bg-white/20 transition-all text-xs font-sans"
                             >
-                              <td className="py-3 px-3 text-slate-400 font-mono whitespace-nowrap">{item.date}</td>
-                              <td className="py-3 px-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                              <td className="py-3 px-3 text-slate-600 font-mono whitespace-nowrap">{item.date}</td>
+                              <td className="py-3 px-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                                 {item.voucherType} ({item.voucherNumber})
                               </td>
-                              <td className="py-3 px-3 font-bold text-white">{item.ledgerName}</td>
-                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-200">
+                              <td className="py-3 px-3 font-bold text-slate-900">{item.ledgerName}</td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
                                 ₹{item.amount.toLocaleString('en-IN')}
                               </td>
                               <td className="py-3 px-3 text-center">
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-500 font-mono border border-slate-850">
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-500 font-mono border border-slate-850">
                                   {item.stratum || 'N/A'}
                                 </span>
                               </td>
@@ -3194,7 +3372,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                     status === 'Verified' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-450' :
                                     status === 'Document Missing' ? 'bg-rose-500/10 border-rose-500/25 text-rose-450' :
                                     status === 'Query Raised' ? 'bg-amber-500/10 border-amber-500/25 text-amber-450' :
-                                    'bg-slate-950 border-slate-800 text-slate-400'
+                                    'bg-slate-50 border-slate-200 text-slate-600'
                                   }`}
                                 >
                                   <option value="Unverified">🔘 Unverified</option>
@@ -3209,7 +3387,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                   placeholder="Add comments/remarks..."
                                   value={remarks}
                                   onChange={(e) => updateWorkingPaper(item.id, status, e.target.value)}
-                                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-indigo-500/40 rounded px-2.5 py-1 text-[11px] text-slate-200 outline-none placeholder-slate-600 transition-all"
+                                  className="w-full bg-slate-50 border border-slate-850 hover:border-slate-200 focus:border-indigo-500/40 rounded px-2.5 py-1 text-[11px] text-slate-800 outline-none placeholder-slate-600 transition-all"
                                 />
                               </td>
                             </tr>
@@ -3225,6 +3403,72 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             </div>
 
           </div>
+
+          {/* Saved SA 530 Papers Modal */}
+          {showHistoryModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] flex flex-col">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <History className="w-5 h-5 text-indigo-600" />
+                    <h3 className="font-bold text-slate-900 text-base">Saved SA 530 Sampling Workpapers</h3>
+                  </div>
+                  <button
+                    onClick={() => setShowHistoryModal(false)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                  {savedSampleHistory.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-8 text-center">No saved sampling papers found for this client and FY.</p>
+                  ) : (
+                    savedSampleHistory.map((sample) => (
+                      <div
+                        key={sample.id}
+                        className="p-4 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50/50 hover:bg-indigo-50/20 transition-all flex items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">{sample.audit_area || 'Audit Sample'}</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold">
+                              FY {sample.fy}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Saved on: {new Date(sample.updated_at).toLocaleString('en-IN')} &bull; Sample Count: {Array.isArray(sample.sample_vouchers) ? sample.sample_vouchers.length : 'N/A'}
+                          </p>
+                          {sample.parameters && (
+                            <p className="text-[11px] text-slate-600">
+                              Method: <strong className="capitalize">{sample.parameters.method}</strong>
+                              {sample.parameters.highValueThreshold ? ` (Threshold: ₹${Number(sample.parameters.highValueThreshold).toLocaleString('en-IN')})` : ''}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleLoadSpecificPaper(sample)}
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all shrink-0 shadow-2xs"
+                        >
+                          Load Paper
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-3 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowHistoryModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
@@ -3258,7 +3502,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     const uniqueLedgers = Array.from(new Set(directExpenseResults.observations.map(o => o.ledgerName)));
 
     return (
-      <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-cyan-500/30">
+      <div className="min-h-screen w-full bg-white text-slate-800 p-4 sm:p-8 font-sans selection:bg-cyan-500/30">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Header */}
@@ -3266,7 +3510,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSelectedSubModule('menu')}
-                className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
+                className="w-10 h-10 bg-slate-800/80 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -3276,10 +3520,10 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     Direct Expense Payment Auditor
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                <p className="text-xs text-slate-600 mt-1 flex items-center gap-2">
                   <span>Checking Expenses Direct Paid (Cash/Bank) Bypassing Creditors Setup</span>
                   {isDemoData && (
-                    <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[9px] font-bold uppercase tracking-wider animate-pulse">
+                    <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-blue-700 font-bold text-[9px] font-bold uppercase tracking-wider animate-pulse">
                       Simulation Mode
                     </span>
                   )}
@@ -3290,7 +3534,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <div className="flex items-center gap-3 self-start md:self-end">
               <button
                 onClick={handleExportDirectExpenses}
-                className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-cyan-900/30 hover:scale-[1.02]"
+                className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-900 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-cyan-900/30 hover:scale-[1.02]"
               >
                 <Download className="w-4 h-4" /> Export Report (Excel)
               </button>
@@ -3300,24 +3544,24 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           {/* Top Controls: Tally Connection & Configuration */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Tally Integration */}
-            <div className="lg:col-span-2 bg-slate-900/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="lg:col-span-2 bg-white/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${connectionStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${connectionStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500 border border-slate-200'}`}>
                     <Server className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Tally Prime Port Setup</h2>
+                    <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Tally Prime Port Setup</h2>
                     <p className="text-[10px] text-slate-500">Live Client Integration</p>
                   </div>
                 </div>
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1">
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-2">Port:</span>
                   <input
                     type="number"
                     value={tallyPort}
                     onChange={(e) => setTallyPort(Number(e.target.value))}
-                    className="w-16 bg-transparent text-xs text-white focus:outline-none font-bold"
+                    className="w-16 bg-transparent text-xs text-slate-900 focus:outline-none font-bold"
                   />
                 </div>
                 <button
@@ -3325,7 +3569,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                     connectionStatus === 'connected'
                       ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                      : 'bg-slate-800 border-slate-750 text-slate-300 hover:bg-slate-700 hover:text-white'
+                      : 'bg-slate-800 border-slate-750 text-slate-700 hover:bg-slate-700 hover:text-slate-900'
                   }`}
                 >
                   {connectionStatus === 'connecting' ? 'Connecting...' : (connectionStatus === 'connected' ? 'Connected' : 'Connect')}
@@ -3343,31 +3587,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               {/* Company Info */}
               <div className="text-right flex items-center gap-3 self-start md:self-center">
                 <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-                <span className="text-xs text-slate-400 font-semibold font-mono whitespace-nowrap">
-                  Entity: <span className="text-white font-bold">{companyName}</span>
+                <span className="text-xs text-slate-600 font-semibold font-mono whitespace-nowrap">
+                  Entity: <span className="text-slate-900 font-bold">{companyName}</span>
                 </span>
               </div>
             </div>
 
             {/* Date Parameters */}
-            <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-center space-y-3">
+            <div className="bg-white/30 border border-slate-850 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-center space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Scan From</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Scan From</label>
                   <input
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-cyan-500/50 [color-scheme:dark] font-mono"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-cyan-500/50 [color-scheme:dark] font-mono"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 block">Scan To</label>
+                  <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1 block">Scan To</label>
                   <input
                     type="date"
                     value={evaluationDate}
                     onChange={(e) => setEvaluationDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-cyan-500/50 [color-scheme:dark] font-mono"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-cyan-500/50 [color-scheme:dark] font-mono"
                   />
                 </div>
               </div>
@@ -3376,38 +3620,38 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
           {/* Stats Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
-              <div className="flex items-center justify-between text-slate-400">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
+              <div className="flex items-center justify-between text-slate-600">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Total Audited Expenses</span>
                 <Calculator className="w-4 h-4 text-slate-500" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-2xl font-black text-white">₹{directExpenseResults.totalAuditedExpenses.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black text-slate-900">₹{directExpenseResults.totalAuditedExpenses.toLocaleString('en-IN')}</h3>
                 <p className="text-[10px] text-slate-500">Debits to Direct &amp; Indirect ledger groups</p>
               </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
-              <div className="flex items-center justify-between text-slate-400">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
+              <div className="flex items-center justify-between text-slate-600">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Bypassed Direct Payments</span>
-                <Layers className="w-4 h-4 text-cyan-400" />
+                <Layers className="w-4 h-4 text-blue-700 font-bold" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-2xl font-black text-cyan-400">₹{directExpenseResults.totalBypassedAmount.toLocaleString('en-IN')}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <h3 className="text-2xl font-black text-blue-700 font-bold">₹{directExpenseResults.totalBypassedAmount.toLocaleString('en-IN')}</h3>
+                <p className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
                   {directExpenseResults.observations.length} Flagged Vouchers
                 </p>
               </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
-              <div className="flex items-center justify-between text-slate-400">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
+              <div className="flex items-center justify-between text-slate-600">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Internal Control Bypass Ratio</span>
                 <TrendingUp className="w-4 h-4 text-indigo-400" />
               </div>
               <div className="flex items-center gap-3">
                 <div className="space-y-1 flex-1">
-                  <h3 className="text-2xl font-black text-white">{directExpenseResults.bypassedPercentage.toFixed(1)}%</h3>
+                  <h3 className="text-2xl font-black text-slate-900">{directExpenseResults.bypassedPercentage.toFixed(1)}%</h3>
                   <div className="w-full bg-slate-850 h-1.5 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full ${
@@ -3427,8 +3671,8 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
-              <div className="flex items-center justify-between text-slate-400">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-lg space-y-4 hover:border-slate-750 transition-all">
+              <div className="flex items-center justify-between text-slate-600">
                 <span className="text-[10px] font-bold uppercase tracking-wider">High Risk Violations</span>
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
               </div>
@@ -3440,15 +3684,15 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           </div>
 
           {/* Tab Panel Card */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex gap-2">
                 <button
                   onClick={() => setDirectExpTab('summary')}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                     directExpTab === 'summary'
-                      ? 'bg-cyan-600/20 border border-cyan-500/30 text-cyan-400'
-                      : 'bg-slate-850 border border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-cyan-600/20 border border-cyan-500/30 text-blue-700 font-bold'
+                      : 'bg-slate-850 border border-slate-200 text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   Expense Ledger Analysis ({directExpenseResults.ledgerSummaries.length})
@@ -3457,12 +3701,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   onClick={() => setDirectExpTab('vouchers')}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
                     directExpTab === 'vouchers'
-                      ? 'bg-cyan-600/20 border border-cyan-500/30 text-cyan-400'
-                      : 'bg-slate-850 border border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-cyan-600/20 border border-cyan-500/30 text-blue-700 font-bold'
+                      : 'bg-slate-850 border border-slate-200 text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   <span>Flagged Vouchers Ledger</span>
-                  <span className="bg-slate-950 px-2 py-0.5 rounded text-[10px] font-bold text-slate-400">
+                  <span className="bg-slate-50 px-2 py-0.5 rounded text-[10px] font-bold text-slate-600">
                     {filteredObservations.length}
                   </span>
                 </button>
@@ -3470,12 +3714,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
               {directExpTab === 'vouchers' && (
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-2">Ledger:</span>
                     <select
                       value={directExpLedgerFilter}
                       onChange={(e) => setDirectExpLedgerFilter(e.target.value)}
-                      className="bg-transparent text-white font-bold focus:outline-none min-w-[120px] select-dark"
+                      className="bg-transparent text-slate-900 font-bold focus:outline-none min-w-[120px] select-dark"
                     >
                       <option value="All">All Ledgers</option>
                       {uniqueLedgers.map(l => (
@@ -3484,12 +3728,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     </select>
                   </div>
 
-                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-2">Risk:</span>
                     <select
                       value={directExpRiskFilter}
                       onChange={(e) => setDirectExpRiskFilter(e.target.value as any)}
-                      className="bg-transparent text-white font-bold focus:outline-none select-dark"
+                      className="bg-transparent text-slate-900 font-bold focus:outline-none select-dark"
                     >
                       <option value="All">All Risks</option>
                       <option value="High">High Risk Only</option>
@@ -3505,7 +3749,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       placeholder="Search vouchers & details..."
                       value={directExpSearch}
                       onChange={(e) => setDirectExpSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/40"
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-cyan-500/40"
                     />
                   </div>
                 </div>
@@ -3515,9 +3759,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {directExpTab === 'summary' && (
               <div className="space-y-4">
                 {directExpenseResults.ledgerSummaries.length === 0 ? (
-                  <div className="text-center py-16 bg-slate-950/20 border border-slate-850 rounded-2xl">
+                  <div className="text-center py-16 bg-slate-50/20 border border-slate-850 rounded-2xl">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500/80 mx-auto mb-3" />
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Perfect Internal Controls</h3>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Perfect Internal Controls</h3>
                     <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto leading-relaxed">
                       Absolutely zero direct payment vouchers detected. All expenses were correctly routed via Creditor ledger accounts.
                     </p>
@@ -3526,7 +3770,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                        <tr className="border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                           <th className="text-left py-3 px-4">Expense Ledger Name</th>
                           <th className="text-left py-3 px-4">Primary Tally Group</th>
                           <th className="text-right py-3 px-4">Bypassed Amount</th>
@@ -3539,14 +3783,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         {directExpenseResults.ledgerSummaries.map((s, idx) => (
                           <tr
                             key={idx}
-                            className="border-b border-slate-850 hover:bg-slate-900/20 transition-all text-xs"
+                            className="border-b border-slate-850 hover:bg-white/20 transition-all text-xs"
                           >
-                            <td className="py-4 px-4 font-bold text-white">{s.ledgerName}</td>
-                            <td className="py-4 px-4 text-slate-400 uppercase font-mono text-[10px]">{s.parentGroup}</td>
-                            <td className="py-4 px-4 text-right font-mono font-bold text-cyan-400">
+                            <td className="py-4 px-4 font-bold text-slate-900">{s.ledgerName}</td>
+                            <td className="py-4 px-4 text-slate-600 uppercase font-mono text-[10px]">{s.parentGroup}</td>
+                            <td className="py-4 px-4 text-right font-mono font-bold text-blue-700 font-bold">
                               ₹{s.directPaymentAmount.toLocaleString('en-IN')}
                             </td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-300">
+                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-700">
                               {s.transactionCount} Voucher(s)
                             </td>
                             <td className="py-4 px-4 text-center">
@@ -3564,7 +3808,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                   setDirectExpLedgerFilter(s.ledgerName.toUpperCase());
                                   setDirectExpTab('vouchers');
                                 }}
-                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-md text-[10px] font-bold uppercase transition-all"
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-700 hover:text-slate-900 rounded-md text-[10px] font-bold uppercase transition-all"
                               >
                                 View Entries
                               </button>
@@ -3581,14 +3825,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             {directExpTab === 'vouchers' && (
               <div className="space-y-4">
                 {filteredObservations.length === 0 ? (
-                  <div className="text-center py-12 bg-slate-950/20 border border-slate-850 rounded-2xl">
+                  <div className="text-center py-12 bg-slate-50/20 border border-slate-850 rounded-2xl">
                     <p className="text-sm text-slate-500">No vouchers match the active filters or search criteria.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                        <tr className="border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                           <th className="text-left py-3 px-4">Date</th>
                           <th className="text-left py-3 px-4">Expense Ledger</th>
                           <th className="text-left py-3 px-4">Voucher (No.)</th>
@@ -3602,22 +3846,22 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         {filteredObservations.map((obs, idx) => (
                           <tr
                             key={idx}
-                            className="border-b border-slate-850 hover:bg-slate-900/20 transition-all text-xs"
+                            className="border-b border-slate-850 hover:bg-white/20 transition-all text-xs"
                           >
-                            <td className="py-4 px-4 text-slate-400 font-mono whitespace-nowrap">{obs.date}</td>
-                            <td className="py-4 px-4 font-bold text-white">{obs.ledgerName}</td>
-                            <td className="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                            <td className="py-4 px-4 text-slate-600 font-mono whitespace-nowrap">{obs.date}</td>
+                            <td className="py-4 px-4 font-bold text-slate-900">{obs.ledgerName}</td>
+                            <td className="py-4 px-4 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                               {obs.voucherType} ({obs.voucherNumber})
                             </td>
-                            <td className="py-4 px-4 font-semibold text-slate-300">{obs.paymentLedger}</td>
+                            <td className="py-4 px-4 font-semibold text-slate-700">{obs.paymentLedger}</td>
                             <td className="py-4 px-4 max-w-md space-y-1.5">
-                              <div className="text-slate-200 font-medium leading-relaxed">{obs.description}</div>
-                              <div className="text-[11px] text-cyan-400 italic font-mono flex items-start gap-1">
+                              <div className="text-slate-800 font-medium leading-relaxed">{obs.description}</div>
+                              <div className="text-[11px] text-blue-700 font-bold italic font-mono flex items-start gap-1">
                                 <span className="text-[10px] font-bold">💡 Auditor Rec:</span>
                                 <span>{obs.recommendation}</span>
                               </div>
                             </td>
-                            <td className="py-4 px-4 text-right font-mono font-bold text-white">
+                            <td className="py-4 px-4 text-right font-mono font-bold text-slate-900">
                               ₹{obs.amount.toLocaleString('en-IN')}
                             </td>
                             <td className="py-4 px-4 text-center">
@@ -3674,7 +3918,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-indigo-500/30 silk-reveal">
+    <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-4 sm:p-8 font-sans silk-reveal">
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* Header */}
@@ -3682,7 +3926,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setSelectedSubModule('menu')}
-              className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400"
+              className="w-10 h-10 bg-slate-800/80 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -3692,7 +3936,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   Audit &amp; Ageing Suite
                 </span>
               </h1>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="text-sm text-slate-600 mt-1">
                 Deep analysis of Trade Receivables (Debtors) &amp; Payables (Creditors) with Fifo ageing
               </p>
             </div>
@@ -3706,7 +3950,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <button
               onClick={handleDebtorsExport}
               disabled={debtors.length === 0}
-              className="px-3 py-2 bg-indigo-600/80 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-indigo-500/20"
+              className="px-3 py-2 bg-indigo-600/80 hover:bg-indigo-500 text-slate-900 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-indigo-500/20"
             >
               <Download className="w-3.5 h-3.5 text-indigo-300" />
               Export Debtors Workbook
@@ -3714,7 +3958,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <button
               onClick={handleCreditorsExport}
               disabled={creditors.length === 0}
-              className="px-3 py-2 bg-cyan-600/80 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-cyan-500/20"
+              className="px-3 py-2 bg-cyan-600/80 hover:bg-cyan-500 text-slate-900 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-cyan-500/20"
             >
               <Download className="w-3.5 h-3.5 text-cyan-300" />
               Export Creditors Workbook
@@ -3722,9 +3966,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
             <button
               onClick={triggerExcelExport}
               disabled={debtors.length === 0 && creditors.length === 0}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-slate-700"
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all border border-slate-200"
             >
-              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <Download className="w-3.5 h-3.5 text-slate-600" />
               Export Full Portfolio
             </button>
           </div>
@@ -3733,31 +3977,31 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         {/* Top Controls: Tally Connection & Configuration */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Tally Integration */}
-          <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+          <div className="lg:col-span-2 bg-white/50 backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-8 h-8 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center">
                   <Server className="w-4 h-4 text-indigo-400" />
                 </div>
-                <h2 className="text-lg font-bold text-white">Tally Sync Integration</h2>
+                <h2 className="text-lg font-bold text-slate-900">Tally Sync Integration</h2>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
                 <div>
-                  <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1.5 block">Tally Port</label>
+                  <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1.5 block">Tally Port</label>
                   <input
                     type="number"
                     value={tallyPort}
                     onChange={(e) => setTallyPort(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500/50 transition-all"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500/50 transition-all"
                   />
                 </div>
                 <div>
                   <button
                     onClick={connectToTally}
                     disabled={connectionStatus === 'connecting'}
-                    className="w-full h-[38px] px-4 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg border border-slate-700 transition-all flex items-center justify-center gap-2"
+                    className="w-full h-[38px] px-4 bg-slate-800 hover:bg-slate-700 text-slate-900 text-sm font-semibold rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-2"
                   >
-                    {connectionStatus === 'connecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-red-400" />)}
+                    {connectionStatus === 'connecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> : (connectionStatus === 'connected' ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-rose-600 font-bold" />)}
                     {connectionStatus === 'connected' ? 'Connected' : 'Test Connection'}
                   </button>
                 </div>
@@ -3765,7 +4009,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   <button
                     onClick={handleFetchTallyData}
                     disabled={connectionStatus !== 'connected' || isFetching}
-                    className="w-full h-[38px] px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800/80 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15"
+                    className="w-full h-[38px] px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800/80 disabled:text-slate-500 text-slate-900 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15"
                   >
                     {isFetching ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Fetch Live Ageing'}
                   </button>
@@ -3782,36 +4026,36 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           </div>
 
           {/* Import / Evaluation Parameters */}
-          <div className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="bg-white/50 backdrop-blur-xl border border-slate-200/80 rounded-2xl p-6 shadow-xl space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-cyan-500/10 border border-cyan-500/20 rounded-lg flex items-center justify-center">
-                <Clock className="w-4 h-4 text-cyan-400" />
+                <Clock className="w-4 h-4 text-blue-700 font-bold" />
               </div>
-              <h2 className="text-lg font-bold text-white">Parameters</h2>
+              <h2 className="text-lg font-bold text-slate-900">Parameters</h2>
             </div>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1 block">Scan From</label>
+                  <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1 block">Scan From</label>
                   <input
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1 block">Scan To / Valuation</label>
+                  <label className="text-[11px] text-slate-600 font-medium uppercase tracking-wider mb-1 block">Scan To / Valuation</label>
                   <input
                     type="date"
                     value={evaluationDate}
                     onChange={(e) => setEvaluationDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
                   />
                 </div>
               </div>
               <div className="flex gap-2">
-                <label className="flex-1 cursor-pointer h-[38px] border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg flex items-center justify-center gap-2 text-xs font-semibold text-slate-300 hover:text-white transition-all bg-slate-950/40">
+                <label className="flex-1 cursor-pointer h-[38px] border border-dashed border-slate-200 hover:border-indigo-500 rounded-lg flex items-center justify-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-all bg-slate-50/40">
                   <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
                   Upload Outstanding Excel
                   <input type="file" accept=".xlsx,.xls" onChange={handleExcelImport} className="hidden" />
@@ -3819,7 +4063,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 {!isDemoData && (
                   <button
                     onClick={loadDemo}
-                    className="px-3 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-400 hover:text-white transition-all"
+                    className="px-3 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 transition-all"
                   >
                     Demo
                   </button>
@@ -3832,50 +4076,50 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         {/* Metric Cards Banner */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Debtors */}
-          <div className="bg-slate-900/40 border border-white/5 p-5 rounded-2xl relative overflow-hidden">
+          <div className="bg-white border border-slate-200/80 shadow-xs p-5 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-            <div className="flex justify-between items-start text-slate-400">
+            <div className="flex justify-between items-start text-slate-600">
               <span className="text-xs font-bold uppercase tracking-wider">Total Receivables</span>
               <Users className="w-4 h-4 text-indigo-400" />
             </div>
             <div className="mt-2">
-              <span className="text-2xl font-black text-white">
+              <span className="text-2xl font-black text-slate-900">
                 ₹{metrics.totalDebtors.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
               </span>
               <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
                 <span>DSO Cycle: </span>
-                <span className="font-bold text-slate-300">{metrics.avgDSO} Days</span>
+                <span className="font-bold text-slate-700">{metrics.avgDSO} Days</span>
               </div>
             </div>
           </div>
 
           {/* Card 2: Creditors */}
-          <div className="bg-slate-900/40 border border-white/5 p-5 rounded-2xl relative overflow-hidden">
+          <div className="bg-white border border-slate-200/80 shadow-xs p-5 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
-            <div className="flex justify-between items-start text-slate-400">
+            <div className="flex justify-between items-start text-slate-600">
               <span className="text-xs font-bold uppercase tracking-wider">Total Payables</span>
-              <Users className="w-4 h-4 text-cyan-400" />
+              <Users className="w-4 h-4 text-blue-700 font-bold" />
             </div>
             <div className="mt-2">
-              <span className="text-2xl font-black text-white">
+              <span className="text-2xl font-black text-slate-900">
                 ₹{metrics.totalCreditors.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
               </span>
               <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
                 <span>DPO Cycle: </span>
-                <span className="font-bold text-slate-300">{metrics.avgDPO} Days</span>
+                <span className="font-bold text-slate-700">{metrics.avgDPO} Days</span>
               </div>
             </div>
           </div>
 
           {/* Card 3: Overdue Critical */}
-          <div className="bg-slate-900/40 border border-white/5 p-5 rounded-2xl relative overflow-hidden">
+          <div className="bg-white border border-slate-200/80 shadow-xs p-5 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-            <div className="flex justify-between items-start text-slate-400">
+            <div className="flex justify-between items-start text-slate-600">
               <span className="text-xs font-bold uppercase tracking-wider">Overdue &gt; 90 Days</span>
-              <AlertTriangle className="w-4 h-4 text-red-400" />
+              <AlertTriangle className="w-4 h-4 text-rose-600 font-bold" />
             </div>
             <div className="mt-2">
-              <span className="text-2xl font-black text-red-400">
+              <span className="text-2xl font-black text-rose-600 font-bold">
                 ₹{metrics.debtorsOver90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
               </span>
               <div className="text-[10px] text-slate-500 mt-1">
@@ -3885,33 +4129,33 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
           </div>
 
           {/* Card 4: Concentration Exposure */}
-          <div className="bg-slate-900/40 border border-white/5 p-5 rounded-2xl relative overflow-hidden">
+          <div className="bg-white border border-slate-200/80 shadow-xs p-5 rounded-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
-            <div className="flex justify-between items-start text-slate-400">
+            <div className="flex justify-between items-start text-slate-600">
               <span className="text-xs font-bold uppercase tracking-wider">Credit Concentration</span>
-              <TrendingUp className="w-4 h-4 text-yellow-400" />
+              <TrendingUp className="w-4 h-4 text-amber-700 font-bold" />
             </div>
             <div className="mt-2">
-              <span className="text-2xl font-black text-white">
+              <span className="text-2xl font-black text-slate-900">
                 {metrics.concentrationPct.toFixed(1)}%
               </span>
               <div className="text-[10px] text-slate-500 mt-1 truncate">
-                Top Client: <span className="font-bold text-slate-300">{metrics.topDebtorName}</span>
+                Top Client: <span className="font-bold text-slate-700">{metrics.topDebtorName}</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Ageing Summary Visual Progress Bars */}
-        <div className="bg-slate-900/30 border border-white/5 rounded-2xl p-6">
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <div className="bg-white/30 border border-slate-200/80 rounded-2xl p-6">
+          <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-400" />
             {activeTab === 'debtors' ? 'Debtors' : 'Creditors'} Ageing Bucket Distribution
           </h3>
 
           <div className="space-y-4">
             {/* Horizontal Stacked Bar */}
-            <div className="h-6 w-full bg-slate-950 rounded-lg overflow-hidden flex border border-slate-800">
+            <div className="h-6 w-full bg-slate-50 rounded-lg overflow-hidden flex border border-slate-200">
               {activeAgeingTotals.total > 0 ? (
                 <>
                   <div style={{ width: `${(activeAgeingTotals.t0_30 / activeAgeingTotals.total) * 100}%` }} className="bg-emerald-500/80 hover:opacity-90 transition-all" title="0-30 Days" />
@@ -3927,44 +4171,44 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
             {/* Legend with Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 flex flex-col">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <div className="bg-slate-50/40 p-3 rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div>
                   0-30 Days
                 </div>
-                <span className="text-sm font-bold text-white mt-1">₹{activeAgeingTotals.t0_30.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-sm font-bold text-slate-900 mt-1">₹{activeAgeingTotals.t0_30.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 <span className="text-[10px] text-slate-500">{activeAgeingTotals.total > 0 ? ((activeAgeingTotals.t0_30 / activeAgeingTotals.total) * 100).toFixed(1) : 0}%</span>
               </div>
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 flex flex-col">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <div className="bg-slate-50/40 p-3 rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   <div className="w-2.5 h-2.5 bg-cyan-500 rounded-full"></div>
                   31-60 Days
                 </div>
-                <span className="text-sm font-bold text-white mt-1">₹{activeAgeingTotals.t31_60.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-sm font-bold text-slate-900 mt-1">₹{activeAgeingTotals.t31_60.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 <span className="text-[10px] text-slate-500">{activeAgeingTotals.total > 0 ? ((activeAgeingTotals.t31_60 / activeAgeingTotals.total) * 100).toFixed(1) : 0}%</span>
               </div>
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 flex flex-col">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <div className="bg-slate-50/40 p-3 rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></div>
                   61-90 Days
                 </div>
-                <span className="text-sm font-bold text-white mt-1">₹{activeAgeingTotals.t61_90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-sm font-bold text-slate-900 mt-1">₹{activeAgeingTotals.t61_90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 <span className="text-[10px] text-slate-500">{activeAgeingTotals.total > 0 ? ((activeAgeingTotals.t61_90 / activeAgeingTotals.total) * 100).toFixed(1) : 0}%</span>
               </div>
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 flex flex-col">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <div className="bg-slate-50/40 p-3 rounded-xl border border-slate-200/60 flex flex-col">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   <div className="w-2.5 h-2.5 bg-orange-500 rounded-full"></div>
                   91-120 Days
                 </div>
-                <span className="text-sm font-bold text-white mt-1">₹{activeAgeingTotals.t91_120.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-sm font-bold text-slate-900 mt-1">₹{activeAgeingTotals.t91_120.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 <span className="text-[10px] text-slate-500">{activeAgeingTotals.total > 0 ? ((activeAgeingTotals.t91_120 / activeAgeingTotals.total) * 100).toFixed(1) : 0}%</span>
               </div>
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 flex flex-col col-span-2 sm:col-span-1">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <div className="bg-slate-50/40 p-3 rounded-xl border border-slate-200/60 flex flex-col col-span-2 sm:col-span-1">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>
                   120+ Days
                 </div>
-                <span className="text-sm font-bold text-white mt-1">₹{activeAgeingTotals.t120.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-sm font-bold text-slate-900 mt-1">₹{activeAgeingTotals.t120.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 <span className="text-[10px] text-slate-500">{activeAgeingTotals.total > 0 ? ((activeAgeingTotals.t120 / activeAgeingTotals.total) * 100).toFixed(1) : 0}%</span>
               </div>
             </div>
@@ -3972,32 +4216,32 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         </div>
 
         {/* Interactive Tabs Menu */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-px">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-px">
           <div className="flex gap-6">
             <button
               onClick={() => { setActiveTab('debtors' as any); setExpandedParty(null); }}
-              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'debtors' ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'debtors' ? 'text-indigo-600 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Debtors (Receivables)
               {activeTab === 'debtors' && <motion.div layoutId="auditActiveTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500" />}
             </button>
             <button
               onClick={() => { setActiveTab('creditors'); setExpandedParty(null); }}
-              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'creditors' as any ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'creditors' as any ? 'text-indigo-600 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Creditors (Payables)
               {activeTab === 'creditors' && <motion.div layoutId="auditActiveTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500" />}
             </button>
             <button
               onClick={() => { setActiveTab('detailed-bills' as any); setExpandedParty(null); }}
-              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'detailed-bills' as any ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'detailed-bills' as any ? 'text-indigo-600 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Detailed Invoices (Bill-Wise)
               {activeTab === 'detailed-bills' as any && <motion.div layoutId="auditActiveTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500" />}
             </button>
             <button
               onClick={() => { setActiveTab('insights' as any); setExpandedParty(null); }}
-              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'insights' ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+              className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'insights' ? 'text-indigo-600 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Risk &amp; Audit Insights
               {activeTab === 'insights' && <motion.div layoutId="auditActiveTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500" />}
@@ -4014,17 +4258,17 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   placeholder="Search party or GSTIN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500/50 w-48 sm:w-60 transition-all"
+                  className="bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-900 outline-none focus:border-indigo-500/50 w-48 sm:w-60 transition-all"
                 />
               </div>
 
               {/* Risk Filter */}
-              <div className="relative flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs">
+              <div className="relative flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs">
                 <Filter className="w-3 h-3 text-slate-500" />
                 <select
                   value={riskFilter}
                   onChange={(e) => setRiskFilter(e.target.value as any)}
-                  className="bg-transparent text-slate-300 outline-none border-none pr-4 text-xs font-semibold cursor-pointer"
+                  className="bg-transparent text-slate-700 outline-none border-none pr-4 text-xs font-semibold cursor-pointer"
                 >
                   <option value="All">All Risk</option>
                   <option value="Low">Low Risk</option>
@@ -4045,12 +4289,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.2 }}
-              className="bg-slate-900/25 border border-white/5 rounded-2xl overflow-hidden shadow-2xl"
+              className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs"
             >
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-950 border-b border-slate-800/80 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    <tr className="bg-slate-100 border-b-2 border-slate-200 text-xs text-slate-800 font-bold uppercase tracking-wider">
                       <th className="py-4 px-5">Party Name</th>
                       <th className="py-4 px-4">GSTIN</th>
                       <th className="py-4 px-4 text-right">Total Outstanding</th>
@@ -4064,7 +4308,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       <th className="py-4 px-5 text-center">Details</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                  <tbody className="divide-y divide-slate-200 text-xs">
                     {activePartiesList.length > 0 ? (
                       activePartiesList.map((p, idx) => {
                         const isExpanded = expandedParty === p.partyName;
@@ -4074,14 +4318,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
                         return (
                           <React.Fragment key={p.partyName}>
-                            <tr className={`hover:bg-slate-850/40 transition-colors ${idx % 2 === 0 ? 'bg-slate-900/10' : ''}`}>
-                              <td className="py-3.5 px-5 font-bold text-white flex flex-col justify-center">
+                            <tr className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 0 ? 'bg-slate-50/40' : ''}`}>
+                              <td className="py-3.5 px-5 font-bold text-slate-900 flex flex-col justify-center">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span>{p.partyName}</span>
                                   {partyObs.length > 0 && (
                                     <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider flex items-center gap-1 ${partyObs.some(o => o.severity === 'High')
-                                      ? 'bg-red-500/10 border border-red-500/20 text-red-400'
-                                      : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400'
+                                      ? 'bg-red-500/10 border border-red-500/20 text-rose-600 font-bold'
+                                      : 'bg-yellow-500/10 border border-yellow-500/20 text-amber-700 font-bold'
                                       }`}>
                                       ⚠️ {partyObs.length} Flag{partyObs.length > 1 ? 's' : ''}
                                     </span>
@@ -4089,55 +4333,55 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                 </div>
                                 <span className="text-[10px] text-slate-500 font-medium mt-0.5">{p.email}</span>
                               </td>
-                              <td className="py-3.5 px-4 font-mono text-slate-300 font-medium">
+                              <td className="py-3.5 px-4 font-mono text-slate-700 font-medium">
                                 {p.gstin || <span className="text-slate-600">N/A</span>}
                               </td>
-                              <td className="py-3.5 px-4 text-right font-black text-white">
+                              <td className="py-3.5 px-4 text-right font-black text-slate-900">
                                 <div>₹{p.totalOutstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
                                 {p.isAdvancePending && (
-                                  <span className="text-[9px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1 py-0.5 rounded font-black tracking-wider mt-0.5 inline-block uppercase">
+                                  <span className="text-[9px] bg-cyan-500/10 text-blue-700 font-bold border border-cyan-500/20 px-1 py-0.5 rounded font-black tracking-wider mt-0.5 inline-block uppercase">
                                     {activeTab === 'debtors' ? 'Advance Recd' : 'Advance Paid'}
                                   </span>
                                 )}
                               </td>
-                              <td className="py-3.5 px-4 text-center text-slate-300 font-mono">
+                              <td className="py-3.5 px-4 text-center text-slate-700 font-mono">
                                 {p.oldestInvoiceDate || <span className="text-slate-600">-</span>}
                               </td>
-                              <td className="py-3.5 px-4 text-right text-slate-300 font-bold">
+                              <td className="py-3.5 px-4 text-right text-slate-700 font-bold">
                                 {p.oldestInvoiceAge ? (
-                                  <span className={p.oldestInvoiceAge > 90 ? 'text-red-400' : 'text-slate-300'}>
+                                  <span className={p.oldestInvoiceAge > 90 ? 'text-rose-600 font-bold' : 'text-slate-700'}>
                                     {p.oldestInvoiceAge} Days
                                   </span>
                                 ) : '-'}
                               </td>
-                              <td className="py-3.5 px-4 text-right text-slate-300 font-medium">
+                              <td className="py-3.5 px-4 text-right text-slate-700 font-medium">
                                 ₹{p.days0_30.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                               </td>
-                              <td className="py-3.5 px-4 text-right text-slate-400 font-medium">
+                              <td className="py-3.5 px-4 text-right text-slate-600 font-medium">
                                 {sum31_90 > 0 ? `₹${sum31_90.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '-'}
                               </td>
                               <td className="py-3.5 px-4 text-right text-slate-500 font-bold">
                                 {sum91Plus > 0 ? (
-                                  <span className={sum91Plus > 100000 ? 'text-red-400' : 'text-slate-400'}>
+                                  <span className={sum91Plus > 100000 ? 'text-rose-600 font-bold' : 'text-slate-600'}>
                                     ₹{sum91Plus.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                   </span>
                                 ) : '-'}
                               </td>
                               <td className="py-3.5 px-4 text-center">
-                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${p.riskStatus === 'High' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-                                  p.riskStatus === 'Medium' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
+                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${p.riskStatus === 'High' ? 'bg-red-500/10 border border-red-500/20 text-rose-600 font-bold' :
+                                  p.riskStatus === 'Medium' ? 'bg-yellow-500/10 border border-yellow-500/20 text-amber-700 font-bold' :
                                     'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                                   }`}>
                                   {p.riskStatus}
                                 </span>
                               </td>
-                              <td className="py-3.5 px-4 text-center font-bold text-slate-400">
+                              <td className="py-3.5 px-4 text-center font-bold text-slate-600">
                                 {p.invoiceCount}
                               </td>
                               <td className="py-3.5 px-5 text-center">
                                 <button
                                   onClick={() => setExpandedParty(isExpanded ? null : p.partyName)}
-                                  className="w-7 h-7 bg-slate-800/80 border border-slate-700/80 rounded-lg flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all text-slate-400 mx-auto"
+                                  className="w-7 h-7 bg-slate-800/80 border border-slate-200/80 rounded-lg flex items-center justify-center hover:bg-slate-700 hover:text-slate-900 transition-all text-slate-600 mx-auto"
                                 >
                                   {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                 </button>
@@ -4228,28 +4472,28 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                               };
 
                               return (
-                                <tr className="bg-slate-950/70 border-l-2 border-indigo-500 animate-in fade-in slide-in-from-top-1">
+                                <tr className="bg-slate-50/70 border-l-2 border-indigo-500 animate-in fade-in slide-in-from-top-1">
                                   <td colSpan={11} className="py-5 px-6">
                                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
                                       {/* Left Column: Health Profile & Auditor Summary */}
-                                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-4">
+                                      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between space-y-4">
                                         <div>
-                                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                          <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
                                             <Activity className="w-3.5 h-3.5 text-indigo-400" />
                                             Ledger Health Audit
                                           </h4>
 
                                           {/* Health score gauge bar */}
-                                          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center gap-4">
-                                            <div className="relative w-12 h-12 rounded-full border border-slate-800 flex items-center justify-center bg-slate-900">
-                                              <span className={`text-sm font-black ${healthScore >= 80 ? 'text-emerald-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-4">
+                                            <div className="relative w-12 h-12 rounded-full border border-slate-200 flex items-center justify-center bg-white">
+                                              <span className={`text-sm font-black ${healthScore >= 80 ? 'text-emerald-400' : healthScore >= 50 ? 'text-amber-700 font-bold' : 'text-rose-600 font-bold'}`}>
                                                 {healthScore}%
                                               </span>
                                             </div>
                                             <div>
                                               <div className="text-[10px] text-slate-500 uppercase font-black">Audit Status</div>
-                                              <div className={`text-xs font-bold ${healthScore >= 80 ? 'text-emerald-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                              <div className={`text-xs font-bold ${healthScore >= 80 ? 'text-emerald-400' : healthScore >= 50 ? 'text-amber-700 font-bold' : 'text-rose-600 font-bold'}`}>
                                                 {healthScore >= 80 ? 'Excellent Profile' : healthScore >= 50 ? 'Moderate Alert' : 'Critical Risk Profile'}
                                               </div>
                                             </div>
@@ -4257,27 +4501,27 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                         </div>
 
                                         <div className="space-y-2">
-                                          <div className="text-[11px] text-slate-400 border-b border-slate-800 pb-1.5 flex justify-between">
+                                          <div className="text-[11px] text-slate-600 border-b border-slate-200 pb-1.5 flex justify-between">
                                             <span className="text-slate-500">Parent Account:</span>
-                                            <span className="font-bold text-white">{p.parentGroup}</span>
+                                            <span className="font-bold text-slate-900">{p.parentGroup}</span>
                                           </div>
-                                          <div className="text-[11px] text-slate-400 border-b border-slate-800 pb-1.5 flex justify-between">
+                                          <div className="text-[11px] text-slate-600 border-b border-slate-200 pb-1.5 flex justify-between">
                                             <span className="text-slate-500">Outstanding:</span>
-                                            <span className="font-mono font-bold text-white">₹{p.totalOutstanding.toLocaleString('en-IN')}</span>
+                                            <span className="font-mono font-bold text-slate-900">₹{p.totalOutstanding.toLocaleString('en-IN')}</span>
                                           </div>
-                                          <div className="text-[11px] text-slate-400 border-b border-slate-800 pb-1.5 flex justify-between">
+                                          <div className="text-[11px] text-slate-600 border-b border-slate-200 pb-1.5 flex justify-between">
                                             <span className="text-slate-500">GSTIN Status:</span>
-                                            <span className={`font-mono font-bold ${p.gstin ? 'text-emerald-400' : 'text-red-400'}`}>{p.gstin ? 'Registered' : 'Unregistered'}</span>
+                                            <span className={`font-mono font-bold ${p.gstin ? 'text-emerald-400' : 'text-rose-600 font-bold'}`}>{p.gstin ? 'Registered' : 'Unregistered'}</span>
                                           </div>
-                                          <div className="text-[11px] text-slate-400 border-b border-slate-800 pb-1.5 flex justify-between">
+                                          <div className="text-[11px] text-slate-600 border-b border-slate-200 pb-1.5 flex justify-between">
                                             <span className="text-slate-500">Period Transactions:</span>
-                                            <span className="font-bold text-white">{p.periodTxCount || 0} Vouchers</span>
+                                            <span className="font-bold text-slate-900">{p.periodTxCount || 0} Vouchers</span>
                                           </div>
                                         </div>
 
                                         <div className="pt-2">
                                           <div className="text-[9px] text-slate-500 uppercase font-black mb-1">Contact Channels</div>
-                                          <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                                          <div className="flex items-center gap-1.5 text-xs text-slate-700">
                                             <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-500" /> {p.email}</span>
                                           </div>
                                         </div>
@@ -4287,24 +4531,24 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                       <div className="lg:col-span-3 space-y-4">
 
                                         {/* Tabs Navigation */}
-                                        <div className="flex border-b border-slate-800 gap-2">
+                                        <div className="flex border-b border-slate-200 gap-2">
                                           <button
                                             onClick={() => setTab('bills')}
-                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'bills' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'bills' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                           >
                                             <FileSpreadsheet className="w-3.5 h-3.5" />
                                             Outstanding Invoices ({billsList.length})
                                           </button>
                                           <button
                                             onClick={() => setTab('ledger')}
-                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'ledger' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'ledger' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                           >
                                             <FileText className="w-3.5 h-3.5" />
                                             General Statement ({vchWithBal.length})
                                           </button>
                                           <button
                                             onClick={() => setTab('audit')}
-                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'audit' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'audit' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                           >
                                             <ShieldAlert className="w-3.5 h-3.5" />
                                             Compliance &amp; Risk
@@ -4312,7 +4556,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                           </button>
                                           <button
                                             onClick={() => setTab('actions')}
-                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'actions' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                                            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${currentTab === 'actions' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                           >
                                             <MessageSquare className="w-3.5 h-3.5" />
                                             Auditor Action Hub
@@ -4321,9 +4565,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
                                         {/* Tab Content 1: Outstanding Invoices */}
                                         {currentTab === 'bills' && (
-                                          <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in duration-200">
+                                          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden animate-in fade-in duration-200">
                                             <table className="w-full text-left text-xs whitespace-nowrap">
-                                              <thead className="bg-slate-950 border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                                              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                                                 <tr>
                                                   <th className="py-2.5 px-4">Ref/Invoice No</th>
                                                   <th className="py-2.5 px-4">Invoice Date</th>
@@ -4333,17 +4577,17 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                                   <th className="py-2.5 px-4 text-center">Ageing status</th>
                                                 </tr>
                                               </thead>
-                                              <tbody className="divide-y divide-slate-800/40 font-mono text-slate-300">
+                                              <tbody className="divide-y divide-slate-800/40 font-mono text-slate-700">
                                                 {billsList.map((bill, bIdx) => (
-                                                  <tr key={bIdx} className="hover:bg-slate-800/30">
-                                                    <td className="py-2.5 px-4 font-bold text-slate-200">{bill.refNo}</td>
+                                                  <tr key={bIdx} className="hover:bg-slate-100/30">
+                                                    <td className="py-2.5 px-4 font-bold text-slate-800">{bill.refNo}</td>
                                                     <td className="py-2.5 px-4">{bill.date}</td>
                                                     <td className="py-2.5 px-4">{bill.dueDate}</td>
-                                                    <td className="py-2.5 px-4 text-right font-bold text-white">₹{Math.abs(bill.amount).toLocaleString('en-IN')}</td>
+                                                    <td className="py-2.5 px-4 text-right font-bold text-slate-900">₹{Math.abs(bill.amount).toLocaleString('en-IN')}</td>
                                                     <td className="py-2.5 px-4 text-right">{bill.ageDays} Days</td>
                                                     <td className="py-2.5 px-4 text-center">
-                                                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider inline-block ${bill.ageDays > 90 ? 'bg-red-500/10 text-red-400 border border-red-500/10' :
-                                                        bill.ageDays > 45 ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/10' :
+                                                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider inline-block ${bill.ageDays > 90 ? 'bg-red-500/10 text-rose-600 font-bold border border-red-500/10' :
+                                                        bill.ageDays > 45 ? 'bg-yellow-500/10 text-amber-700 font-bold border border-yellow-500/10' :
                                                           'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
                                                         }`}>
                                                         {bill.ageDays > 90 ? 'Critical (90+)' : (bill.ageDays > 45 ? 'Delayed (45+)' : 'Safe')}
@@ -4358,14 +4602,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
                                         {/* Tab Content 2: Ledger statement */}
                                         {currentTab === 'ledger' && (
-                                          <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in duration-200 max-h-[220px] overflow-y-auto">
+                                          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden animate-in fade-in duration-200 max-h-[220px] overflow-y-auto">
                                             {vchWithBal.length === 0 ? (
                                               <div className="py-8 text-center text-slate-500 text-[11px]">
                                                 No chronological transactions parsed for this scan period.
                                               </div>
                                             ) : (
                                               <table className="w-full text-left text-xs whitespace-nowrap">
-                                                <thead className="bg-slate-950 border-b border-slate-800 text-slate-500 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10">
+                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10">
                                                   <tr>
                                                     <th className="py-2 px-4">Date</th>
                                                     <th className="py-2 px-4">Voucher Type</th>
@@ -4375,23 +4619,23 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                                     <th className="py-2 px-4 text-right">Running Balance</th>
                                                   </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-800/40 font-mono text-slate-300">
+                                                <tbody className="divide-y divide-slate-800/40 font-mono text-slate-700">
                                                   {vchWithBal.map((v, vIdx) => (
-                                                    <tr key={vIdx} className="hover:bg-slate-800/30">
-                                                      <td className="py-2 px-4 text-slate-400">{v.date}</td>
+                                                    <tr key={vIdx} className="hover:bg-slate-100/30">
+                                                      <td className="py-2 px-4 text-slate-600">{v.date}</td>
                                                       <td className="py-2 px-4">
-                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${v.voucherType === 'Sales' || v.voucherType === 'Purchase' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-800 text-slate-400'}`}>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${v.voucherType === 'Sales' || v.voucherType === 'Purchase' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-800 text-slate-600'}`}>
                                                           {v.voucherType}
                                                         </span>
                                                       </td>
-                                                      <td className="py-2 px-4 font-bold text-slate-300">{v.voucherNumber}</td>
-                                                      <td className="py-2 px-4 text-right text-slate-200">
+                                                      <td className="py-2 px-4 font-bold text-slate-700">{v.voucherNumber}</td>
+                                                      <td className="py-2 px-4 text-right text-slate-800">
                                                         {v.isDebit ? `₹${Math.abs(v.amount).toLocaleString('en-IN')}` : '-'}
                                                       </td>
-                                                      <td className="py-2 px-4 text-right text-slate-400">
+                                                      <td className="py-2 px-4 text-right text-slate-600">
                                                         {!v.isDebit ? `₹${Math.abs(v.amount).toLocaleString('en-IN')}` : '-'}
                                                       </td>
-                                                      <td className="py-2 px-4 text-right text-white font-bold">
+                                                      <td className="py-2 px-4 text-right text-slate-900 font-bold">
                                                         ₹{Math.abs(v.runningBalance).toLocaleString('en-IN')}{' '}
                                                         <span className="text-[9px] font-normal text-slate-500">
                                                           {v.runningBalance >= 0 ? 'Dr' : 'Cr'}
@@ -4411,20 +4655,20 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                                               {/* MSME & 43B(h) Audit Check */}
-                                              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-3">
-                                                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                                <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
                                                   <Building2 className="w-4 h-4 text-indigo-400" />
-                                                  <span className="text-xs font-bold text-white">MSME Section 43B(h) Auditor</span>
+                                                  <span className="text-xs font-bold text-slate-900">MSME Section 43B(h) Auditor</span>
                                                 </div>
 
                                                 {p.parentGroup === 'Sundry Creditors' ? (
                                                   <div className="space-y-3">
                                                     <div className="flex items-center justify-between">
-                                                      <span className="text-[11px] text-slate-400">MSME Status:</span>
+                                                      <span className="text-[11px] text-slate-600">MSME Status:</span>
                                                       <select
                                                         value={msmeStatus}
                                                         onChange={e => setMsmeStatusMap(prev => ({ ...prev, [p.partyName.toUpperCase()]: e.target.value as any }))}
-                                                        className="h-8 bg-slate-950 border border-slate-800 rounded px-2 text-xs text-white outline-none focus:border-indigo-500"
+                                                        className="h-8 bg-slate-50 border border-slate-200 rounded px-2 text-xs text-slate-900 outline-none focus:border-indigo-500"
                                                       >
                                                         <option value="None">Not Registered</option>
                                                         <option value="Micro">Micro Enterprise</option>
@@ -4435,11 +4679,11 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
                                                     {hasMsmeViolation ? (
                                                       <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-lg text-xs space-y-1.5 animate-pulse">
-                                                        <div className="font-bold text-red-400 flex items-center gap-1.5">
-                                                          <AlertTriangle className="w-4 h-4 text-red-400" />
+                                                        <div className="font-bold text-rose-600 font-bold flex items-center gap-1.5">
+                                                          <AlertTriangle className="w-4 h-4 text-rose-600 font-bold" />
                                                           Sec 43B(h) IT Disallowance Alert!
                                                         </div>
-                                                        <p className="text-[10px] text-slate-400 leading-normal">
+                                                        <p className="text-[10px] text-slate-600 leading-normal">
                                                           Supplier is a registered <b>{msmeStatus} Enterprise</b>. Overdue outstanding of <b>₹{msmeViolationAmt.toLocaleString('en-IN')}</b> exceeds 45 days. Unless paid before financial year-end, this sum will be disallowed from taxable business expenses.
                                                         </p>
                                                       </div>
@@ -4457,29 +4701,29 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                               </div>
 
                                               {/* Provisioning & Bad Debt Audit */}
-                                              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-3">
-                                                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                                <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
                                                   <ShieldAlert className="w-4 h-4 text-indigo-400" />
-                                                  <span className="text-xs font-bold text-white">Recommended Provisioning Audit</span>
+                                                  <span className="text-xs font-bold text-slate-900">Recommended Provisioning Audit</span>
                                                 </div>
 
                                                 <div className="space-y-2 text-xs">
                                                   <div className="flex justify-between">
-                                                    <span className="text-slate-400">Outstanding Balance:</span>
-                                                    <span className="font-mono text-white">₹{p.totalOutstanding.toLocaleString('en-IN')}</span>
+                                                    <span className="text-slate-600">Outstanding Balance:</span>
+                                                    <span className="font-mono text-slate-900">₹{p.totalOutstanding.toLocaleString('en-IN')}</span>
                                                   </div>
                                                   <div className="flex justify-between">
-                                                    <span className="text-slate-400">Aging Risk Provision:</span>
+                                                    <span className="text-slate-600">Aging Risk Provision:</span>
                                                     <span className="font-mono text-amber-400 font-bold">₹{Math.round(provisionAmt).toLocaleString('en-IN')}</span>
                                                   </div>
                                                   <div className="flex justify-between">
-                                                    <span className="text-slate-400">Risk Assessment:</span>
-                                                    <span className={`font-bold ${p.riskStatus === 'High' ? 'text-red-400' : p.riskStatus === 'Medium' ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                                                    <span className="text-slate-600">Risk Assessment:</span>
+                                                    <span className={`font-bold ${p.riskStatus === 'High' ? 'text-rose-600 font-bold' : p.riskStatus === 'Medium' ? 'text-amber-700 font-bold' : 'text-emerald-400'}`}>
                                                       {p.riskStatus}
                                                     </span>
                                                   </div>
 
-                                                  <div className="p-2.5 bg-slate-950 border border-slate-800 rounded text-[10px] text-slate-500 leading-relaxed mt-2">
+                                                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[10px] text-slate-500 leading-relaxed mt-2">
                                                     Provision recommended at 5% for 31-60 days, 15% for 61-90 days, 40% for 91-120 days, and 80% for 120+ days aging brackets.
                                                   </div>
                                                 </div>
@@ -4488,21 +4732,21 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
                                             {/* Flagged Observations list */}
                                             {partyObs.length > 0 && (
-                                              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2">
-                                                <span className="text-xs font-bold text-white block mb-2">Detailed Exception Flags</span>
+                                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+                                                <span className="text-xs font-bold text-slate-900 block mb-2">Detailed Exception Flags</span>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                   {partyObs.map((obs, oIdx) => (
-                                                    <div key={oIdx} className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg text-xs space-y-1.5">
+                                                    <div key={oIdx} className="p-3 bg-slate-50/70 border border-slate-200 rounded-lg text-xs space-y-1.5">
                                                       <div className="flex justify-between items-center">
-                                                        <span className="font-bold text-white flex items-center gap-1.5">
+                                                        <span className="font-bold text-slate-900 flex items-center gap-1.5">
                                                           <span className={`w-1.5 h-1.5 rounded-full ${obs.severity === 'High' ? 'bg-red-500' : (obs.severity === 'Medium' ? 'bg-yellow-500' : 'bg-cyan-500')}`} />
                                                           {obs.title}
                                                         </span>
-                                                        <span className={`text-[8px] px-1.5 py-0.5 rounded font-black uppercase ${obs.severity === 'High' ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
+                                                        <span className={`text-[8px] px-1.5 py-0.5 rounded font-black uppercase ${obs.severity === 'High' ? 'bg-red-500/10 text-rose-600 font-bold' : 'bg-yellow-500/10 text-amber-700 font-bold'}`}>
                                                           {obs.severity}
                                                         </span>
                                                       </div>
-                                                      <p className="text-slate-400 text-[10px] leading-relaxed">{obs.description}</p>
+                                                      <p className="text-slate-600 text-[10px] leading-relaxed">{obs.description}</p>
                                                     </div>
                                                   ))}
                                                 </div>
@@ -4516,15 +4760,15 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-200">
 
                                             {/* Action confirmation letter template */}
-                                            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-3">
-                                              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                                                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                                                   <FileText className="w-4 h-4 text-indigo-400" />
                                                   Audit Balance Confirmation Letter
                                                 </span>
                                                 <button
                                                   onClick={handleCopyLetter}
-                                                  className="h-7 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[10px] font-bold transition-all flex items-center gap-1"
+                                                  className="h-7 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-700 hover:text-slate-900 rounded text-[10px] font-bold transition-all flex items-center gap-1"
                                                   title="Copy letter to clipboard"
                                                 >
                                                   <Copy className="w-3.5 h-3.5" />
@@ -4535,20 +4779,20 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                               <textarea
                                                 readOnly
                                                 value={balanceText}
-                                                className="w-full h-32 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-[10px] font-mono text-slate-400 focus:outline-none resize-none leading-relaxed"
+                                                className="w-full h-32 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[10px] font-mono text-slate-600 focus:outline-none resize-none leading-relaxed"
                                               />
 
                                               <div className="flex gap-2">
                                                 <button
                                                   onClick={handleSendEmail}
-                                                  className="flex-1 h-9 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/10"
+                                                  className="flex-1 h-9 bg-indigo-600 hover:bg-indigo-500 text-slate-900 rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/10"
                                                 >
                                                   <Mail className="w-3.5 h-3.5" />
                                                   Queue Email
                                                 </button>
                                                 <button
                                                   onClick={handleSendWhatsapp}
-                                                  className="flex-1 h-9 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                                                  className="flex-1 h-9 bg-slate-800 hover:bg-slate-700 text-slate-700 hover:text-slate-900 border border-slate-200 rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                                                 >
                                                   <Share2 className="w-3.5 h-3.5 text-emerald-400" />
                                                   Share Link
@@ -4557,18 +4801,18 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                             </div>
 
                                             {/* Auditor Notes Board */}
-                                            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 flex flex-col justify-between">
                                               <div>
-                                                <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-3">
+                                                <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-3">
                                                   <MessageSquare className="w-4 h-4 text-indigo-400" />
-                                                  <span className="text-xs font-bold text-white">Auditor Notes &amp; Discussion log</span>
+                                                  <span className="text-xs font-bold text-slate-900">Auditor Notes &amp; Discussion log</span>
                                                 </div>
 
                                                 <textarea
                                                   value={partyNotes[p.partyName] || ''}
                                                   onChange={e => setPartyNotes(prev => ({ ...prev, [p.partyName]: e.target.value }))}
                                                   placeholder="Record client discussions, disputes, write-off approvals, or offline settlement entries here..."
-                                                  className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white placeholder-slate-600 outline-none focus:border-indigo-500 transition-all resize-none"
+                                                  className="w-full h-24 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 placeholder-slate-600 outline-none focus:border-indigo-500 transition-all resize-none"
                                                 />
                                               </div>
 
@@ -4576,7 +4820,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                                                 <span className="text-[10px] text-slate-500 font-medium">Auto-saves to local session</span>
                                                 <button
                                                   onClick={() => toast.success(`Audit notes updated for ${p.partyName}`)}
-                                                  className="h-8 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition-colors flex items-center gap-1"
+                                                  className="h-8 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-900 rounded text-xs font-bold transition-colors flex items-center gap-1"
                                                 >
                                                   <Check className="w-3.5 h-3.5" /> Save Audit Note
                                                 </button>
@@ -4599,7 +4843,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       <tr>
                         <td colSpan={11} className="py-12 px-5 text-center text-slate-500">
                           <ShieldAlert className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-                          <h4 className="font-bold text-slate-400">No Outstanding Entries Found</h4>
+                          <h4 className="font-bold text-slate-600">No Outstanding Entries Found</h4>
                           <p className="text-xs text-slate-500 mt-1">Try clearing search filters or connecting Tally to load data.</p>
                         </td>
                       </tr>
@@ -4615,12 +4859,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.2 }}
-              className="bg-slate-900/25 border border-white/5 rounded-2xl overflow-hidden shadow-2xl"
+              className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs"
             >
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-950 border-b border-slate-800/80 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    <tr className="bg-slate-50 border-b border-slate-200/80 text-[10px] text-slate-600 font-bold uppercase tracking-wider">
                       <th className="py-4 px-5">Party Name</th>
                       <th className="py-4 px-4">Ledger Group</th>
                       <th className="py-4 px-4">Ref Number</th>
@@ -4632,7 +4876,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       <th className="py-4 px-5 text-center">Risk Rating</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                  <tbody className="divide-y divide-slate-200 text-xs">
                     {filteredDetailedBills.length > 0 ? (
                       filteredDetailedBills.map((b, idx) => {
                         let statusText = "Current";
@@ -4640,42 +4884,42 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         else if (b.ageDays > 30) statusText = "Overdue";
 
                         return (
-                          <tr key={idx} className={`hover:bg-slate-850/40 transition-colors ${idx % 2 === 0 ? 'bg-slate-900/10' : ''}`}>
-                            <td className="py-3 px-5 font-bold text-white">
+                          <tr key={idx} className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 0 ? 'bg-slate-50/40' : ''}`}>
+                            <td className="py-3 px-5 font-bold text-slate-900">
                               {b.partyName}
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${b.parentGroup === 'Sundry Debtors' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20' : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/20'
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${b.parentGroup === 'Sundry Debtors' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20' : 'bg-cyan-500/15 text-blue-700 font-bold border border-cyan-500/20'
                                 }`}>
                                 {b.parentGroup === 'Sundry Debtors' ? 'Debtor' : 'Creditor'}
                               </span>
                             </td>
-                            <td className="py-3 px-4 font-mono font-bold text-slate-300">
+                            <td className="py-3 px-4 font-mono font-bold text-slate-700">
                               {b.refNo}
                             </td>
-                            <td className="py-3 px-4 text-slate-400 font-mono">
+                            <td className="py-3 px-4 text-slate-600 font-mono">
                               {b.date}
                             </td>
-                            <td className="py-3 px-4 text-slate-400 font-mono">
+                            <td className="py-3 px-4 text-slate-600 font-mono">
                               {b.dueDate}
                             </td>
-                            <td className="py-3 px-4 text-right font-black text-white">
+                            <td className="py-3 px-4 text-right font-black text-slate-900">
                               ₹{Math.abs(b.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </td>
-                            <td className="py-3 px-4 text-right font-mono text-slate-300 font-bold">
+                            <td className="py-3 px-4 text-right font-mono text-slate-700 font-bold">
                               {b.ageDays} Days
                             </td>
                             <td className="py-3 px-4 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${statusText === 'Critical' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-                                statusText === 'Overdue' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${statusText === 'Critical' ? 'bg-red-500/10 border border-red-500/20 text-rose-600 font-bold' :
+                                statusText === 'Overdue' ? 'bg-yellow-500/10 border border-yellow-500/20 text-amber-700 font-bold' :
                                   'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                                 }`}>
                                 {statusText}
                               </span>
                             </td>
                             <td className="py-3 px-5 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${b.riskStatus === 'High' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-                                b.riskStatus === 'Medium' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider inline-block ${b.riskStatus === 'High' ? 'bg-red-500/10 border border-red-500/20 text-rose-600 font-bold' :
+                                b.riskStatus === 'Medium' ? 'bg-yellow-500/10 border border-yellow-500/20 text-amber-700 font-bold' :
                                   'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                                 }`}>
                                 {b.riskStatus}
@@ -4688,7 +4932,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       <tr>
                         <td colSpan={9} className="py-12 px-5 text-center text-slate-500">
                           <ShieldAlert className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-                          <h4 className="font-bold text-slate-400">No Outstanding Invoices Found</h4>
+                          <h4 className="font-bold text-slate-600">No Outstanding Invoices Found</h4>
                           <p className="text-xs text-slate-500 mt-1">Try clearing search filters or loading data.</p>
                         </td>
                       </tr>
@@ -4713,7 +4957,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   {
                     title: "Advances (Unbilled)",
                     count: auditObservations.filter(o => o.type === 'Advances').length,
-                    color: "text-cyan-400 border-cyan-500/20 bg-cyan-500/5",
+                    color: "text-blue-700 font-bold border-cyan-500/20 bg-cyan-500/5",
                     icon: Clock
                   },
                   {
@@ -4725,7 +4969,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   {
                     title: "Dormant (No Activity)",
                     count: auditObservations.filter(o => o.type === 'Dormant Balances').length,
-                    color: "text-red-400 border-red-500/20 bg-red-500/5",
+                    color: "text-rose-600 font-bold border-red-500/20 bg-red-500/5",
                     icon: ShieldAlert
                   },
                   {
@@ -4737,7 +4981,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 ].map((c, idx) => (
                   <div key={idx} className={`border rounded-2xl p-4 flex items-center justify-between shadow-lg ${c.color}`}>
                     <div>
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">{c.title}</span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-600 block mb-1">{c.title}</span>
                       <span className="text-2xl font-black">{c.count}</span>
                     </div>
                     <c.icon className="w-8 h-8 opacity-40" />
@@ -4746,14 +4990,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               </div>
 
               {/* Exception Scanner Dashboard List */}
-              <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 shadow-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+              <div className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
                   <div>
-                    <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                       <Layers className="w-5 h-5 text-indigo-400" />
                       Detailed Exceptions &amp; Audit Logs
                     </h3>
-                    <p className="text-xs text-slate-400 mt-1">Filter anomalies by type and risk severity</p>
+                    <p className="text-xs text-slate-600 mt-1">Filter anomalies by type and risk severity</p>
                   </div>
 
                   {/* Filters */}
@@ -4762,7 +5006,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     <select
                       value={obsTypeFilter}
                       onChange={(e) => setObsTypeFilter(e.target.value as any)}
-                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
                     >
                       <option value="All">All Types</option>
                       <option value="Advances">Unbilled Advances</option>
@@ -4775,7 +5019,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                     <select
                       value={obsSeverityFilter}
                       onChange={(e) => setObsSeverityFilter(e.target.value as any)}
-                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 outline-none focus:border-indigo-500/50 [color-scheme:dark]"
                     >
                       <option value="All">All Severities</option>
                       <option value="High">High Risk Only</option>
@@ -4798,21 +5042,21 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       return (
                         <div className="py-12 px-5 text-center text-slate-500">
                           <CheckCircle2 className="w-10 h-10 text-emerald-500/50 mx-auto mb-3 animate-pulse" />
-                          <h4 className="font-bold text-slate-400">Zero Audit Exceptions Detected</h4>
+                          <h4 className="font-bold text-slate-600">Zero Audit Exceptions Detected</h4>
                           <p className="text-xs text-slate-500 mt-1">All ledger items passed the selected filters.</p>
                         </div>
                       );
                     }
 
                     return filteredObs.map((obs, idx) => (
-                      <div key={obs.id} className="bg-slate-950/60 hover:bg-slate-950/90 border border-slate-800/80 hover:border-slate-700/80 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
+                      <div key={obs.id} className="bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200/80 hover:border-slate-200/80 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
                         <div className="space-y-1.5 max-w-3xl">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${obs.parentGroup === 'Sundry Debtors' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20' : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/20'
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${obs.parentGroup === 'Sundry Debtors' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20' : 'bg-cyan-500/15 text-blue-700 font-bold border border-cyan-500/20'
                               }`}>
                               {obs.parentGroup === 'Sundry Debtors' ? 'Debtor' : 'Creditor'}
                             </span>
-                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${obs.severity === 'High' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : (obs.severity === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20')
+                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${obs.severity === 'High' ? 'bg-red-500/10 text-rose-600 font-bold border border-red-500/20' : (obs.severity === 'Medium' ? 'bg-yellow-500/10 text-amber-700 font-bold border border-yellow-500/20' : 'bg-cyan-500/10 text-blue-700 font-bold border border-cyan-500/20')
                               }`}>
                               {obs.severity} Severity
                             </span>
@@ -4822,10 +5066,10 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             )}
                           </div>
 
-                          <h4 className="text-sm font-black text-slate-200">{obs.title} — <span className="text-white underline">{obs.partyName}</span></h4>
-                          <p className="text-xs text-slate-400 leading-relaxed">{obs.description}</p>
+                          <h4 className="text-sm font-black text-slate-800">{obs.title} — <span className="text-slate-900 underline">{obs.partyName}</span></h4>
+                          <p className="text-xs text-slate-600 leading-relaxed">{obs.description}</p>
 
-                          <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800/60 text-indigo-300 text-[11px] mt-1.5">
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-slate-200/60 text-indigo-300 text-[11px] mt-1.5">
                             <span className="font-black uppercase tracking-wider block text-[8px] mb-0.5 text-indigo-200">Recommended Auditor Checklist Action:</span>
                             {obs.recommendation}
                           </div>
@@ -4834,7 +5078,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                         {obs.impactAmt > 0 && (
                           <div className="text-left md:text-right flex-shrink-0">
                             <span className="text-[9px] uppercase font-bold text-slate-500 block">Financial Impact</span>
-                            <span className={`text-base font-black ${obs.severity === 'High' ? 'text-red-400' : 'text-slate-200'
+                            <span className={`text-base font-black ${obs.severity === 'High' ? 'text-rose-600 font-bold' : 'text-slate-800'
                               }`}>
                               ₹{obs.impactAmt.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </span>
@@ -4849,12 +5093,12 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               {/* Preexisting concentration & liquidity analyses */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Credit Concentration card */}
-                <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 space-y-4">
+                <div className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 space-y-4">
                   <div className="flex items-center gap-2 mb-2">
                     <ShieldAlert className="w-5 h-5 text-yellow-500" />
-                    <h3 className="text-base font-bold text-white">Exposure Concentration Risk</h3>
+                    <h3 className="text-base font-bold text-slate-900">Exposure Concentration Risk</h3>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
+                  <p className="text-xs text-slate-600 leading-relaxed">
                     High concentration means a large percentage of your receivables are tied to a single client, exposing the entity to systemic payment default risk.
                   </p>
                   {metrics.concentrationPct > 15 ? (
@@ -4875,30 +5119,30 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 </div>
 
                 {/* Ageing Trend Audit Observations */}
-                <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-6 space-y-4">
+                <div className="bg-white border border-slate-200/80 shadow-xs rounded-2xl p-6 space-y-4">
                   <div className="flex items-center gap-2 mb-2">
                     <TrendingUp className="w-5 h-5 text-indigo-400" />
-                    <h3 className="text-base font-bold text-white">Liquidity &amp; Collection Efficiency</h3>
+                    <h3 className="text-base font-bold text-slate-900">Liquidity &amp; Collection Efficiency</h3>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
+                  <p className="text-xs text-slate-600 leading-relaxed">
                     Analyzing average collection timelines allows auditing of the firm's working capital turnover efficiency.
                   </p>
                   <div className="space-y-3 font-sans">
-                    <div className="flex justify-between items-center p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-                      <span className="text-xs text-slate-400">Average DSO Cycle (Debtors)</span>
+                    <div className="flex justify-between items-center p-3 bg-slate-50/60 rounded-xl border border-slate-200">
+                      <span className="text-xs text-slate-600">Average DSO Cycle (Debtors)</span>
                       <span className={`text-xs font-bold ${metrics.avgDSO > 45 ? 'text-yellow-500' : 'text-emerald-400'}`}>
                         {metrics.avgDSO} Days
                       </span>
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-                      <span className="text-xs text-slate-400">Average DPO Cycle (Creditors)</span>
+                    <div className="flex justify-between items-center p-3 bg-slate-50/60 rounded-xl border border-slate-200">
+                      <span className="text-xs text-slate-600">Average DPO Cycle (Creditors)</span>
                       <span className="text-xs font-bold text-indigo-400">
                         {metrics.avgDPO} Days
                       </span>
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-                      <span className="text-xs text-slate-400">Working Capital Liquidity Gap</span>
-                      <span className={`text-xs font-bold ${metrics.avgDPO - metrics.avgDSO > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <div className="flex justify-between items-center p-3 bg-slate-50/60 rounded-xl border border-slate-200">
+                      <span className="text-xs text-slate-600">Working Capital Liquidity Gap</span>
+                      <span className={`text-xs font-bold ${metrics.avgDPO - metrics.avgDSO > 0 ? 'text-emerald-400' : 'text-rose-600 font-bold'}`}>
                         {metrics.avgDPO - metrics.avgDSO} Days (Net)
                       </span>
                     </div>
@@ -4919,40 +5163,40 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               className="space-y-6"
             >
               {/* Top Controls & Connect Bar */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setSelectedSubModule('menu')}
-                    className="p-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors"
+                    className="p-2 bg-slate-800 text-slate-700 hover:text-slate-900 rounded-xl border border-slate-200 transition-colors"
                   >
                     <ArrowLeft className="w-5 h-5" />
                   </button>
                   <div>
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                       <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
                       Creditor &amp; Debtor Finalisation Scrutiny
                     </h2>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-600">
                       12 CA Finalisation Rules (Modeled after Queries for Finalisation 1.xlsx)
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                  <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-400 font-medium">Tally Port:</span>
+                  <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
+                    <span className="text-slate-600 font-medium">Tally Port:</span>
                     <input
                       type="number"
                       value={tallyPort}
                       onChange={(e) => setTallyPort(Number(e.target.value))}
-                      className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-white font-mono text-center outline-none focus:border-indigo-500"
+                      className="w-16 bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-900 font-mono text-center outline-none focus:border-indigo-500"
                     />
                   </div>
 
                   <button
                     onClick={handleConnectAndRunFinalisationScrutiny}
                     disabled={isScrutinyLoading}
-                    className="h-10 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-900/30 disabled:opacity-50"
+                    className="h-10 px-4 bg-indigo-600 hover:bg-indigo-500 text-slate-900 font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-900/30 disabled:opacity-50"
                   >
                     <RefreshCw className={`w-4 h-4 ${isScrutinyLoading ? 'animate-spin' : ''}`} />
                     {isScrutinyLoading ? 'Scanning Tally Vouchers...' : 'Connect & Scan Live Tally'}
@@ -4961,7 +5205,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   <button
                     onClick={() => exportFinalisationScrutinyToExcel(scrutinyObservations, companyName)}
                     disabled={scrutinyObservations.length === 0}
-                    className="h-10 px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-50"
+                    className="h-10 px-4 bg-purple-600 hover:bg-purple-500 text-slate-900 font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-50"
                   >
                     <Download className="w-4 h-4" /> Export Working Paper
                   </button>
@@ -4970,9 +5214,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
 
               {/* Metric Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-center">
-                  <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Total Scrutiny Queries</span>
-                  <span className="text-2xl font-black text-white">{scrutinyObservations.length}</span>
+                <div className="bg-white/50 border border-slate-200 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-slate-600 block uppercase tracking-wider">Total Scrutiny Queries</span>
+                  <span className="text-2xl font-black text-slate-900">{scrutinyObservations.length}</span>
                 </div>
                 <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-4 text-center">
                   <span className="text-[10px] text-rose-400 block uppercase tracking-wider">High Risk Queries</span>
@@ -4982,9 +5226,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                   <span className="text-[10px] text-amber-400 block uppercase tracking-wider">Medium Risk Queries</span>
                   <span className="text-2xl font-black text-amber-400">{scrutinyObservations.filter(o => o.severity === 'Medium').length}</span>
                 </div>
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 text-center">
-                  <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Low Risk Queries</span>
-                  <span className="text-2xl font-black text-slate-300">{scrutinyObservations.filter(o => o.severity === 'Low').length}</span>
+                <div className="bg-slate-800/30 border border-slate-200/50 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-slate-600 block uppercase tracking-wider">Low Risk Queries</span>
+                  <span className="text-2xl font-black text-slate-700">{scrutinyObservations.filter(o => o.severity === 'Low').length}</span>
                 </div>
                 <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-center col-span-2 md:col-span-1">
                   <span className="text-[10px] text-emerald-400 block uppercase tracking-wider">Resolved Queries</span>
@@ -4993,7 +5237,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
               </div>
 
               {/* Scrutiny Controls Bar */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xl">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                   <div className="relative w-full md:w-72">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -5002,7 +5246,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       value={scrutinySearch}
                       onChange={(e) => setScrutinySearch(e.target.value)}
                       placeholder="Search party or query..."
-                      className="w-full h-9 bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 text-xs text-white outline-none focus:border-indigo-500"
+                      className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 text-xs text-slate-900 outline-none focus:border-indigo-500"
                     />
                   </div>
 
@@ -5011,7 +5255,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                       <button
                         key={cat}
                         onClick={() => setScrutinyCategoryFilter(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap border ${scrutinyCategoryFilter === cat ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'}`}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap border ${scrutinyCategoryFilter === cat ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-slate-900'}`}
                       >
                         {cat === 'All' ? 'All Categories' : cat}
                       </button>
@@ -5020,9 +5264,9 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                 </div>
 
                 {/* Finalisation Scrutiny Findings Table */}
-                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30">
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/30">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
                       <tr>
                         <th className="px-3.5 py-2.5 font-medium w-12 text-center">Sr.No</th>
                         <th className="px-3.5 py-2.5 font-medium">Ledger Name</th>
@@ -5039,7 +5283,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                           <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
                             <div className="flex flex-col items-center gap-3">
                               <FileSpreadsheet className="w-10 h-10 text-slate-600" />
-                              <span className="text-sm font-medium text-slate-300">No Finalisation Scrutiny Findings Loaded</span>
+                              <span className="text-sm font-medium text-slate-700">No Finalisation Scrutiny Findings Loaded</span>
                               <p className="text-xs text-slate-500 max-w-md">
                                 Click <strong className="text-indigo-400">"Connect &amp; Scan Live Tally"</strong> to execute the 12 CA Finalisation Rules against Tally vouchers.
                               </p>
@@ -5053,7 +5297,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             const getRiskStyle = (sev: string) => {
                               if (sev === 'High') return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
                               if (sev === 'Medium') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-                              return 'bg-slate-500/10 text-slate-400 border-slate-700';
+                              return 'bg-slate-500/10 text-slate-600 border-slate-200';
                             };
 
                             const toggleStatus = (id: string) => {
@@ -5067,16 +5311,16 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
                             };
 
                             return (
-                              <tr key={obs.id} className="hover:bg-slate-800/30 transition-colors">
+                              <tr key={obs.id} className="hover:bg-slate-100/30 transition-colors">
                                 <td className="px-3.5 py-3 text-center text-slate-500 font-mono">{idx + 1}</td>
-                                <td className="px-3.5 py-3 text-white font-bold max-w-[180px] truncate" title={obs.partyName}>{obs.partyName}</td>
+                                <td className="px-3.5 py-3 text-slate-900 font-bold max-w-[180px] truncate" title={obs.partyName}>{obs.partyName}</td>
                                 <td className="px-3.5 py-3">
                                   <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-bold text-[10px]">
                                     {obs.category}
                                   </span>
                                 </td>
-                                <td className="px-3.5 py-3 text-slate-300 max-w-[280px] leading-relaxed">{obs.queryDescription}</td>
-                                <td className="px-3.5 py-3 text-slate-400 max-w-[280px] leading-relaxed">{obs.suggestedAction}</td>
+                                <td className="px-3.5 py-3 text-slate-700 max-w-[280px] leading-relaxed">{obs.queryDescription}</td>
+                                <td className="px-3.5 py-3 text-slate-600 max-w-[280px] leading-relaxed">{obs.suggestedAction}</td>
                                 <td className="px-3.5 py-3 text-center">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getRiskStyle(obs.severity)}`}>
                                     {obs.severity}

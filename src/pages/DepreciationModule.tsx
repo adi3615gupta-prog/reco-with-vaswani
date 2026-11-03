@@ -3,7 +3,7 @@ import {
   ArrowLeft, Download, Server, Wifi, WifiOff, RefreshCw, 
   Calculator, FileSpreadsheet, Plus, Trash2, Building2,
   Calendar, Layers, CheckCircle2, TrendingUp, AlertTriangle,
-  CloudDownload
+  CloudDownload, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -196,6 +196,80 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
     { blockName: "Goodwill 0%", rate: 0.00, openingWdv: 0, deletions: 0 }
   ]);
   const [assetBlockMapping, setAssetBlockMapping] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+
+  // Auto-load existing depreciation schedule from SQLite
+  useEffect(() => {
+    const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+    const fy = `${fyStart.split('-')[0]}-${fyEnd.split('-')[0].slice(-2)}`;
+    if (clientGstin) {
+      fetch(`/api/audit-storage/depreciation/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.data && data.data.assets_data) {
+            const ad = data.data.assets_data;
+            if (ad.companyName) setCompanyName(ad.companyName);
+            if (ad.entityType) setEntityType(ad.entityType);
+            if (ad.compAssets && Array.isArray(ad.compAssets)) setCompAssets(ad.compAssets);
+            if (ad.tallyAssets && Array.isArray(ad.tallyAssets)) setTallyAssets(ad.tallyAssets);
+            if (ad.itBlocks && Array.isArray(ad.itBlocks)) setItBlocks(ad.itBlocks);
+            if (ad.assetBlockMapping) setAssetBlockMapping(ad.assetBlockMapping);
+            setLastSaved(new Date(data.data.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+          }
+        })
+        .catch(err => {
+          console.warn('Depreciation auto-load deferred:', err);
+        });
+    }
+  }, [fyStart, fyEnd]);
+
+  const handleSaveDepreciationSchedule = async () => {
+    if (compAssets.length === 0 && itBlocks.length === 0) {
+      toast.error('No depreciation schedule data to save. Fetch from Tally or load template first.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
+      const fy = `${fyStart.split('-')[0]}-${fyEnd.split('-')[0].slice(-2)}`;
+      const res = await fetch('/api/audit-storage/depreciation/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_gstin: clientGstin,
+          fy,
+          assets_data: {
+            companyName,
+            entityType,
+            compAssets,
+            tallyAssets,
+            itBlocks,
+            assetBlockMapping,
+            fyStart,
+            fyEnd
+          },
+          dta_dtl: {
+            totalCompDep,
+            totalItDep,
+            dtaDtl,
+            dtaDtlType
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLastSaved(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+        toast.success('Dual Depreciation Schedule saved to central database!');
+      } else {
+        toast.error(data.error || 'Failed to save depreciation schedule');
+      }
+    } catch (err: any) {
+      toast.error('Local database connection error: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // ─── Tally Connection ──────────────────────────────────────────────
   const connectToTally = async () => {
@@ -620,7 +694,22 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
               </p>
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
+            {lastSaved && (
+              <span className="text-[11px] font-mono font-bold bg-cyan-950/60 text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-500/30 flex items-center gap-1.5 shadow-xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+                Saved: {lastSaved}
+              </span>
+            )}
+            <button
+              onClick={handleSaveDepreciationSchedule}
+              disabled={isSaving}
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-cyan-500/10 disabled:opacity-50 transition-all"
+              title="Save Depreciation Schedule to central SQLite database"
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-spin' : ''}`} />
+              {isSaving ? 'Saving...' : 'Save Schedule'}
+            </button>
             {entityType === 'company' && (
               <>
                 <button onClick={triggerExportComprehensive} disabled={compAssets.length === 0} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-cyan-500/10 disabled:opacity-50 transition-all" title="Export Companies Act, Income Tax Act, and Deferred Tax Variance in one single sheet">
