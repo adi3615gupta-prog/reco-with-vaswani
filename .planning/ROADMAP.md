@@ -33,6 +33,7 @@ Vaswani Return Enterprise is evolving its reconciliation and compliance suite. H
 - [x] **Phase 27: Executive Enterprise Light Theme Harmonization for Suites 03, 05, 06, 07 & GST Notices Suite** - Modernize and harmonize all remaining major suites (Suite 03 Tally Direct, Suite 05 Statutory Audit & Clause 44, Suite 06 Income Tax Sandbox, Suite 07 Bank CMA, and GST Notices & Orders Autonomous Suite) into the clean, high-contrast, executive white theme established in Suite 01, Suite 02, Suite 04, and Suite 08 — eliminating dark obsidian cards, fixing unreadable grey texts, ensuring responsive non-sticky layouts, and validating zero regressions. (completed 2026-11-01)
 - [x] **Phase 28: System Hardening, Security Safeguards & Comprehensive Bug Resolution** - Fix unauthenticated cleartext portal credentials exposure, restrict reflected CORS, eliminate Explorer shell injection, repair TDS engine duplicate rows & threshold calculation, resolve concurrent Playwright browser collisions, enable SQLite WAL mode, fix tax head classification, preserve GSTR-3B cash credits, and remove dead code.
 - [x] **Phase 29: Landing Page Layout Transformation & Executive White Theme Modernization with UI/UX Pro Max** - Elevate landing page into a fully advanced Executive White Gateway with frosted sticky navigation, interactive financial cockpit, comprehensive 8-Suite showcase with category filters, zero-merge architectural deep-dive, and 100% WCAG 2.2 accessibility. (completed 2026-11-01)
+- [x] **Phase 30: Monthly Audit Multi-User Maker-Checker Review & Approval Workflow (Senior/Junior Firebase Collaboration)** - Multi-location remote Maker-Checker review pipeline: cloud Senior CA Partner selection, real-time Firebase broadcast, Senior Review Requests Hub (Pending Inbox) with 1-click 'Accept & Review', structured section-wise revision feedback drawer with auto-unlocking, and 1-click formal digital sign-off and approval. (completed 2026-11-02)
 
 ## Phase Details
 
@@ -378,6 +379,24 @@ pm run build) pass with zero errors.
 - [x] 29-02: Comprehensive 8-Suite Showcase, Interactive Module Navigator & Filter Cockpit (completed 2026-11-01)
 - [x] 29-03: Architectural Defense Deep-Dive, Executive Feedback Engine & Accessibility Polish (completed 2026-11-01)
 
+### Phase 32: Codebase Audit Remediation: Syntax, Database Security, SSRF Prevention & Lean Optimization
+
+**Goal:** Resolve all 15 findings surfaced during the senior codebase quality and security audit: fix the asynchronous syntax error in monthly audit release routes, ensure transactional rollback safety on bulk GSTR-2B invoice ingestion, prevent client credential leakage by untracking production database and user files from Git and installer extraResources, eliminate unauthenticated database reset and localhost SSRF vectors, implement route-level lazy loading to break down the monolithic 7.1 MB bundle, eliminate circular bundle references, and clean up duplicate libraries and lockfiles.
+
+**Depends on:** Phase 31  
+**Requirements:** BUG-SYNTAX-01, BUG-ROLLBACK-01, BUG-GSTR1-PERIOD-01, BUG-EMAIL-XSS-01, SEC-DB-PRIVACY-01, SEC-SSRF-01, SEC-TDS-RESET-01, SEC-FOLDER-AUTH-01, PERF-BUNDLE-01, PERF-CIRCULAR-01, LEAN-CLEANUP-01, PERF-SCAN-01  
+**Success Criteria** (what must be TRUE):
+  1. `monthly_audit_routes.js` declares `async (err, audit) =>` before `await resolveMonthlyAuditFolder(...)`, and `src/test/monthlyAuditBackend.test.ts` passes with zero syntax or parse errors.
+  2. `bulkSaveGstr2bInvoices` in `gstr2b/db.js` implements statement error tracking and triggers `db.run('ROLLBACK')` on failures, preventing silent loss of previously existing monthly invoices.
+  3. `network_data.db` and `network_users.json` are untracked from Git and excluded from installer `extraResources`.
+  4. Destructive endpoint `/api/tds/reset`, SSRF proxy `/api/tally-proxy`, and folder launcher `/api/returns/open-folder` require valid JWT authentication with role and parameter boundaries.
+  5. Heavy routes in `src/App.tsx` are code-split via `React.lazy()`, circular vendor chunk warnings in `vite.config.ts` are resolved, redundant packages (`react-hot-toast`, `framer-motion`) and Bun lockfiles are deleted, and `npm test` and `npm run build` succeed with 100% green output.
+
+**Plans**: 3/3 plans complete
+- [x] 32-01: Critical Bug Fixes, Syntax Remediation, Transaction Rollback & Email HTML Guard (completed 2026-11-03)
+- [x] 32-02: Database Privacy & Credential Security, Reset Endpoint Auth & SSRF Prevention (completed 2026-11-03)
+- [x] 32-03: Route-Level Code Splitting, Circular Chunks, Lean Cleanup & Test Verification (completed 2026-11-03)
+
 ---
 *Roadmap defined: 2026-10-22*
 *Last updated: 2026-10-24 after Phase 15 Returns Tracking addition*
@@ -599,3 +618,40 @@ Ensure that any client added, updated, or imported on one PC is immediately avai
 - [x] 27-02: Suite 05 (Statutory Audit & Tax Audit Clause 44) Executive Light Theme Modernization (completed 2026-11-01)
 - [x] 27-03: Suite 06 (Income Tax Sandbox) & Suite 07 (Bank CMA Appraisal & Projections) Modernization (completed 2026-11-01)
 - [x] 27-04: GST Notices & Orders Autonomous Suite (Dashboard, AI Reply Modal & Pipeline) Modernization (completed 2026-11-01)
+
+### Phase 30: Monthly Audit Multi-User Maker-Checker Review & Approval Workflow (Senior/Junior Firebase Collaboration)
+
+**Goal**: Deliver a comprehensive multi-user Maker-Checker review, scrutiny, and sign-off pipeline for Suite 08 (Monthly Audit Format & Working Paper Verification Suite), powered by Firebase Firestore real-time synchronization between Junior Article Assistants and Senior CA Partners.
+
+**Depends on**: Phase 26, Phase 27, Phase 28  
+**Requirements**: AUDIT-MC-01, AUDIT-MC-02, AUDIT-MC-03, AUDIT-MC-04, AUDIT-MC-05  
+**Success Criteria** (what must be TRUE):
+  1. Junior selects a designated Senior CA Partner/Manager from cloud-synced `network_users` upon submitting an audit for review.
+  2. Submitting an audit instantly broadcasts metadata to Firebase Firestore (`monthly_audits`), sets status to `SUBMITTED_FOR_REVIEW`, and locks working papers from junior modifications.
+  3. Senior CA Partners receive real-time review alerts via `subscribeToSeniorPendingQueue` and access a dedicated "Senior Review Requests Hub" (Inbox drawer) with 1-click "Accept & Review" navigation.
+  4. If correct, Senior clicks "Approve & Sign-Off", stamping digital sign-off into SQLite, Firestore, and exported Zero-Merge Excel & PDF reports.
+  5. If changes are required, Senior enters structured, section-specific revision comments ("Request Revision"), automatically alerting the Junior, unlocking working papers, and tracking point-by-point rectifications before resubmission.
+
+**Plans**: 3/3 plans complete
+- [x] 30-01: Senior Review Requests Hub (Pending Queue Inbox), Auto Role Context & Client Switcher (completed 2026-11-02)
+- [x] 30-02: Structured Senior Revision Feedback Drawer & Junior Resolution Checklist (completed 2026-11-02)
+- [x] 30-03: Automated Multi-User Verification Suite, Scrutiny Tests & Zero-Merge Excel/PDF Sign-Off Audit (completed 2026-11-02)
+
+
+### Phase 31: Enterprise Unified Database Persistence Suite (Suite 05 Tax Audit, Suite 06 Bank CMA & Schedule III, Suite 02 GST Reco Working Papers)
+
+**Goal:** Deliver enterprise SQLite database persistence across all modules that currently lack permanent backend storage (Form 3CD Clause 44, Dual Depreciation Schedules, SA 530 Monetary Unit Sampling, Bank CMA Projections, Schedule III Financial Statements, and GST PR vs 2B Reconciliation History). All working papers will be centralized into the single unified `network_data.db` SQLite database with explicit user save actions, automatic client/FY hydration, and saved history review drawers.
+
+**Depends on:** Phase 27, Phase 28, Phase 30  
+**Requirements:** DB-SCHEMA-01, DB-SCHEMA-02, DB-SCHEMA-03, DB-UI-SUITE05, DB-UI-SUITE06, DB-UI-SUITE02, DB-TESTS-01  
+**Success Criteria** (what must be TRUE):
+  1. Dedicated Express backend router `audit_storage_routes.js` connects to unified `network_data.db` with WAL mode and manages 6 master tables (`audit_clause44_records`, `audit_depreciation_assets`, `audit_sa530_samples`, `cma_appraisals`, `financial_statements_workspaces`, `gst_reconciliation_runs`).
+  2. Suite 05 Tax Audit Clause 44, Depreciation Module, and SA 530 Sampling components render explicit 'Save Working Paper' action buttons and auto-load saved state upon client/FY switch with timestamp badges.
+  3. Suite 06 Bank CMA Appraisal saves MPBF projections and financial ratios to SQLite, and Schedule III Financial Statements migrates from 5MB `localStorage` to SQLite backend persistence with resilient offline fallback.
+  4. Suite 02 GST Reconciliation Engine provides an explicit 'Save Reco Run' action and a 'Saved Reco History' drawer to reload previous monthly matching runs and vendor disputes without re-uploading files.
+  5. Vitest automated test suite `src/test/unifiedDatabaseSuite.test.ts` verifies all CRUD endpoints, and `npm run build` compiles with zero errors.
+
+**Plans**: 0/3 plans complete
+- [ ] 31-01: Unified SQLite Backend Schema & Express Storage API (audit_storage_routes.js & server.js)
+- [ ] 31-02: Suite 05 (Statutory & Tax Audit) & Suite 06 (Bank CMA / Schedule III) Explicit Save & Auto-Load Integration
+- [ ] 31-03: Suite 02 (Core GST Reco History & Vendor Disputes) & Automated Vitest Verification Suite

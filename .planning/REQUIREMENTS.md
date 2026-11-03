@@ -264,3 +264,13 @@
 - [x] **LAND-04**: Architectural Defense Deep Dive — Visual and structural presentation of core architectural pillars: Zero-Merge Excel Architecture (`ws['!merges'] = []`), Local-First Air-Gapped SQLite privacy, and Mathematical Reconciliation Invariants.
 - [x] **LAND-05**: Executive Feedback Modal & Testimonial Grid — Modernized executive feedback submission dialog with star ratings and toast feedback, plus authentic CA practitioner endorsements and firm credentials.
 - [x] **LAND-06**: UI/UX Pro Max Accessibility & Responsiveness — Full adherence to WCAG 2.2 AA contrast standards ($\ge$ 4.5:1), visible keyboard focus rings, `prefers-reduced-motion` fallbacks, and comprehensive Vitest unit tests in `src/test/landingPage.test.tsx`.
+
+### Enterprise Unified Database Persistence Suite (Phase 31)
+
+- [ ] **DB-SCHEMA-01**: Centralized SQLite Schema — Initialize 6 master persistence tables (`audit_clause44_records`, `audit_depreciation_assets`, `audit_sa530_samples`, `cma_appraisals`, `financial_statements_workspaces`, `gst_reconciliation_runs`) in `network_data.db` with WAL mode and compound unique constraints.
+- [ ] **DB-SCHEMA-02**: Parameterized REST Endpoints with UPSERT Support — Build sanitized GET/POST handlers in `audit_storage_routes.js` with `INSERT ... ON CONFLICT DO UPDATE SET` logic to cleanly overwrite existing working papers without constraint errors.
+- [ ] **DB-SCHEMA-03**: Central Server Integration — Mount `setupAuditStorageRoutes(app, db, userDataPath)` in `server.js` and `server.cjs` under `/api/audit-storage`, reusing the central database handle and respecting Electron `userDataPath`.
+- [ ] **DB-UI-SUITE05**: Suite 05 Tax Audit & Depreciation UI Persistence — Add explicit "Save Working Paper" buttons, auto-load on client/FY change, and last-saved timestamp badges in `TaxAuditClause44.tsx`, `DepreciationModule.tsx`, and `AuditModule.tsx`.
+- [ ] **DB-UI-SUITE06**: Suite 06 Bank CMA & Schedule III Financials Persistence — Save MPBF projections and financial ratios to SQLite in `BankCmaAppraisal.tsx`, and synchronize `FinancialStatements.tsx` / `finStatements.storage.ts` to backend SQLite with localStorage offline fallback.
+- [ ] **DB-UI-SUITE02**: Suite 02 GST Reco Run History & Vendor Disputes — Add "Save Reco Run" action and "Saved Reco History" drawer in `Reconciliation.tsx` to persist and reload past PR vs 2B runs and vendor disputes without re-uploading files.
+- [ ] **DB-TESTS-01**: Automated Persistence Test Suite — Comprehensive Vitest test suite `src/test/unifiedDatabaseSuite.test.ts` exercising all CRUD endpoints, UPSERT behavior, and data retrieval using an isolated SQLite database.
