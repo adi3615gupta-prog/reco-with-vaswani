@@ -163,33 +163,37 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
   return (
     <div className="relative min-h-screen py-12 px-4 overflow-hidden">
       <div className="max-w-6xl mx-auto relative">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white">
-            GST Data <span className="text-blue-400">Consolidator</span>
+        <div className="text-center mb-10 max-w-xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-xs font-bold uppercase tracking-wider mb-4 shadow-2xs">
+            <Database className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Multi-Branch Consolidator · Suite 02</span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            GST Data Consolidator
           </h1>
-          <p className="text-slate-400 mt-4 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
-            Enter company details, upload your Tally exports, map the tax ledger columns, and download a clean consolidated GST report.
+          <p className="text-sm font-medium text-slate-600 mt-2">
+            Merge multi-branch purchase or sales ledgers exported from Tally/ERP into a unified, consolidated register.
           </p>
         </div>
 
         {/* Collapsible Quick Guide */}
-        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg max-w-4xl mx-auto mb-8">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 text-slate-700 shadow-xs max-w-4xl mx-auto mb-8">
           <button 
             onClick={() => setShowQuickGuide(!showQuickGuide)} 
-            className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+            className="flex items-center justify-between w-full text-slate-800 hover:text-slate-900 transition-colors"
           >
-            <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
-              <Lightbulb className="w-4 h-4 text-yellow-400" />
+            <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-slate-800">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
               Quick Consolidator User Guide
             </span>
-            <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
+            <span className="text-xs text-indigo-600 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
           </button>
           {showQuickGuide && (
-            <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
               <p><strong>Overview:</strong> Merge multi-branch purchase or sales ledgers exported from Tally/ERP into a unified, consolidated sheet.</p>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                  <p className="font-bold text-slate-800 mb-1.5">Step-by-step Steps:</p>
                   <ol className="space-y-1.5 pl-4 list-decimal">
                     <li><strong>Company Info:</strong> Enter the target company name, GSTIN (15 characters), and date ranges.</li>
                     <li><strong>Upload Ledgers:</strong> Drag and drop your multiple ledger spreadsheets.</li>
@@ -198,7 +202,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
                   </ol>
                 </div>
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">Inputs & Outputs:</p>
+                  <p className="font-bold text-slate-800 mb-1.5">Inputs & Outputs:</p>
                   <p className="mb-2"><strong>Required Inputs:</strong> Organization details, and at least two Excel files (purchase/sales registers) containing supplier details and transaction amounts.</p>
                   <p><strong>Outputs Produced:</strong> Unified consolidated registers and raw SQLite tables saved to the server database.</p>
                 </div>
@@ -217,11 +221,11 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
               <div className="w-full max-w-4xl mx-auto animate-slow-reveal" style={{ animationDelay: '0.2s' }}>
                 <div className="flex items-center justify-center gap-3 mb-8 px-2">
                   <Database className="w-5 h-5 text-purple-500" />
-                  <h3 className="text-lg font-bold text-white tracking-tight">Saved Consolidations</h3>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">Saved Consolidations</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2">
                   {networkConsolidations.map(c => (
-                    <div key={c.id} onClick={() => handleLoadWorkspace(c)} className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl shadow-lg p-5 cursor-pointer hover:border-blue-500/50 hover:bg-slate-800/50 transition-all group relative overflow-hidden">
+                    <div key={c.id} onClick={() => handleLoadWorkspace(c)} className="bg-white border border-slate-200/80 rounded-2xl shadow-xs p-5 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all group relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={async (e) => {
                           e.stopPropagation();
@@ -241,7 +245,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
                       </div>
                       <div className="flex items-center gap-3 mb-3">
                         <Building2 className="w-5 h-5 text-purple-400" />
-                        <h4 className="font-semibold text-slate-100 truncate pr-8">{c.company_name}</h4>
+                        <h4 className="font-bold text-slate-900 truncate pr-8">{c.company_name}</h4>
                       </div>
                       <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-4">
                         Consolidated Workspace
@@ -265,7 +269,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
               <span className="font-semibold text-blue-400">
                 File {fileIndex + 1} of {parsedFiles.length}:
               </span>{" "}
-              <span className="text-white">{parsedFiles[fileIndex].fileName}</span>
+              <span className="text-slate-900 font-bold">{parsedFiles[fileIndex].fileName}</span>
             </div>
             <ColumnMapper
               key={fileIndex}

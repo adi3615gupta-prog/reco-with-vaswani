@@ -169,4 +169,54 @@ describe('GST Purchase Reconciliation Engine - Advanced Matching', () => {
     expect(nanekarPR?.remark).toContain('Note: Party Net Balance is Nil');
     expect(nanekar2B?.remark).toContain('Note: Party Net Balance is Nil');
   });
+
+  it('should handle Tax Type Error without ReferenceError on extraRemark', () => {
+    const prRecords: InvoiceRecord[] = [
+      {
+        supplierName: 'ABC ENTERPRISES',
+        gstin: '27AAAAA0000A1Z5',
+        invoiceNo: 'INV-1',
+        invoiceDate: '2024-05-10',
+        igst: 1800,
+        cgst: 0,
+        sgst: 0,
+        source: 'PR'
+      }
+    ];
+
+    const twoBRecords: InvoiceRecord[] = [
+      {
+        supplierName: 'ABC ENTERPRISES',
+        gstin: '27AAAAA0000A1Z5',
+        invoiceNo: 'INV-1',
+        invoiceDate: '2024-05-10',
+        igst: 0,
+        cgst: 900,
+        sgst: 900,
+        source: '2B'
+      }
+    ];
+
+    const results = reconcile(prRecords, twoBRecords, 'input');
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('Tax Type Error');
+  });
+
+  it('should safely provide terms across all mode variants without throwing TypeError', async () => {
+    const { getTerms, TERMS, normalizeMode } = await import('../lib/mode');
+    
+    expect(getTerms('input').primaryBookLabel).toBe('Purchase Register');
+    expect(getTerms('output').primaryBookLabel).toBe('Sales Register');
+    expect(getTerms('2b-to-pr').primaryBookLabel).toBe('Purchase Register');
+    expect(getTerms(null).primaryBookLabel).toBe('Purchase Register');
+    expect(getTerms(undefined).primaryBookLabel).toBe('Purchase Register');
+    expect(getTerms('unknown' as any).primaryBookLabel).toBe('Purchase Register');
+
+    expect(TERMS['2b-to-pr']).toBeDefined();
+    expect(TERMS['2b-to-pr'].primaryBookLabel).toBe('Purchase Register');
+
+    expect(normalizeMode('2b-to-pr')).toBe('input');
+    expect(normalizeMode('output')).toBe('output');
+    expect(normalizeMode(null)).toBe('input');
+  });
 });

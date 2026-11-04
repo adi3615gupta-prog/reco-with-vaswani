@@ -558,7 +558,7 @@ export default function CmaReport({ onBack }: Props) {
       {/* Navigation Header */}
       <button
         onClick={onBack}
-        className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] mb-4 transition-colors"
+        className="text-slate-600 hover:text-slate-900 flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] mb-4 transition-colors"
       >
         <ArrowLeft className="w-3.5 h-3.5" /> Back to Hub
       </button>
@@ -567,10 +567,10 @@ export default function CmaReport({ onBack }: Props) {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <FileSpreadsheet className="w-5 h-5 text-white" />
+            <FileSpreadsheet className="w-5 h-5 text-slate-900" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
               CMA Data &amp; Project Report
               <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold tracking-widest uppercase">
                 Automated
@@ -585,7 +585,7 @@ export default function CmaReport({ onBack }: Props) {
         {wizardType && (
           <button
             onClick={resetForm}
-            className="px-3 py-1.5 rounded-lg bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800 text-slate-400 hover:text-white text-[9px] font-bold uppercase tracking-wider transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[9px] uppercase tracking-wider transition-colors shadow-xs"
           >
             <RotateCcw className="w-3.5 h-3.5 inline mr-1" /> Change Project Type
           </button>
@@ -596,7 +596,7 @@ export default function CmaReport({ onBack }: Props) {
       {!wizardType && (
         <div className="max-w-4xl mx-auto py-12 space-y-8 animate-in fade-in duration-500">
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-black text-white tracking-tight">Select Report Profile</h2>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Select Report Profile</h2>
             <p className="text-xs text-slate-500 max-w-md mx-auto">Choose whether to upload historical statements for an existing business or compile a new Greenfield project.</p>
           </div>
           <div className="grid md:grid-cols-2 gap-6">
@@ -608,11 +608,11 @@ export default function CmaReport({ onBack }: Props) {
                 <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
                   <FileText className="w-6 h-6" />
                 </div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-900/40 px-2 py-0.5 rounded border border-white/5">Existing Business</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-white/40 px-2 py-0.5 rounded border border-white/5">Existing Business</span>
               </div>
               <div className="mt-8">
-                <h3 className="text-lg font-bold text-white group-hover:text-cyan-400 transition-colors">Existing / Revised Projects</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">Requires historical Statement uploads (ITR-5/6 JSON or Tally Ledgers) to compile comparative base years, forecast provisional periods, and run bank appraisals.</p>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-cyan-400 transition-colors">Existing / Revised Projects</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">Requires historical Statement uploads (ITR-5/6 JSON or Tally Ledgers) to compile comparative base years, forecast provisional periods, and run bank appraisals.</p>
               </div>
             </div>
 
@@ -624,11 +624,11 @@ export default function CmaReport({ onBack }: Props) {
                 <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
                   <Building2 className="w-6 h-6" />
                 </div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-900/40 px-2 py-0.5 rounded border border-white/5">Greenfield</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-white/40 px-2 py-0.5 rounded border border-white/5">Greenfield</span>
               </div>
               <div className="mt-8">
-                <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">New Greenfield Projects</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">No historical data required. Designed for fresh business setups, project cost estimates, term loan repayment sizing, and 5-year projections.</p>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-400 transition-colors">New Greenfield Projects</h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">No historical data required. Designed for fresh business setups, project cost estimates, term loan repayment sizing, and 5-year projections.</p>
               </div>
             </div>
           </div>
@@ -639,18 +639,18 @@ export default function CmaReport({ onBack }: Props) {
       {wizardType === 'existing' && (
         <div className="space-y-6">
           {/* Stepper bar */}
-          <div className="flex justify-between items-center bg-slate-900/30 border border-slate-800/80 rounded-2xl p-4 max-w-4xl mx-auto">
+          <div className="flex justify-between items-center bg-white/30 border border-slate-200/80 rounded-2xl p-4 max-w-4xl mx-auto">
             {['Upload ITR', 'Validate', 'Provisional', 'Forecasting', 'Project Cost', 'Report'].map((label, i) => {
               const active = step === i + 1;
               const completed = step > i + 1;
               return (
                 <div key={label} className="flex items-center gap-2">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
-                    active ? 'bg-cyan-500 text-slate-950 font-bold' : completed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700/60'
+                    active ? 'bg-cyan-500 text-slate-950 font-bold' : completed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-100 text-slate-600 border border-slate-200 border border-slate-200/60'
                   }`}>
                     {i + 1}
                   </div>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider hidden md:inline ${active ? 'text-white' : 'text-slate-500'}`}>{label}</span>
+                  <span className={`text-[9px] font-bold uppercase tracking-wider hidden md:inline ${active ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span>
                   {i < 5 && <div className="w-8 h-px bg-slate-800 hidden md:block" />}
                 </div>
               );
@@ -659,13 +659,13 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 1: INGESTION SOURCE SELECTOR & FORMS */}
           {step === 1 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               {/* Tabs header */}
-              <div className="flex border-b border-slate-800 pb-2 gap-4">
+              <div className="flex border-b border-slate-200 pb-2 gap-4">
                 <button
                   onClick={() => setIngestChannel('ITR')}
                   className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                    ingestChannel === 'ITR' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'
+                    ingestChannel === 'ITR' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   ITR JSON Upload
@@ -673,7 +673,7 @@ export default function CmaReport({ onBack }: Props) {
                 <button
                   onClick={() => setIngestChannel('TALLY')}
                   className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                    ingestChannel === 'TALLY' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'
+                    ingestChannel === 'TALLY' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   Tally Prime Sync
@@ -681,7 +681,7 @@ export default function CmaReport({ onBack }: Props) {
                 <button
                   onClick={() => setIngestChannel('MANUAL')}
                   className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                    ingestChannel === 'MANUAL' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'
+                    ingestChannel === 'MANUAL' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   Manual Entry
@@ -692,14 +692,14 @@ export default function CmaReport({ onBack }: Props) {
               {ingestChannel === 'ITR' && (
                 <div className="space-y-6 animate-in fade-in duration-200">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                       <FileText className="w-4 h-4 text-cyan-400" /> Upload ITR JSON Files
                     </h3>
-                    <p className="text-xs text-slate-400">Upload ITR-3, ITR-5, or ITR-6 JSON files from the Income Tax Portal for the last 2 financial years. All figures will be parsed and loaded in actual Rupees (₹).</p>
+                    <p className="text-xs text-slate-600">Upload ITR-3, ITR-5, or ITR-6 JSON files from the Income Tax Portal for the last 2 financial years. All figures will be parsed and loaded in actual Rupees (₹).</p>
                   </div>
                   <div className="grid md:grid-cols-2 gap-6">
                     {/* FY1 upload */}
-                    <div className="border-2 border-dashed border-slate-800 hover:border-cyan-500/40 rounded-2xl p-8 text-center cursor-pointer transition-colors relative">
+                    <div className="border-2 border-dashed border-slate-200 hover:border-cyan-500/40 rounded-2xl p-8 text-center cursor-pointer transition-colors relative">
                       <input 
                         type="file" 
                         accept=".json" 
@@ -707,11 +707,11 @@ export default function CmaReport({ onBack }: Props) {
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       />
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-800 text-slate-400 rounded-xl flex items-center justify-center">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl flex items-center justify-center">
                           <Upload className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-slate-300">Financial Year 1 (Earlier Year)</p>
+                          <p className="text-xs font-bold text-slate-700">Financial Year 1 (Earlier Year)</p>
                           <p className="text-[10px] text-slate-500 mt-1">Drop ITR JSON file here, or click to browse</p>
                         </div>
                         {fy1File && (
@@ -721,7 +721,7 @@ export default function CmaReport({ onBack }: Props) {
                     </div>
 
                     {/* FY2 upload */}
-                    <div className="border-2 border-dashed border-slate-800 hover:border-cyan-500/40 rounded-2xl p-8 text-center cursor-pointer transition-colors relative">
+                    <div className="border-2 border-dashed border-slate-200 hover:border-cyan-500/40 rounded-2xl p-8 text-center cursor-pointer transition-colors relative">
                       <input 
                         type="file" 
                         accept=".json" 
@@ -729,11 +729,11 @@ export default function CmaReport({ onBack }: Props) {
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       />
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-800 text-slate-400 rounded-xl flex items-center justify-center">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl flex items-center justify-center">
                           <Upload className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-slate-300">Financial Year 2 (Later Year)</p>
+                          <p className="text-xs font-bold text-slate-700">Financial Year 2 (Later Year)</p>
                           <p className="text-[10px] text-slate-500 mt-1">Drop ITR JSON file here, or click to browse</p>
                         </div>
                         {fy2File && (
@@ -743,10 +743,10 @@ export default function CmaReport({ onBack }: Props) {
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-800 flex justify-end">
+                  <div className="pt-4 border-t border-slate-200 flex justify-end">
                     <button
                       onClick={() => setStep(2)}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
                     >
                       Proceed to Validate <ArrowRight className="w-3.5 h-3.5" />
                     </button>
@@ -762,19 +762,19 @@ export default function CmaReport({ onBack }: Props) {
                       <Server className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white">Direct Sync from TallyPrime</h3>
+                      <h3 className="text-sm font-bold text-slate-900">Direct Sync from TallyPrime</h3>
                       <p className="text-[10px] text-slate-500">Ensure TallyPrime is running locally with the active client company open.</p>
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-6 items-end bg-slate-950/40 p-6 rounded-xl border border-slate-800/80">
+                  <div className="grid md:grid-cols-2 gap-6 items-end bg-slate-50/40 p-6 rounded-xl border border-slate-200/80">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Tally XML Port</label>
                       <input
                         type="number"
                         value={tallyPort}
                         onChange={(e) => setTallyPort(Number(e.target.value) || 9000)}
-                        className="w-full h-10 bg-slate-900 border border-slate-700/60 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-10 bg-white border border-slate-200/60 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     
@@ -788,18 +788,18 @@ export default function CmaReport({ onBack }: Props) {
                           <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1.5 text-xs text-slate-500 font-bold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
+                        <span className="flex items-center gap-1.5 text-xs text-slate-500 font-bold bg-white border border-slate-200 px-3 py-1.5 rounded-lg">
                           <WifiOff className="w-3.5 h-3.5" /> Disconnected
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
+                  <div className="pt-4 border-t border-slate-200 flex justify-end gap-3">
                     <button
                       onClick={handleTallySync}
                       disabled={isTallySyncing}
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-slate-900 text-[10px] font-black uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
                     >
                       {isTallySyncing ? (
                         <>
@@ -818,18 +818,18 @@ export default function CmaReport({ onBack }: Props) {
               {/* Tab Content 3: Manual Entry */}
               {ingestChannel === 'MANUAL' && (
                 <div className="space-y-6 animate-in fade-in duration-200 text-center py-6">
-                  <div className="w-16 h-16 bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <div className="w-16 h-16 bg-slate-800 text-slate-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <Building2 className="w-8 h-8" />
                   </div>
                   <div>
-                    <h3 className="text-md font-bold text-white">Configure Statement Manually</h3>
-                    <p className="text-xs text-slate-400 mt-2 max-w-md mx-auto">No statements file or Tally link required. Skip automatic ingestion and fill in all base year estimates manually inside the setup forms.</p>
+                    <h3 className="text-md font-bold text-slate-900">Configure Statement Manually</h3>
+                    <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto">No statements file or Tally link required. Skip automatic ingestion and fill in all base year estimates manually inside the setup forms.</p>
                   </div>
 
-                  <div className="pt-6 border-t border-slate-800 flex justify-end">
+                  <div className="pt-6 border-t border-slate-200 flex justify-end">
                     <button
                       onClick={() => setStep(2)}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
                     >
                       Proceed to Forms <ArrowRight className="w-3.5 h-3.5" />
                     </button>
@@ -841,15 +841,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 2: VALIDATE EXTRACTED HISTORICALS */}
           {step === 2 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 2: Validate Extracted Historical Data</h2>
-                <p className="text-xs text-slate-400">Review the baseline figures pulled from the files. Edit any fields if necessary to match audited statements.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 2: Validate Extracted Historical Data</h2>
+                <p className="text-xs text-slate-600">Review the baseline figures pulled from the files. Edit any fields if necessary to match audited statements.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Metadata</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Client Metadata</h3>
                   <div>
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Entity/Company Name</label>
                     <input 
@@ -857,7 +857,7 @@ export default function CmaReport({ onBack }: Props) {
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       placeholder="e.g. Astra Tech Manufacturing Pvt Ltd"
-                      className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                      className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                     />
                   </div>
                   <div>
@@ -867,13 +867,13 @@ export default function CmaReport({ onBack }: Props) {
                       value={pan}
                       onChange={(e) => setPan(e.target.value)}
                       placeholder="e.g. AABCA1234Z"
-                      className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                      className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Year Balance Sheet (₹)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Base Year Balance Sheet (₹)</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Share Capital</label>
@@ -881,7 +881,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={shareCapitalInit}
                         onChange={(e) => setShareCapitalInit(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -890,23 +890,23 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={baseSales}
                         onChange={(e) => setBaseSales(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(1)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(3)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -916,15 +916,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 3: PROVISIONAL DATA */}
           {step === 3 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 3: Enter Provisional / Current Year Balances</h2>
-                <p className="text-xs text-slate-400">Provide estimates for the closing fiscal year. These will bridge the gap between historical files and future capex projections.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 3: Enter Provisional / Current Year Balances</h2>
+                <p className="text-xs text-slate-600">Provide estimates for the closing fiscal year. These will bridge the gap between historical files and future capex projections.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Blocks (Closing)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Asset Blocks (Closing)</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Plant &amp; Machinery</label>
@@ -932,7 +932,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={assetMachineryInit}
                         onChange={(e) => setAssetMachineryInit(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -941,28 +941,28 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={assetBuildingInit}
                         onChange={(e) => setAssetBuildingInit(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bank Credit Limits</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Bank Credit Limits</h3>
                   <div>
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sanctioned Cash Credit (CC) Limit</label>
                     <input 
                       type="text" 
                       value={ccLimit}
                       onChange={(e) => setCcLimit(e.target.value)}
-                      className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                      className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                     />
                   </div>
                 </div>
 
                 {/* Working Capital Balances */}
-                <div className="space-y-4 md:col-span-2 border-t border-slate-800/85 pt-6 mt-4 animate-in fade-in duration-200">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Working Capital Balances (₹)</h3>
+                <div className="space-y-4 md:col-span-2 border-t border-slate-200/85 pt-6 mt-4 animate-in fade-in duration-200">
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Working Capital Balances (₹)</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Stock Value</label>
@@ -970,7 +970,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={stockValue}
                         onChange={(e) => setStockValue(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -979,7 +979,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={sundryCreditors}
                         onChange={(e) => setSundryCreditors(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -988,7 +988,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={debtorsUnder90}
                         onChange={(e) => setDebtorsUnder90(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -997,23 +997,23 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={debtorsOver90}
                         onChange={(e) => setDebtorsOver90(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(2)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(4)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1023,16 +1023,16 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 4: FORECASTING ASSUMPTIONS */}
           {step === 4 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 4: Projections &amp; Operating Ratios</h2>
-                <p className="text-xs text-slate-400">Outline projection parameters over the 5-year forecast horizon. All calculations reference these coordinates directly.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 4: Projections &amp; Operating Ratios</h2>
+                <p className="text-xs text-slate-600">Outline projection parameters over the 5-year forecast horizon. All calculations reference these coordinates directly.</p>
               </div>
 
               {/* Projections Inputs */}
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Growth Rates (Y1 - Y5)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Growth Rates (Y1 - Y5)</h3>
                   <div className="space-y-3">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sales Growth Rate % (YoY)</label>
@@ -1047,7 +1047,7 @@ export default function CmaReport({ onBack }: Props) {
                               newVals[idx] = e.target.value;
                               setSalesGrowth(newVals);
                             }}
-                            className="w-full h-8 bg-slate-950/60 border border-slate-800 rounded px-2 text-center text-xs text-white"
+                            className="w-full h-8 bg-slate-50/60 border border-slate-200 rounded px-2 text-center text-xs text-slate-900"
                           />
                         ))}
                       </div>
@@ -1065,7 +1065,7 @@ export default function CmaReport({ onBack }: Props) {
                               newVals[idx] = e.target.value;
                               setCapacityUtil(newVals);
                             }}
-                            className="w-full h-8 bg-slate-950/60 border border-slate-800 rounded px-2 text-center text-xs text-white"
+                            className="w-full h-8 bg-slate-50/60 border border-slate-200 rounded px-2 text-center text-xs text-slate-900"
                           />
                         ))}
                       </div>
@@ -1074,7 +1074,7 @@ export default function CmaReport({ onBack }: Props) {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Margins &amp; Tax</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Margins &amp; Tax</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">RM Cost % of Sales</label>
@@ -1086,7 +1086,7 @@ export default function CmaReport({ onBack }: Props) {
                           newCost[0] = e.target.value;
                           setRmCostPct(newCost);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1095,23 +1095,23 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={taxRate}
                         onChange={(e) => setTaxRate(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(3)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(5)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1121,15 +1121,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 5: PROJECT COST & CAPEX */}
           {step === 5 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 5: Project Cost &amp; Term Loan Structure</h2>
-                <p className="text-xs text-slate-400">Map capex and loan repayment terms. Principal payments and interest accruals are calculated monthly in the amortization block.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 5: Project Cost &amp; Term Loan Structure</h2>
+                <p className="text-xs text-slate-600">Map capex and loan repayment terms. Principal payments and interest accruals are calculated monthly in the amortization block.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Term Loan Appraisals</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Term Loan Appraisals</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Loan Amount (₹)</label>
@@ -1137,7 +1137,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={termLoanAmount}
                         onChange={(e) => setTermLoanAmount(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1146,7 +1146,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={interestRate}
                         onChange={(e) => setInterestRate(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1155,7 +1155,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={repaymentMonths}
                         onChange={(e) => setRepaymentMonths(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1164,14 +1164,14 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={moratoriumMonths}
                         onChange={(e) => setMoratoriumMonths(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Year 1 Capex Additions (₹)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Year 1 Capex Additions (₹)</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Plant &amp; Machinery capex</label>
@@ -1183,7 +1183,7 @@ export default function CmaReport({ onBack }: Props) {
                           newPlan[0].machinery = parseFloat(e.target.value) || 0;
                           setCapexPlan(newPlan);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1196,23 +1196,23 @@ export default function CmaReport({ onBack }: Props) {
                           newPlan[0].building = parseFloat(e.target.value) || 0;
                           setCapexPlan(newPlan);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(4)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(6)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1222,41 +1222,41 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* STEP 6: COMPILE AND DOWNLOAD REPORT */}
           {step === 6 && (
-            <div className="max-w-xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-8 space-y-6 text-center animate-in fade-in duration-300">
+            <div className="max-w-xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-8 space-y-6 text-center animate-in fade-in duration-300">
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-lg font-bold text-white">Project Setup &amp; Modeling Complete!</h2>
-                <p className="text-xs text-slate-400">All data has been verified. The Excel compiler is ready to generate the dynamic workbook containing detailed charts, ratios, repayment, and depreciation schedules.</p>
+                <h2 className="text-lg font-bold text-slate-900">Project Setup &amp; Modeling Complete!</h2>
+                <p className="text-xs text-slate-600">All data has been verified. The Excel compiler is ready to generate the dynamic workbook containing detailed charts, ratios, repayment, and depreciation schedules.</p>
               </div>
 
-              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-4 text-left space-y-2">
+              <div className="bg-slate-50/40 border border-slate-200 rounded-xl p-4 text-left space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Entity Name:</span>
-                  <span className="text-slate-300 font-bold">{companyName}</span>
+                  <span className="text-slate-700 font-bold">{companyName}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Term Loan:</span>
-                  <span className="text-slate-300 font-bold">₹ {Number(termLoanAmount).toLocaleString('en-IN')} ({interestRate}% interest)</span>
+                  <span className="text-slate-700 font-bold">₹ {Number(termLoanAmount).toLocaleString('en-IN')} ({interestRate}% interest)</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">CC Limit:</span>
-                  <span className="text-slate-300 font-bold">₹ {Number(ccLimit).toLocaleString('en-IN')}</span>
+                  <span className="text-slate-700 font-bold">₹ {Number(ccLimit).toLocaleString('en-IN')}</span>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(5)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={executeGeneration}
                   disabled={loading}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-650 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
                 >
                   <FileDown className="w-4 h-4" />
                   {loading ? 'Compiling Excel...' : 'Download Excel Report'}
@@ -1271,18 +1271,18 @@ export default function CmaReport({ onBack }: Props) {
       {wizardType === 'greenfield' && (
         <div className="space-y-6">
           {/* Stepper bar */}
-          <div className="flex justify-between items-center bg-slate-900/30 border border-slate-800/80 rounded-2xl p-4 max-w-4xl mx-auto">
+          <div className="flex justify-between items-center bg-white/30 border border-slate-200/80 rounded-2xl p-4 max-w-4xl mx-auto">
             {['Project Setup', 'Project Cost', 'Base Year Estimates', 'Forecasting', 'Report'].map((label, i) => {
               const active = step === i + 1;
               const completed = step > i + 1;
               return (
                 <div key={label} className="flex items-center gap-2">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
-                    active ? 'bg-cyan-500 text-slate-950 font-bold' : completed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700/60'
+                    active ? 'bg-cyan-500 text-slate-950 font-bold' : completed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-100 text-slate-600 border border-slate-200 border border-slate-200/60'
                   }`}>
                     {i + 1}
                   </div>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider hidden md:inline ${active ? 'text-white' : 'text-slate-500'}`}>{label}</span>
+                  <span className={`text-[9px] font-bold uppercase tracking-wider hidden md:inline ${active ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span>
                   {i < 4 && <div className="w-8 h-px bg-slate-800 hidden md:block" />}
                 </div>
               );
@@ -1291,10 +1291,10 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* GREENFIELD STEP 1: PROJECT SETUP */}
           {step === 1 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 1: Project Setup — Greenfield Project</h2>
-                <p className="text-xs text-slate-400">Enter the basic details of your new project. Since this is a greenfield project, no historical financial data is required.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 1: Project Setup — Greenfield Project</h2>
+                <p className="text-xs text-slate-600">Enter the basic details of your new project. Since this is a greenfield project, no historical financial data is required.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
@@ -1305,7 +1305,7 @@ export default function CmaReport({ onBack }: Props) {
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
                     placeholder="e.g., ABC Private Limited"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
                 <div>
@@ -1315,7 +1315,7 @@ export default function CmaReport({ onBack }: Props) {
                     value={pan}
                     onChange={(e) => setPan(e.target.value)}
                     placeholder="e.g., AABCA1234Z"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
                 <div>
@@ -1325,7 +1325,7 @@ export default function CmaReport({ onBack }: Props) {
                     value={constitution}
                     onChange={(e) => setConstitution(e.target.value)}
                     placeholder="e.g., Private Limited Company"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
                 <div>
@@ -1335,7 +1335,7 @@ export default function CmaReport({ onBack }: Props) {
                     value={natureOfBusiness}
                     onChange={(e) => setNatureOfBusiness(e.target.value)}
                     placeholder="e.g., Manufacturing of steel products"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
                 <div>
@@ -1345,7 +1345,7 @@ export default function CmaReport({ onBack }: Props) {
                     value={purposeOfLoan}
                     onChange={(e) => setPurposeOfLoan(e.target.value)}
                     placeholder="e.g., Setting up manufacturing unit"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
                 <div>
@@ -1355,15 +1355,15 @@ export default function CmaReport({ onBack }: Props) {
                     value={firstProjectedYear}
                     onChange={(e) => setFirstProjectedYear(e.target.value)}
                     placeholder="2025-26"
-                    className="w-full h-10 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                    className="w-full h-10 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                   />
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end">
+              <div className="pt-4 border-t border-slate-200 flex justify-end">
                 <button
                   onClick={() => setStep(2)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] transition-transform"
                 >
                   Proceed to Project Cost <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1373,15 +1373,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* GREENFIELD STEP 2: PROJECT COST */}
           {step === 2 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 2: Project Cost &amp; Debt Funding</h2>
-                <p className="text-xs text-slate-400">Map capex and loan repayment terms. All figures are in actual Rupees (₹).</p>
+                <h2 className="text-md font-bold text-slate-900">Step 2: Project Cost &amp; Debt Funding</h2>
+                <p className="text-xs text-slate-600">Map capex and loan repayment terms. All figures are in actual Rupees (₹).</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Term Loan details</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Term Loan details</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Term Loan Sanctioned</label>
@@ -1389,7 +1389,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={termLoanAmount}
                         onChange={(e) => setTermLoanAmount(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1398,7 +1398,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={interestRate}
                         onChange={(e) => setInterestRate(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1407,7 +1407,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={repaymentMonths}
                         onChange={(e) => setRepaymentMonths(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1416,14 +1416,14 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={moratoriumMonths}
                         onChange={(e) => setMoratoriumMonths(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Capex Incurred (Year 1)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Capex Incurred (Year 1)</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Plant &amp; Machinery additions</label>
@@ -1435,7 +1435,7 @@ export default function CmaReport({ onBack }: Props) {
                           newPlan[0].machinery = parseFloat(e.target.value) || 0;
                           setCapexPlan(newPlan);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1448,23 +1448,23 @@ export default function CmaReport({ onBack }: Props) {
                           newPlan[0].building = parseFloat(e.target.value) || 0;
                           setCapexPlan(newPlan);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(1)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(3)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1474,15 +1474,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* GREENFIELD STEP 3: BASE YEAR ESTIMATES */}
           {step === 3 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 3: Base Year Estimates &amp; CC limits</h2>
-                <p className="text-xs text-slate-400">Setup assumptions for working capital bank finance limits and promoter equity capital.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 3: Base Year Estimates &amp; CC limits</h2>
+                <p className="text-xs text-slate-600">Setup assumptions for working capital bank finance limits and promoter equity capital.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Working Capital Limits</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Working Capital Limits</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sanctioned CC Limit</label>
@@ -1490,7 +1490,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={ccLimit}
                         onChange={(e) => setCcLimit(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1499,14 +1499,14 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={shareCapitalInit}
                         onChange={(e) => setShareCapitalInit(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Stipulated Bank Margins</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Stipulated Bank Margins</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Stock Margin %</label>
@@ -1514,7 +1514,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={stockMargin}
                         onChange={(e) => setStockMargin(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1523,15 +1523,15 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={debtorsMargin}
                         onChange={(e) => setDebtorsMargin(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* Working Capital Balances */}
-                <div className="space-y-4 md:col-span-2 border-t border-slate-800/85 pt-6 mt-4 animate-in fade-in duration-200">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Working Capital Balances (₹)</h3>
+                <div className="space-y-4 md:col-span-2 border-t border-slate-200/85 pt-6 mt-4 animate-in fade-in duration-200">
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Working Capital Balances (₹)</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Stock Value</label>
@@ -1539,7 +1539,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={stockValue}
                         onChange={(e) => setStockValue(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -1548,7 +1548,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={sundryCreditors}
                         onChange={(e) => setSundryCreditors(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -1557,7 +1557,7 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={debtorsUnder90}
                         onChange={(e) => setDebtorsUnder90(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                     <div>
@@ -1566,23 +1566,23 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={debtorsOver90}
                         onChange={(e) => setDebtorsOver90(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white outline-none focus:border-cyan-500/50"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900 outline-none focus:border-cyan-500/50"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(2)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(4)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1592,15 +1592,15 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* GREENFIELD STEP 4: FORECASTING ASSUMPTIONS */}
           {step === 4 && (
-            <div className="max-w-4xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
+            <div className="max-w-4xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-6 space-y-6 animate-in fade-in duration-300">
               <div>
-                <h2 className="text-md font-bold text-white">Step 4: Projections &amp; Operating Ratios</h2>
-                <p className="text-xs text-slate-400">Outline projection parameters over the 5-year forecast horizon.</p>
+                <h2 className="text-md font-bold text-slate-900">Step 4: Projections &amp; Operating Ratios</h2>
+                <p className="text-xs text-slate-600">Outline projection parameters over the 5-year forecast horizon.</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Growth Rates (Y1 - Y5)</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Growth Rates (Y1 - Y5)</h3>
                   <div className="space-y-3">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sales Growth Rate % (YoY)</label>
@@ -1615,7 +1615,7 @@ export default function CmaReport({ onBack }: Props) {
                               newVals[idx] = e.target.value;
                               setSalesGrowth(newVals);
                             }}
-                            className="w-full h-8 bg-slate-950/60 border border-slate-800 rounded px-2 text-center text-xs text-white"
+                            className="w-full h-8 bg-slate-50/60 border border-slate-200 rounded px-2 text-center text-xs text-slate-900"
                           />
                         ))}
                       </div>
@@ -1633,7 +1633,7 @@ export default function CmaReport({ onBack }: Props) {
                               newVals[idx] = e.target.value;
                               setCapacityUtil(newVals);
                             }}
-                            className="w-full h-8 bg-slate-950/60 border border-slate-800 rounded px-2 text-center text-xs text-white"
+                            className="w-full h-8 bg-slate-50/60 border border-slate-200 rounded px-2 text-center text-xs text-slate-900"
                           />
                         ))}
                       </div>
@@ -1642,7 +1642,7 @@ export default function CmaReport({ onBack }: Props) {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Operating Costs &amp; Taxes</h3>
+                  <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">Operating Costs &amp; Taxes</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">RM Cost % of Sales</label>
@@ -1654,7 +1654,7 @@ export default function CmaReport({ onBack }: Props) {
                           newCost[0] = e.target.value;
                           setRmCostPct(newCost);
                         }}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                     <div>
@@ -1663,23 +1663,23 @@ export default function CmaReport({ onBack }: Props) {
                         type="text" 
                         value={taxRate}
                         onChange={(e) => setTaxRate(e.target.value)}
-                        className="w-full h-9 bg-slate-950/60 border border-slate-800 rounded-lg px-3 text-xs text-white"
+                        className="w-full h-9 bg-slate-50/60 border border-slate-200 rounded-lg px-3 text-xs text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(3)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => setStep(5)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2"
                 >
                   Next Step <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -1689,41 +1689,41 @@ export default function CmaReport({ onBack }: Props) {
 
           {/* GREENFIELD STEP 5: REPORT GENERATION */}
           {step === 5 && (
-            <div className="max-w-xl mx-auto bg-slate-900/30 border border-slate-800/60 rounded-2xl p-8 space-y-6 text-center animate-in fade-in duration-300">
+            <div className="max-w-xl mx-auto bg-white/30 border border-slate-200/60 rounded-2xl p-8 space-y-6 text-center animate-in fade-in duration-300">
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-lg font-bold text-white">Project Setup &amp; Modeling Complete!</h2>
-                <p className="text-xs text-slate-400">All data has been verified. The Excel compiler is ready to generate the dynamic workbook containing detailed charts, ratios, repayment, and depreciation schedules.</p>
+                <h2 className="text-lg font-bold text-slate-900">Project Setup &amp; Modeling Complete!</h2>
+                <p className="text-xs text-slate-600">All data has been verified. The Excel compiler is ready to generate the dynamic workbook containing detailed charts, ratios, repayment, and depreciation schedules.</p>
               </div>
 
-              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-4 text-left space-y-2">
+              <div className="bg-slate-50/40 border border-slate-200 rounded-xl p-4 text-left space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Entity Name:</span>
-                  <span className="text-slate-300 font-bold">{companyName || 'Unnamed Greenfield Project'}</span>
+                  <span className="text-slate-700 font-bold">{companyName || 'Unnamed Greenfield Project'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Term Loan:</span>
-                  <span className="text-slate-300 font-bold">₹ {Number(termLoanAmount).toLocaleString('en-IN')} ({interestRate}% interest)</span>
+                  <span className="text-slate-700 font-bold">₹ {Number(termLoanAmount).toLocaleString('en-IN')} ({interestRate}% interest)</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">CC Limit:</span>
-                  <span className="text-slate-300 font-bold">₹ {Number(ccLimit).toLocaleString('en-IN')}</span>
+                  <span className="text-slate-700 font-bold">₹ {Number(ccLimit).toLocaleString('en-IN')}</span>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
                 <button
                   onClick={() => setStep(4)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider shadow-xs"
                 >
                   Back
                 </button>
                 <button
                   onClick={executeGeneration}
                   disabled={loading}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-650 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
                 >
                   <FileDown className="w-4 h-4" />
                   {loading ? 'Compiling Excel...' : 'Download Excel Report'}

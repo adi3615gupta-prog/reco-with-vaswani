@@ -144,7 +144,11 @@ export function initMonthlyAuditDatabase(db) {
 /**
  * Express Route Handlers for Monthly Audit Suite
  */
-export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '.') {
+export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '.', authenticateToken = (req, res, next) => next()) {
+    const auth = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/monthly-audits', auth);
+    app.use('/api/audit-pending-points', auth);
+
     // Ensure DB tables exist
     initMonthlyAuditDatabase(db);
 
@@ -152,6 +156,45 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         if (!str) return 'UNKNOWN';
         return String(str).replace(/[<>:"/\\|?*]+/g, '_').trim();
     };
+
+    // Helper to resolve client folder inside active monthly audit or returns storage directory
+    function resolveMonthlyAuditFolder(clientName, gstin, fy, month, subFolder = 'Audit Working') {
+        return new Promise((resolve) => {
+            const cName = safePathSegment(clientName || 'Client');
+            const cGstin = safePathSegment(gstin || 'GSTIN');
+            const cFy = safePathSegment(fy || 'FY');
+            const cMonth = safePathSegment(month || 'Month');
+            const folderName = `${cName} - ${cGstin}`;
+
+            db.get("SELECT value FROM app_config WHERE key = 'monthly_audit_path'", [], (err, row) => {
+                let baseDir = null;
+                if (!err && row && row.value) {
+                    const candidate = path.resolve(String(row.value).trim().replace(/^["']|["']$/g, ''));
+                    try {
+                        if (!fs.existsSync(candidate)) fs.mkdirSync(candidate, { recursive: true });
+                        baseDir = candidate;
+                    } catch (e) {}
+                }
+                if (!baseDir) {
+                    baseDir = path.resolve(defaultUserDataPath, 'monthly_audits');
+                    try {
+                        if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
+                    } catch (e) {}
+                }
+                try {
+                    const target = path.join(baseDir, folderName, cFy, cMonth, subFolder);
+                    if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+                    resolve(target);
+                } catch (e) {
+                    const fallback = path.resolve(defaultUserDataPath, 'gst_returns_data', folderName, cFy, cMonth, subFolder);
+                    try {
+                        if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
+                    } catch (fbErr) {}
+                    resolve(fallback);
+                }
+            });
+        });
+    }
 
     // ─── 1. GET ALL MONTHLY AUDITS (FILTER BY GSTIN & FY & MONTH) ─────────
     app.get('/api/monthly-audits', (req, res) => {
@@ -323,7 +366,13 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         const preparedBy = req.body.preparedBy || req.body.prepared_by;
         const reviewedBy = req.body.reviewedBy || req.body.reviewed_by;
         const notes = req.body.notes || req.body.general_summary;
+        const clientGstin = req.body.clientGstin || req.body.client_gstin;
+        const fy = req.body.fy;
+        const month = req.body.month;
         const now = Date.now();
+
+        const altId1 = id.startsWith('audit_') ? id.replace('audit_', '') : `audit_${id}`;
+        const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, '')}`;
 
         const sql = `
             UPDATE monthly_audits SET
@@ -334,12 +383,14 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
                 prepared_at = ?,
                 general_summary = CASE WHEN ? THEN ? ELSE general_summary END,
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
         `;
 
-        db.run(sql, [preparedBy || null, reviewedBy || null, now, notes ? 1 : 0, notes || '', now, id], function (err) {
+        db.run(sql, [
+            preparedBy || null, reviewedBy || null, now, notes ? 1 : 0, notes || '', now,
+            id, altId1, altId2, clientGstin || '', fy || '', month || ''
+        ], function (err) {
             if (err) return res.status(500).json({ success: false, error: err.message });
-            if (this.changes === 0) return res.status(404).json({ success: false, error: 'Audit not found' });
             res.json({
                 success: true,
                 message: 'Audit submitted for senior review successfully',
@@ -355,6 +406,9 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         const action = req.body.action; // 'APPROVE' | 'REQUEST_REVISION' | 'REVISE'
         const reviewedBy = req.body.reviewedBy || req.body.reviewed_by;
         const reviewNotes = req.body.reviewNotes || req.body.seniorReviewNotes || req.body.senior_review_notes;
+        const clientGstin = req.body.clientGstin || req.body.client_gstin;
+        const fy = req.body.fy;
+        const month = req.body.month;
         const now = Date.now();
 
         const isApprove = action === 'APPROVE';
@@ -367,6 +421,9 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         const newAuditStatus = isApprove ? 'APPROVED' : 'REVISION_REQUESTED';
         const newStatus = isApprove ? 'Completed' : 'Draft';
 
+        const altId1 = id.startsWith('audit_') ? id.replace('audit_', '') : `audit_${id}`;
+        const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, '')}`;
+
         const sql = `
             UPDATE monthly_audits SET
                 audit_status = ?,
@@ -375,12 +432,14 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
                 reviewed_at = ?,
                 senior_review_notes = COALESCE(?, senior_review_notes),
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
         `;
 
-        db.run(sql, [newAuditStatus, newStatus, reviewedBy || null, now, reviewNotes || null, now, id], function (err) {
+        db.run(sql, [
+            newAuditStatus, newStatus, reviewedBy || null, now, reviewNotes || null, now,
+            id, altId1, altId2, clientGstin || '', fy || '', month || ''
+        ], function (err) {
             if (err) return res.status(500).json({ success: false, error: err.message });
-            if (this.changes === 0) return res.status(404).json({ success: false, error: 'Audit not found' });
             res.json({ success: true, audit_status: newAuditStatus, message: isApprove ? 'Audit approved and signed off' : 'Revision requested from junior' });
         });
     });
@@ -391,7 +450,12 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         const { releasedBy, channel, workbookBase64, filename, clientName, gstin, fy, month } = req.body;
         const now = Date.now();
 
-        db.get(`SELECT * FROM monthly_audits WHERE id = ?`, [id], (err, audit) => {
+        const altId1 = id.startsWith('audit_') ? id.replace('audit_', '') : `audit_${id}`;
+        const altId2 = `AUD_${id.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+        db.get(`SELECT * FROM monthly_audits WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)`, [
+            id, altId1, altId2, gstin || '', fy || '', month || ''
+        ], async (err, audit) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
             if (!audit) return res.status(404).json({ success: false, error: 'Audit not found' });
 
@@ -402,15 +466,7 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
             let savedPath = null;
             if (workbookBase64 && filename) {
                 try {
-                    const cName = safePathSegment(clientName || audit.client_name);
-                    const cGstin = safePathSegment(gstin || audit.client_gstin);
-                    const cFy = safePathSegment(fy || audit.fy);
-                    const cMonth = safePathSegment(month || audit.month);
-
-                    const folderName = `${cName} - ${cGstin}`;
-                    const targetDir = path.resolve(defaultUserDataPath, 'gst_returns_data', folderName, cFy, cMonth, 'Released to Client');
-                    fs.mkdirSync(targetDir, { recursive: true });
-
+                    const targetDir = await resolveMonthlyAuditFolder(clientName || audit.client_name, gstin || audit.client_gstin, fy || audit.fy, month || audit.month, 'Released to Client');
                     const safeFile = safePathSegment(filename);
                     const fullFilePath = path.join(targetDir, safeFile);
                     fs.writeFileSync(fullFilePath, Buffer.from(workbookBase64, 'base64'));
@@ -433,10 +489,13 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
                     released_at = ?,
                     release_channel = ?,
                     updated_at = ?
-                WHERE id = ?
+                WHERE id = ? OR id = ? OR id = ? OR (client_gstin = ? AND fy = ? AND month = ?)
             `;
 
-            db.run(sql, [releasedBy || 'Auditor', now, channel || 'DIRECTORY', now, id], function (updateErr) {
+            db.run(sql, [
+                releasedBy || 'Auditor', now, channel || 'DIRECTORY', now,
+                audit.id, id, altId1, audit.client_gstin, audit.fy, audit.month
+            ], function (updateErr) {
                 if (updateErr) return res.status(500).json({ success: false, error: updateErr.message });
                 res.json({
                     success: true,
@@ -746,7 +805,7 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
     });
 
     // ─── 14. DIRECT CLIENT DIRECTORY AUTO-SAVE ─────────────────────────────
-    app.post('/api/monthly-audits/:id/save-directory', (req, res) => {
+    app.post('/api/monthly-audits/:id/save-directory', async (req, res) => {
         const { id } = req.params;
         const { workbookBase64, filename, clientName, gstin, fy, month } = req.body;
 
@@ -755,15 +814,7 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         }
 
         try {
-            const cName = safePathSegment(clientName || 'Client');
-            const cGstin = safePathSegment(gstin || 'GSTIN');
-            const cFy = safePathSegment(fy || 'FY');
-            const cMonth = safePathSegment(month || 'Month');
-
-            const folderName = `${cName} - ${cGstin}`;
-            const targetDir = path.resolve(defaultUserDataPath, 'gst_returns_data', folderName, cFy, cMonth, 'Audit Working');
-            fs.mkdirSync(targetDir, { recursive: true });
-
+            const targetDir = await resolveMonthlyAuditFolder(clientName, gstin, fy, month, 'Audit Working');
             const safeFilename = safePathSegment(filename);
             const fullPath = path.join(targetDir, safeFilename);
 
@@ -808,19 +859,19 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
             const ws = wb.Sheets[sheetName];
             const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-            let companyName = 'DYP INFRAPROJECTS PRIVATE LIMITED';
-            let cin = 'U45309PN2017PTC173221';
-            let registeredAddress = 'Kohinoor Majestic, 1st Floor, Office No. 126 & 127,Plot No. 85/186, Chinchwad, Pune - 411019. Maharashtra (India).';
-            let periodEndedDate = '31-March-2026';
+            let companyName = '';
+            let cin = '';
+            let registeredAddress = '';
+            let periodEndedDate = '';
 
-            let revenueFromOperations = 234202771;
-            let otherIncome = 2034582;
-            let costOfMaterialsConsumed = 179319171;
-            let changeInInventories = -6873231;
-            let employeeBenefitExpenses = 36176399;
-            let financeCosts = 4614888;
-            let depreciationAmortization = 2488741;
-            let otherExpenses = 8727832;
+            let revenueFromOperations = 0;
+            let otherIncome = 0;
+            let costOfMaterialsConsumed = 0;
+            let changeInInventories = 0;
+            let employeeBenefitExpenses = 0;
+            let financeCosts = 0;
+            let depreciationAmortization = 0;
+            let otherExpenses = 0;
 
             for (let r = 0; r < rawRows.length; r++) {
                 const row = rawRows[r];

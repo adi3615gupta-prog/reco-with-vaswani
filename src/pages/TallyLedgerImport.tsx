@@ -424,37 +424,51 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
   // ─── Render ──────────────────────────────────────────────
 
   return (
-    <div className="w-full space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-3.5 max-w-7xl mx-auto">
 
-      {/* HEADER */}
-      <div className="flex items-center gap-4">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-semibold transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" /> ← Back to All Suites
-        </button>
-        <div className="flex-1" />
-        <span className="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-black uppercase tracking-widest">
-          Module 3.3
-        </span>
-      </div>
-
-      {/* TITLE */}
-      <div className="space-y-2">
-        <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400">
-            <BookOpen className="w-6 h-6" />
+      {/* ─── TOP ELEVATED HEADER BAR (Suite 03 · Live) ─── */}
+      <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+            title="Return to Master Central Hub"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          </button>
+          <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200/70 flex items-center justify-center text-orange-600 shrink-0 shadow-2xs">
+            <BookOpen className="w-5 h-5" />
           </div>
-          Tally Ledger Voucher Import
-        </h1>
-        <p className="text-sm text-slate-400 max-w-2xl leading-relaxed">
-          Connect to TallyPrime, select specific ledgers, and import all their vouchers with full transaction details. Export to styled Excel workbooks.
-        </p>
-      </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                Tally Ledger Voucher Import
+              </h1>
+              <span className="text-[10px] font-mono font-bold bg-orange-50 text-orange-700 px-2 py-0.5 rounded border border-orange-200 uppercase tracking-wider">
+                Module 3.3 · Live
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-mono">
+              Selective Ledger Extraction, Real-Time Voucher Query & Audit-Grade Excel Export
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-bold font-mono px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+            connectionStatus === 'connected'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : connectionStatus === 'connecting'
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : 'bg-rose-50 text-rose-700 border-rose-200'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'}`} />
+            {connectionStatus === 'connected' ? 'Port 9000 Online' : connectionStatus === 'connecting' ? 'Connecting...' : 'Port 9000 Offline'}
+          </span>
+        </div>
+      </header>
 
       {/* STEP INDICATOR */}
-      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-900/60 border border-slate-800/50">
+      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
         {steps.map((step, i) => {
           const isActive = currentStep === step.id;
           const isPast = steps.findIndex(s => s.id === currentStep) > i;
@@ -485,31 +499,31 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-6 md:p-8 rounded-3xl bg-slate-900/60 border border-slate-800/50 backdrop-blur-xl space-y-6"
+          className="p-6 md:p-8 rounded-3xl bg-white border border-slate-200/80 shadow-xs backdrop-blur-xl space-y-6"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Connect to TallyPrime</h2>
-              <p className="text-xs text-slate-400">Ensure TallyPrime is running with XML API enabled</p>
+              <h2 className="text-lg font-bold text-slate-900">Connect to TallyPrime</h2>
+              <p className="text-xs text-slate-600">Ensure TallyPrime is running with XML API enabled</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Tally Port</label>
+              <label className="text-xs text-slate-600 font-semibold uppercase tracking-wider">Tally Port</label>
               <input
                 type="number"
                 value={tallyPort}
                 onChange={e => setTallyPort(Number(e.target.value))}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none transition-colors"
                 placeholder="9000"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Status</label>
+              <label className="text-xs text-slate-600 font-semibold uppercase tracking-wider">Status</label>
               <div className={`px-4 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
                 connectionStatus === 'connected'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -517,7 +531,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                   ? 'bg-red-500/10 border-red-500/30 text-red-400'
                   : connectionStatus === 'connecting'
                   ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  : 'bg-slate-950/60 border-slate-700/50 text-slate-500'
+                  : 'bg-slate-50/80 border-slate-200 text-slate-500'
               }`}>
                 {connectionStatus === 'connected' && <><Wifi className="w-4 h-4" /> Connected</>}
                 {connectionStatus === 'error' && <><WifiOff className="w-4 h-4" /> Connection Failed</>}
@@ -526,11 +540,11 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider">&nbsp;</label>
+              <label className="text-xs text-slate-600 font-semibold uppercase tracking-wider">&nbsp;</label>
               <button
                 onClick={handleConnect}
                 disabled={connectionStatus === 'connecting'}
-                className="w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-900 text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {connectionStatus === 'connecting' ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Connecting...</>
@@ -548,7 +562,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
               <Building2 className="w-5 h-5 text-emerald-400" />
               <div>
                 <p className="text-sm font-bold text-emerald-300">{companyInfo.name}</p>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-slate-600">
                   {companyInfo.gstin && `GSTIN: ${companyInfo.gstin} • `}
                   {companyInfo.state && `State: ${companyInfo.state} • `}
                   {companyInfo.financialYear && `FY: ${companyInfo.financialYear}`}
@@ -576,35 +590,35 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
           )}
 
           {/* Date range */}
-          <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/50 space-y-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Filter className="w-4 h-4 text-orange-400" /> Date Range & Filters
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">From Date</label>
+                <label className="text-[10px] text-slate-600 font-semibold uppercase tracking-wider">From Date</label>
                 <input
                   type="date"
                   value={fromDate}
                   onChange={e => setFromDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">To Date</label>
+                <label className="text-[10px] text-slate-600 font-semibold uppercase tracking-wider">To Date</label>
                 <input
                   type="date"
                   value={toDate}
                   onChange={e => setToDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Filter by Group</label>
+                <label className="text-[10px] text-slate-600 font-semibold uppercase tracking-wider">Filter by Group</label>
                 <select
                   value={groupFilter}
                   onChange={e => setGroupFilter(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
                 >
                   <option value="">All Groups</option>
                   {uniqueGroups.map(g => (
@@ -613,7 +627,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Search Ledger</label>
+                <label className="text-[10px] text-slate-600 font-semibold uppercase tracking-wider">Search Ledger</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                   <input
@@ -621,10 +635,10 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                     value={ledgerSearch}
                     onChange={e => setLedgerSearch(e.target.value)}
                     placeholder="Type to search..."
-                    className="w-full pl-9 pr-8 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                    className="w-full pl-9 pr-8 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
                   />
                   {ledgerSearch && (
-                    <button onClick={() => setLedgerSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                    <button onClick={() => setLedgerSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900">
                       <X className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -651,13 +665,13 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 </button>
               )}
             </div>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-600">
               {selectedLedgers.size} of {allLedgers.length} selected | Showing {filteredLedgers.length}
             </span>
           </div>
 
           {/* Ledger list */}
-          <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/50 max-h-[420px] overflow-y-auto space-y-1 custom-scrollbar">
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs max-h-[420px] overflow-y-auto space-y-1 custom-scrollbar">
             {filteredLedgers.length === 0 ? (
               <div className="text-center py-8 text-slate-500 text-sm">
                 No ledgers match your search criteria
@@ -672,7 +686,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                     className={`flex items-center gap-3 px-4 py-2.5 rounded-xl cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-orange-500/10 border border-orange-500/30 text-orange-300'
-                        : 'hover:bg-slate-800/40 border border-transparent text-slate-300'
+                        : 'hover:bg-slate-100/40 border border-transparent text-slate-700'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
@@ -680,16 +694,16 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                         ? 'border-orange-500 bg-orange-500'
                         : 'border-slate-600'
                     }`}>
-                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-slate-900" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{ledger.name}</p>
                     </div>
-                    <span className="text-[10px] text-slate-500 px-2 py-0.5 rounded bg-slate-950/60 border border-slate-700/30 whitespace-nowrap">
+                    <span className="text-[10px] text-slate-500 px-2 py-0.5 rounded bg-slate-50/80 border border-slate-200/30 whitespace-nowrap">
                       {ledger.parent}
                     </span>
                     {ledger.closingBalance > 0 && (
-                      <span className="text-xs text-slate-400 font-mono whitespace-nowrap">
+                      <span className="text-xs text-slate-600 font-mono whitespace-nowrap">
                         ₹{ledger.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     )}
@@ -703,14 +717,14 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
           <div className="flex items-center justify-between pt-2">
             <button
               onClick={() => setCurrentStep('connect')}
-              className="px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-semibold transition-all flex items-center gap-2"
+              className="px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-100/60 border border-slate-200 text-slate-700 hover:text-slate-900 text-sm font-semibold transition-all flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
             <button
               onClick={handleFetchVouchers}
               disabled={selectedLedgers.size === 0 || fetchingVouchers}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-900 text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {fetchingVouchers ? (
                 <>
@@ -734,7 +748,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 <span className="text-amber-300 font-semibold">
                   Fetching: {fetchProgress.ledgerName}
                 </span>
-                <span className="text-slate-400">
+                <span className="text-slate-600">
                   {fetchProgress.current} / {fetchProgress.total}
                 </span>
               </div>
@@ -758,9 +772,9 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
         >
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/50 space-y-1">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
               <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Total Entries</p>
-              <p className="text-2xl font-black text-white">{processedEntries.length.toLocaleString()}</p>
+              <p className="text-2xl font-black text-slate-900">{processedEntries.length.toLocaleString()}</p>
             </div>
             <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
               <p className="text-[10px] text-emerald-500 uppercase tracking-wider font-bold">Total Debit</p>
@@ -781,7 +795,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
           </div>
 
           {/* Table controls */}
-          <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800/50">
+          <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-white border border-slate-200/80 shadow-xs">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
               <input
@@ -789,13 +803,13 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 value={tableSearch}
                 onChange={e => setTableSearch(e.target.value)}
                 placeholder="Search vouchers, parties, narration..."
-                className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+                className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
               />
             </div>
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+              className="px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
             >
               <option value="">All Types</option>
               {uniqueVoucherTypes.map(t => <option key={t} value={t}>{t}</option>)}
@@ -803,25 +817,25 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
             <select
               value={ledgerFilter}
               onChange={e => setLedgerFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700/50 text-white text-sm focus:border-orange-500/50 focus:outline-none"
+              className="px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
             >
               <option value="">All Ledgers</option>
               {uniqueLedgerNames.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button
               onClick={handleExport}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold flex items-center gap-2 transition-all"
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-900 text-sm font-bold flex items-center gap-2 transition-all"
             >
               <Download className="w-4 h-4" /> Export Excel
             </button>
           </div>
 
           {/* Data table */}
-          <div className="rounded-2xl bg-slate-900/60 border border-slate-800/50 overflow-hidden">
+          <div className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
             <div className="overflow-x-auto max-h-[520px] overflow-y-auto custom-scrollbar">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-slate-900/95 border-b border-slate-700/50">
+                  <tr className="bg-white/95 border-b border-slate-200">
                     {[
                       { field: 'date' as SortField, label: 'Date', width: 'w-[100px]' },
                       { field: 'voucherNumber' as SortField, label: 'Voucher No.', width: '' },
@@ -836,7 +850,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                         onClick={() => handleSort(col.field)}
                         className={`px-4 py-3 text-left text-[10px] font-black uppercase tracking-wider cursor-pointer hover:text-orange-400 transition-colors ${
                           col.width
-                        } ${sortField === col.field ? 'text-orange-400' : 'text-slate-400'}`}
+                        } ${sortField === col.field ? 'text-orange-400' : 'text-slate-600'}`}
                       >
                         <span className="flex items-center gap-1">
                           {col.label}
@@ -844,7 +858,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                         </span>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-600">
                       Narration
                     </th>
                   </tr>
@@ -860,23 +874,23 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                     processedEntries.map((entry, idx) => (
                       <tr
                         key={`${entry.voucherNumber}-${entry.ledgerName}-${idx}`}
-                        className="border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors"
+                        className="border-b border-slate-200/30 hover:bg-slate-100/20 transition-colors"
                       >
-                        <td className="px-4 py-2.5 text-slate-300 font-mono text-xs whitespace-nowrap">
+                        <td className="px-4 py-2.5 text-slate-700 font-mono text-xs whitespace-nowrap">
                           {fmtDate(entry.date)}
                         </td>
-                        <td className="px-4 py-2.5 text-white font-semibold text-xs">
+                        <td className="px-4 py-2.5 text-slate-900 font-semibold text-xs">
                           {entry.voucherNumber || '—'}
                         </td>
                         <td className="px-4 py-2.5">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-700/30 text-slate-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-200/30 text-slate-700 text-[10px] font-bold">
                             {entry.voucherType}
                           </span>
                         </td>
                         <td className="px-4 py-2.5 text-orange-300 text-xs font-medium max-w-[200px] truncate" title={entry.ledgerName}>
                           {entry.ledgerName}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-300 text-xs max-w-[200px] truncate" title={entry.partyName}>
+                        <td className="px-4 py-2.5 text-slate-700 text-xs max-w-[200px] truncate" title={entry.partyName}>
                           {entry.partyName || '—'}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-xs">
@@ -898,8 +912,8 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 </tbody>
                 {processedEntries.length > 0 && (
                   <tfoot className="sticky bottom-0">
-                    <tr className="bg-slate-900/95 border-t-2 border-orange-500/30">
-                      <td colSpan={5} className="px-4 py-3 text-right text-xs font-black text-white uppercase tracking-wider">
+                    <tr className="bg-white/95 border-t-2 border-orange-500/30">
+                      <td colSpan={5} className="px-4 py-3 text-right text-xs font-black text-slate-900 uppercase tracking-wider">
                         Total ({processedEntries.length} entries)
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm font-black text-emerald-400">
@@ -920,14 +934,14 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
           <div className="flex items-center justify-between pt-2">
             <button
               onClick={() => setCurrentStep('select')}
-              className="px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-semibold transition-all flex items-center gap-2"
+              className="px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-100/60 border border-slate-200 text-slate-700 hover:text-slate-900 text-sm font-semibold transition-all flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" /> Change Ledgers
             </button>
             <div className="flex items-center gap-3">
               <button
                 onClick={handleExport}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold flex items-center gap-2 transition-all"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-900 text-sm font-bold flex items-center gap-2 transition-all"
               >
                 <FileSpreadsheet className="w-4 h-4" /> Export to Excel
               </button>

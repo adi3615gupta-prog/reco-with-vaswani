@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
-import { initGstr2bDatabase, bulkSaveGstr2bInvoices, markGstr2bMonthNilSynced } from './gstr2b/db.js';
+import { initGstr2bDatabase, bulkSaveGstr2bInvoices, markGstr2bMonthNilSynced, getInvoicesWithAllocations, bulkSaveItcAllocations } from './gstr2b/db.js';
 import { parseGstr2bExcelHelper, parseGstr2bJsonHelper, parseGstr2bZipHelper } from './gstr2b/parsers.js';
 import { runGstr2bAutopilot, openPortalLoginHelper } from './gstr2b/autopilot.js';
 import { generateGstr2bFullYearWorkbook } from './gstr2b/fullYearExcel.js';
+import { generateItcAllocationWorkbook } from './gstr2b/itcAuditExcel.js';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 
@@ -17,8 +18,14 @@ const XLSX = xlsxModule.default || xlsxModule;
  * - `./gstr2b/parsers.js`: Dedicated parsers for GSTR-2B & GSTR-1 (Excel, JSON, ZIP)
  * - `./gstr2b/autopilot.js`: Playwright automation engine (Login, Period Select, GSTR-1 & GSTR-2B download)
  */
-export function setupGstr2bRoutes(app, db) {
+export function setupGstr2bRoutes(app, db, authenticateToken = (req, res, next) => next()) {
+    const auth = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/gstr2b', auth);
+    app.use('/api/gstr3b/itc-allocations', auth);
+    app.use('/api/gstr3b/export-itc-allocations', auth);
+
     const browserState = { current: null };
+    const activeBrowsers = new Map(); // GSTIN -> { current: Browser }
 
     // Initialize Database Tables & Indexes
     initGstr2bDatabase(db);
@@ -298,9 +305,11 @@ export function setupGstr2bRoutes(app, db) {
 
                 const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
                 const cleanFy = fy.replace(/[^0-9]/g, '');
-                res.setHeader('Content-Disposition', `attachment; filename="GSTR2B_SectionWiseSummary_${gstin.toUpperCase()}_${cleanFy}.xlsx"`);
+                const fileName = `GSTR2B_SectionWiseSummary_${gstin.toUpperCase()}_${cleanFy}.xlsx`;
                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-                res.send(buf);
+                res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+                res.setHeader('Content-Length', buf.length);
+                res.end(buf);
             });
         });
     });
@@ -417,29 +426,65 @@ export function setupGstr2bRoutes(app, db) {
             }
         });
 
-        await runGstr2bAutopilot({
-            db,
-            gstin,
-            returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
-            financialYear,
-            isFullYear: Boolean(isFullYear),
-            portal_username: portal_username || portalUsername,
-            portal_password: portal_password || portalPassword,
-            req,
-            res,
-            browserState
-        });
+        const clientGstinKey = String(gstin || '').trim().toUpperCase();
+        const clientBrowserState = { current: null };
+        if (clientGstinKey) activeBrowsers.set(clientGstinKey, clientBrowserState);
+
+        try {
+            await runGstr2bAutopilot({
+                db,
+                gstin,
+                returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
+                financialYear,
+                isFullYear: Boolean(isFullYear),
+                portal_username: portal_username || portalUsername,
+                portal_password: portal_password || portalPassword,
+                req,
+                res,
+                browserState: clientBrowserState
+            });
+        } finally {
+            if (clientGstinKey) activeBrowsers.delete(clientGstinKey);
+        }
     });
 
     // ─── 3B. CANCEL / ABORT ACTIVE AUTOPILOT BROWSER SESSION ─────────────────
     app.post('/api/gstr2b/cancel', async (req, res) => {
         try {
-            if (browserState && browserState.current) {
-                console.log('[GSTR-2B Autopilot] Force closing browser on user cancel request');
+            const g = String(req.body?.gstin || req.body?.client_gstin || '').trim().toUpperCase();
+            if (g && activeBrowsers.has(g)) {
+                const targetState = activeBrowsers.get(g);
+                if (targetState && targetState.current) {
+                    console.log(`[GSTR-2B Autopilot] Force closing browser for ${g} on user cancel request`);
+                    await targetState.current.close().catch(() => {});
+                    targetState.current = null;
+                }
+                activeBrowsers.delete(g);
+            } else if (browserState && browserState.current) {
+                console.log('[GSTR-2B Autopilot] Force closing fallback browser on user cancel request');
                 await browserState.current.close().catch(() => {});
                 browserState.current = null;
             }
-            res.json({ success: true, message: 'Browser session terminated' });
+            const p = String(req.body?.returnPeriod || req.body?.period || '').trim();
+            const m = String(req.body?.month || req.body?.selectedMonth || (p.match(/^[a-zA-Z]+/)?.[0]) || '').trim();
+
+            if (g && (p || m)) {
+                await new Promise((resolve) => {
+                    const monthPattern = m ? `%${m}%` : `%${p}%`;
+                    db.run(
+                        `UPDATE gstr2b_batches 
+                         SET status = 'CANCELLED', updated_at = ? 
+                         WHERE UPPER(client_gstin) = ? 
+                           AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?)`,
+                        [Date.now(), g, p, `%${p}%`, monthPattern],
+                        (uErr) => {
+                            if (uErr) console.warn('[GSTR-2B Autopilot] Note: batch cancel update warning:', uErr.message);
+                            resolve();
+                        }
+                    );
+                });
+            }
+            res.json({ success: true, message: 'Browser session terminated and GSTR-2B sync cancelled' });
         } catch (e) {
             console.error('[GSTR-2B Autopilot] Error canceling browser session:', e.message);
             res.status(500).json({ success: false, error: e.message });
@@ -657,16 +702,108 @@ export function setupGstr2bRoutes(app, db) {
 
     // ─── 8. QUICK LAUNCH & AUTO-FILL GST LOGIN PORTAL ─────────────────────────
     app.post('/api/gstr2b/open-portal-login', async (req, res) => {
-        const { gstin } = req.body;
+        const { gstin, portal_username, portal_password, portalUsername, portalPassword } = req.body;
         if (!gstin) {
             return res.status(400).json({ success: false, error: 'gstin required' });
         }
 
         try {
-            const result = await openPortalLoginHelper({ db, gstin, browserState });
+            const effUser = portal_username || portalUsername;
+            const effPass = portal_password || portalPassword;
+            const result = await openPortalLoginHelper({ db, gstin, portal_username: effUser, portal_password: effPass, browserState });
             res.json({ success: true, message: 'Chrome launched and login details filled!', ...result });
         } catch (err) {
             console.error('[Open Portal Login] Error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 9. GSTR-3B INWARD ITC MANUAL ALLOCATION & AUDIT WORKBENCH ───────────
+
+    // GET /api/gstr3b/itc-allocations/:gstin?period=June%202025
+    app.get('/api/gstr3b/itc-allocations/:gstin', async (req, res) => {
+        const { gstin } = req.params;
+        const period = req.query.period;
+        if (!gstin || !period) {
+            return res.status(400).json({ success: false, error: 'gstin and period query parameter required' });
+        }
+
+        if (gstin === 'Not Specified' || gstin.length < 5) {
+            return res.json({
+                success: true,
+                clientGstin: gstin,
+                returnPeriod: period,
+                summary: {
+                    totalInvoices: 0,
+                    totalTaxable: 0,
+                    totalTax: 0,
+                    eligible_4a5: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    temporary_4b2: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    permanent_4b1: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    ineligible_4d1: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    ineligible_4d2: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    rcm_4a3: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    import_4a1: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+                    deferred: { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 }
+                },
+                invoices: []
+            });
+        }
+
+        try {
+            const data = await getInvoicesWithAllocations(db, gstin, period);
+            res.json({ success: true, ...data });
+        } catch (err) {
+            console.error('[GSTR-3B ITC Allocations] Fetch error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // POST /api/gstr3b/itc-allocations
+    app.post('/api/gstr3b/itc-allocations', async (req, res) => {
+        const { clientGstin, returnPeriod, allocations } = req.body;
+        if (!clientGstin || !returnPeriod || !Array.isArray(allocations)) {
+            return res.status(400).json({ success: false, error: 'clientGstin, returnPeriod, and allocations array required' });
+        }
+
+        try {
+            const saveRes = await bulkSaveItcAllocations(db, clientGstin, returnPeriod, allocations);
+            // Fetch updated summary
+            const data = await getInvoicesWithAllocations(db, clientGstin, returnPeriod);
+            res.json({ success: true, updatedCount: saveRes.updatedCount, summary: data.summary });
+        } catch (err) {
+            console.error('[GSTR-3B ITC Allocations] Save error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // GET /api/gstr3b/export-itc-allocations?gstin=...&period=...&clientName=...
+    app.get('/api/gstr3b/export-itc-allocations', async (req, res) => {
+        const { gstin, period, clientName } = req.query;
+        if (!gstin || !period) {
+            return res.status(400).json({ success: false, error: 'gstin and period query parameters required' });
+        }
+
+        try {
+            const data = await getInvoicesWithAllocations(db, gstin, period);
+            const wb = generateItcAllocationWorkbook({
+                clientGstin: gstin,
+                returnPeriod: period,
+                clientName: clientName || '',
+                summary: data.summary,
+                invoices: data.invoices
+            });
+
+            const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+            const cleanPeriod = (period || 'period').replace(/[^a-zA-Z0-9]/g, '_');
+            const cleanGstin = gstin.toUpperCase();
+            const filename = `GSTR3B_ITC_Allocations_${cleanGstin}_${cleanPeriod}.xlsx`;
+
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.send(buf);
+        } catch (err) {
+            console.error('[GSTR-3B ITC Allocations] Export error:', err);
             res.status(500).json({ success: false, error: err.message });
         }
     });

@@ -62,4 +62,18 @@ describe('Sourav AI Frontend — Action Parser & Navigation Mapping', () => {
     expect(actions[0].gstin).toBe('27AAQCS1984G1ZT');
     expect(actions[0].label).toContain('27AAQCS1984G1ZT');
   });
+
+  it('should format dynamic AI persona name based on user name', () => {
+    const formatAiName = (rawUser?: string) => {
+      const cleanName = (rawUser || '').replace(/^(ca|adv|dr|mr|ms|mrs)\.?\s+/i, '').trim();
+      return cleanName.split(/\s+/)[0] || cleanName || 'AI';
+    };
+
+    expect(formatAiName('Sourav Vaswani')).toBe('Sourav');
+    expect(formatAiName('CA Vipul Patel')).toBe('Vipul');
+    expect(formatAiName('Amit')).toBe('Amit');
+    expect(formatAiName('admin')).toBe('admin');
+    expect(formatAiName('')).toBe('AI');
+    expect(formatAiName(undefined)).toBe('AI');
+  });
 });

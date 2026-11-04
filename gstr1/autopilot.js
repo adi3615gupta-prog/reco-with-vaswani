@@ -4,12 +4,14 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 import { bulkSaveGstr1Invoices, saveGstr1Summary, markGstr1MonthRequested, markGstr1MonthSyncedEmpty } from './db.js';
 import { parseGstr1Json, parseGstr1Excel, parseGstr1Zip } from './parsers.js';
 import { generateGstr1FullYearWorkbook } from './fullYearExcel.js';
 import { launchAutopilotBrowser } from '../gstr2b/browserLauncher.js';
+import { parseGstr1PdfBuffer } from '../gstr1PdfParser.js';
 
 /**
  * runGstr1Autopilot — Autonomous Playwright engine for GSTR-1:
@@ -28,6 +30,7 @@ export async function runGstr1Autopilot({
     isFullYear = false,
     targetMonth = null,
     isDownloadOnly = false,
+    downloadFormat = 'JSON', // 'JSON' or 'PDF'
     req,
     res,
     browserState = null
@@ -40,6 +43,8 @@ export async function runGstr1Autopilot({
     let parsedInvoices = null;
     let capturedExcelPath = null;
     let capturedJsonPath = null;
+    let capturedPdfPath = null;
+    let capturedGstr1PdfSummary = null;
     let capturedSummary = null;
 
     try {
@@ -188,6 +193,25 @@ export async function runGstr1Autopilot({
                             parsedInvoices = res.invoices;
                             capturedSummary = res.summary;
                             console.log(`[Autopilot GSTR-1] Extracted ${res.invoices.length} invoices from downloaded ZIP!`);
+                        }
+                    } else if (lower.endsWith('.pdf')) {
+                        capturedPdfPath = savePath;
+                        try {
+                            const buf = fs.readFileSync(savePath);
+                            const res = await parseGstr1PdfBuffer(buf, suggestedFilename);
+                            if (res) {
+                                capturedGstr1PdfSummary = res;
+                                capturedSummary = {
+                                    gstin: res.gstin || gstinUpper,
+                                    period: res.period || curPeriod,
+                                    totalTaxable: res.totalOutwardTaxable,
+                                    totalTax: res.totalOutwardTax,
+                                    counts: res.counts
+                                };
+                                console.log(`[Autopilot GSTR-1] Extracted GSTR-1 summary from downloaded PDF! Taxable: ₹${res.totalOutwardTaxable}, Tax: ₹${res.totalOutwardTax}`);
+                            }
+                        } catch (pdfErr) {
+                            console.error('[Autopilot GSTR-1] Error parsing downloaded PDF in listener:', pdfErr);
                         }
                     }
                 } catch (dlErr) {
@@ -1051,6 +1075,282 @@ export async function runGstr1Autopilot({
             return { status: 'REQUESTED', count: 0, excelPath: null, jsonPath: null, summary: null };
         };
 
+        // ─── DOWNLOAD GSTR-1 PDF (FILED SUMMARY OR PREVIEW) ────────────────────
+        const downloadAndProcessGstr1Pdf = async (currentPeriodStr) => {
+            activeSyncPeriod = currentPeriodStr;
+            capturedPdfPath = null;
+            capturedGstr1PdfSummary = null;
+
+            console.log(`\n======================================================`);
+            console.log(`[GSTR-1 Autopilot PDF] Initiating PDF download workflow for ${currentPeriodStr}...`);
+            console.log(`======================================================\n`);
+            await updateBanner(`[GSTR-1 PDF] Opening GSTR-1 details for ${currentPeriodStr}...`, '#8b5cf6');
+
+            let clickedG1Open = false;
+
+            // Step 4: Click "VIEW" (if filed) or "PREPARE ONLINE" (if pending)
+            try {
+                const clickRes = await page.evaluate(() => {
+                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
+                    const cards = Array.from(document.querySelectorAll('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel'));
+                    for (const card of cards) {
+                        if (isTopNavbarOrHeader(card)) continue;
+                        const cardText = (card.innerText || '').toUpperCase();
+                        const isG1 = (cardText.includes('GSTR-1') || cardText.includes('GSTR 1') || cardText.includes('OUTWARD SUPPLIES') || cardText.includes('DETAILS OF OUTWARD')) &&
+                                     !cardText.includes('GSTR-2B') && !cardText.includes('GSTR-2A') && !cardText.includes('GSTR-3B');
+
+                        if (isG1) {
+                            const btns = Array.from(card.querySelectorAll('button, a, input[type="button"]'));
+                            // Check "VIEW" first
+                            let targetBtn = btns.find(b => {
+                                if (isTopNavbarOrHeader(b)) return false;
+                                const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                return t === 'VIEW' || t.startsWith('VIEW ') || t.includes('VIEW DETAILS');
+                            });
+                            // Fallback to "PREPARE ONLINE"
+                            if (!targetBtn) {
+                                targetBtn = btns.find(b => {
+                                    if (isTopNavbarOrHeader(b)) return false;
+                                    const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                    return t === 'PREPARE ONLINE' || t.includes('PREPARE ONLINE') || t === 'ONLINE';
+                                });
+                            }
+                            if (targetBtn) {
+                                targetBtn.scrollIntoView({ block: 'center' });
+                                targetBtn.click();
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(targetBtn).triggerHandler('click');
+                                        window.angular.element(targetBtn).scope()?.$apply();
+                                    } catch(e) {}
+                                }
+                                return { success: true, text: (targetBtn.innerText || targetBtn.value || '').trim() };
+                            }
+                        }
+                    }
+                    return { success: false };
+                });
+                clickedG1Open = clickRes.success;
+                if (clickedG1Open) {
+                    console.log(`[GSTR-1 Autopilot PDF] ✓ Clicked "${clickRes.text}" on GSTR-1 tile!`);
+                }
+            } catch (e) {
+                console.warn('[GSTR-1 Autopilot PDF] Evaluate click error:', e.message);
+            }
+
+            // Fallback via Playwright locator
+            if (!clickedG1Open) {
+                try {
+                    const g1Card = page.locator('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel')
+                        .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                        .filter({ hasText: /GSTR-?1|Outward\s*Supplies|IFF/i })
+                        .filter({ hasNotText: /GSTR-?2B|Auto\s*-\s*drafted|GSTR-?3B/i })
+                        .first();
+                    if (await g1Card.isVisible({ timeout: 2500 })) {
+                        const viewBtn = g1Card.locator('button, a, input[type="button"]')
+                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu') })
+                            .filter({ hasText: /^VIEW$|PREPARE\s*ONLINE/i })
+                            .first();
+                        if (await viewBtn.isVisible({ timeout: 1500 })) {
+                            await viewBtn.scrollIntoViewIfNeeded().catch(() => {});
+                            await viewBtn.click({ force: true });
+                            clickedG1Open = true;
+                            console.log('[GSTR-1 Autopilot PDF] ✓ Clicked VIEW / PREPARE ONLINE via locator');
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            if (!clickedG1Open) {
+                console.warn('[GSTR-1 Autopilot PDF] Could not locate VIEW or PREPARE ONLINE button on GSTR-1 tile');
+                return { status: 'FAILED', count: 0, excelPath: null, jsonPath: null, summary: null };
+            }
+
+            // Allow GSTR-1 page to load
+            await page.waitForTimeout(2000);
+            try {
+                await page.waitForFunction(() => {
+                    const u = window.location.href.toLowerCase();
+                    const txt = (document.body.innerText || '').toUpperCase();
+                    return u.includes('/gstr1') || u.includes('/view') || txt.includes('TABLE 4') || txt.includes('B2B') || txt.includes('DOWNLOAD PDF');
+                }, null, { timeout: 15000 }).catch(() => {});
+            } catch (e) {}
+            await dismissPopups();
+
+            // Step 5: Scroll to the very bottom of the page
+            console.log('[GSTR-1 Autopilot PDF] Scrolling to bottom of GSTR-1 page to locate Download PDF button...');
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await page.waitForTimeout(1000);
+
+            await updateBanner(`[GSTR-1 PDF] Downloading official GSTR-1 PDF for ${currentPeriodStr}...`, '#10b981');
+
+            // Download interception
+            let downloadedPdfPath = null;
+            let downloadedFilename = null;
+
+            try {
+                const downloadPromise = page.waitForEvent('download', { timeout: 35000 });
+
+                // Click Download PDF / Preview button
+                const clickedDownload = await page.evaluate(() => {
+                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav'));
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
+
+                    const matchers = [
+                        (t) => t === 'DOWNLOAD PDF' || t.includes('DOWNLOAD PDF'),
+                        (t) => t.includes('DOWNLOAD SUMMARY') || t.includes('DOWNLOAD FILED'),
+                        (t) => t === 'PREVIEW' || t.includes('PREVIEW'),
+                        (t) => t.includes('GENERATE PDF') || t.includes('PRINT / DOWNLOAD')
+                    ];
+
+                    for (const matcher of matchers) {
+                        for (const b of btns) {
+                            if (isTopNavbarOrHeader(b)) continue;
+                            const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                            if (matcher(t)) {
+                                b.scrollIntoView({ block: 'center' });
+                                b.click();
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(b).triggerHandler('click');
+                                        window.angular.element(b).scope()?.$apply();
+                                    } catch(e) {}
+                                }
+                                return { success: true, text: t };
+                            }
+                        }
+                    }
+                    return { success: false };
+                });
+
+                if (clickedDownload.success) {
+                    console.log(`[GSTR-1 Autopilot PDF] Clicked "${clickedDownload.text}" button! Waiting for file download event...`);
+                } else {
+                    const dlLoc = page.locator('button, input[type="button"], a')
+                        .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu') })
+                        .filter({ hasText: /DOWNLOAD\s*PDF|DOWNLOAD\s*SUMMARY|PREVIEW|GENERATE\s*PDF/i })
+                        .last();
+                    if (await dlLoc.isVisible({ timeout: 2500 }).catch(() => false)) {
+                        await dlLoc.scrollIntoViewIfNeeded().catch(() => {});
+                        await dlLoc.click({ force: true });
+                        console.log('[GSTR-1 Autopilot PDF] Clicked Download PDF button via Playwright locator!');
+                    }
+                }
+
+                const download = await downloadPromise;
+                if (download) {
+                    downloadedFilename = download.suggestedFilename();
+                    downloadedPdfPath = path.join(downloadDir, `${Date.now()}_${downloadedFilename}`);
+                    await download.saveAs(downloadedPdfPath);
+                    console.log(`[GSTR-1 Autopilot PDF] ✓ Successfully saved downloaded PDF to: ${downloadedPdfPath}`);
+                }
+            } catch (dlErr) {
+                console.warn('[GSTR-1 Autopilot PDF] Download event note:', dlErr.message);
+            }
+
+            // Fallback: Check downloadDir or user Downloads folder for freshly created .pdf file
+            if (!downloadedPdfPath || !fs.existsSync(downloadedPdfPath)) {
+                console.log('[GSTR-1 Autopilot PDF] Checking local directories for intercepted PDF file...');
+                const checkFolders = [downloadDir, path.join(os.homedir(), 'Downloads')];
+                const now = Date.now();
+                for (const folder of checkFolders) {
+                    if (!fs.existsSync(folder)) continue;
+                    try {
+                        const files = fs.readdirSync(folder);
+                        for (const f of files) {
+                            if (f.toLowerCase().endsWith('.pdf') && (f.toLowerCase().includes('gstr1') || f.toLowerCase().includes('gstr-1') || f.toUpperCase().includes(gstinUpper))) {
+                                const fPath = path.join(folder, f);
+                                const stats = fs.statSync(fPath);
+                                if (now - stats.mtimeMs < 60000 && stats.size > 1000) {
+                                    downloadedPdfPath = fPath;
+                                    downloadedFilename = f;
+                                    console.log(`[GSTR-1 Autopilot PDF] Located downloaded PDF in ${folder}: ${f}`);
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                    if (downloadedPdfPath) break;
+                }
+            }
+
+            if (!downloadedPdfPath || !fs.existsSync(downloadedPdfPath)) {
+                return {
+                    status: 'REQUESTED',
+                    count: 0,
+                    excelPath: null,
+                    jsonPath: null,
+                    summary: null,
+                    message: 'PDF download request triggered. If portal generation takes 1-2 minutes, click Download & Inject GSTR-1 PDF again once ready.'
+                };
+            }
+
+            // Step 6: Parse the downloaded PDF Buffer with gstr1PdfParser!
+            const pdfBuf = fs.readFileSync(downloadedPdfPath);
+            const parsedSummary = await parseGstr1PdfBuffer(pdfBuf, downloadedFilename || 'GSTR1.pdf');
+
+            // Persist to SQLite clients table if firmName/tradeName is present
+            if (parsedSummary.gstin && parsedSummary.legalName && db && typeof db.run === 'function') {
+                db.run(
+                    "UPDATE clients SET trade_name = COALESCE(NULLIF(trade_name, ''), ?) WHERE gstin = ?",
+                    [parsedSummary.legalName, parsedSummary.gstin],
+                    () => {}
+                );
+            }
+
+            // Save batch to SQLite gstr1_batches as SYNCED
+            try {
+                const bId = randomUUID();
+                const now = Date.now();
+                db.run(
+                    `INSERT INTO gstr1_batches (
+                        id, client_gstin, return_period, status,
+                        total_invoices, b2b_count, b2cl_count, b2cs_count, cdnr_count, exp_count,
+                        total_taxable, total_igst, total_cgst, total_sgst, total_cess, total_tax,
+                        excel_path, json_path, downloaded_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, 'SYNCED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(client_gstin, return_period) DO UPDATE SET
+                        status = 'SYNCED',
+                        total_invoices = excluded.total_invoices,
+                        total_taxable = excluded.total_taxable,
+                        total_igst = excluded.total_igst,
+                        total_cgst = excluded.total_cgst,
+                        total_sgst = excluded.total_sgst,
+                        total_tax = excluded.total_tax,
+                        excel_path = excluded.excel_path,
+                        downloaded_at = excluded.downloaded_at,
+                        updated_at = excluded.updated_at`,
+                    [
+                        bId, gstinUpper, currentPeriodStr,
+                        parsedSummary.counts.totalDocs, parsedSummary.counts.b2b, parsedSummary.counts.b2cl, parsedSummary.counts.b2cs, parsedSummary.counts.cdnr, parsedSummary.counts.exp,
+                        parsedSummary.totalOutwardTaxable, parsedSummary.breakdowns.b2b.igst, parsedSummary.breakdowns.b2b.cgst, parsedSummary.breakdowns.b2b.sgst, 0, parsedSummary.totalOutwardTax,
+                        downloadedPdfPath, null, now, now, now
+                    ],
+                    () => {}
+                );
+            } catch (dbErr) {
+                console.warn('[GSTR-1 Autopilot PDF] DB batch save note:', dbErr.message);
+            }
+
+            capturedGstr1PdfSummary = parsedSummary;
+            capturedSummary = {
+                gstin: parsedSummary.gstin || gstinUpper,
+                period: parsedSummary.period || currentPeriodStr,
+                totalTaxable: parsedSummary.totalOutwardTaxable,
+                totalTax: parsedSummary.totalOutwardTax,
+                counts: parsedSummary.counts
+            };
+
+            return {
+                status: 'SYNCED',
+                count: parsedSummary.counts.totalDocs,
+                excelPath: null,
+                jsonPath: null,
+                pdfPath: downloadedPdfPath,
+                summary: parsedSummary
+            };
+        };
+
         // ─── EXECUTION: 12-MONTH REQUEST LOOP OR TARGETED DOWNLOAD ─────────
         const startYr = parseInt(targetFy.match(/\d{4}/)?.[0] || '2025', 10);
         const endYr = startYr + 1;
@@ -1096,7 +1396,9 @@ export async function runGstr1Autopilot({
             await page.waitForTimeout(400);
 
             await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Checking download / requesting file...`, '#10b981');
-            const mRes = await downloadAndProcessGstr1(mInfo.period);
+            const mRes = downloadFormat === 'PDF'
+                ? await downloadAndProcessGstr1Pdf(mInfo.period)
+                : await downloadAndProcessGstr1(mInfo.period);
             syncedResults.push({ period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count });
 
             if (mRes.status === 'SYNCED') {
@@ -1114,8 +1416,8 @@ export async function runGstr1Autopilot({
 
         if (isTargetedMonth) {
             const resMonth = syncedResults[0];
-            if (resMonth && resMonth.status === 'SYNCED' && resMonth.count > 0) {
-                await updateBanner(`✓ SUCCESS: ${resMonth.count} GSTR-1 Invoices downloaded for ${resMonth.period}! Closing in 2s...`, '#10b981');
+            if (resMonth && resMonth.status === 'SYNCED' && (resMonth.count > 0 || capturedGstr1PdfSummary)) {
+                await updateBanner(`✓ SUCCESS: GSTR-1 ${downloadFormat === 'PDF' ? 'PDF' : 'Invoices'} downloaded for ${resMonth.period}! Closing in 2s...`, '#10b981');
             } else {
                 await updateBanner(`⏱️ File generation is in progress for ${resMonth?.period || returnPeriod}. Timer running. Closing in 2s...`, '#f59e0b');
             }
@@ -1135,13 +1437,14 @@ export async function runGstr1Autopilot({
             return res.json({
                 success: true,
                 message: resMonth && resMonth.status === 'SYNCED'
-                    ? `Successfully downloaded ${resMonth.count} GSTR-1 invoices for ${resMonth.period}!`
-                    : `GSTR-1 generation in progress for ${resMonth?.period || returnPeriod}. 20-min timer active in dashboard.`,
+                    ? `Successfully downloaded GSTR-1 ${downloadFormat === 'PDF' ? 'PDF' : 'data'} for ${resMonth.period}!`
+                    : `GSTR-1 generation in progress for ${resMonth?.period || returnPeriod}.`,
                 gstin: gstinUpper,
                 period: resMonth?.period || returnPeriod,
                 invoiceCount: resMonth?.count || 0,
                 status: resMonth?.status || 'REQUESTED',
-                requestedAt: Date.now()
+                requestedAt: Date.now(),
+                gstr1: capturedGstr1PdfSummary || null
             });
         } else {
             // Full 12-Month Loop completed!

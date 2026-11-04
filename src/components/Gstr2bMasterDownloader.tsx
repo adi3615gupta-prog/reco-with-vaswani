@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Building2, Calendar, CheckCircle2, Clock, Download, ExternalLink,
+  Building2, Table, Calendar, CheckCircle2, Clock, Download, ExternalLink,
   FileSpreadsheet, FileText, Filter, MessageSquare, RefreshCw,
   Search, Send, ShieldCheck, Sparkles, UploadCloud, Users, X,
   Check, AlertTriangle, ArrowUpDown, Eye, ArrowRight, Smartphone,
@@ -313,6 +313,19 @@ export default function Gstr2bMasterDownloader({
       await safeApiFetch('/api/gstr2b/bring-to-front', { method: 'POST' });
       toast.success('Focused browser window!');
     } catch {}
+  };
+
+  const handleCancelTask = async () => {
+    try {
+      autopilotAbortRef.current?.abort();
+      batchAbortRef.current?.abort();
+      await safeApiFetch('/api/gstr2b/cancel', { method: 'POST' });
+      setActiveAutopilotClient(null);
+      setIsBatchRunning(false);
+      toast.info('GSTR-2B Autopilot task cancelled cleanly');
+    } catch {
+      toast.info('Cancellation signal dispatched');
+    }
   };
 
   const handleRunAutopilot = async (client: Gstr2bClientBatch) => {

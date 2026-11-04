@@ -233,237 +233,264 @@ export default function GSTR2BTracker({ onBack, companyName: globalCompanyName }
   };
 
   return (
-    <div className="w-full text-white">
-      <div className="max-w-6xl mx-auto space-y-6">
-
-        {/* Header */}
-        <div className="flex items-center justify-between glass-card-np p-6 rounded-2xl border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.1)]">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
-              <ArrowLeft className="w-5 h-5 text-blue-400" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
-                ITC Compliance Tracker
-              </h1>
-              <p className="text-sm text-slate-400 font-medium">Verify GSTR-2B invoice-wise matches & parse monthly GSTR-3B returns summary.</p>
-            </div>
+    <div className="w-full max-w-[1520px] mx-auto space-y-5 pb-16 select-text relative z-10 animate-fade-in font-sans text-slate-900">
+      
+      {/* ─── Top Elevated Header Bar ─── */}
+      <header className="bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <button 
+            onClick={onBack} 
+            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition shrink-0 cursor-pointer"
+            title="Back to Central Command Hub"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+            <CalendarClock className="w-5 h-5" />
           </div>
-          <div className="flex items-center gap-3">
-            {activeTab === '2b' && results && (
-              <button onClick={exportTrackerReport} className="h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2">
-                <Download className="w-4 h-4" /> Download Tracker Report
-              </button>
-            )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                ITC Compliance &amp; 12M Return Tracker
+              </h1>
+              <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-bold uppercase tracking-wider shrink-0">
+                Suite 01.3 · YTD Engine
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5 truncate max-w-xl">
+              Verify GSTR-2B invoice-wise matches &amp; parse monthly GSTR-3B returns summary.
+            </p>
           </div>
         </div>
+        
+        <div className="flex items-center gap-2.5">
+          {activeTab === '2b' && results && (
+            <button 
+              onClick={exportTrackerReport} 
+              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Download className="w-4 h-4" /> Download Tracker Report
+            </button>
+          )}
+        </div>
+      </header>
 
-        {/* Collapsible Quick Guide */}
-        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg max-w-6xl mx-auto">
-          <button
-            onClick={() => setShowQuickGuide(!showQuickGuide)}
-            className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
-          >
-            <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
-              <Lightbulb className="w-4 h-4 text-yellow-400" />
-              Quick ITC Tracker User Guide
-            </span>
-            <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
-          </button>
-          {showQuickGuide && (
-            <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
-              <p><strong>Overview:</strong> Track dynamic monthly ITC flows, analyze claimed vs available credits, and inspect GSTR-2B or GSTR-3B return summaries.</p>
-              <div className="grid md:grid-cols-2 gap-6">
+      {/* ─── Collapsible Quick Guide ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 text-slate-700 shadow-2xs">
+        <button
+          onClick={() => setShowQuickGuide(!showQuickGuide)}
+          className="flex items-center justify-between w-full text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
+        >
+          <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-slate-800">
+            <Lightbulb className="w-4 h-4 text-amber-500" />
+            Quick ITC Tracker User Guide
+          </span>
+          <span className="text-xs text-indigo-600 font-bold hover:underline">{showQuickGuide ? 'Hide Instructions' : 'Show Instructions'}</span>
+        </button>
+        {showQuickGuide && (
+          <div className="mt-4 pt-4 border-t border-slate-200/80 text-xs text-slate-600 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <p className="leading-relaxed"><strong>Overview:</strong> Track dynamic monthly ITC flows, analyze claimed vs available credits, and inspect GSTR-2B or GSTR-3B return summaries.</p>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <p className="font-bold text-slate-800 mb-1.5">Step-by-step Guide:</p>
+                <ol className="space-y-1.5 pl-4 list-decimal text-slate-600">
+                  <li><strong>Choose Mode:</strong> Select GSTR-2B Full Year Tracker or GSTR-3B Summary tab.</li>
+                  <li><strong>Fetch Books:</strong> Connect to Tally or define date ranges to fetch purchase entries.</li>
+                  <li><strong>Upload Portal:</strong> Select and drag the GSTR-2B spreadsheet and confirm mappings.</li>
+                  <li><strong>Execute:</strong> Click "Run ITC Tracker Analysis" to review Safe ITC, Missing ITC, and Missed claims.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 mb-1.5">Differences with normal Reco Engine:</p>
+                <ul className="space-y-1.5 pl-4 list-disc text-slate-600">
+                  <li>This tracker is optimized for year-to-date monthly summaries.</li>
+                  <li>Supports direct GSTR-3B comparison tables to prevent over/under-claiming ITC in filed returns.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Tab Switcher ─── */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-2xs p-1.5 flex gap-2">
+        <button
+          onClick={() => setActiveTab('2b')}
+          className={`flex-1 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === '2b'
+              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+          }`}
+        >
+          <Search className="w-4 h-4 text-indigo-600" /> 
+          <span>GSTR-2B Full Year ITC Tracker</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('3b')}
+          className={`flex-1 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === '3b'
+              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4 text-indigo-600" /> 
+          <span>GSTR-3B Month-wise ITC Summary</span>
+        </button>
+      </div>
+
+      {activeTab === '3b' ? (
+        <GSTR3BAnalyzer companyName={globalCompanyName} />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Left Col: Tally Data */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-5">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Server className="w-4 h-4 text-indigo-600" /> Step 1: Fetch Books (ITC Taken)
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Directly extract all purchase and journal entries where ITC was claimed.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
-                  <ol className="space-y-1.5 pl-4 list-decimal">
-                    <li><strong>Choose Mode:</strong> Select GSTR-2B Full Year Tracker or GSTR-3B Summary tab.</li>
-                    <li><strong>Fetch Books:</strong> Connect to Tally or define date ranges to fetch purchase entries.</li>
-                    <li><strong>Upload Portal:</strong> Select and drag the GSTR-2B spreadsheet and confirm mappings.</li>
-                    <li><strong>Execute:</strong> Click "Run ITC Tracker Analysis" to review Safe ITC, Missing ITC, and Missed claims.</li>
-                  </ol>
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">From Date</label>
+                  <input 
+                    type="date" 
+                    value={fromDate} 
+                    onChange={e => setFromDate(e.target.value)} 
+                    className="w-full h-10 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl px-3 text-xs font-medium text-slate-900 focus:border-indigo-400 outline-none transition-all" 
+                  />
                 </div>
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">Differences with normal Reco Engine:</p>
-                  <ul className="space-y-1.5 pl-4 list-disc text-slate-400">
-                    <li>This tracker is optimized for year-to-date monthly summaries.</li>
-                    <li>Supports direct GSTR-3B comparison tables to prevent over/under-claiming ITC in filed returns.</li>
-                  </ul>
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">To Date</label>
+                  <input 
+                    type="date" 
+                    value={toDate} 
+                    onChange={e => setToDate(e.target.value)} 
+                    className="w-full h-10 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl px-3 text-xs font-medium text-slate-900 focus:border-indigo-400 outline-none transition-all" 
+                  />
                 </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={connectToTally} 
+                  className="h-10 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs transition-colors flex items-center gap-2 shadow-2xs cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Connect Tally
+                </button>
+                {connectionStatus === 'connected' && (
+                  <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Connected ({companyInfo?.name})
+                  </span>
+                )}
+              </div>
+
+              <button
+                onClick={handleFetchTally}
+                disabled={connectionStatus !== 'connected' || isFetchingTally}
+                className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isFetchingTally ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                Fetch ITC Taken from Tally
+              </button>
+
+              {tallyRecords.length > 0 && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200/80 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                    <span className="text-xs font-bold text-indigo-900">{tallyRecords.length} tax-related vouchers loaded</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Col: 2B Data */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-5">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Step 2: GSTR-2B (ITC Available)
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Upload the GSTR-2B Excel file downloaded from the GST Portal.</p>
+              </div>
+
+              {!twoBFile ? (
+                <FileUploadZone
+                  onFileSelect={handleTwoBUpload}
+                  label="Upload GSTR-2B (Excel)"
+                  description="Drag & drop or click to browse"
+                />
+              ) : isMapping2B ? (
+                <div className="space-y-4">
+                  <ColumnMapper
+                    title="GSTR-2B Mapping"
+                    headers={twoBHeaders}
+                    mapping={twoBMapping}
+                    onChange={setTwoBMapping}
+                  />
+                  <button onClick={handleConfirm2BMapping} className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer">
+                    Confirm Column Mapping
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-900">{twoBFile.name} loaded</span>
+                  </div>
+                  <div className="text-xs text-emerald-700">
+                    {twoBRecords.length} invoices mapped from GSTR-2B.
+                  </div>
+                  <button onClick={() => { setTwoBFile(null); setTwoBRecords([]); }} className="text-xs text-rose-600 hover:text-rose-700 font-semibold cursor-pointer underline">
+                    Remove File
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Run Action */}
+          <div className="flex justify-center py-2">
+            <button
+              onClick={handleRunTracker}
+              disabled={tallyRecords.length === 0 || twoBRecords.length === 0 || isProcessing}
+              className="h-12 px-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-xs flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              {isProcessing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              Run ITC Tracker Analysis
+            </button>
+          </div>
+
+          {/* Results Summary */}
+          {results && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4">
+              <div className="bg-white border border-slate-200/80 border-l-4 border-l-emerald-500 rounded-2xl p-5 shadow-xs">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">1. ITC Matched (Safe)</h4>
+                <div className="text-3xl font-black text-slate-900 mt-2">
+                  {results.filter(r => r.status === 'Perfect Match' || r.status === 'Matched (Diff Date)' || r.status === 'Value Mismatch').length}
+                </div>
+                <p className="text-xs text-emerald-700 font-semibold mt-1">ITC taken matches exactly with 2B.</p>
+              </div>
+              <div className="bg-white border border-slate-200/80 border-l-4 border-l-rose-500 rounded-2xl p-5 shadow-xs">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">2. ITC Taken but Missing in 2B</h4>
+                <div className="text-3xl font-black text-slate-900 mt-2">
+                  {results.filter(r => r.status === 'Not in 2B' || r.status === 'Unmatched Vendor').length}
+                </div>
+                <p className="text-xs text-rose-700 font-semibold mt-1">Risk: Vendors haven't filed GSTR-1.</p>
+              </div>
+              <div className="bg-white border border-slate-200/80 border-l-4 border-l-indigo-500 rounded-2xl p-5 shadow-xs">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">3. ITC Missed in Books</h4>
+                <div className="text-3xl font-black text-slate-900 mt-2">
+                  {results.filter(r => r.status === 'Not in Books' || r.status === 'Missing in PR').length}
+                </div>
+                <p className="text-xs text-indigo-700 font-semibold mt-1">Opportunity: Available in 2B but not claimed.</p>
               </div>
             </div>
           )}
-        </div>
+        </>
+      )}
 
-        {/* Tab Switcher */}
-        <div className="flex gap-2 bg-slate-900/60 p-1.5 rounded-2xl border border-slate-800 backdrop-blur-md">
-          <button
-            onClick={() => setActiveTab('2b')}
-            className={`flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeTab === '2b'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-              : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-          >
-            <Search className="w-4 h-4" /> GSTR-2B Full Year ITC Tracker
-          </button>
-          <button
-            onClick={() => setActiveTab('3b')}
-            className={`flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeTab === '3b'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-              : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-          >
-            <FileSpreadsheet className="w-4 h-4" /> GSTR-3B Month-wise ITC Summary
-          </button>
-        </div>
-
-        {activeTab === '3b' ? (
-          <GSTR3BAnalyzer companyName={globalCompanyName} />
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Col: Tally Data */}
-              <div className="glass-card-np p-6 rounded-2xl border border-slate-800 space-y-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-                  <Database className="w-24 h-24 text-blue-500" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Server className="w-5 h-5 text-blue-400" /> Step 1: Fetch Books (ITC Taken)
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">Directly extract all purchase and journal entries where ITC was claimed.</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">From Date</label>
-                    <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full h-10 bg-slate-900/80 border border-slate-700 rounded-lg px-3 text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">To Date</label>
-                    <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="w-full h-10 bg-slate-900/80 border border-slate-700 rounded-lg px-3 text-sm" />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button onClick={connectToTally} className="h-10 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium text-sm transition-colors border border-slate-700 flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4" /> Connect Tally
-                  </button>
-                  {connectionStatus === 'connected' && (
-                    <span className="text-xs text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
-                      <CheckCircle2 className="w-3 h-3" /> Connected ({companyInfo?.name})
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleFetchTally}
-                  disabled={connectionStatus !== 'connected' || isFetchingTally}
-                  className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
-                >
-                  {isFetchingTally ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                  Fetch ITC Taken from Tally
-                </button>
-
-                {tallyRecords.length > 0 && (
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm font-medium text-blue-100">{tallyRecords.length} tax-related vouchers loaded</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Col: 2B Data */}
-              <div className="glass-card-np p-6 rounded-2xl border border-slate-800 space-y-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-                  <FileSpreadsheet className="w-24 h-24 text-emerald-500" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-emerald-400" /> Step 2: GSTR-2B (ITC Available)
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">Upload the GSTR-2B Excel file downloaded from the GST Portal.</p>
-                </div>
-
-                {!twoBFile ? (
-                  <FileUploadZone
-                    onFileSelect={handleTwoBUpload}
-                    label="Upload GSTR-2B (Excel)"
-                    description="Drag & drop or click to browse"
-                  />
-                ) : isMapping2B ? (
-                  <div className="space-y-4">
-                    <ColumnMapper
-                      title="GSTR-2B Mapping"
-                      headers={twoBHeaders}
-                      mapping={twoBMapping}
-                      onChange={setTwoBMapping}
-                    />
-                    <button onClick={handleConfirm2BMapping} className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-sm">
-                      Confirm Column Mapping
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                      <span className="text-sm font-bold text-emerald-100">{twoBFile.name} loaded</span>
-                    </div>
-                    <div className="text-xs text-emerald-200/70">
-                      {twoBRecords.length} invoices mapped from GSTR-2B.
-                    </div>
-                    <button onClick={() => { setTwoBFile(null); setTwoBRecords([]); }} className="text-xs text-red-400 hover:text-red-300 font-medium">
-                      Remove File
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Run Action */}
-            <div className="flex justify-center py-4">
-              <button
-                onClick={handleRunTracker}
-                disabled={tallyRecords.length === 0 || twoBRecords.length === 0 || isProcessing}
-                className="h-14 px-8 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:grayscale text-white font-black text-lg transition-all shadow-[0_0_40px_rgba(139,92,246,0.3)] hover:scale-105 flex items-center justify-center gap-3 tracking-wide"
-              >
-                {isProcessing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-                Run ITC Tracker Analysis
-              </button>
-            </div>
-
-            {/* Results Summary */}
-            {results && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4">
-                <div className="glass-card-np p-5 rounded-2xl border-l-4 border-l-emerald-500">
-                  <h4 className="text-sm font-bold text-slate-400">1. ITC Matched (Safe)</h4>
-                  <div className="text-3xl font-black text-white mt-2">
-                    {results.filter(r => r.status === 'Perfect Match' || r.status === 'Matched (Diff Date)' || r.status === 'Value Mismatch').length}
-                  </div>
-                  <p className="text-xs text-emerald-400 mt-1">ITC taken matches exactly with 2B.</p>
-                </div>
-                <div className="glass-card-np p-5 rounded-2xl border-l-4 border-l-red-500">
-                  <h4 className="text-sm font-bold text-slate-400">2. ITC Taken but Missing in 2B</h4>
-                  <div className="text-3xl font-black text-white mt-2">
-                    {results.filter(r => r.status === 'Not in 2B' || r.status === 'Unmatched Vendor').length}
-                  </div>
-                  <p className="text-xs text-red-400 mt-1">Risk: Vendors haven't filed GSTR-1.</p>
-                </div>
-                <div className="glass-card-np p-5 rounded-2xl border-l-4 border-l-blue-500">
-                  <h4 className="text-sm font-bold text-slate-400">3. ITC Missed in Books</h4>
-                  <div className="text-3xl font-black text-white mt-2">
-                    {results.filter(r => r.status === 'Not in Books' || r.status === 'Missing in PR').length}
-                  </div>
-                  <p className="text-xs text-blue-400 mt-1">Opportunity: Available in 2B but not claimed.</p>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-      </div>
     </div>
   );
 }

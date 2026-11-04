@@ -863,7 +863,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
   // ─── Render ──────────────────────────────────────────────
 
   const statusColors: Record<ConnectionStatus, string> = {
-    disconnected: 'text-slate-400',
+    disconnected: 'text-slate-600',
     connecting: 'text-amber-400',
     connected: 'text-emerald-400',
     error: 'text-red-400',
@@ -877,33 +877,54 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-4 sm:p-8 silk-reveal">
+    <div className="min-h-screen w-full bg-slate-50/40 text-slate-900 p-2 sm:p-4 silk-reveal">
       {/* Header */}
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center justify-center hover:bg-slate-700 transition-all"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-300" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">
-              <span className="bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent">
-                Tally Direct Import
-              </span>
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Connect to TallyPrime and pull vouchers automatically via XML API
-            </p>
+        <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+              title="Return to Master Central Hub"
+            >
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            </button>
+            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200/70 flex items-center justify-center text-teal-600 shrink-0 shadow-2xs">
+              <Server className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                  Tally Direct Import
+                </h1>
+                <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-200 uppercase tracking-wider">
+                  Suite 03 · Live
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-mono">
+                Direct Port 9000 XML Gateway & Native Voucher Synchronization Engine
+              </p>
+            </div>
           </div>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold font-mono px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+              connectionStatus === 'connected'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : connectionStatus === 'connecting'
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-rose-50 text-rose-700 border-rose-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'}`} />
+              {connectionStatus === 'connected' ? 'Port 9000 Online' : connectionStatus === 'connecting' ? 'Connecting...' : 'Port 9000 Offline'}
+            </span>
+          </div>
+        </header>
 
         {/* Collapsible Quick Guide */}
-        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 text-slate-300 backdrop-blur-md shadow-lg mb-6">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 text-slate-700 shadow-xs mb-6">
           <button
             onClick={() => setShowQuickGuide(!showQuickGuide)}
-            className="flex items-center justify-between w-full text-slate-300 hover:text-white transition-colors"
+            className="flex items-center justify-between w-full text-slate-700 hover:text-slate-900 transition-colors"
           >
             <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
               <Lightbulb className="w-4 h-4 text-yellow-400" />
@@ -912,11 +933,11 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             <span className="text-xs text-blue-400 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
           </button>
           {showQuickGuide && (
-            <div className="mt-4 pt-4 border-t border-slate-800/80 text-xs text-slate-400 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
+            <div className="mt-4 pt-4 border-t border-slate-200/80 text-xs text-slate-600 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
               <p><strong>Overview:</strong> Directly import purchase, sales, debit/credit notes, and journal vouchers from your running TallyPrime application via XML API.</p>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">Step-by-step Steps:</p>
+                  <p className="font-bold text-slate-700 mb-1.5">Step-by-step Steps:</p>
                   <ol className="space-y-1.5 pl-4 list-decimal">
                     <li><strong>Tally Setup:</strong> Open TallyPrime on your computer. Make sure "Enable ODBC/XML server" is turned ON.</li>
                     <li><strong>Connect:</strong> Enter your Tally Port (default is 9000) and click "Connect". Your active company name should appear.</li>
@@ -925,8 +946,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   </ol>
                 </div>
                 <div>
-                  <p className="font-bold text-slate-300 mb-1.5">TallyPrime Configuration details:</p>
-                  <ul className="space-y-1.5 pl-4 list-disc text-slate-400">
+                  <p className="font-bold text-slate-700 mb-1.5">TallyPrime Configuration details:</p>
+                  <ul className="space-y-1.5 pl-4 list-disc text-slate-600">
                     <li>To verify port: Go to TallyPrime → <strong>F12 (Configure)</strong> → <strong>Advanced Configuration</strong>.</li>
                     <li>Ensure "TallyPrime acts as" is set to <strong>Server</strong> or <strong>Both</strong>.</li>
                     <li>Ensure the Port matches the number typed in this interface.</li>
@@ -938,7 +959,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         </div>
 
         {/* ─── Step 1: Connection Panel ─── */}
-        <div className="obsidian-card rounded-2xl p-6 mb-6">
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 bg-teal-500/10 border border-teal-500/20 rounded-lg flex items-center justify-center">
               <Server className="w-4 h-4 text-teal-400" />
@@ -961,14 +982,14 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 type="number"
                 value={tallyPort}
                 onChange={(e) => setTallyPort(Number(e.target.value))}
-                className="w-28 h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                className="w-28 h-9 bg-slate-100 border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
             </div>
 
             <button
               onClick={connectToTally}
               disabled={connectionStatus === 'connecting'}
-              className="h-9 px-5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-xs rounded-lg hover:from-teal-500 hover:to-cyan-500 transition-all disabled:opacity-50 flex items-center gap-2"
+              className="h-9 px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-lg shadow-xs transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {connectionStatus === 'connecting' ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -994,13 +1015,13 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
           {/* Company Info Card */}
           {companyInfo && (
-            <div className="mt-5 bg-slate-800/60 border border-teal-500/20 rounded-xl p-4 flex items-center gap-4">
+            <div className="mt-5 bg-slate-100 border border-teal-500/20 rounded-xl p-4 flex items-center gap-4">
               <div className="w-12 h-12 bg-teal-500/10 rounded-xl flex items-center justify-center">
                 <Building2 className="w-6 h-6 text-teal-400" />
               </div>
               <div>
-                <p className="text-sm font-bold text-white">{companyInfo.name}</p>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-sm font-bold text-slate-900">{companyInfo.name}</p>
+                <p className="text-[10px] text-slate-600">
                   {companyInfo.gstin && `GSTIN: ${companyInfo.gstin} • `}
                   {companyInfo.state && `State: ${companyInfo.state}`}
                 </p>
@@ -1010,7 +1031,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         </div>
 
         {/* ─── Step 2: Custom Voucher Mapping ─── */}
-        <div className="obsidian-card rounded-2xl p-6 mb-6">
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 bg-purple-500/10 border border-purple-500/20 rounded-lg flex items-center justify-center">
               <Settings2 className="w-4 h-4 text-purple-400" />
@@ -1035,7 +1056,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     localStorage.setItem(`tallyCustomVouchers_${companyInfo?.name || 'default'}`, JSON.stringify(n));
                     return n;
                   })}
-                  className="h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-slate-600"
+                  className="h-9 bg-slate-100 border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-slate-600"
                 />
               </div>
             ))}
@@ -1044,7 +1065,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
         {/* ─── Step 3: Select Voucher Types & Fetch ─── */}
         {connectionStatus === 'connected' && (
-          <div className="obsidian-card rounded-2xl p-6 mb-6 silk-reveal">
+          <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs rounded-2xl p-6 mb-6 silk-reveal">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-8 h-8 bg-cyan-500/10 border border-cyan-500/20 rounded-lg flex items-center justify-center">
                 <Database className="w-4 h-4 text-cyan-400" />
@@ -1067,7 +1088,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="h-9 bg-slate-100 border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
               <div>
@@ -1078,14 +1099,14 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="h-9 bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="h-9 bg-slate-100 border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
             </div>
 
             {/* Quick Month / Period Presets */}
-            <div className="mb-5 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1.5">
+            <div className="mb-5 bg-slate-50 border border-slate-200 p-3 rounded-xl border border-slate-200">
+              <label className="text-[10px] text-slate-600 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                 <span>⚡</span> Quick Month Selection (Presets):
               </label>
               <div className="flex flex-wrap gap-1.5">
@@ -1114,7 +1135,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all ${
                       fromDate === preset.from && toDate === preset.to
                         ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/20'
-                        : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-700 hover:text-white'
+                        : 'bg-slate-100 text-slate-600 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
                     {preset.label}
@@ -1131,11 +1152,11 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   onClick={() => toggleVoucherType(idx)}
                   className={`p-3 rounded-xl border-2 transition-all text-left ${vt.enabled
                     ? `${vt.bgColor} ${vt.borderColor} ring-1 ring-white/10`
-                    : 'bg-slate-800/40 border-slate-700/50 opacity-50 hover:opacity-80'
+                    : 'bg-slate-50 border-slate-200 opacity-50 hover:opacity-80'
                     }`}
                 >
                   <span className="text-xl">{vt.icon}</span>
-                  <p className={`text-xs font-bold mt-1 ${vt.enabled ? vt.color : 'text-slate-400'}`}>
+                  <p className={`text-xs font-bold mt-1 ${vt.enabled ? vt.color : 'text-slate-600'}`}>
                     {vt.label}
                   </p>
                   <p className="text-[9px] text-slate-500 mt-0.5">
@@ -1149,12 +1170,12 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               <span className="w-4 h-4 text-emerald-400">🛡</span>
               Step 3: Custom Tax Mapping
             </h2>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-slate-600 mb-4">
               Explicitly define your Tax Ledgers here if the auto-detection is not picking up the values. If you add ledgers here, it will guarantee they are classified correctly.
             </p>
 
             <div className="flex items-center gap-2 mb-4">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-2 cursor-pointer bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:bg-slate-800/50 transition-colors">
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100/50 transition-colors">
                 <input
                   type="checkbox"
                   checked={strictMode}
@@ -1162,7 +1183,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     setStrictMode(e.target.checked);
                     localStorage.setItem('tallyStrictMode', String(e.target.checked));
                   }}
-                  className="rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                  className="rounded border-slate-600 bg-slate-100 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
                 />
                 Strict Mapping (Ignore Auto-Detect and ONLY import mapped ledgers)
               </label>
@@ -1170,12 +1191,12 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
-                <label className="block text-xs font-semibold text-slate-300">Explicit Ledger Mapping Table</label>
+                <label className="block text-xs font-semibold text-slate-700">Explicit Ledger Mapping Table</label>
                 <div className="flex items-center gap-2">
-                  <button onClick={exportTaxLedgers} className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors flex items-center gap-1">
+                  <button onClick={exportTaxLedgers} className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-100 px-3 py-1 rounded transition-colors flex items-center gap-1">
                     Export Excel
                   </button>
-                  <label className="text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 px-3 py-1 rounded transition-colors cursor-pointer flex items-center gap-1">
+                  <label className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-100 px-3 py-1 rounded transition-colors cursor-pointer flex items-center gap-1">
                     Import Excel
                     <input type="file" accept=".xlsx" className="hidden" onChange={importTaxLedgers} />
                   </label>
@@ -1186,9 +1207,9 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               </div>
 
               {customTaxLedgers.length > 0 ? (
-                <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
+                    <thead className="bg-white border-b border-slate-200 text-slate-600">
                       <tr>
                         <th className="px-3 py-2 font-medium">Exact Ledger Name (in Tally)</th>
                         <th className="px-3 py-2 font-medium w-32">Tax Category</th>
@@ -1212,7 +1233,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             <select
                               value={ledger.category}
                               onChange={e => updateCustomTaxLedger(ledger.id, 'category', e.target.value)}
-                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
+                              className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none"
                             >
                               <option value="CGST">CGST</option>
                               <option value="SGST">SGST</option>
@@ -1223,7 +1244,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             <select
                               value={ledger.type}
                               onChange={e => updateCustomTaxLedger(ledger.id, 'type', e.target.value)}
-                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 outline-none"
+                              className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none"
                             >
                               <option value="Input">Input</option>
                               <option value="Output">Output</option>
@@ -1239,31 +1260,31 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   </table>
                 </div>
               ) : (
-                <div className="text-center py-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-500">
+                <div className="text-center py-4 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500">
                   No explicit ledgers defined. Auto-detection via Groups will be used.
                 </div>
               )}
             </div>
 
-            <div className="grid gap-4 pt-4 border-t border-slate-800">
+            <div className="grid gap-4 pt-4 border-t border-slate-200">
               <p className="text-xs text-slate-500 col-span-full">Or map entire Ledger Groups (Fallback Auto-Detection):</p>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Input Tax Groups (Purchases)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Input Tax Groups (Purchases)</label>
                 <input
                   type="text"
                   value={customInputTaxGroups}
                   onChange={e => handleInputTaxGroupsChange(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 font-medium focus:border-teal-500 outline-none"
                   placeholder="e.g. ITC, DUTIES & TAXES"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Output Tax Groups (Sales)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Output Tax Groups (Sales)</label>
                 <input
                   type="text"
                   value={customOutputTaxGroups}
                   onChange={e => handleOutputTaxGroupsChange(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs"
                   placeholder="e.g. OUTPUT, DUTIES & TAXES"
                 />
               </div>
@@ -1273,7 +1294,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             <button
               onClick={handleFetchVouchers}
               disabled={isFetching || voucherTypes.every((v) => !v.enabled)}
-              className="w-full h-12 bg-gradient-to-r from-cyan-600 to-teal-600 text-white font-black text-sm rounded-xl hover:from-cyan-500 hover:to-teal-500 transition-all disabled:opacity-40 flex items-center justify-center gap-3"
+              className="w-full h-12 bg-gradient-to-r from-cyan-600 to-teal-600 text-slate-900 font-black text-sm rounded-xl hover:from-cyan-500 hover:to-teal-500 transition-all disabled:opacity-40 flex items-center justify-center gap-3"
             >
               {isFetching ? (
                 <>
@@ -1290,9 +1311,9 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
             {/* Progress log */}
             {fetchProgress.length > 0 && (
-              <div className="mt-4 bg-slate-800/50 rounded-xl p-3 max-h-40 overflow-y-auto">
+              <div className="mt-4 bg-slate-100/50 rounded-xl p-3 max-h-40 overflow-y-auto">
                 {fetchProgress.map((msg, i) => (
-                  <p key={i} className="text-[11px] text-slate-300 font-mono py-0.5">
+                  <p key={i} className="text-[11px] text-slate-700 font-mono py-0.5">
                     {msg}
                   </p>
                 ))}
@@ -1306,7 +1327,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="obsidian-card rounded-2xl p-6 mb-6 silk-reveal"
+            className="bg-white border border-slate-200/80 rounded-2xl shadow-xs rounded-2xl p-6 mb-6 silk-reveal"
           >
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
@@ -1325,22 +1346,22 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 {onImportToReconciliation && (
                   <button
                     onClick={handleDirectSendToReconciliation}
-                    className="h-9 px-5 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-950 font-black text-xs rounded-lg hover:from-teal-300 hover:to-cyan-300 transition-all flex items-center gap-2 shadow-lg shadow-teal-500/15 animate-pulse hover:animate-none"
+                    className="h-9 px-5 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-900 font-black text-xs rounded-lg hover:from-teal-300 hover:to-cyan-300 transition-all flex items-center gap-2 shadow-lg shadow-teal-500/15 animate-pulse hover:animate-none"
                   >
-                    <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
+                    <Zap className="w-4 h-4 fill-slate-950 text-slate-900" />
                     Send to Reconciliation Workspace
                   </button>
                 )}
                 <button
                   onClick={handleExportExcel}
-                  className="h-9 px-5 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold text-xs rounded-lg hover:from-emerald-500 hover:to-green-500 transition-all flex items-center gap-2"
+                  className="h-9 px-5 bg-gradient-to-r from-emerald-600 to-green-600 text-slate-900 font-bold text-xs rounded-lg hover:from-emerald-500 hover:to-green-500 transition-all flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Combined Workbook
                 </button>
                 <button
                   onClick={handleExportSeparate}
-                  className="h-9 px-5 bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold text-xs rounded-lg hover:from-violet-500 hover:to-purple-500 transition-all flex items-center gap-2"
+                  className="h-9 px-5 bg-gradient-to-r from-violet-600 to-purple-600 text-slate-900 font-bold text-xs rounded-lg hover:from-violet-500 hover:to-purple-500 transition-all flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Separate Workbooks
@@ -1349,11 +1370,11 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             </div>
 
             {/* Filter Bar: Voucher Types & Months */}
-            <div className="mb-5 bg-slate-950/60 border border-slate-800 p-3 rounded-xl space-y-3">
+            <div className="mb-5 bg-slate-50/80 border border-slate-200 p-3 rounded-xl space-y-3">
               {/* Voucher Type Filter Options */}
               <div>
                 <div className="flex items-center justify-between mb-2 px-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1.5">
                     <span>🏷️</span> Filter Preview & Metrics by Voucher Type:
                   </span>
                   {selectedVoucherTypeFilter !== 'ALL' && (
@@ -1367,7 +1388,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {[
-                    { type: 'ALL', label: 'All Types', icon: '⚡', color: 'border-slate-700' },
+                    { type: 'ALL', label: 'All Types', icon: '⚡', color: 'border-slate-200' },
                     { type: 'Purchase', label: 'Purchase', icon: '🛒', color: 'border-blue-500/30' },
                     { type: 'Journal', label: 'Journal', icon: '📒', color: 'border-yellow-500/30' },
                     { type: 'Debit Note', label: 'Debit Note', icon: '🟢', color: 'border-emerald-500/30' },
@@ -1386,14 +1407,14 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                         onClick={() => setSelectedVoucherTypeFilter(vt.type)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border ${
                           isSelected
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20 scale-105'
-                            : `bg-slate-800/40 text-slate-300 ${vt.color} hover:bg-slate-800 hover:text-white`
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 border-amber-400 shadow-md shadow-amber-500/20 scale-105'
+                            : `bg-slate-50 text-slate-700 ${vt.color} hover:bg-slate-100 hover:text-slate-900`
                         }`}
                       >
                         <span>{vt.icon}</span>
                         <span>{vt.label}</span>
                         <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                          isSelected ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-700/60 text-slate-300'
+                          isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
                         }`}>
                           {count}
                         </span>
@@ -1403,10 +1424,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                 </div>
               </div>
 
-              <div className="border-t border-slate-800/80 pt-2.5">
+              <div className="border-t border-slate-200/80 pt-2.5">
                 {/* Month Filter Tabs Bar */}
                 <div className="flex items-center justify-between mb-2 px-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1.5">
                     <span>📅</span> Filter Preview & Metrics by Month:
                   </span>
                   {(selectedMonthFilter !== 'ALL' || selectedVoucherTypeFilter !== 'ALL') && (
@@ -1445,13 +1466,13 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                         onClick={() => setSelectedMonthFilter(m.key)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                           isSelected
-                            ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-md shadow-teal-500/20 scale-105'
-                            : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800 hover:text-white'
+                            ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-900 shadow-md shadow-teal-500/20 scale-105'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                         }`}
                       >
                         <span>{m.label}</span>
                         <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                          isSelected ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-700/60 text-slate-300'
+                          isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
                         }`}>
                           {count}
                         </span>
@@ -1478,7 +1499,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               const totalInvAmount = displayData.reduce((s, v) => s + v.totalAmount, 0);
 
               const cards = [
-                { label: 'Total Vouchers', value: displayData.length.toLocaleString(), color: 'text-slate-200', bg: 'bg-slate-800/50', border: 'border-slate-700/50' },
+                { label: 'Total Vouchers', value: displayData.length.toLocaleString(), color: 'text-slate-200', bg: 'bg-slate-100/50', border: 'border-slate-200' },
                 { label: 'Total Taxable Value', value: `₹${totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
                 { label: 'Total IGST', value: `₹${totalIgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
                 { label: 'Total CGST', value: `₹${totalCgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
@@ -1508,7 +1529,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                       whileHover={{ scale: 1.03, y: -3, transition: { type: 'spring', stiffness: 400, damping: 10 } }}
                       className={`${card.bg} border ${card.border} rounded-xl p-3.5 shadow-lg backdrop-blur-sm cursor-default`}
                     >
-                      <p className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">{card.label}</p>
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wider font-bold">{card.label}</p>
                       <p className={`text-base sm:text-lg font-black mt-1 ${card.color}`}>{card.value}</p>
                     </motion.div>
                   ))}
@@ -1560,13 +1581,13 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               });
 
               return (
-                <div className="mb-6 bg-slate-900/60 border border-teal-500/30 rounded-xl overflow-hidden shadow-xl backdrop-blur-md">
+                <div className="mb-6 bg-white/60 border border-teal-500/30 rounded-xl overflow-hidden shadow-xl backdrop-blur-md">
                   <div className="bg-gradient-to-r from-teal-950/80 via-slate-900 to-slate-900 px-4 py-3 border-b border-teal-500/20 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-base">🧮</span>
                       <div>
                         <h3 className="text-sm font-bold text-teal-300">Tax Bifurcation & Mathematical Audit Proof</h3>
-                        <p className="text-[10px] text-slate-400">Step-by-step breakdown of how Net Tax ₹{netTotalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })} is calculated and reconciled with Books</p>
+                        <p className="text-[10px] text-slate-600">Step-by-step breakdown of how Net Tax ₹{netTotalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })} is calculated and reconciled with Books</p>
                       </div>
                     </div>
                     <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold rounded-lg flex items-center gap-1.5">
@@ -1576,28 +1597,28 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
                   <div className="p-4 space-y-4">
                     {/* Mathematical Formula Banner */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 flex flex-wrap items-center justify-around gap-4 text-center">
+                    <div className="bg-slate-50/90 border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-around gap-4 text-center">
                       <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase">Gross Inward / Purchase Tax (+)</p>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase">Gross Inward / Purchase Tax (+)</p>
                         <p className="text-sm font-black text-cyan-400">₹{positiveTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                       </div>
                       <span className="text-slate-500 text-lg font-bold">−</span>
                       <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase">Reversals & Adjustments (−)</p>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase">Reversals & Adjustments (−)</p>
                         <p className="text-sm font-black text-amber-400">₹{Math.abs(negativeTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                       </div>
                       <span className="text-slate-500 text-lg font-bold">=</span>
                       <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase">Net Claimable Tax Total</p>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase">Net Claimable Tax Total</p>
                         <p className="text-base font-black text-emerald-400">₹{netTotalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                       </div>
                     </div>
 
                     {/* Breakdown Table */}
-                    <div className="overflow-x-auto rounded-lg border border-slate-800">
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-slate-800/80 text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                          <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-bold tracking-wider">
                             <th className="px-3 py-2 text-left">Voucher Type</th>
                             <th className="px-3 py-2 text-center">Count</th>
                             <th className="px-3 py-2 text-right">Taxable Value (₹)</th>
@@ -1610,9 +1631,9 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                         </thead>
                         <tbody className="divide-y divide-slate-800/60 font-mono">
                           {breakdown.map((row) => (
-                            <tr key={row.type} className="hover:bg-slate-800/40 transition-colors">
+                            <tr key={row.type} className="hover:bg-slate-100/40 transition-colors">
                               <td className="px-3 py-2 font-sans font-semibold text-slate-200">{row.type}</td>
-                              <td className="px-3 py-2 text-center text-slate-400">{row.count}</td>
+                              <td className="px-3 py-2 text-center text-slate-600">{row.count}</td>
                               <td className="px-3 py-2 text-right text-cyan-300">{row.taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                               <td className="px-3 py-2 text-right text-blue-300">{row.igst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                               <td className="px-3 py-2 text-right text-purple-300">{row.cgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1629,9 +1650,9 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                               </td>
                             </tr>
                           ))}
-                          <tr className="bg-slate-950 font-sans font-bold text-white border-t-2 border-slate-700">
+                          <tr className="bg-slate-100 font-sans font-bold text-slate-900 border-t-2 border-slate-200">
                             <td className="px-3 py-2.5">NET TOTALS</td>
-                            <td className="px-3 py-2.5 text-center text-slate-300">{displayData.length}</td>
+                            <td className="px-3 py-2.5 text-center text-slate-700">{displayData.length}</td>
                             <td className="px-3 py-2.5 text-right font-mono text-cyan-300">{totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             <td className="px-3 py-2.5 text-right font-mono text-blue-300">{totalIgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             <td className="px-3 py-2.5 text-right font-mono text-purple-300">{totalCgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1695,13 +1716,13 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               const totalNet = totalGross + totalReversals;
 
               return (
-                <div className="mb-6 bg-slate-900/60 border border-cyan-500/30 rounded-xl overflow-hidden shadow-xl backdrop-blur-md">
+                <div className="mb-6 bg-white/60 border border-cyan-500/30 rounded-xl overflow-hidden shadow-xl backdrop-blur-md">
                   <div className="bg-gradient-to-r from-cyan-950/80 via-slate-900 to-slate-900 px-4 py-3 border-b border-cyan-500/20 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-base">📅</span>
                       <div>
                         <h3 className="text-sm font-bold text-cyan-300">Month-by-Month Reconciliation Audit Grid</h3>
-                        <p className="text-[10px] text-slate-400">Identify exact month-wise inward tax, reversals, and net claimable tax to pinpoint mismatches</p>
+                        <p className="text-[10px] text-slate-600">Identify exact month-wise inward tax, reversals, and net claimable tax to pinpoint mismatches</p>
                       </div>
                     </div>
                     <span className="px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-bold rounded-lg">
@@ -1712,7 +1733,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   <div className="p-4 overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="bg-slate-800/80 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b border-slate-700">
+                        <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-bold tracking-wider border-b border-slate-200">
                           <th className="px-3 py-2 text-left">Month</th>
                           <th className="px-3 py-2 text-center">Vouchers</th>
                           <th className="px-3 py-2 text-right">Inward Tax (+)</th>
@@ -1730,11 +1751,11 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             <tr
                               key={row.key}
                               className={`transition-colors ${
-                                isCurrentFiltered ? 'bg-cyan-950/40 border-l-4 border-l-cyan-400' : 'hover:bg-slate-800/40'
+                                isCurrentFiltered ? 'bg-cyan-950/40 border-l-4 border-l-cyan-400' : 'hover:bg-slate-100/40'
                               }`}
                             >
                               <td className="px-3 py-2 font-sans font-bold text-slate-200">{row.label}</td>
-                              <td className="px-3 py-2 text-center text-slate-400">{row.count}</td>
+                              <td className="px-3 py-2 text-center text-slate-600">{row.count}</td>
                               <td className="px-3 py-2 text-right text-cyan-300">₹{row.grossInward.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                               <td className={`px-3 py-2 text-right ${row.reversals < 0 ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
                                 {row.reversals < 0 ? '−' : ''}₹{Math.abs(row.reversals).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1760,8 +1781,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                                   onClick={() => setSelectedMonthFilter(row.key)}
                                   className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
                                     isCurrentFiltered
-                                      ? 'bg-cyan-500 text-slate-950 font-black'
-                                      : 'bg-slate-800 hover:bg-slate-700 text-cyan-300'
+                                      ? 'bg-cyan-500 text-slate-900 font-black'
+                                      : 'bg-slate-100 hover:bg-slate-100 text-cyan-300'
                                   }`}
                                 >
                                   {isCurrentFiltered ? 'Selected ✓' : 'Inspect Month 🔍'}
@@ -1770,9 +1791,9 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             </tr>
                           );
                         })}
-                        <tr className="bg-slate-950 font-sans font-bold text-white border-t-2 border-slate-700">
+                        <tr className="bg-slate-100 font-sans font-bold text-slate-900 border-t-2 border-slate-200">
                           <td className="px-3 py-2.5">FY GRAND TOTALS</td>
-                          <td className="px-3 py-2.5 text-center text-slate-300">{totalCount}</td>
+                          <td className="px-3 py-2.5 text-center text-slate-700">{totalCount}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-cyan-300">₹{totalGross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-amber-400">−₹{Math.abs(totalReversals).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-emerald-400 text-sm">₹{totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1804,38 +1825,38 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     </div>
                     <button
                       onClick={() => handleExportAnomalies(anomalies)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-amber-900/30"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-900 text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-amber-900/30"
                     >
                       <Download className="w-3 h-3" />
                       Export Anomalies
                     </button>
                   </div>
-                  <div className="p-4 bg-slate-900/50">
-                    <p className="text-xs text-slate-400 mb-3">
+                  <div className="p-4 bg-white">
+                    <p className="text-xs text-slate-600 mb-3">
                       The following vouchers contained tax anomalies (such as Input Tax in Credit Balance, or Output Tax on Purchase). These amounts have been mathematically subtracted from their respective totals, and are detailed here for your review.
                     </p>
-                    <div className="overflow-x-auto rounded-lg border border-slate-700/50">
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-slate-800">
-                            <th className="px-3 py-2 text-left text-slate-400">Date</th>
-                            <th className="px-3 py-2 text-left text-slate-400">Voucher Type</th>
-                            <th className="px-3 py-2 text-left text-slate-400">Party</th>
-                            <th className="px-3 py-2 text-left text-slate-400">Voucher No</th>
-                            <th className="px-3 py-2 text-left text-slate-400">Anomalies Detected</th>
+                          <tr className="bg-slate-100">
+                            <th className="px-3 py-2 text-left text-slate-600">Date</th>
+                            <th className="px-3 py-2 text-left text-slate-600">Voucher Type</th>
+                            <th className="px-3 py-2 text-left text-slate-600">Party</th>
+                            <th className="px-3 py-2 text-left text-slate-600">Voucher No</th>
+                            <th className="px-3 py-2 text-left text-slate-600">Anomalies Detected</th>
                           </tr>
                         </thead>
                         <tbody>
                           {anomalies.slice(0, 15).map((v, i) => (
-                            <tr key={i} className="border-t border-slate-700/50 hover:bg-slate-800/50">
-                              <td className="px-3 py-2 text-slate-300">{v.date}</td>
-                              <td className="px-3 py-2 text-slate-300">
-                                <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] font-bold text-slate-300">
+                            <tr key={i} className="border-t border-slate-200 hover:bg-slate-100/50">
+                              <td className="px-3 py-2 text-slate-700">{v.date}</td>
+                              <td className="px-3 py-2 text-slate-700">
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-bold text-slate-700">
                                   {v.voucherType}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-white truncate max-w-[200px]">{v.partyName}</td>
-                              <td className="px-3 py-2 text-slate-300">{v.voucherNumber}</td>
+                              <td className="px-3 py-2 text-slate-900 truncate max-w-[200px]">{v.partyName}</td>
+                              <td className="px-3 py-2 text-slate-700">{v.voucherNumber}</td>
                               <td className="px-3 py-2 text-amber-300">
                                 <ul className="list-disc pl-4">
                                   {v.anomalies.map((anomaly, idx) => (
@@ -1848,7 +1869,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                         </tbody>
                       </table>
                       {anomalies.length > 15 && (
-                        <div className="text-center py-2 text-[10px] text-slate-500 bg-slate-800/30">
+                        <div className="text-center py-2 text-[10px] text-slate-500 bg-slate-100/30">
                           Showing 15 of {anomalies.length} anomalies • Export to Excel for full data
                         </div>
                       )}
@@ -1886,22 +1907,22 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               const inwardCount = baseFiltered.filter(v => (v.igst + v.cgst + v.sgst) > 0).length;
 
               return (
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden mb-6 shadow-xl backdrop-blur-md">
+                <div className="bg-white border border-slate-200/80 shadow-xs rounded-xl overflow-hidden mb-6 shadow-xl backdrop-blur-md">
                   {/* Table Control Header */}
-                  <div className="bg-slate-950/80 px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  <div className="bg-slate-50/90 px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-200">📋 Vouchers Data Table</span>
-                      <span className="text-xs text-slate-400 font-mono">({totalItems.toLocaleString()} vouchers)</span>
+                      <span className="text-xs text-slate-600 font-mono">({totalItems.toLocaleString()} vouchers)</span>
                     </div>
 
                     {/* Filter Tabs for Reversals vs All */}
-                    <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-200">
                       <button
                         onClick={() => setPreviewImpactFilter('ALL')}
                         className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                           previewImpactFilter === 'ALL'
-                            ? 'bg-slate-800 text-white shadow'
-                            : 'text-slate-400 hover:text-white'
+                            ? 'bg-slate-100 text-slate-900 shadow'
+                            : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
                         All ({baseFiltered.length})
@@ -1932,14 +1953,14 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => exportVouchersDataTable(finalFiltered)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 border border-emerald-400/30 active:scale-95 cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 border border-emerald-400/30 active:scale-95 cursor-pointer"
                         title="Export current filtered vouchers data table to Excel (.xlsx)"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>Export Excel ({finalFiltered.length})</span>
                       </button>
 
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <div className="flex items-center gap-2 text-xs text-slate-600">
                         <span>Rows per page:</span>
                         <select
                           value={pageSize}
@@ -1947,7 +1968,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             setPageSize(Number(e.target.value));
                             setCurrentPage(1);
                           }}
-                          className="bg-slate-800 border border-slate-700 text-slate-200 rounded px-2 py-1 font-mono text-xs outline-none cursor-pointer"
+                          className="bg-slate-100 border border-slate-200 text-slate-200 rounded px-2 py-1 font-mono text-xs outline-none cursor-pointer"
                         >
                           <option value={25}>25</option>
                           <option value={50}>50</option>
@@ -1963,7 +1984,7 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="bg-slate-800/80 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b border-slate-700">
+                        <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-bold tracking-wider border-b border-slate-200">
                           {['#', 'Type', 'Date', 'Party Name', 'GSTIN', 'Invoice No', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Inv Amt', 'Impact'].map(
                             (h) => (
                               <th
@@ -1994,32 +2015,32 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             return (
                               <tr
                                 key={i}
-                                className={`border-b border-slate-800/50 transition-colors ${
+                                className={`border-b border-slate-200/60 transition-colors ${
                                   isReversal
                                     ? 'bg-amber-950/20 hover:bg-amber-900/30'
                                     : i % 2 === 0
-                                    ? 'bg-slate-900/30 hover:bg-slate-800/40'
-                                    : 'hover:bg-slate-800/40'
+                                    ? 'bg-white/30 hover:bg-slate-100/40'
+                                    : 'hover:bg-slate-100/40'
                                 }`}
                               >
                                 <td className="px-3 py-2 text-center text-slate-500 font-mono text-[11px]">{globalIndex}</td>
                                 <td className="px-3 py-2">
-                                  <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] font-bold text-slate-300">
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-bold text-slate-700">
                                     {v.voucherType}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{v.date}</td>
-                                <td className="px-3 py-2 text-white font-medium max-w-[220px] truncate">{v.partyName}</td>
-                                <td className="px-3 py-2 text-slate-300 font-mono text-[10px]">{v.gstin || '—'}</td>
-                                <td className="px-3 py-2 text-slate-300 font-mono">{v.invoiceNo || v.voucherNumber}</td>
+                                <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{v.date}</td>
+                                <td className="px-3 py-2 text-slate-900 font-medium max-w-[220px] truncate">{v.partyName}</td>
+                                <td className="px-3 py-2 text-slate-700 font-mono text-[10px]">{v.gstin || '—'}</td>
+                                <td className="px-3 py-2 text-slate-700 font-mono">{v.invoiceNo || v.voucherNumber}</td>
                                 <td className="px-3 py-2 text-right text-cyan-300 font-mono">{v.taxableValue.toFixed(2)}</td>
-                                <td className={`px-3 py-2 text-right font-mono ${v.igst < 0 ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>{v.igst.toFixed(2)}</td>
-                                <td className={`px-3 py-2 text-right font-mono ${v.cgst < 0 ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>{v.cgst.toFixed(2)}</td>
-                                <td className={`px-3 py-2 text-right font-mono ${v.sgst < 0 ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>{v.sgst.toFixed(2)}</td>
+                                <td className={`px-3 py-2 text-right font-mono ${v.igst < 0 ? 'text-amber-400 font-bold' : 'text-slate-700'}`}>{v.igst.toFixed(2)}</td>
+                                <td className={`px-3 py-2 text-right font-mono ${v.cgst < 0 ? 'text-amber-400 font-bold' : 'text-slate-700'}`}>{v.cgst.toFixed(2)}</td>
+                                <td className={`px-3 py-2 text-right font-mono ${v.sgst < 0 ? 'text-amber-400 font-bold' : 'text-slate-700'}`}>{v.sgst.toFixed(2)}</td>
                                 <td className={`px-3 py-2 text-right font-mono font-bold ${isReversal ? 'text-amber-400' : 'text-emerald-400'}`}>
                                   {totalTax.toFixed(2)}
                                 </td>
-                                <td className="px-3 py-2 text-right text-white font-bold font-mono">{v.totalAmount.toFixed(2)}</td>
+                                <td className="px-3 py-2 text-right text-slate-900 font-bold font-mono">{v.totalAmount.toFixed(2)}</td>
                                 <td className="px-3 py-2 text-center whitespace-nowrap">
                                   <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
                                     isReversal
@@ -2039,46 +2060,46 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
 
                   {/* Pagination Navigation Footer */}
                   {totalItems > 0 && pageSize !== -1 && (
-                    <div className="bg-slate-950/90 px-4 py-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="text-slate-400">
-                        Showing <span className="font-bold text-white">{startIndex + 1}</span> to{' '}
-                        <span className="font-bold text-white">{Math.min(startIndex + pageSize, totalItems)}</span> of{' '}
-                        <span className="font-bold text-white">{totalItems.toLocaleString()}</span> vouchers
+                    <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="text-slate-600">
+                        Showing <span className="font-bold text-slate-900">{startIndex + 1}</span> to{' '}
+                        <span className="font-bold text-slate-900">{Math.min(startIndex + pageSize, totalItems)}</span> of{' '}
+                        <span className="font-bold text-slate-900">{totalItems.toLocaleString()}</span> vouchers
                       </div>
 
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => setCurrentPage(1)}
                           disabled={safePage === 1}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded font-bold transition-colors cursor-pointer"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-100 disabled:opacity-40 text-slate-700 rounded font-bold transition-colors cursor-pointer"
                         >
                           « First
                         </button>
                         <button
                           onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                           disabled={safePage === 1}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded font-bold transition-colors cursor-pointer"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-100 disabled:opacity-40 text-slate-700 rounded font-bold transition-colors cursor-pointer"
                         >
                           ‹ Prev
                         </button>
 
                         <div className="flex items-center gap-1 px-2">
-                          <span className="text-slate-400">Page</span>
+                          <span className="text-slate-600">Page</span>
                           <span className="font-bold text-teal-400 font-mono px-1">{safePage}</span>
-                          <span className="text-slate-400">of {totalPages}</span>
+                          <span className="text-slate-600">of {totalPages}</span>
                         </div>
 
                         <button
                           onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                           disabled={safePage === totalPages}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded font-bold transition-colors cursor-pointer"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-100 disabled:opacity-40 text-slate-700 rounded font-bold transition-colors cursor-pointer"
                         >
                           Next ›
                         </button>
                         <button
                           onClick={() => setCurrentPage(totalPages)}
                           disabled={safePage === totalPages}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded font-bold transition-colors cursor-pointer"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-100 disabled:opacity-40 text-slate-700 rounded font-bold transition-colors cursor-pointer"
                         >
                           Last »
                         </button>
@@ -2094,17 +2115,17 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
         )}
 
         {/* Debug Logs Panel */}
-        <div className="bg-slate-955/90 border border-slate-800 rounded-2xl p-4 mt-6 backdrop-blur-md shadow-2xl">
-          <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-2">
+        <div className="bg-slate-955/90 border border-slate-200 rounded-2xl p-4 mt-6 backdrop-blur-md shadow-2xl">
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-2 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse inline-block" />
             Tally Engine Console Debugger (Active Logs)
           </p>
-          <div className="h-60 overflow-y-auto bg-black/60 border border-slate-900 rounded-xl p-3 font-mono text-[10px] text-slate-400 space-y-1.5 select-all scrollbar-thin">
+          <div className="h-60 overflow-y-auto bg-black/60 border border-slate-900 rounded-xl p-3 font-mono text-[10px] text-slate-600 space-y-1.5 select-all scrollbar-thin">
             {logs.length === 0 ? (
               <span className="text-slate-600 italic">No logs recorded yet. Connect to Tally and click 'Fetch Vouchers'.</span>
             ) : (
               logs.map((log, idx) => (
-                <div key={idx} className={log.startsWith('❌') ? 'text-red-400 font-semibold' : log.startsWith('⚠️') ? 'text-amber-400' : 'text-slate-300'}>
+                <div key={idx} className={log.startsWith('❌') ? 'text-red-400 font-semibold' : log.startsWith('⚠️') ? 'text-amber-400' : 'text-slate-700'}>
                   {log}
                 </div>
               ))

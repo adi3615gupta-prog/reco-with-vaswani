@@ -421,6 +421,7 @@ export async function sendTallyRequest(
   config: TallyConnectionConfig = DEFAULT_CONFIG,
   timeoutMs = 15000
 ): Promise<string> {
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') { timeoutMs = Math.min(timeoutMs, 500); }
   // In Electron, make the request via IPC to the Node.js main process to bypass CORS restrictions (webSecurity is enabled).
   // For Web Clients, we proxy the request through the Express backend so it can hit Tally running on the Server PC.
   const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
@@ -445,21 +446,32 @@ export async function sendTallyRequest(
     }
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let controller: AbortController | null = null;
+  let timeoutId: any = null;
+  try {
+    if (typeof AbortController !== 'undefined') {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller?.abort(), timeoutMs);
+    }
+  } catch (e) {}
 
   try {
-    const response = await fetch(url, {
+    const fetchOptions: RequestInit = {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
         'x-tally-port': config.port.toString()
       },
-      body: xml,
-      signal: controller.signal
-    });
+      body: xml
+    };
 
-    clearTimeout(timeoutId);
+    if (controller && controller.signal) {
+      fetchOptions.signal = controller.signal as any;
+    }
+
+    const response = await fetch(url, fetchOptions);
+
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`Tally connection failed (HTTP ${response.status}). Is TallyPrime running on port ${config.port}?`);
@@ -467,7 +479,7 @@ export async function sendTallyRequest(
 
     return response.text();
   } catch (err: any) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       const limitSec = Math.round(timeoutMs / 1000);
       throw new Error(`Tally connection timed out (${limitSec}s limit). Ensure TallyPrime is open, responsive, and no dialog popups are active.`);

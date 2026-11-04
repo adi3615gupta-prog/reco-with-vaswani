@@ -66,9 +66,9 @@ describe('Phase 29: Landing Page Executive White Theme & Layout Tests', () => {
       expect(content).toContain('SQLite WAL');
     });
 
-    it('Universal Loco Pilot: displays Ctrl+Alt+S desktop copilot shortcut', () => {
-      expect(content).toContain('Ctrl+Alt+S');
-      expect(content).toContain('Universal PC Loco Pilot');
+    it('Autonomous Suite: displays In-App AI Copilot capability', () => {
+      expect(content).toContain('In-App AI Copilot');
+      expect(content).toContain('Notice Shield AI');
     });
   });
 

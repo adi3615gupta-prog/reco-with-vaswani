@@ -43,17 +43,25 @@ export default function CredentialsVaultModal({
   const [savingGstin, setSavingGstin] = useState<string | null>(null);
   const [deletingGstin, setDeletingGstin] = useState<string | null>(null);
   const [mirrorMode, setMirrorMode] = useState<boolean>(true);
+  const [isSyncingVault, setIsSyncingVault] = useState<boolean>(false);
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number | null>(null);
+  const [dataPath, setDataPath] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchClients();
-    }
-  }, [isOpen]);
+  const fetchSyncStatus = async () => {
+    try {
+      const res = await safeApiFetch('/api/ims/credentials/sync-status');
+      const data = await res.json();
+      if (data && data.success) {
+        if (data.dataPath) setDataPath(data.dataPath);
+        if (data.lastSyncedAt) setLastSyncTimestamp(data.lastSyncedAt);
+      }
+    } catch {}
+  };
 
-  const fetchClients = async () => {
-    setLoading(true);
+  const fetchClients = async (silent: boolean = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await safeApiFetch('/api/ims/credentials');
       const data = await res.json();
@@ -61,11 +69,51 @@ export default function CredentialsVaultModal({
         setClients(data.clients);
       }
     } catch (err: any) {
-      toast.error('Failed to load credentials vault', { description: err?.message });
+      if (!silent) toast.error('Failed to load credentials vault', { description: err?.message });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  const handleManualSyncVault = async () => {
+    setIsSyncingVault(true);
+    try {
+      const res = await safeApiFetch('/api/ims/credentials/sync-vault', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        setLastSyncTimestamp(data.lastSyncTime || Date.now());
+        await fetchClients(true);
+        window.dispatchEvent(new CustomEvent('credentials-updated'));
+        toast.success('Synchronized with Central Office Vault!', {
+          description: `Pulled ${data.pulledCount || 0} updates • Pushed ${data.pushedCount || 0} updates • Total: ${data.totalClients || clients.length} clients.`
+        });
+      } else {
+        toast.error('Sync failed', { description: data.error || 'Server error' });
+      }
+    } catch (err: any) {
+      toast.error('Sync error', { description: err?.message });
+    } finally {
+      setIsSyncingVault(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchClients();
+      fetchSyncStatus();
+    }
+  }, [isOpen]);
+
+  // Window focus auto-refresh (silent)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleFocus = () => {
+      fetchClients(true);
+      fetchSyncStatus();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isOpen]);
 
   const configuredCount = clients.filter(c => c.portal_username && c.portal_password).length;
   const missingCount = clients.length - configuredCount;
@@ -127,6 +175,7 @@ export default function CredentialsVaultModal({
         return next;
       });
 
+      window.dispatchEvent(new CustomEvent('credentials-updated'));
       toast.success(`Saved credentials for ${gstin}`);
     } catch (err: any) {
       toast.error('Save failed', { description: err?.message });
@@ -152,6 +201,7 @@ export default function CredentialsVaultModal({
       }
 
       setClients(prev => prev.filter(c => c.gstin !== gstin));
+      window.dispatchEvent(new CustomEvent('credentials-updated'));
       toast.success(`Deleted client ${gstin}`);
     } catch (err: any) {
       toast.error('Failed to delete client', { description: err?.message });
@@ -171,7 +221,7 @@ export default function CredentialsVaultModal({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast.success('Downloaded Credentials Vault Template');
     } catch (err: any) {
       toast.error('Failed generating template', { description: err?.message });
@@ -203,6 +253,7 @@ export default function CredentialsVaultModal({
       }
 
       await fetchClients();
+      window.dispatchEvent(new CustomEvent('credentials-updated'));
       if (data.deletedCount > 0) {
         toast.success(`Synchronized ${data.importedCount} clients (${data.deletedCount} deleted, ${data.addedCount || 0} added, ${data.updatedCount || 0} updated)!`, { id: toastId });
       } else {
@@ -227,14 +278,18 @@ export default function CredentialsVaultModal({
               <Key className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+              <h3 className="text-base md:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                 Client Credentials Vault
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Multi-PC LAN Synced
+                </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   Shared Across All Modules
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Configure GST Portal Usernames & Passwords once. Automatically used for GSTR-3B, IMS, and 2B Autopilot.
+                Configure GST Portal Usernames & Passwords once. Automatically synced across all office PCs via central data path.
               </p>
             </div>
           </div>
@@ -330,6 +385,17 @@ export default function CredentialsVaultModal({
               />
               <span className="font-semibold text-slate-300">Sync &amp; Prune (Mirror Sheet)</span>
             </label>
+
+            <button
+              type="button"
+              onClick={handleManualSyncVault}
+              disabled={isSyncingVault || loading}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-all hover:border-amber-500/50 cursor-pointer disabled:opacity-50"
+              title={dataPath ? `Sync with Central Office Vault at: ${dataPath}` : "Reconcile credentials across all office PCs"}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncingVault ? 'animate-spin' : ''}`} />
+              <span>{isSyncingVault ? 'Syncing...' : 'Sync Across PCs'}</span>
+            </button>
 
             <button
               onClick={handleDownloadTemplate}

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { 
   Sparkles, Users, Lock, FileCode2, Database, 
   FileSpreadsheet, ShieldCheck, Search, Server, Send, ImageIcon,
-  Zap, ShieldAlert, Landmark, ChevronRight, ArrowLeft, ArrowRight, Calculator,
+  Zap, ShieldAlert, Landmark, ChevronRight, ArrowLeft, ArrowRight, Calculator, Receipt,
   AlertTriangle, CalendarClock, RotateCcw
 } from 'lucide-react';
 
@@ -15,6 +16,32 @@ interface HubProps {
   loginUser?: string;
   setReturnsInitialTab?: (tab: any) => void;
 }
+
+const hubContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.045,
+      delayChildren: 0.03
+    }
+  }
+};
+
+const hubCardVariants = {
+  hidden: { opacity: 0, y: 18, scale: 0.98 },
+  show: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: "spring",
+      stiffness: 280,
+      damping: 24,
+      mass: 0.8
+    }
+  }
+};
 
 export default function Hub({ 
   moduleConfig, 
@@ -103,457 +130,655 @@ export default function Hub({
                       </div>
                     </section>
 
-                    {/* 2. Primary Compliance Operations Header Strip */}
+                    {/* 2. Enterprise Compliance & Advisory Suites (Series 01 – 08 Standardized) */}
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-blue-600"></div>
-                          <h2 className="text-[16px] font-bold text-slate-900 tracking-tight uppercase">Primary Compliance Operations</h2>
-                          <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 text-[10px] font-semibold uppercase tracking-wider">
-                            High Frequency Workflows
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                          </span>
+                          <h2 className="text-[15px] font-bold text-slate-900 tracking-tight uppercase flex items-center gap-2">
+                            Enterprise Compliance &amp; Advisory Suites
+                          </h2>
+                          <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200/70 text-[10px] font-semibold uppercase tracking-wider shadow-2xs">
+                            Series 01 – 08 Standardized
                           </span>
                         </div>
-                        <div className="text-slate-500 text-[12px] font-mono flex items-center gap-1.5">
-                          <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Real-Time GSTN Engine Connected</span>
+                        <div className="text-slate-500 text-[11px] font-mono flex items-center gap-2 hidden sm:flex bg-slate-50/80 px-2.5 py-1 rounded-lg border border-slate-200/60 shadow-2xs">
+                          <RotateCcw className="w-3.5 h-3.5 text-blue-600 animate-spin-slow" />
+                          <span>8 Autonomous Suites Connected</span>
                         </div>
                       </div>
 
-                      {/* Top 2 Flagship Suites in 2-Column Wide Grid */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Unified 8-Card Motion Grid: Compact, Series-wise 1 to 8 with Advanced Corporate Animation */}
+                      <motion.div 
+                        variants={hubContainerVariants}
+                        initial="hidden"
+                        animate="show"
+                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+                      >
 
-                        {/* Suite 04: Returns Preparation & Filing (Purple Theme) */}
-                        <article 
-                          onClick={() => setActiveCategoryCard('returns')}
-                          className="relative rounded-xl bg-white p-6 border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group cursor-pointer"
+                        {/* SUITE 01: Work In Progress & Practice Hub */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setActiveCategoryCard('wip')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-amber-300"
                         >
-                          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500"></div>
-                          <div>
-                            {/* Header */}
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                  <Send className="w-6 h-6" />
-                                </div>
-                                <div>
-                                  <span className="font-mono text-indigo-600 text-[10px] block uppercase tracking-wider font-semibold">SUITE 04</span>
-                                  <h3 className="text-[18px] text-slate-900 font-bold leading-tight group-hover:text-indigo-600 transition-colors">
-                                    Returns Preparation &amp; Filing
-                                  </h3>
-                                </div>
+                          {/* Ambient radial highlight on hover */}
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-amber-500/5 via-transparent to-transparent -z-0" />
+                          {/* Top accent stripe with expansion on hover */}
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-amber-50/90 border border-amber-200/80 text-amber-600 shadow-2xs group-hover:scale-110 group-hover:shadow-amber-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Zap className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
                               </div>
-                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[11px] font-semibold uppercase tracking-wider">
-                                6 Modules
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-amber-50/80 text-amber-700 border border-amber-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                SUITE 01
                               </span>
                             </div>
 
-                            {/* Subtext */}
-                            <p className="text-slate-600 text-[13px] mb-5 leading-relaxed">
-                              Autonomous 12-month return cycles, Rule 88A set-off cascade, and Invoice Management System hub.
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-amber-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Practice &amp; WIP Hub
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              Practice roster metrics, checksum validators, and 12M filing tracker.
                             </p>
 
-                            {/* 5 Clickable Module Rows */}
-                            <div className="flex flex-col gap-2 mb-6">
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
                               <div 
-                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('working3b'); setAppRoute('returns'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('dashboard'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-amber-50/80 hover:border-amber-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-indigo-700 transition-colors">GSTR-3B Working Sheet &amp; Rule 88A</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-amber-900 transition-colors">Practice Dashboard</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-indigo-700 border border-slate-200 font-semibold shadow-2xs">Ready</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-indigo-700 border border-slate-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-amber-200/80 transition-colors">342 Clients</span>
                               </div>
 
                               <div 
-                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('matrix'); setAppRoute('returns'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('gstin-scan'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-amber-50/80 hover:border-amber-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-indigo-700 transition-colors">12-Month FY Comparative Matrix</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-amber-900 transition-colors">GSTIN Smart Scanner</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-slate-700 border border-slate-200 font-medium shadow-2xs">13-Cols Aligned</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-amber-200/80 transition-colors">Mod-36</span>
                               </div>
 
                               <div 
-                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('ims2b'); setAppRoute('returns'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50/50 hover:bg-amber-50 border border-amber-200/70 transition-colors cursor-pointer group/item"
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('tracker'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-amber-50/80 hover:border-amber-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-amber-800 transition-colors">GST IMS &amp; 2B Recipient Decision Hub</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-amber-900 transition-colors">12M Filing Tracker</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-amber-100/80 text-amber-800 border border-amber-300/60 font-semibold shadow-2xs">18 Pending</span>
-                              </div>
-
-                              <div 
-                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('gstr2b_downloader'); setAppRoute('returns'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-indigo-700 transition-colors">GSTR-2B 12-Month Inward Autopilot</span>
-                                </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-slate-700 border border-slate-200 font-medium shadow-2xs">8 Sheets Sync</span>
-                              </div>
-
-                              <div 
-                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('gstr1_downloader'); setAppRoute('returns'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-emerald-700 transition-colors">GSTR-1 Outward Harvester &amp; Table 12</span>
-                                </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold shadow-2xs">Zero-Merge</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-emerald-300 transition-colors">96.4% Filed</span>
                               </div>
                             </div>
                           </div>
 
-                          {/* Footer CTA */}
-                          <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-slate-400">Suite 04 · /returns-hub</span>
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/dashboard</span>
                             <button 
-                              onClick={(e) => { e.stopPropagation(); setAppRoute('returns'); }}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700 transition-colors shadow-xs group-hover:translate-x-0.5"
+                              onClick={(e) => { e.stopPropagation(); setAppRoute('dashboard'); }}
+                              className="inline-flex items-center gap-1.5 text-amber-700 font-semibold text-[11.5px] hover:text-amber-800 transition-all duration-200 group/btn"
                             >
-                              <span>Launch Returns Workspace</span>
-                              <ArrowRight className="w-4 h-4" />
+                              <span>Open Hub</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
                             </button>
                           </div>
-                        </article>
+                        </motion.article>
 
-                        {/* Suite 02: Core GST & TDS Reco Engine (Emerald Theme) */}
-                        <article 
+                        {/* SUITE 02: GST & TDS Reconciliation Engine */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
                           onClick={() => setActiveCategoryCard('reco')}
-                          className="relative rounded-xl bg-white p-6 border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group cursor-pointer"
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-emerald-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-emerald-300"
                         >
-                          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-600 via-teal-500 to-blue-600"></div>
-                          <div>
-                            {/* Header */}
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                  <ShieldCheck className="w-6 h-6" />
-                                </div>
-                                <div>
-                                  <span className="font-mono text-emerald-700 text-[10px] block uppercase tracking-wider font-semibold">SUITE 02</span>
-                                  <h3 className="text-[18px] text-slate-900 font-bold leading-tight group-hover:text-emerald-700 transition-colors">
-                                    GST &amp; TDS Reconciliation Engine
-                                  </h3>
-                                </div>
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-emerald-500 via-teal-400 to-teal-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-emerald-50/90 border border-emerald-200/80 text-emerald-600 shadow-2xs group-hover:scale-110 group-hover:shadow-emerald-100/50 transition-all duration-200 flex items-center justify-center">
+                                <ShieldCheck className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
                               </div>
-                              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[11px] font-semibold uppercase tracking-wider">
-                                3 Modules
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-emerald-50/80 text-emerald-700 border border-emerald-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                SUITE 02
                               </span>
                             </div>
 
-                            {/* Subtext */}
-                            <p className="text-slate-600 text-[13px] mb-5 leading-relaxed">
-                              Purchase Register vs GSTR-2B matching with ±₹2 tolerance, CDNR pairing, and Form 26Q matching.
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-emerald-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              GST &amp; TDS Reco Engine
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              PR vs 2B matching (&le; ₹2 tol), party dispute hub, and TRACES 26Q TDS.
                             </p>
 
-                            {/* 4 Clickable Module Rows */}
-                            <div className="flex flex-col gap-2 mb-6">
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
                               <div 
-                                onClick={(e) => { e.stopPropagation(); setMode('2b-to-pr'); setAppRoute('reco'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-200/70 transition-colors cursor-pointer group/item"
+                                onClick={(e) => { e.stopPropagation(); setMode('input'); setAppRoute('reco'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-emerald-50/60 hover:bg-emerald-50 hover:border-emerald-300/80 border border-emerald-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-emerald-700 transition-colors">GST Multi-Pass Reco (PR vs 2B)</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-emerald-900 transition-colors">GST Reco (PR vs 2B)</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-emerald-100/90 text-emerald-800 border border-emerald-300/60 font-semibold shadow-2xs">±₹2.00 Tol</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-100/90 text-emerald-800 border border-emerald-300/60 font-semibold shrink-0 ml-1.5 shadow-2xs">&plusmn;₹2.00 Tol</span>
                               </div>
 
                               <div 
-                                onClick={(e) => { e.stopPropagation(); setMode('2b-to-pr'); setAppRoute('reco'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
+                                onClick={(e) => { e.stopPropagation(); setMode('input'); setAppRoute('reco'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-emerald-50/80 hover:border-emerald-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-slate-900 transition-colors">Party-Wise Vendor Dispute Center</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-emerald-900 transition-colors">Party Dispute Center</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-slate-700 border border-slate-200 font-medium shadow-2xs">WhatsApp / Mail Dispatch</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-700 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-emerald-200/80 transition-colors">WhatsApp/Mail</span>
                               </div>
 
                               <div 
                                 onClick={(e) => { e.stopPropagation(); setAppRoute('tds-reco'); }}
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors cursor-pointer group/item"
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-emerald-50/80 hover:border-emerald-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium group-hover/item:text-amber-800 transition-colors">TRACES Form 26Q TDS Consolidator</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-emerald-900 transition-colors">TRACES Form 26Q TDS</span>
                                 </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-amber-700 border border-slate-200 font-medium shadow-2xs">194C/J/I/Q Auto-Tiers</span>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-amber-700 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-amber-300 transition-colors">194C/J/I/Q</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/reconciliation</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setMode('input'); setAppRoute('reco'); }}
+                              className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold text-[11.5px] hover:text-emerald-800 transition-all duration-200 group/btn"
+                            >
+                              <span>Open Reco</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
+                            </button>
+                          </div>
+                        </motion.article>
+
+                        {/* SUITE 03: Tally Connectors & XML Bridge */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setActiveCategoryCard('collector')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-rose-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-pink-300"
+                        >
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-rose-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-pink-500 via-rose-400 to-rose-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-pink-50/90 border border-pink-200/80 text-pink-600 shadow-2xs group-hover:scale-110 group-hover:shadow-pink-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Server className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
+                              </div>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-pink-50/80 text-pink-700 border border-pink-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse"></span>
+                                SUITE 03
+                              </span>
+                            </div>
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-pink-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Tally Connectors &amp; Bridge
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              Direct HTTP Port 9000 connector, real-time XML parsers &amp; auto-detect.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('tally-direct'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-pink-50/80 hover:border-pink-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-pink-900 transition-colors">Direct Port 9000 Link</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-emerald-300 transition-colors">Port 9000</span>
                               </div>
 
                               <div 
-                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition-colors group/item"
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                                  <span className="text-[13px] text-slate-800 font-medium">Zero-Merge Corporate 12-Tab Excel</span>
-                                </div>
-                                <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-white text-emerald-700 border border-slate-200 font-semibold shadow-2xs">100% Sort Safe</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Footer CTA */}
-                          <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-slate-400">Suite 02 · /reconciliation</span>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); setMode('2b-to-pr'); setAppRoute('reco'); }}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] font-semibold hover:bg-emerald-700 transition-colors shadow-xs group-hover:translate-x-0.5"
-                            >
-                              <span>Open Reco Workspace</span>
-                              <ArrowRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </article>
-
-                      </div>
-                    </div>
-
-                    {/* 3. Secondary Compliance & Advisory Suites (4-Column Clean Grid) */}
-                    <section>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">Secondary Compliance &amp; Advisory Suites</span>
-                          <span className="text-slate-300">|</span>
-                          <span className="font-mono text-[11px] text-slate-400">Firm Operations &amp; Diagnostic Modules</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-
-                        {/* Suite 01: Work In Progress & Practice Hub (Amber Theme) */}
-                        <article 
-                          onClick={() => setActiveCategoryCard('wip')}
-                          className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                <Zap className="w-5 h-5" />
-                              </div>
-                              <span className="font-mono text-[10px] font-semibold text-amber-700 uppercase">SUITE 01</span>
-                            </div>
-                            <h3 className="text-[15px] font-bold text-slate-900 leading-snug mb-1 group-hover:text-amber-700 transition-colors">
-                              Work In Progress &amp; Practice Hub
-                            </h3>
-                            <p className="text-slate-500 text-[12px] mb-4">Practice management, roster metrics, and checksum validators.</p>
-                            
-                            <ul className="flex flex-col gap-1.5 mb-5 text-[12px]">
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('dashboard'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-amber-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate">Practice Dashboard</span>
-                                <span className="font-mono text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">342 Clients</span>
-                              </li>
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('gstin-scan'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-amber-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate">GSTIN Smart Scanner</span>
-                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">Mod-36</span>
-                              </li>
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('tracker'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-emerald-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate">12M Filing Tracker</span>
-                                <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">96.4% Filed</span>
-                              </li>
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('fin-statements'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 hover:text-cyan-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate font-semibold text-slate-900">1.6 Financial Statements Engine</span>
-                                <span className="font-mono text-[10px] font-bold text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">Sch III & Non-Corp</span>
-                              </li>
-                            </ul>
-                          </div>
-
-                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[10px] text-slate-400">/dashboard</span>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); setAppRoute('dashboard'); }}
-                              className="inline-flex items-center gap-1 text-amber-600 font-semibold text-[12px] group-hover:translate-x-0.5 transition-transform"
-                            >
-                              <span>Open Hub</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </article>
-
-                        {/* Suite 03: Tally Connectors & XML Bridge (Pink Theme) */}
-                        <article 
-                          onClick={() => setActiveCategoryCard('collector')}
-                          className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <div className="w-9 h-9 rounded-lg bg-pink-50 border border-pink-100 text-pink-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                <Server className="w-5 h-5" />
-                              </div>
-                              <span className="font-mono text-[10px] font-semibold text-pink-700 uppercase">SUITE 03</span>
-                            </div>
-                            <h3 className="text-[15px] font-bold text-slate-900 leading-snug mb-1 group-hover:text-pink-700 transition-colors">
-                              Tally Connectors &amp; XML Bridge
-                            </h3>
-                            <p className="text-slate-500 text-[12px] mb-4">Direct HTTP Port 9000 connector and real-time XML parsers.</p>
-                            
-                            <ul className="flex flex-col gap-1.5 mb-5 text-[12px]">
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('tally-direct'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-pink-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate">Direct HTTP Port 9000 Link</span>
-                                <span className="font-mono text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Connected</span>
-                              </li>
-                              <li 
                                 onClick={(e) => { e.stopPropagation(); setAppRoute('tally'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-pink-700 transition-colors cursor-pointer"
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-pink-50/80 hover:border-pink-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">Daybook &amp; TB XML Converter</span>
-                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">Fast Ingest</span>
-                              </li>
-                              <li 
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-pink-900 transition-colors">Daybook &amp; TB XML Parse</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-pink-200/80 transition-colors">Fast Ingest</span>
+                              </div>
+
+                              <div 
                                 onClick={(e) => { e.stopPropagation(); setAppRoute('ledger-import'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 hover:text-pink-700 transition-colors cursor-pointer"
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-pink-50/80 hover:border-pink-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">Active Company Auto-Detect</span>
-                                <span className="font-mono text-[10px] text-pink-700 bg-pink-50 px-1.5 py-0.5 rounded">Auto-Detect</span>
-                              </li>
-                            </ul>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-pink-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-pink-900 transition-colors">Active Company Detect</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-700 border border-pink-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-pink-300 transition-colors">Auto-Detect</span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[10px] text-slate-400">/tally-bridge</span>
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/tally-bridge</span>
                             <button 
-                              onClick={(e) => { e.stopPropagation(); setAppRoute('tally'); }}
-                              className="inline-flex items-center gap-1 text-pink-600 font-semibold text-[12px] group-hover:translate-x-0.5 transition-transform"
+                              onClick={(e) => { e.stopPropagation(); setAppRoute('tally-direct'); }}
+                              className="inline-flex items-center gap-1.5 text-pink-700 font-semibold text-[11.5px] hover:text-pink-800 transition-all duration-200 group/btn"
                             >
                               <span>Launch Bridge</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
                             </button>
                           </div>
-                        </article>
+                        </motion.article>
 
-                        {/* Suite 05: Statutory & Tax Audit Suite (Indigo Theme) */}
-                        <article 
-                          onClick={() => setActiveCategoryCard('audit')}
-                          className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
+                        {/* SUITE 04: Returns Preparation & 12M Filing */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setActiveCategoryCard('returns')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-indigo-300"
                         >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                <Landmark className="w-5 h-5" />
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-indigo-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-indigo-600 via-purple-500 to-pink-500"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-indigo-50/90 border border-indigo-200/80 text-indigo-600 shadow-2xs group-hover:scale-110 group-hover:shadow-indigo-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Send className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
                               </div>
-                              <span className="font-mono text-[10px] font-semibold text-indigo-700 uppercase">SUITE 05</span>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-indigo-50/80 text-indigo-700 border border-indigo-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                SUITE 04
+                              </span>
                             </div>
-                            <h3 className="text-[15px] font-bold text-slate-900 leading-snug mb-1 group-hover:text-indigo-700 transition-colors">
-                              Statutory &amp; Tax Audit Suite
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-indigo-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Returns Prep &amp; 12M Filing
                             </h3>
-                            <p className="text-slate-500 text-[12px] mb-4">Statutory audit sampling, 3CD reporting, and tax balance schedules.</p>
-                            
-                            <ul className="flex flex-col gap-1.5 mb-5 text-[12px]">
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('audit'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-indigo-700 transition-colors cursor-pointer"
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              12-month return cycles, Rule 88A set-off cascade &amp; IMS recipient hub.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('working3b'); setAppRoute('returns'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-indigo-50/80 hover:border-indigo-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">SA 530 Monetary Unit Sampling</span>
-                                <span className="font-mono text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">SA 530</span>
-                              </li>
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('clause44'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-indigo-700 transition-colors cursor-pointer"
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-indigo-900 transition-colors">GSTR-3B Sheet &amp; 88A</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-indigo-300 transition-colors">Ready</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('matrix'); setAppRoute('returns'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-indigo-50/80 hover:border-indigo-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">Form 3CD Clause 44 Spend</span>
-                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">Reg vs Unreg</span>
-                              </li>
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('depreciation'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 hover:text-indigo-700 transition-colors cursor-pointer"
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-indigo-900 transition-colors">12-Month FY Matrix</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-700 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-indigo-200/80 transition-colors">13-Cols Aligned</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setReturnsInitialTab('ims2b'); setAppRoute('returns'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-50/60 hover:bg-amber-50 hover:border-amber-200/80 border border-amber-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">Dual Depreciation &amp; DTA/DTL</span>
-                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">Co Act vs IT</span>
-                              </li>
-                            </ul>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-amber-900 transition-colors">GST IMS &amp; 2B Decision</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-100/90 text-amber-800 border border-amber-300/60 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-amber-400 transition-colors">18 Pending</span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[10px] text-slate-400">/stat-audit</span>
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/returns-hub</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setAppRoute('returns'); }}
+                              className="inline-flex items-center gap-1.5 text-indigo-700 font-semibold text-[11.5px] hover:text-indigo-800 transition-all duration-200 group/btn"
+                            >
+                              <span>Launch Returns</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
+                            </button>
+                          </div>
+                        </motion.article>
+
+                        {/* SUITE 05: Statutory & Tax Audit Suite */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setActiveCategoryCard('audit')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-blue-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-blue-300"
+                        >
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-blue-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-blue-50/90 border border-blue-200/80 text-blue-600 shadow-2xs group-hover:scale-110 group-hover:shadow-blue-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Landmark className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
+                              </div>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-blue-50/80 text-blue-700 border border-blue-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                SUITE 05
+                              </span>
+                            </div>
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-blue-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Statutory &amp; Tax Audit
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              SA 530 Monetary Unit Sampling, Form 3CD Clause 44 &amp; Dual Depreciation.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('audit'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-blue-50/80 hover:border-blue-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-blue-900 transition-colors">SA 530 Monetary Sampling</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-blue-300 transition-colors">SA 530</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('clause44'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-blue-50/80 hover:border-blue-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-blue-900 transition-colors">Form 3CD Clause 44 Spend</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-blue-200/80 transition-colors">Reg vs Unreg</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('depreciation'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-blue-50/80 hover:border-blue-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-blue-900 transition-colors">Dual Depreciation &amp; DTA</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-indigo-200/80 transition-colors">Co Act vs IT</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/stat-audit</span>
                             <button 
                               onClick={(e) => { e.stopPropagation(); setAppRoute('audit'); }}
-                              className="inline-flex items-center gap-1 text-indigo-600 font-semibold text-[12px] group-hover:translate-x-0.5 transition-transform"
+                              className="inline-flex items-center gap-1.5 text-blue-700 font-semibold text-[11.5px] hover:text-blue-800 transition-all duration-200 group/btn"
                             >
                               <span>Open Audit</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
                             </button>
                           </div>
-                        </article>
+                        </motion.article>
 
-                        {/* Suite 06 & 07: Taxation & Bank CMA Credit (Blue/Cyan Theme) */}
-                        <article 
+                        {/* SUITE 06: Bank CMA Credit & Financials */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
                           onClick={() => setActiveCategoryCard('cma-bank')}
-                          className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-teal-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-teal-300"
                         >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <div className="w-9 h-9 rounded-lg bg-sky-50 border border-sky-100 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                                <Calculator className="w-5 h-5" />
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-teal-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-teal-500 via-emerald-400 to-emerald-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-teal-50/90 border border-teal-200/80 text-teal-600 shadow-2xs group-hover:scale-110 group-hover:shadow-teal-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Calculator className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
                               </div>
-                              <span className="font-mono text-[10px] font-semibold text-blue-700 uppercase">SUITE 06 &amp; 07</span>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-teal-50/80 text-teal-700 border border-teal-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+                                SUITE 06
+                              </span>
                             </div>
-                            <h3 className="text-[15px] font-bold text-slate-900 leading-snug mb-1 group-hover:text-blue-700 transition-colors">
-                              Taxation &amp; Bank CMA Credit
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-teal-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Bank CMA Credit &amp; Ratios
                             </h3>
-                            <p className="text-slate-500 text-[12px] mb-4">Direct tax regime optimizer, working capital MPBF, and ratios.</p>
-                            
-                            <ul className="flex flex-col gap-1.5 mb-5 text-[12px]">
-                              <li 
-                                onClick={(e) => { e.stopPropagation(); setAppRoute('income-tax'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-blue-700 transition-colors cursor-pointer"
-                              >
-                                <span className="truncate">IT Regime Optimizer (115BAC)</span>
-                                <span className="font-mono text-[10px] font-semibold text-blue-700 bg-sky-50 px-1.5 py-0.5 rounded">AY 25-26</span>
-                              </li>
-                              <li 
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              Tandon Committee Method II MPBF, 10 financial ratios &amp; Schedule III.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
                                 onClick={(e) => { e.stopPropagation(); setAppRoute('bank-cma'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 border-b border-slate-100 hover:text-blue-700 transition-colors cursor-pointer"
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-teal-50/80 hover:border-teal-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">Bank CMA Credit MPBF Method II</span>
-                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">Method II</span>
-                              </li>
-                              <li 
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-teal-900 transition-colors">Bank CMA MPBF Method II</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-teal-300 transition-colors">Method II</span>
+                              </div>
+
+                              <div 
                                 onClick={(e) => { e.stopPropagation(); setAppRoute('cma'); }}
-                                className="flex items-center justify-between text-slate-700 py-1 hover:text-emerald-700 transition-colors cursor-pointer"
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-teal-50/80 hover:border-teal-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
                               >
-                                <span className="truncate">10 Financial Ratios</span>
-                                <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">DSCR 1.84x</span>
-                              </li>
-                            </ul>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-teal-900 transition-colors">10 Financial Ratios</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-emerald-300 transition-colors">DSCR 1.84x</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('fin-statements'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-teal-50/80 hover:border-teal-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-teal-900 transition-colors">Schedule III Financials</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-teal-200/80 transition-colors">Schedule III</span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="font-mono text-[10px] text-slate-400">/cma-advisory</span>
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/cma-credit</span>
                             <button 
                               onClick={(e) => { e.stopPropagation(); setAppRoute('bank-cma'); }}
-                              className="inline-flex items-center gap-1 text-blue-600 font-semibold text-[12px] group-hover:translate-x-0.5 transition-transform"
+                              className="inline-flex items-center gap-1.5 text-teal-700 font-semibold text-[11.5px] hover:text-teal-800 transition-all duration-200 group/btn"
                             >
-                              <span>Launch Advisory</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
+                              <span>Open CMA</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
                             </button>
                           </div>
-                        </article>
+                        </motion.article>
 
-                      </div>
-                    </section>
+                        {/* SUITE 07: Income Tax Liability & Regime Optimizer */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setActiveCategoryCard('tax')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-violet-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-violet-300"
+                        >
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-violet-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-violet-600 via-purple-500 to-purple-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-violet-50/90 border border-violet-200/80 text-violet-600 shadow-2xs group-hover:scale-110 group-hover:shadow-violet-100/50 transition-all duration-200 flex items-center justify-center">
+                                <Receipt className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
+                              </div>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-violet-50/80 text-violet-700 border border-violet-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse"></span>
+                                SUITE 07
+                              </span>
+                            </div>
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-violet-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Income Tax &amp; Regime Engine
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              Section 115BAC New vs Old regime, 25% surcharge cap &amp; 87A rebate.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('income-tax'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-violet-50/80 hover:border-violet-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-violet-900 transition-colors">IT Regime Optimizer (115BAC)</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-violet-300 transition-colors">AY 25-26</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('income-tax'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-violet-50/80 hover:border-violet-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-violet-900 transition-colors">Surcharge 25% Cap &amp; Rebates</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-purple-700 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-purple-300 transition-colors">87A Relief</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('income-tax'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-violet-50/80 hover:border-violet-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-violet-900 transition-colors">Tax Computation Sheet</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-indigo-200/80 transition-colors">Computation</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/income-tax</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setAppRoute('income-tax'); }}
+                              className="inline-flex items-center gap-1.5 text-violet-700 font-semibold text-[11.5px] hover:text-violet-800 transition-all duration-200 group/btn"
+                            >
+                              <span>Open Tax</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
+                            </button>
+                          </div>
+                        </motion.article>
+
+                        {/* SUITE 08: Monthly Audit Working Paper */}
+                        <motion.article 
+                          variants={hubCardVariants}
+                          whileHover={{ y: -4, transition: { duration: 0.22, ease: [0.25, 1, 0.5, 1] } }}
+                          whileTap={{ scale: 0.985 }}
+                          onClick={() => setAppRoute('monthly-audit')}
+                          className="relative rounded-xl bg-white p-4 sm:p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 flex flex-col justify-between overflow-hidden group cursor-pointer hover:border-indigo-300"
+                        >
+                          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-b from-indigo-500/5 via-transparent to-transparent -z-0" />
+                          <div className="absolute inset-x-0 top-0 h-1 group-hover:h-1.5 transition-all duration-300 bg-gradient-to-r from-indigo-500 via-blue-500 to-blue-600"></div>
+                          
+                          <div className="relative z-10">
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-indigo-50/90 border border-indigo-200/80 text-indigo-600 shadow-2xs group-hover:scale-110 group-hover:shadow-indigo-100/50 transition-all duration-200 flex items-center justify-center">
+                                <FileSpreadsheet className="w-4.5 h-4.5 transition-transform duration-200 group-hover:rotate-[-4deg]" />
+                              </div>
+                              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-indigo-50/80 text-indigo-700 border border-indigo-200/80 shadow-2xs flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                SUITE 08
+                              </span>
+                            </div>
+
+                            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-indigo-700 transition-colors duration-200 leading-snug line-clamp-1 mb-1 tracking-tight">
+                              Monthly Audit Working Paper
+                            </h3>
+                            <p className="text-slate-500 text-[11.5px] leading-relaxed line-clamp-2 min-h-[32px] mb-3">
+                              Standardized firm format, Maker-Checker review &amp; Zero-Merge Excel.
+                            </p>
+
+                            <div className="flex flex-col gap-1.5 mb-3.5 text-[11.5px]">
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('monthly-audit'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-indigo-50/80 hover:border-indigo-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-indigo-900 transition-colors">5 Sections &amp; 8 Checklists</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-indigo-300 transition-colors">Standard</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('monthly-audit'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-indigo-50/80 hover:border-indigo-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-indigo-900 transition-colors">Maker-Checker 4-Eye Flow</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/80 font-medium shrink-0 ml-1.5 shadow-2xs group-hover/item:border-amber-300 transition-colors">Draft &rarr; Released</span>
+                              </div>
+
+                              <div 
+                                onClick={(e) => { e.stopPropagation(); setAppRoute('monthly-audit'); }}
+                                className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50/80 hover:bg-indigo-50/80 hover:border-indigo-200/80 border border-slate-200/60 transition-all duration-200 cursor-pointer group/item hover:translate-x-1 hover:shadow-2xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 transition-transform group-hover/item:scale-125"></span>
+                                  <span className="truncate text-slate-700 font-medium group-hover/item:text-indigo-900 transition-colors">Work Pending Continuity</span>
+                                </div>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold shrink-0 ml-1.5 shadow-2xs group-hover/item:border-emerald-300 transition-colors">Continuity</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative z-10 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors">/monthly-audit</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setAppRoute('monthly-audit'); }}
+                              className="inline-flex items-center gap-1.5 text-indigo-700 font-semibold text-[11.5px] hover:text-indigo-800 transition-all duration-200 group/btn"
+                            >
+                              <span>Launch Suite 08</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform duration-200" />
+                            </button>
+                          </div>
+                        </motion.article>
+
+                      </motion.div>
+                    </div>
 
                     {/* 4. Docked Bottom Operational Telemetry Status Bar */}
                     <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-600 gap-3 shadow-xs">
@@ -571,7 +796,7 @@ export default function Hub({
                       <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
                         <span>Core Daemon v2.4.0</span>
                         <span>•</span>
-                        <span className="text-slate-700 font-semibold">Vaswani &amp; Associates</span>
+                        <span className="text-slate-700 font-semibold">VCAN &amp; Associates LLP</span>
                       </div>
                     </div>
                   </>

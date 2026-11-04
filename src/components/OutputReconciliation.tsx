@@ -141,7 +141,7 @@ export default function OutputReconciliation() {
       a.download = "GSTR1_Reconciliation_Output.xlsx";
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       document.body.removeChild(a);
 
       // Dummy summary visually confirming process success

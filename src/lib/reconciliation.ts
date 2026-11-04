@@ -683,8 +683,24 @@ export function reconcile(
 
     let status: MatchStatus = within ? 'Perfect Match' : 'Value Mismatch';
 
-    if ((p.igst > 0 && (p.cgst > 0 || p.sgst > 0)) || (t.igst > 0 && (t.cgst > 0 || t.sgst > 0))) {
+    const pHasIgst = p.igst > tolerance;
+    const pHasCgstSgst = (p.cgst > tolerance || p.sgst > tolerance);
+    const tHasIgst = t.igst > tolerance;
+    const tHasCgstSgst = (t.cgst > tolerance || t.sgst > tolerance);
+
+    let extraRemark = vendorRemark;
+    if ((matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
+      extraRemark = `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
+    }
+
+    if ((pHasIgst && tHasCgstSgst) || (pHasCgstSgst && tHasIgst)) {
       status = 'Tax Type Error';
+      const pHead = pHasIgst ? 'IGST' : 'CGST/SGST';
+      const tHead = tHasIgst ? 'IGST' : 'CGST/SGST';
+      extraRemark = extraRemark ? `${extraRemark} | Tax Head Mismatch (${bookName}: ${pHead} vs ${govtName}: ${tHead})` : `Tax Head Mismatch (${bookName}: ${pHead} vs ${govtName}: ${tHead})`;
+    } else if ((pHasIgst && pHasCgstSgst) || (tHasIgst && tHasCgstSgst)) {
+      status = 'Tax Type Error';
+      extraRemark = extraRemark ? `${extraRemark} | Dual Tax Type Error (IGST & CGST/SGST both present)` : `Dual Tax Type Error (IGST & CGST/SGST both present)`;
     }
 
     if (status === 'Perfect Match') {
@@ -693,11 +709,6 @@ export function reconcile(
       if (pDate !== null && tDate !== null && pDate !== tDate) {
         status = 'Matched (Diff Date)';
       }
-    }
-
-    let extraRemark = vendorRemark;
-    if ((matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
-      extraRemark = `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
     }
 
     if (within && taxableDiff !== undefined && Math.abs(taxableDiff) > tolerance) {

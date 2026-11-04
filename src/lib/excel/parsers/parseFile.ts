@@ -20,7 +20,7 @@ export async function parseFile(
     const dt = options.docType.toLowerCase();
     const matched = wb.SheetNames.find(sn => {
       const lower = sn.toLowerCase().trim();
-      if (dt === 'b2b' && (lower.includes('b2b') || lower === 'b2b supplies')) return true;
+      if ((dt === 'b2b' || dt === '2b') && (lower.includes('b2b') || lower.includes('2b') || lower === 'b2b supplies')) return true;
       if (dt === 'b2c' && (lower.includes('b2c') || lower.includes('b2cs'))) return true;
       if (dt === 'b2cl' && lower.includes('b2cl')) return true;
       if (dt === 'cn' && (lower.includes('cdnr') || lower.includes('cn') || lower.includes('credit'))) return true;

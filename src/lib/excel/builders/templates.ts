@@ -16,8 +16,6 @@ export function exportClientTemplate(): XLSX.WorkBook {
   ws['E1'].s = { fill: { fgColor: { rgb: '1E3A8A' } }, font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 }, alignment: { horizontal: 'center', vertical: 'center' } };
 
   ws['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 18 }];
-  ws['!rows'] = [{ hpt: 20 }];
-
   XLSX.utils.book_append_sheet(wb, ws, 'Client Import Template');
   removeAllMergesFromWorkbook(wb);
   try {
@@ -27,6 +25,48 @@ export function exportClientTemplate(): XLSX.WorkBook {
   }
   return wb;
 }
+
+export function exportClientAdditionTemplate(): XLSX.WorkBook {
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['GSTIN', 'Trade Name', 'Legal Name', 'Email Address', 'Phone Number', 'Portal Username', 'Portal Password'],
+    ['27AADCB2230M1Z4', 'Vaswani Enterprises', 'Vaswani Enterprises Private Limited', 'accounts@vaswanient.com', '+91 98230 12345', 'vaswani_portal', 'Pass#2026'],
+    ['24AAACA1234B1Z5', 'Gujarat Steel Traders', 'Gujarat Steel Traders LLP', 'tax@gujaratsteel.in', '+91 98790 54321', 'gujsteel_gst', 'Steel@8899'],
+    ['07AAAAA0000A1Z5', 'Apex Logistics Solution', 'Apex Logistics Solution Pvt Ltd', 'billing@apexlogistics.com', '+91 99110 22334', 'apex_gstin', 'Apex#4433']
+  ]);
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: '1E3A8A' } },
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+    alignment: { horizontal: 'center', vertical: 'center' }
+  };
+
+  ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'].forEach(cell => {
+    if (ws[cell]) ws[cell].s = headerStyle;
+  });
+
+  ws['!cols'] = [
+    { wch: 20 }, // GSTIN
+    { wch: 28 }, // Trade Name
+    { wch: 32 }, // Legal Name
+    { wch: 28 }, // Email Address
+    { wch: 18 }, // Phone Number
+    { wch: 20 }, // Portal Username
+    { wch: 20 }  // Portal Password
+  ];
+  ws['!rows'] = [{ hpt: 24 }];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Client Master Addition');
+  removeAllMergesFromWorkbook(wb);
+  try {
+    XLSX.writeFile(wb, 'GST_Client_Addition_Template.xlsx');
+  } catch (err) {
+    console.error('Failed to write client addition template:', err);
+  }
+  return wb;
+}
+
 
 export function export3BTemplate(): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();

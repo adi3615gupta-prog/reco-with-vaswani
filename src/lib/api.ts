@@ -68,20 +68,35 @@ export const safeApiFetch = async (urlOrPath: string, options?: RequestInit): Pr
   const isFullPath = urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://');
   const primaryUrl = isFullPath ? urlOrPath : `${getApiBase()}${urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`}`;
 
+  const token = getToken();
+  const baseHeaders: Record<string, string> = {};
+  if (token && token !== 'null' && token !== 'undefined') {
+    baseHeaders['Authorization'] = `Bearer ${token}`;
+  }
+  baseHeaders['bypass-tunnel-reminder'] = 'true';
+
+  const mergedOptions: RequestInit = {
+    ...options,
+    headers: {
+      ...baseHeaders,
+      ...(options?.headers as Record<string, string> || {}),
+    },
+  };
+
   try {
-    const res = await fetch(primaryUrl, options);
+    const res = await fetch(primaryUrl, mergedOptions);
     return res;
   } catch (primaryErr) {
     if (!isFullPath && typeof window !== 'undefined') {
       const relPath = urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
       try {
         // Fallback 1: Vite proxy relative path
-        const res = await fetch(relPath, options);
+        const res = await fetch(relPath, mergedOptions);
         return res;
       } catch {
         // Fallback 2: Direct localhost:3001
         try {
-          const res = await fetch(`http://localhost:3001${relPath}`, options);
+          const res = await fetch(`http://localhost:3001${relPath}`, mergedOptions);
           return res;
         } catch {
           throw primaryErr;

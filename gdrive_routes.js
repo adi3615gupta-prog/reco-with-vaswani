@@ -89,14 +89,15 @@ async function getOrCreateAppFolder(token) {
     return folderData.id;
 }
 
-export default function setupGDriveRoutes(app) {
+export default function setupGDriveRoutes(app, authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
 
     // =========================================================================
     // POST /api/gdrive/admin-setup
     // One-time admin setup: exchange authorization code for refresh token
     // Body: { client_id, client_secret, auth_code, redirect_uri }
     // =========================================================================
-    app.post('/api/gdrive/admin-setup', async (req, res) => {
+    app.post('/api/gdrive/admin-setup', authMiddleware, async (req, res) => {
         try {
             const { client_id, client_secret, auth_code, redirect_uri } = req.body;
             if (!client_id || !client_secret || !auth_code) {
@@ -328,7 +329,7 @@ export default function setupGDriveRoutes(app) {
     // DELETE /api/gdrive/delete/:fileId
     // Delete a snapshot from admin's Google Drive
     // =========================================================================
-    app.delete('/api/gdrive/delete/:fileId', async (req, res) => {
+    app.delete('/api/gdrive/delete/:fileId', authMiddleware, async (req, res) => {
         try {
             const token = await getAdminAccessToken();
             await fetch(`https://www.googleapis.com/drive/v3/files/${req.params.fileId}`, {
@@ -346,7 +347,7 @@ export default function setupGDriveRoutes(app) {
     // POST /api/gdrive/disconnect
     // Remove admin's GDrive config
     // =========================================================================
-    app.post('/api/gdrive/disconnect', (req, res) => {
+    app.post('/api/gdrive/disconnect', authMiddleware, (req, res) => {
         try {
             if (fs.existsSync(GDRIVE_CONFIG_FILE)) {
                 fs.unlinkSync(GDRIVE_CONFIG_FILE);

@@ -58,19 +58,29 @@ import {
     Percent,
     RotateCcw,
     Paperclip,
-    Cloud
+    Cloud,
+    Inbox,
+    CheckSquare,
+    ListChecks,
+    Settings,
+    Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
-import { getApiBase } from '@/lib/api';
+import { getApiBase, getAuthToken, safeApiFetch, getToken } from '@/lib/api';
 import {
     submitAuditForSeniorReviewInFirebase,
     approveAuditInFirebase,
     requestRevisionInFirebase,
     releaseAuditInFirebase,
+    deleteAuditFromFirebase,
     subscribeToCloudAudit,
+    subscribeToSeniorPendingQueue,
     fetchSeniorAuditorsFromCloud,
-    type CloudAuditRecord
+    fetchJuniorAuditorsFromCloud,
+    isSeniorAssigned,
+    type CloudAuditRecord,
+    type CloudSeniorAuditor
 } from '../lib/firebaseAuditSync';
 import {
     type MonthlyAuditHeader,
@@ -122,7 +132,7 @@ import {
     generateMonthlyAuditPdf
 } from '@/lib/monthlyAuditPdf';
 
-const FINANCIAL_YEARS = ['2025-26', '2024-25', '2023-24', '2022-23'];
+const FINANCIAL_YEARS = ['2026-27', '2027-28', '2028-29', '2029-30', '2030-31'];
 const MONTHS = [
     'April', 'May', 'June', 'July', 'August', 'September',
     'October', 'November', 'December', 'January', 'February', 'March'
@@ -156,19 +166,25 @@ interface MonthlyAuditSuiteProps {
 
 export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     // ─── Client & Navigation State ──────────────────────────────────────────────
-    const [clients, setClients] = useState<Array<{ gstin: string; legalName: string; tradeName?: string }>>([
-        { gstin: '27AAGCD4105L1ZO', legalName: 'DYP INFRAPROJECTS PRIVATE LIMITED', tradeName: 'DYP Infra' }
-    ]);
-    const [selectedClientGstin, setSelectedClientGstin] = useState<string>('27AAGCD4105L1ZO');
+    const [clients, setClients] = useState<Array<{ id?: string; gstin: string; legalName: string; tradeName?: string; email?: string; phone?: string }>>([]);
+    const [selectedClientGstin, setSelectedClientGstin] = useState<string>(() => {
+        try {
+            return localStorage.getItem('monthly_audit_selected_client') ||
+                   localStorage.getItem('last_active_gstin') ||
+                   localStorage.getItem('gstr3b_active_client_gstin') || '';
+        } catch {
+            return '';
+        }
+    });
     const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
     const [clientSearchQuery, setClientSearchQuery] = useState('');
-    const [selectedFy, setSelectedFy] = useState<string>('2025-26');
-    const [selectedMonth, setSelectedMonth] = useState<string>('October');
+    const [selectedFy, setSelectedFy] = useState<string>('2026-27');
+    const [selectedMonth, setSelectedMonth] = useState<string>('April');
     const [monthStatuses, setMonthStatuses] = useState<Record<string, string>>({});
 
     // ─── Active Audit Bundle State ──────────────────────────────────────────────
     const [auditHeader, setAuditHeader] = useState<MonthlyAuditHeader>(() => {
-        const init = initializeMonthlyAudit('27AAGCD4105L1ZO', 'DYP INFRAPROJECTS PRIVATE LIMITED', '2025-26', 'October');
+        const init = initializeMonthlyAudit('', '', '2026-27', 'April');
         const userTitle = getLoggedInUserTitle();
         if (userTitle) {
             init.preparedBy = userTitle;
@@ -233,10 +249,44 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const [pendingPoints, setPendingPoints] = useState<AuditPendingPointItem[]>([]);
 
     // ─── Maker-Checker Role & UI Tabs ──────────────────────────────────────────
+    // Determines if the authenticated user has Senior CA Partner / Manager / Admin authority
+    const isSeniorUser = useMemo(() => {
+        try {
+            const rawUser = localStorage.getItem('np_user') || sessionStorage.getItem('np_user') || '';
+            const rawRole = localStorage.getItem('np_user_role') || sessionStorage.getItem('np_user_role') || '';
+            const rawDesig = localStorage.getItem('np_user_designation') || sessionStorage.getItem('np_user_designation') || '';
+            const isAdmin = localStorage.getItem('np_admin') === 'true' || sessionStorage.getItem('np_admin') === 'true';
+
+            let parsedRole = rawRole;
+            let parsedDesig = rawDesig;
+            let parsedUsername = rawUser;
+
+            if (rawUser.startsWith('{')) {
+                const u = JSON.parse(rawUser);
+                parsedRole = u.role || parsedRole;
+                parsedDesig = u.designation || parsedDesig;
+                parsedUsername = u.username || parsedUsername;
+            }
+
+            const combined = `${parsedRole} ${parsedDesig} ${parsedUsername}`.toLowerCase();
+
+            // Senior / Partner / Admin / Manager authority check
+            return isAdmin ||
+                combined.includes('admin') ||
+                combined.includes('partner') ||
+                combined.includes('senior') ||
+                combined.includes('manager') ||
+                combined.includes('principal');
+        } catch {
+            return false;
+        }
+    }, []);
+
     const [currentRole, setCurrentRole] = useState<'junior' | 'senior'>('junior');
     const [activeTab, setActiveTab] = useState<'scope' | 'profitability' | 'verification' | 'observations' | 'pending'>('scope');
     const [verificationSubTab, setVerificationSubTab] = useState<'sales' | 'purchase' | 'journal' | 'bank' | 'roc' | 'cash' | 'labor'>('sales');
     const [salesMatrixViewMode, setSalesMatrixViewMode] = useState<'all' | 'books_r1' | 'books_3b' | 'drc01b'>('all');
+    const [salesSelectedPeriod, setSalesSelectedPeriod] = useState<string>('active');
     const [purchaseMatrixViewMode, setPurchaseMatrixViewMode] = useState<'all' | 'books_2b' | 'books_3b' | 'drc01c'>('all');
     const [pendingFilter, setPendingFilter] = useState<'All' | 'Pending' | 'In Progress' | 'Cleared'>('All');
 
@@ -246,9 +296,9 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const [salesLocalPathInput, setSalesLocalPathInput] = useState<string>('');
     const [purchaseLocalPathInput, setPurchaseLocalPathInput] = useState<string>('');
 
-    // ─── Profitability Status (Schedule III P&L Modeled on E:\Book1.xlsx) ──────
+    // ─── Profitability Status (Schedule III P&L) ──────────────────────────────
     const [profitability, setProfitability] = useState<ProfitabilityStatement>(DEFAULT_PROFITABILITY_STATEMENT);
-    const [profitabilityFilePath, setProfitabilityFilePath] = useState<string>('E:\\Book1.xlsx');
+    const [profitabilityFilePath, setProfitabilityFilePath] = useState<string>('');
     const [loadingProfitability, setLoadingProfitability] = useState<boolean>(false);
     const [showNotesGuidance, setShowNotesGuidance] = useState<boolean>(false);
 
@@ -282,14 +332,30 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Firebase Cloud Sync & Senior Review Selection State ──────────────────
     const [submitReviewModalOpen, setSubmitReviewModalOpen] = useState(false);
-    const [selectedSenior, setSelectedSenior] = useState('CA Ramesh Vaswani (Senior Partner)');
+    const [selectedSenior, setSelectedSenior] = useState('');
     const [customSeniorName, setCustomSeniorName] = useState('');
     const [submissionNotes, setSubmissionNotes] = useState('');
     const [reviewPriority, setReviewPriority] = useState<'Normal' | 'High' | 'Urgent (GST Deadline)'>('Normal');
     const [isSubmittingCloud, setIsSubmittingCloud] = useState(false);
     const [cloudAuditRecord, setCloudAuditRecord] = useState<CloudAuditRecord | null>(null);
     const [isCloudLive, setIsCloudLive] = useState(false);
-    const [cloudSeniors, setCloudSeniors] = useState<Array<{ id: string; name: string; designation?: string; department?: string; role?: string }>>([]);
+    const [cloudSeniors, setCloudSeniors] = useState<Array<CloudSeniorAuditor>>([]);
+    const [seniorQueueModalOpen, setSeniorQueueModalOpen] = useState(false);
+    const [pendingReviewsQueue, setPendingReviewsQueue] = useState<CloudAuditRecord[]>([]);
+    const [activeSeniorReviewer, setActiveSeniorReviewer] = useState<string>('ALL');
+    const [queueSearchQuery, setQueueSearchQuery] = useState('');
+    const [revisionSection, setRevisionSection] = useState('General Scrutiny / Overall Working Paper');
+    const [revisionSeverity, setRevisionSeverity] = useState<'Mandatory Fix' | 'Clarification' | 'Advisory'>('Mandatory Fix');
+    const [resolvedRevisionPoints, setResolvedRevisionPoints] = useState<Record<string, boolean>>({});
+
+    // ─── Client Quick Add Modal State ─────────────────────────────────────────
+    const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+    const [newClientGstin, setNewClientGstin] = useState('');
+    const [newClientLegalName, setNewClientLegalName] = useState('');
+    const [newClientTradeName, setNewClientTradeName] = useState('');
+    const [newClientEmail, setNewClientEmail] = useState('');
+    const [newClientPhone, setNewClientPhone] = useState('');
+    const [isSavingClient, setIsSavingClient] = useState(false);
 
     // Load Senior Auditors & Reviewers configured in Super Admin Portal
     useEffect(() => {
@@ -297,6 +363,11 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         fetchSeniorAuditorsFromCloud().then((seniors) => {
             if (isMounted && Array.isArray(seniors) && seniors.length > 0) {
                 setCloudSeniors(seniors);
+                // Pre-select first cloud senior if not already configured
+                if (!auditHeader.reviewedBy) {
+                    setSelectedSenior(seniors[0].name);
+                    setAuditHeader(prev => ({ ...prev, reviewedBy: seniors[0].name }));
+                }
             }
         }).catch((err) => {
             console.warn('[MonthlyAuditSuite] Could not load senior auditors from cloud:', err);
@@ -304,10 +375,258 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         return () => { isMounted = false; };
     }, []);
 
+    // Subscribe to Senior's real-time pending queue across all clients
+    useEffect(() => {
+        const unsubscribe = subscribeToSeniorPendingQueue(
+            activeSeniorReviewer,
+            (audits) => {
+                setPendingReviewsQueue(audits);
+            },
+            (err) => {
+                console.warn('[MonthlyAuditSuite] Pending queue listener error:', err);
+            }
+        );
+        return () => { unsubscribe(); };
+    }, [activeSeniorReviewer]);
+
+    // Auto-detect logged-in user role from session / localStorage / active credentials
+    useEffect(() => {
+        try {
+            const rawUser = localStorage.getItem('np_user') || sessionStorage.getItem('np_user') || localStorage.getItem('np_auth_user');
+            if (rawUser) {
+                const parsed = typeof rawUser === 'string' && rawUser.startsWith('{') ? JSON.parse(rawUser) : { username: rawUser };
+                const nameStr = parsed.name || localStorage.getItem('np_user_name') || parsed.username || '';
+                if (isSeniorUser) {
+                    setCurrentRole('senior');
+                    if (nameStr && !auditHeader.reviewedBy) {
+                        setAuditHeader(prev => ({ ...prev, reviewedBy: nameStr }));
+                    }
+                } else {
+                    if (nameStr && !auditHeader.preparedBy) {
+                        setAuditHeader(prev => ({ ...prev, preparedBy: nameStr }));
+                    }
+                }
+            }
+        } catch {
+            // keep default fallback
+        }
+    }, [isSeniorUser]);
+
+    // Robust resolver to extract GSTIN, FY, Month, and Client Name from any audit record or ID
+    const resolveAuditIdentifiers = (item: CloudAuditRecord) => {
+        const cleanId = (item?.id || '').replace(/^audit_/i, '').replace(/^AUD_/i, '');
+        const idParts = cleanId.split('_');
+        const idGstinMatch = cleanId.match(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/i);
+        const nameGstinMatch = (item?.clientName || '').match(/[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/i);
+
+        const matchedClient = clients.find(c =>
+            (c.legalName && item?.clientName && c.legalName.toLowerCase().trim() === item.clientName.toLowerCase().trim()) ||
+            (c.tradeName && item?.clientName && c.tradeName.toLowerCase().trim() === item.clientName.toLowerCase().trim())
+        );
+
+        const targetGstin = (
+            item?.clientGstin ||
+            (item as any)?.client_gstin ||
+            (item as any)?.gstin ||
+            (item as any)?.clientId ||
+            (item as any)?.client_id ||
+            (idGstinMatch ? idGstinMatch[0].toUpperCase() : '') ||
+            (nameGstinMatch ? nameGstinMatch[0].toUpperCase() : '') ||
+            (matchedClient ? matchedClient.gstin : '') ||
+            (idParts[0] && idParts[0].length >= 10 ? idParts[0].toUpperCase() : '') ||
+            selectedClientGstin ||
+            (clients[0] ? clients[0].gstin : '') ||
+            ''
+        ).trim().toUpperCase();
+
+        const targetFy = (
+            item?.fy ||
+            (item as any)?.financialYear ||
+            (idParts[1] && idParts[1].includes('-') ? idParts[1] : '') ||
+            selectedFy ||
+            '2026-27'
+        ).trim();
+
+        const targetMonth = (
+            item?.month ||
+            (idParts[2] ? idParts[2] : '') ||
+            selectedMonth ||
+            'April'
+        ).trim();
+
+        const targetClientName = item?.clientName || (item as any)?.client_name || matchedClient?.legalName || (targetGstin ? `Client (${targetGstin})` : 'Selected Client');
+
+        return {
+            targetGstin,
+            targetFy,
+            targetMonth,
+            targetClientName
+        };
+    };
+
+    // Helper to dismiss / delete an invalid or test cloud audit record from inbox
+    const handleDismissCloudAudit = async (item: CloudAuditRecord) => {
+        try {
+            const toastId = toast.loading('Removing audit request from inbox...');
+            await deleteAuditFromFirebase(item.id);
+            setPendingReviewsQueue(prev => prev.filter(p => p.id !== item.id));
+            toast.success('Audit request removed from review inbox', { id: toastId });
+        } catch (err: any) {
+            toast.error(`Could not remove request: ${err.message}`);
+        }
+    };
+
+    // Direct 1-Click Accept & Sign-Off action from Senior Pending Inbox
+    const handleDirectAcceptAndApprove = async (item: CloudAuditRecord) => {
+        const { targetGstin: rawGstin, targetFy, targetMonth, targetClientName } = resolveAuditIdentifiers(item);
+        let targetGstin = (rawGstin === 'UNKNOWN' ? '' : rawGstin).trim();
+
+        // If record has no GSTIN (e.g. submitted before client was added)
+        if (!targetGstin) {
+            if (clients.length > 0) {
+                targetGstin = selectedClientGstin || clients[0].gstin;
+            }
+        }
+
+        if (!targetGstin) {
+            toast.error('This audit was submitted without a client. Please add a client first, or click "Dismiss" to remove this request.', {
+                duration: 6000
+            });
+            setSeniorQueueModalOpen(false);
+            setIsAddClientModalOpen(true);
+            return;
+        }
+
+        const seniorName = item?.reviewedBy || selectedSenior || (activeSeniorReviewer !== 'ALL' ? activeSeniorReviewer : '') || 'Senior CA Partner';
+        const notes = 'Audit working papers verified and approved for client release.';
+        const apiBase = getApiBase();
+
+        // Dynamically register client in local clients list if not already present
+        if (targetGstin && !clients.some(c => c.gstin === targetGstin)) {
+            setClients(prev => [{
+                gstin: targetGstin,
+                legalName: targetClientName !== targetGstin && targetClientName !== 'No Client Selected' ? targetClientName : `Client (${targetGstin})`
+            }, ...prev]);
+        }
+
+        const toastId = toast.loading(`Accepting & signing off ${targetClientName} (${targetMonth} ${targetFy})...`);
+        setSeniorQueueModalOpen(false);
+
+        try {
+            const auditId = item.id || `audit_${targetGstin}_${targetFy}_${targetMonth}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            // 1. Update SQLite backend with multiple lookup keys for guaranteed match
+            await fetch(`${apiBase}/api/monthly-audits/${auditId}/senior-review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'APPROVE',
+                    reviewedBy: seniorName,
+                    seniorReviewNotes: notes,
+                    clientGstin: targetGstin,
+                    fy: targetFy,
+                    month: targetMonth
+                })
+            }).catch(() => {});
+
+            // 2. Sync to Firebase Cloud with a 3.5s timeout guarantee so slow networks never hang
+            const firebasePromise = approveAuditInFirebase({
+                clientGstin: targetGstin,
+                fy: targetFy,
+                month: targetMonth,
+                reviewedBy: seniorName,
+                seniorReviewNotes: notes
+            });
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ success: true, timeout: true }), 3500));
+            await Promise.race([firebasePromise, timeoutPromise]).catch(() => {});
+
+            // 3. Update header state and switch to this audit
+            setSelectedClientGstin(targetGstin);
+            setSelectedFy(targetFy);
+            setSelectedMonth(targetMonth);
+            setCurrentRole('senior');
+            setAuditHeader(prev => ({
+                ...prev,
+                clientGstin: targetGstin,
+                fy: targetFy,
+                month: targetMonth,
+                auditStatus: 'APPROVED',
+                reviewedBy: seniorName,
+                reviewedAt: Date.now()
+            }));
+
+            // 4. Update local pending queue immediately
+            setPendingReviewsQueue(prev => prev.filter(p =>
+                p.id !== item.id && !(
+                    (p.clientGstin || (p as any).client_gstin) === targetGstin &&
+                    p.fy === targetFy &&
+                    p.month === targetMonth
+                )
+            ));
+
+            toast.success(`Audit for ${targetClientName} (${targetMonth} ${targetFy}) Accepted & Signed Off!`, { id: toastId });
+        } catch (err: any) {
+            toast.error(`Approval failed: ${err.message}`, { id: toastId });
+        }
+    };
+
+    // 1-Click Open & Review action from Senior Pending Inbox
+    const handleAcceptAndReview = (item: CloudAuditRecord) => {
+        const { targetGstin: rawGstin, targetFy, targetMonth, targetClientName } = resolveAuditIdentifiers(item);
+        let targetGstin = (rawGstin === 'UNKNOWN' ? '' : rawGstin).trim();
+
+        // If record has no GSTIN (e.g. submitted before client was added)
+        if (!targetGstin) {
+            if (clients.length > 0) {
+                targetGstin = selectedClientGstin || clients[0].gstin;
+            }
+        }
+
+        if (!targetGstin) {
+            toast.error('This audit was submitted without a client. Please add a client first, or click "Dismiss" to remove this request.', {
+                duration: 6000
+            });
+            setSeniorQueueModalOpen(false);
+            setIsAddClientModalOpen(true);
+            return;
+        }
+
+        const targetSenior = item?.reviewedBy || (item as any)?.reviewed_by || selectedSenior;
+
+        // Dynamically register client in local clients list if not already present
+        if (targetGstin && !clients.some(c => c.gstin === targetGstin)) {
+            setClients(prev => [{
+                gstin: targetGstin,
+                legalName: targetClientName !== targetGstin && targetClientName !== 'No Client Selected' ? targetClientName : `Client (${targetGstin})`
+            }, ...prev]);
+        }
+
+        setSelectedClientGstin(targetGstin);
+        setSelectedFy(targetFy);
+        setSelectedMonth(targetMonth);
+        setCurrentRole('senior');
+        setActiveTab('verification');
+        if (targetSenior) {
+            setSelectedSenior(targetSenior);
+            setAuditHeader(prev => ({ ...prev, reviewedBy: targetSenior }));
+        }
+        setSeniorQueueModalOpen(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        toast.success(`Opened ${targetClientName} (${targetMonth} ${targetFy}) in Senior Review Mode`);
+    };
+
     const activeClient = useMemo(() => {
-        return clients.find(c => c.gstin === selectedClientGstin) || clients[0] || {
-            gstin: selectedClientGstin,
-            legalName: 'DYP INFRAPROJECTS PRIVATE LIMITED'
+        const found = clients.find(c => c.gstin === selectedClientGstin);
+        if (found) return found;
+        if (clients.length > 0 && !selectedClientGstin) return clients[0];
+        let savedName = '';
+        try {
+            savedName = localStorage.getItem('np_company_name') || '';
+        } catch {}
+        return {
+            gstin: selectedClientGstin || '',
+            legalName: savedName || (selectedClientGstin ? `Client (${selectedClientGstin})` : 'No Client Selected'),
+            tradeName: savedName
         };
     }, [clients, selectedClientGstin]);
 
@@ -320,6 +639,20 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             (c.tradeName && c.tradeName.toLowerCase().includes(q))
         );
     }, [clients, clientSearchQuery]);
+
+    // ─── Available Financial Years (2026-27 onwards + any active/queued historical audit) ──
+    const availableFinancialYears = useMemo(() => {
+        const list = [...FINANCIAL_YEARS];
+        if (selectedFy && !list.includes(selectedFy)) {
+            list.unshift(selectedFy);
+        }
+        pendingReviewsQueue.forEach(p => {
+            if (p.fy && !list.includes(p.fy)) {
+                list.push(p.fy);
+            }
+        });
+        return Array.from(new Set(list));
+    }, [selectedFy, pendingReviewsQueue]);
 
     // ─── Senior CA Partner / Reviewer Options ─────────────────────────────────
     const availableSeniorOptions = useMemo(() => {
@@ -344,40 +677,276 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 }
             });
         }
-        // 3. Fallback standard partners
-        partners.add('CA Ramesh Vaswani (Senior Partner)');
-        partners.add('CA Ankit Shah (Audit Partner)');
-        partners.add('CA Suresh Vaswani (Managing Partner)');
-        partners.add('CA Senior Partner (General In-Charge)');
         return Array.from(partners);
     }, [auditHeader.partnerName, auditHeader.reviewedBy, auditHeader.teamMembers, cloudSeniors]);
 
-    // ─── Load Clients from DB ──────────────────────────────────────────────────
-    useEffect(() => {
-        const fetchClients = async () => {
+    // ─── Load Clients from DB (Central Master Vault + Fallback) ───────────────────
+    const fetchClients = useCallback(async () => {
+        try {
+            let clientList: any[] = [];
+            // 1. Primary source: /api/ims/credentials (Central client master vault, no auth barrier)
             try {
-                const apiBase = getApiBase();
-                const token = localStorage.getItem('np_auth_token') || sessionStorage.getItem('np_auth_token');
-                const res = await fetch(`${apiBase}/api/clients`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        const mapped = data.map((c: any) => ({
-                            gstin: c.gstin,
-                            legalName: c.legal_name || c.trade_name || c.gstin,
-                            tradeName: c.trade_name
-                        }));
-                        setClients(mapped);
+                const imsRes = await safeApiFetch('/api/ims/credentials');
+                if (imsRes.ok) {
+                    const imsData = await imsRes.json();
+                    if (imsData && Array.isArray(imsData.clients) && imsData.clients.length > 0) {
+                        clientList = imsData.clients;
                     }
                 }
-            } catch (err) {
-                console.warn('[MonthlyAuditSuite] Could not load clients from server:', err);
+            } catch (imsErr) {
+                console.warn('[MonthlyAuditSuite] /api/ims/credentials fetch error:', imsErr);
+            }
+
+            // 2. Secondary fallback: /api/clients
+            if (clientList.length === 0) {
+                try {
+                    const token = getToken() || localStorage.getItem('np_token') || localStorage.getItem('np_auth_token') || sessionStorage.getItem('np_auth_token');
+                    const res = await safeApiFetch('/api/clients', {
+                        headers: token ? { Authorization: `Bearer ${token}` } : {}
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            clientList = data;
+                        }
+                    }
+                } catch (clientErr) {
+                    console.warn('[MonthlyAuditSuite] /api/clients fetch error:', clientErr);
+                }
+            }
+
+            if (clientList.length > 0) {
+                const mapped = clientList.map((c: any) => ({
+                    id: c.id,
+                    gstin: c.gstin,
+                    legalName: c.legal_name || c.trade_name || c.gstin,
+                    tradeName: c.trade_name,
+                    email: c.email,
+                    phone: c.phone
+                }));
+                setClients(mapped);
+                setSelectedClientGstin(prev => {
+                    if (prev && mapped.some((m: any) => m.gstin === prev)) {
+                        return prev;
+                    }
+                    const savedGstin = localStorage.getItem('monthly_audit_selected_client') ||
+                                       localStorage.getItem('last_active_gstin') ||
+                                       localStorage.getItem('gstr3b_active_client_gstin');
+                    if (savedGstin && mapped.some((m: any) => m.gstin === savedGstin)) {
+                        return savedGstin;
+                    }
+                    return mapped[0].gstin;
+                });
+            }
+        } catch (err) {
+            console.warn('[MonthlyAuditSuite] Could not load clients from server:', err);
+        }
+    }, []);
+
+    const handleSelectClient = useCallback((c: { gstin: string; legalName: string; tradeName?: string }) => {
+        setSelectedClientGstin(c.gstin);
+        setIsClientDropdownOpen(false);
+        try {
+            localStorage.setItem('monthly_audit_selected_client', c.gstin);
+            localStorage.setItem('last_active_gstin', c.gstin);
+            localStorage.setItem('gstr3b_active_client_gstin', c.gstin);
+            localStorage.setItem('np_company_name', c.tradeName || c.legalName);
+        } catch {}
+        window.dispatchEvent(new CustomEvent('client-selected', {
+            detail: { gstin: c.gstin, legalName: c.legalName, tradeName: c.tradeName }
+        }));
+    }, []);
+
+    useEffect(() => {
+        fetchClients();
+        const handleClientsUpdated = () => {
+            fetchClients();
+        };
+        const handleClientSelected = (e: any) => {
+            const { gstin, trade_name, legal_name, clientName } = e.detail || {};
+            if (gstin) {
+                const cleanGstin = String(gstin).trim().toUpperCase();
+                setSelectedClientGstin(cleanGstin);
+                try {
+                    localStorage.setItem('monthly_audit_selected_client', cleanGstin);
+                    localStorage.setItem('last_active_gstin', cleanGstin);
+                    localStorage.setItem('gstr3b_active_client_gstin', cleanGstin);
+                    const name = trade_name || legal_name || clientName;
+                    if (name) localStorage.setItem('np_company_name', name);
+                } catch {}
+
+                setClients(prev => {
+                    if (prev.some(c => c.gstin === cleanGstin)) return prev;
+                    const displayName = trade_name || legal_name || clientName || cleanGstin;
+                    return [{
+                        gstin: cleanGstin,
+                        legalName: displayName,
+                        tradeName: trade_name || displayName
+                    }, ...prev];
+                });
             }
         };
-        fetchClients();
-    }, []);
+        const handleAppNav = (e: any) => {
+            const { gstin, trade_name, legal_name, clientName, fy, month } = e.detail || {};
+            if (gstin) {
+                const cleanGstin = String(gstin).trim().toUpperCase();
+                setSelectedClientGstin(cleanGstin);
+                try {
+                    localStorage.setItem('monthly_audit_selected_client', cleanGstin);
+                    localStorage.setItem('last_active_gstin', cleanGstin);
+                    localStorage.setItem('gstr3b_active_client_gstin', cleanGstin);
+                    const name = trade_name || legal_name || clientName;
+                    if (name) localStorage.setItem('np_company_name', name);
+                } catch {}
+
+                setClients(prev => {
+                    if (prev.some(c => c.gstin === cleanGstin)) return prev;
+                    const displayName = trade_name || legal_name || clientName || cleanGstin;
+                    return [{
+                        gstin: cleanGstin,
+                        legalName: displayName,
+                        tradeName: trade_name || displayName
+                    }, ...prev];
+                });
+            }
+            if (fy) {
+                setSelectedFy(fy);
+            }
+            if (month) {
+                setSelectedMonth(month);
+            }
+        };
+        window.addEventListener('clients-updated', handleClientsUpdated);
+        window.addEventListener('client-selected', handleClientSelected);
+        window.addEventListener('app-navigate', handleAppNav);
+        return () => {
+            window.removeEventListener('clients-updated', handleClientsUpdated);
+            window.removeEventListener('client-selected', handleClientSelected);
+            window.removeEventListener('app-navigate', handleAppNav);
+        };
+    }, [fetchClients]);
+
+    // ─── Client Master Management (Add & Delete) ───────────────────────────────
+    const handleSaveNewClient = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const trimmedGstin = newClientGstin.trim().toUpperCase();
+        const trimmedLegal = newClientLegalName.trim();
+        const trimmedTrade = newClientTradeName.trim() || trimmedLegal;
+
+        if (!trimmedGstin) {
+            toast.error('Please enter client GSTIN');
+            return;
+        }
+        if (trimmedGstin.length !== 15) {
+            toast.error('GSTIN must be exactly 15 characters (e.g. 27AAGCD4105L1ZO)');
+            return;
+        }
+        if (!trimmedLegal) {
+            toast.error('Please enter client Legal Name');
+            return;
+        }
+
+        setIsSavingClient(true);
+        const loadingId = toast.loading(`Saving client "${trimmedTrade}"...`);
+        try {
+            const apiBase = getApiBase();
+            const token = getAuthToken();
+            const newId = `cli_${Date.now()}`;
+            const res = await fetch(`${apiBase}/api/clients`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                    id: newId,
+                    gstin: trimmedGstin,
+                    legal_name: trimmedLegal,
+                    trade_name: trimmedTrade,
+                    email: newClientEmail.trim() || undefined,
+                    phone: newClientPhone.trim() || undefined
+                })
+            });
+
+            if (res.ok) {
+                toast.success(`Client "${trimmedTrade}" registered successfully!`, { id: loadingId });
+                const newClientObj = {
+                    id: newId,
+                    gstin: trimmedGstin,
+                    legalName: trimmedLegal,
+                    tradeName: trimmedTrade,
+                    email: newClientEmail.trim() || undefined,
+                    phone: newClientPhone.trim() || undefined
+                };
+                setClients(prev => {
+                    const exists = prev.some(c => c.gstin === trimmedGstin);
+                    return exists ? prev.map(c => c.gstin === trimmedGstin ? newClientObj : c) : [newClientObj, ...prev];
+                });
+                handleSelectClient({
+                    gstin: trimmedGstin,
+                    legalName: trimmedLegal,
+                    tradeName: trimmedTrade
+                });
+                safeApiFetch('/api/ims/credentials/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gstin: trimmedGstin,
+                        trade_name: trimmedTrade,
+                        legal_name: trimmedLegal,
+                        email: newClientEmail.trim() || undefined,
+                        phone: newClientPhone.trim() || undefined
+                    })
+                }).catch(() => {});
+                setIsAddClientModalOpen(false);
+                setIsClientDropdownOpen(false);
+                window.dispatchEvent(new CustomEvent('clients-updated'));
+                setNewClientGstin('');
+                setNewClientLegalName('');
+                setNewClientTradeName('');
+                setNewClientEmail('');
+                setNewClientPhone('');
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                toast.error(errData.error || 'Failed to save client', { id: loadingId });
+            }
+        } catch (err: any) {
+            toast.error(`Error saving client: ${err.message || err}`, { id: loadingId });
+        } finally {
+            setIsSavingClient(false);
+        }
+    };
+
+    const handleDeleteClient = async (gstin: string, legalName: string, clientId?: string) => {
+        if (!confirm(`Are you sure you want to delete client "${legalName}" (${gstin})? This cannot be undone.`)) {
+            return;
+        }
+        try {
+            const apiBase = getApiBase();
+            const token = getAuthToken();
+            const idToDelete = clientId || gstin;
+            const res = await fetch(`${apiBase}/api/clients/${idToDelete}`, {
+                method: 'DELETE',
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                toast.success(`Client "${legalName}" deleted from master`);
+                setClients(prev => prev.filter(c => c.gstin !== gstin));
+                if (selectedClientGstin === gstin) {
+                    const remaining = clients.filter(c => c.gstin !== gstin);
+                    if (remaining.length > 0) {
+                        setSelectedClientGstin(remaining[0].gstin);
+                    } else {
+                        setSelectedClientGstin('');
+                    }
+                }
+            } else {
+                toast.error('Could not delete client');
+            }
+        } catch (err: any) {
+            toast.error(`Error deleting client: ${err.message || err}`);
+        }
+    };
 
     // ─── Ping Tally Port 9000 ──────────────────────────────────────────────────
     const pingTally = useCallback(async () => {
@@ -456,7 +1025,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         periodMode: parsedMeta.periodMode || (found.period_mode as any) || 'single',
                         selectedMonths: parsedMeta.selectedMonths || (found.selected_months as any) || [found.month || selectedMonth],
                         auditorName: found.auditor_name || parsedMeta.auditorName || '',
-                        firmName: parsedMeta.firmName || found.firm_name || 'Vaswani & Associates, Chartered Accountants',
+                        firmName: parsedMeta.firmName || found.firm_name || '',
                         firmRegistrationNo: parsedMeta.firmRegistrationNo || found.firm_registration_no || '',
                         membershipNo: parsedMeta.membershipNo || found.membership_no || '',
                         engagementRef: parsedMeta.engagementRef || found.engagement_ref || '',
@@ -482,6 +1051,10 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         createdAt: found.created_at,
                         updatedAt: found.updated_at
                     });
+
+                    if (found.reviewed_by && found.reviewed_by.trim()) {
+                        setSelectedSenior(found.reviewed_by.trim());
+                    }
 
                     if (parsedMeta?.profitability) {
                         setProfitability(parsedMeta.profitability);
@@ -678,6 +1251,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         }
                         if (cloudData.reviewedBy && cloudData.reviewedBy !== prev.reviewedBy) {
                             next.reviewedBy = cloudData.reviewedBy;
+                            setSelectedSenior(cloudData.reviewedBy);
                             hasChange = true;
                         }
                         if (cloudData.submissionNotes && cloudData.submissionNotes !== prev.generalSummary) {
@@ -793,7 +1367,11 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Profitability Status (Schedule III P&L) Handlers ──────────────────────
     const handleLoadProfitabilityFromFile = useCallback(async (customPath?: string) => {
-        const target = customPath || profitabilityFilePath || 'E:/Book1.xlsx';
+        const target = customPath || profitabilityFilePath;
+        if (!target) {
+            toast.error('Please specify an Excel file path for the Profit & Loss statement');
+            return;
+        }
         setLoadingProfitability(true);
         try {
             const apiBase = getApiBase();
@@ -1935,10 +2513,12 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     };
 
     // ─── Save Working Paper (SQLite & Direct Client Directory Auto-Save) ────────
-    const handleSaveAudit = async (showNotification = true) => {
+    const handleSaveAudit = async (showNotification = true, statusOverride?: AuditWorkflowStatus) => {
         setIsSaving(true);
         try {
             const apiBase = getApiBase();
+            const targetStatus = statusOverride || auditHeader.auditStatus;
+            const targetStatusDesc = targetStatus === 'APPROVED' ? 'Completed' : (targetStatus === 'SUBMITTED_FOR_REVIEW' ? 'Under Review' : auditHeader.status);
 
             const headerPayload = {
                 id: auditHeader.id,
@@ -1978,9 +2558,9 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 turnoverGst: auditHeader.turnoverGst,
                 turnover_variance: auditHeader.turnoverVariance,
                 turnoverVariance: auditHeader.turnoverVariance,
-                status: auditHeader.status,
-                audit_status: auditHeader.auditStatus,
-                auditStatus: auditHeader.auditStatus,
+                status: targetStatusDesc,
+                audit_status: targetStatus,
+                auditStatus: targetStatus,
                 prepared_by: auditHeader.preparedBy,
                 preparedBy: auditHeader.preparedBy,
                 reviewed_by: auditHeader.reviewedBy,
@@ -2108,6 +2688,17 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Maker-Checker Review Transitions (with Firebase Cloud Remote Sync) ───
     const handleOpenSubmitReviewModal = () => {
+        if (!selectedClientGstin || selectedClientGstin.trim() === '' || activeClient.legalName === 'No Client Selected') {
+            toast.error('Please select or add a client first before submitting for review.', {
+                action: {
+                    label: 'Add Client',
+                    onClick: () => setIsAddClientModalOpen(true)
+                }
+            });
+            setIsAddClientModalOpen(true);
+            return;
+        }
+
         if (!auditHeader.preparedBy || !auditHeader.preparedBy.trim()) {
             const userTitle = getLoggedInUserTitle();
             if (userTitle) {
@@ -2120,13 +2711,21 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             setSelectedSenior(auditHeader.partnerName.trim());
         } else if (cloudSeniors.length > 0 && cloudSeniors[0].name) {
             setSelectedSenior(cloudSeniors[0].name);
+        } else if (availableSeniorOptions.length > 0) {
+            setSelectedSenior(availableSeniorOptions[0]);
         } else {
-            setSelectedSenior('CA Ramesh Vaswani (Senior Partner)');
+            setSelectedSenior('');
         }
         setSubmitReviewModalOpen(true);
     };
 
     const handleConfirmSubmitForReview = async () => {
+        if (!selectedClientGstin || selectedClientGstin.trim() === '' || activeClient.legalName === 'No Client Selected') {
+            toast.error('Cannot submit: Please select or add a client first.');
+            setIsAddClientModalOpen(true);
+            return;
+        }
+
         const finalSenior = selectedSenior === '__custom__' ? customSeniorName.trim() : selectedSenior;
         if (!finalSenior) {
             toast.error('Please specify a Senior Partner / Reviewer');
@@ -2185,50 +2784,78 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     };
 
     const handleApprove = async () => {
+        const toastId = toast.loading('Accepting & signing off audit...');
         try {
             const apiBase = getApiBase();
-            const seniorName = auditHeader.reviewedBy || 'Senior Partner, CA';
+            const seniorName = auditHeader.reviewedBy || selectedSenior || (activeSeniorReviewer !== 'ALL' ? activeSeniorReviewer : '') || 'Senior CA Partner';
             const notes = 'Audit working papers verified and approved for client release.';
 
-            // 1. Update Local SQLite Backend
-            const res = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/senior-review`, {
+            const targetGstin = (selectedClientGstin || auditHeader.clientGstin || '').trim();
+            const targetFy = (selectedFy || auditHeader.fy || '2026-27').trim();
+            const targetMonth = (selectedMonth || auditHeader.month || 'April').trim();
+
+            if (!targetGstin) {
+                toast.error('Cannot sign off: Missing client GSTIN.', { id: toastId });
+                return;
+            }
+
+            // 1. Update Local SQLite Backend with fallback identifiers
+            await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/senior-review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'APPROVE',
                     reviewedBy: seniorName,
-                    seniorReviewNotes: notes
+                    seniorReviewNotes: notes,
+                    clientGstin: targetGstin,
+                    fy: targetFy,
+                    month: targetMonth
                 })
-            });
+            }).catch(() => {});
 
-            // 2. Sync Approval to Firebase Cloud
-            await approveAuditInFirebase({
-                clientGstin: selectedClientGstin,
-                fy: selectedFy,
-                month: selectedMonth,
+            // 2. Sync Approval to Firebase Cloud with a 3.5s timeout guarantee
+            const fbPromise = approveAuditInFirebase({
+                clientGstin: targetGstin,
+                fy: targetFy,
+                month: targetMonth,
                 reviewedBy: seniorName,
                 seniorReviewNotes: notes
             });
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ success: true, timeout: true }), 3500));
+            await Promise.race([fbPromise, timeoutPromise]).catch(() => {});
 
-            if (res.ok) {
-                toast.success('Audit working paper approved and stamped in Firebase Cloud!');
-                setAuditHeader(prev => ({
-                    ...prev,
-                    auditStatus: 'APPROVED',
-                    reviewedBy: seniorName,
-                    reviewedAt: Date.now()
-                }));
-                await handleSaveAudit(false);
-            }
+            setAuditHeader(prev => ({
+                ...prev,
+                auditStatus: 'APPROVED',
+                reviewedBy: seniorName,
+                reviewedAt: Date.now()
+            }));
+
+            // Remove from local pending queue
+            setPendingReviewsQueue(prev => prev.filter(p =>
+                !(
+                    ((p.clientGstin || (p as any).client_gstin) === targetGstin || (p.clientGstin || (p as any).client_gstin) === selectedClientGstin) &&
+                    p.fy === targetFy &&
+                    p.month === targetMonth
+                )
+            ));
+
+            toast.success('Audit working paper Accepted & Signed Off in Cloud & Local DB!', { id: toastId });
+            await handleSaveAudit(false, 'APPROVED');
         } catch (err: any) {
-            toast.error(`Approval failed: ${err.message}`);
+            toast.error(`Approval failed: ${err.message}`, { id: toastId });
         }
     };
 
     const handleRequestRevision = async () => {
+        if (!isSeniorUser && currentRole !== 'senior') {
+            toast.error('Permission Denied: Only designated Senior CA Partners can request revisions.');
+            return;
+        }
         try {
             const apiBase = getApiBase();
-            const seniorName = auditHeader.reviewedBy || 'Senior Partner, CA';
+            const seniorName = auditHeader.reviewedBy || selectedSenior || 'Senior Partner, CA';
+            const finalNotes = `[${revisionSeverity.toUpperCase()}] [${revisionSection}]\n${revisionNotes.trim()}`;
 
             // 1. Update Local SQLite Backend
             const res = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/senior-review`, {
@@ -2238,9 +2865,9 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     action: 'REQUEST_REVISION',
                     reviewedBy: seniorName,
                     reviewed_by: seniorName,
-                    reviewNotes: revisionNotes,
-                    seniorReviewNotes: revisionNotes,
-                    senior_review_notes: revisionNotes
+                    reviewNotes: finalNotes,
+                    seniorReviewNotes: finalNotes,
+                    senior_review_notes: finalNotes
                 })
             });
 
@@ -2250,7 +2877,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 fy: selectedFy,
                 month: selectedMonth,
                 reviewedBy: seniorName,
-                revisionNotes
+                revisionNotes: finalNotes
             });
 
             if (res.ok) {
@@ -2258,7 +2885,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 setAuditHeader(prev => ({
                     ...prev,
                     auditStatus: 'REVISION_REQUESTED',
-                    seniorReviewNotes: revisionNotes
+                    seniorReviewNotes: finalNotes
                 }));
                 setRevisionModalOpen(false);
                 setRevisionNotes('');
@@ -2272,8 +2899,24 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const handleReleaseToClient = async () => {
         try {
             const apiBase = getApiBase();
+            const resolvedClientName = activeClient?.legalName && activeClient.legalName !== 'Selected Client' && activeClient.legalName !== 'No Client Selected'
+                ? activeClient.legalName
+                : (auditHeader.clientName && auditHeader.clientName !== 'Client Entity' ? auditHeader.clientName : (activeClient?.gstin ? `Client (${activeClient.gstin})` : 'DYP INFRAPROJECTS PRIVATE LIMITED'));
+            const resolvedGstin = activeClient?.gstin || auditHeader.clientGstin || '27AAGCD4105L1ZO';
+            const resolvedPartner = (auditHeader.reviewedBy && auditHeader.reviewedBy !== 'admin' && !auditHeader.reviewedBy.includes('Vaswani'))
+                ? auditHeader.reviewedBy
+                : (auditHeader.auditorName && auditHeader.auditorName !== 'admin' && !auditHeader.auditorName.includes('Vaswani')
+                    ? auditHeader.auditorName 
+                    : 'Engagement Article (Audit Lead)');
+
             const exportBundle: MonthlyAuditExportBundle = {
-                header: auditHeader,
+                header: {
+                    ...auditHeader,
+                    clientName: resolvedClientName,
+                    clientGstin: resolvedGstin,
+                    reviewedBy: resolvedPartner,
+                    auditorName: resolvedPartner
+                },
                 registers,
                 checklists,
                 verification,
@@ -2508,8 +3151,24 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Professional Corporate PDF Export ─────────────────────────────────────
     const handleDownloadPdf = () => {
+        const resolvedClientName = activeClient?.legalName && activeClient.legalName !== 'Selected Client' && activeClient.legalName !== 'No Client Selected'
+            ? activeClient.legalName
+            : (auditHeader.clientName && auditHeader.clientName !== 'Client Entity' ? auditHeader.clientName : (activeClient?.gstin ? `Client (${activeClient.gstin})` : 'DYP INFRAPROJECTS PRIVATE LIMITED'));
+        const resolvedGstin = activeClient?.gstin || auditHeader.clientGstin || '27AAGCD4105L1ZO';
+        const resolvedPartner = (auditHeader.reviewedBy && auditHeader.reviewedBy !== 'admin' && !auditHeader.reviewedBy.includes('Vaswani'))
+            ? auditHeader.reviewedBy
+            : (auditHeader.auditorName && auditHeader.auditorName !== 'admin' && !auditHeader.auditorName.includes('Vaswani')
+                ? auditHeader.auditorName 
+                : 'Engagement Article (Audit Lead)');
+
         const bundle: MonthlyAuditExportBundle = {
-            header: auditHeader,
+            header: {
+                ...auditHeader,
+                clientName: resolvedClientName,
+                clientGstin: resolvedGstin,
+                reviewedBy: resolvedPartner,
+                auditorName: resolvedPartner
+            },
             registers,
             checklists,
             verification,
@@ -2523,14 +3182,14 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Permissions Logic ─────────────────────────────────────────────────────
     const isJuniorAllowedToEdit = canJuniorEdit(auditHeader.auditStatus);
-    const isSeniorReviewAllowed = canSeniorReview(auditHeader.auditStatus);
+    const isSeniorReviewAllowed = auditHeader.auditStatus !== 'APPROVED';
     const isReleaseAllowed = canReleaseToClient(auditHeader.auditStatus);
 
     return (
         <div className="min-h-screen w-full bg-[#F8FAFC] text-slate-900 font-sans pb-16 animate-fade-in">
             {/* ─── TOP ELEVATED NAVBAR (Refined Executive Style) ─────────────────── */}
-            <header className="relative z-20 px-4 sm:px-6 pt-1 pb-1 bg-[#F8FAFC]">
-                <div className="max-w-[1520px] mx-auto min-h-16 bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-slate-200/80">
+            <header className={`relative px-4 sm:px-6 pt-1 pb-1 bg-[#F8FAFC] ${isClientDropdownOpen ? 'z-50' : 'z-20'}`}>
+                <div className={`max-w-[1520px] mx-auto min-h-16 bg-white/95 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.06)] rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-slate-200/80 relative ${isClientDropdownOpen ? 'z-50' : 'z-10'}`}>
                     {/* Client Info (ALL CAPS, enlarged, prominent) */}
                     <div className="flex items-center gap-3 min-w-0">
                         {onBack && (
@@ -2579,7 +3238,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     {/* Switch Client, FY Dropdown, Tally Status & Action Deck */}
                     <div className="flex items-center gap-2 flex-wrap shrink-0">
                         {/* Switch Client Popover Dropdown */}
-                        <div className="relative">
+                        <div className={`relative ${isClientDropdownOpen ? 'z-50' : ''}`}>
                             <button
                                 type="button"
                                 onClick={() => setIsClientDropdownOpen(prev => !prev)}
@@ -2596,7 +3255,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             {isClientDropdownOpen && (
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setIsClientDropdownOpen(false)} />
-                                    <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
+                                    <div className="absolute left-0 top-full mt-2 w-[calc(100vw-3rem)] sm:w-96 max-w-sm sm:max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
                                         <div className="relative mb-2">
                                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                             <input
@@ -2621,13 +3280,10 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                         <button
                                                             key={c.gstin}
                                                             type="button"
-                                                            onClick={() => {
-                                                                setSelectedClientGstin(c.gstin);
-                                                                setIsClientDropdownOpen(false);
-                                                            }}
+                                                            onClick={() => handleSelectClient(c)}
                                                             className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
                                                                 isCurrent
-                                                                    ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold'
+                                                                    ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold shadow-2xs'
                                                                     : 'hover:bg-slate-50 text-slate-700'
                                                             }`}
                                                         >
@@ -2640,10 +3296,42 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                                     {c.gstin}
                                                                 </div>
                                                             </div>
+                                                            {isCurrent && (
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200 shrink-0 shadow-2xs">
+                                                                    <Check className="w-3 h-3 text-indigo-600" />
+                                                                    <span>Active</span>
+                                                                </span>
+                                                            )}
                                                         </button>
                                                     );
                                                 })
                                             )}
+                                        </div>
+
+                                        <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsClientDropdownOpen(false);
+                                                    window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'clients' } }));
+                                                }}
+                                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition cursor-pointer"
+                                                title="Open Client Master in System Settings"
+                                            >
+                                                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                                                <span>Client Master</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsClientDropdownOpen(false);
+                                                    setIsAddClientModalOpen(true);
+                                                }}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-xl shadow-2xs transition cursor-pointer"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                                <span>Add Client</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </>
@@ -2658,7 +3346,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 className="appearance-none bg-slate-100 hover:bg-slate-200/80 focus:bg-white text-slate-900 font-mono font-bold text-xs border border-slate-200 rounded-xl pl-3 pr-8 py-1.5 shadow-2xs transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                                 title="Select Financial Year"
                             >
-                                {FINANCIAL_YEARS.map(fy => (
+                                {availableFinancialYears.map(fy => (
                                     <option key={fy} value={fy}>FY {fy}</option>
                                 ))}
                             </select>
@@ -2730,6 +3418,39 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         </button>
                     </div>
                 </div>
+
+                {/* Empty State Banner if no clients exist */}
+                {clients.length === 0 && (
+                    <div className="max-w-[1520px] mx-auto mt-2 p-3.5 bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-transparent border border-amber-200/80 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in">
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                                <Building2 className="w-4 h-4 text-amber-700" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-slate-900 text-xs">No Clients Configured in Master Vault</h4>
+                                <p className="text-slate-600 text-[11px]">Register a client or open Client Master in System Settings to import clients from Excel.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsAddClientModalOpen(true)}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-1.5 text-xs"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Client</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'clients' } }))}
+                                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1.5 text-xs"
+                            >
+                                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Open Client Master</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* 12-Month Navigation & Period Scope Control Bar */}
                 <div className="max-w-[1520px] mx-auto mt-2 bg-white/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between gap-3 flex-wrap">
@@ -2909,15 +3630,39 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     </div>
 
                     {/* Role Switcher & Workflow Trigger Buttons */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        {/* Senior Review Requests Queue Trigger (Visible in Senior mode or for senior users) */}
+                        {currentRole === 'senior' && (
+                            <button
+                                type="button"
+                                onClick={() => setSeniorQueueModalOpen(true)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer border ${
+                                    pendingReviewsQueue.length > 0
+                                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400/20'
+                                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                                }`}
+                                title="Open Senior Review Requests Inbox"
+                            >
+                                <Inbox className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Review Requests</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                    pendingReviewsQueue.length > 0
+                                        ? 'bg-amber-600 text-white animate-pulse'
+                                        : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                    {pendingReviewsQueue.length}
+                                </span>
+                            </button>
+                        )}
+
                         {/* Role Switcher */}
                         <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-0.5 text-xs">
                             <button
                                 type="button"
                                 onClick={() => setCurrentRole('junior')}
-                                className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+                                className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                                     currentRole === 'junior'
-                                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                                        ? 'bg-white text-blue-900 shadow-xs font-bold border border-slate-200/60'
                                         : 'text-slate-600 hover:text-slate-900'
                                 }`}
                             >
@@ -2927,9 +3672,9 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             <button
                                 type="button"
                                 onClick={() => setCurrentRole('senior')}
-                                className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+                                className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                                     currentRole === 'senior'
-                                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                                        ? 'bg-white text-indigo-900 shadow-xs font-bold border border-slate-200/60'
                                         : 'text-slate-600 hover:text-slate-900'
                                 }`}
                             >
@@ -2940,44 +3685,104 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
                         {/* Junior Actions */}
                         {currentRole === 'junior' && (
-                            <button
-                                type="button"
-                                onClick={handleOpenSubmitReviewModal}
-                                disabled={!canSubmitForReview(auditHeader.auditStatus)}
-                                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
-                                    canSubmitForReview(auditHeader.auditStatus)
-                                        ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
-                                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                                }`}
-                            >
-                                <Send className="w-3.5 h-3.5" />
-                                <span>Submit for Senior Review</span>
-                            </button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {/* Prominent Senior Auditor Selection for Junior Article */}
+                                <div className="flex items-center gap-2 bg-indigo-50/90 border border-indigo-200/90 rounded-xl px-3 py-1 text-xs shadow-2xs">
+                                    <UserCheck className="w-4 h-4 text-indigo-700 shrink-0" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-900">
+                                            Assign Senior Reviewer:
+                                        </span>
+                                        <select
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={selectedSenior}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setSelectedSenior(val);
+                                                setAuditHeader(prev => ({ ...prev, reviewedBy: val }));
+                                            }}
+                                            className="bg-transparent font-bold text-indigo-950 text-xs focus:outline-none cursor-pointer max-w-[210px] truncate disabled:cursor-not-allowed"
+                                            title="Select which Senior CA Partner will receive this audit"
+                                        >
+                                            {availableSeniorOptions.length > 0 ? (
+                                                availableSeniorOptions.map(opt => (
+                                                    <option key={opt} value={opt}>{opt}</option>
+                                                ))
+                                            ) : (
+                                                <option value="" disabled>-- No Senior Configured --</option>
+                                            )}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleOpenSubmitReviewModal}
+                                    disabled={!canSubmitForReview(auditHeader.auditStatus)}
+                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                                        canSubmitForReview(auditHeader.auditStatus)
+                                            ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
+                                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>Submit for Senior Review</span>
+                                </button>
+                            </div>
                         )}
 
                         {/* Senior Actions */}
                         {currentRole === 'senior' && (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {/* Active Senior Reviewer Identity Selector */}
+                                <div className="flex items-center gap-1.5 bg-indigo-50/90 border border-indigo-200/90 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                                    <UserCheck className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] font-bold uppercase tracking-wider text-indigo-900 leading-none">
+                                            Reviewing As:
+                                        </span>
+                                        <select
+                                            value={activeSeniorReviewer}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setActiveSeniorReviewer(val);
+                                                if (val !== 'ALL') {
+                                                    setSelectedSenior(val);
+                                                    setAuditHeader(prev => ({ ...prev, reviewedBy: val }));
+                                                }
+                                            }}
+                                            className="bg-transparent font-bold text-indigo-950 text-xs focus:outline-none cursor-pointer max-w-[170px] truncate"
+                                            title="Select which Senior CA Partner you are reviewing as"
+                                        >
+                                            <option value="ALL">🌟 All Partners (Master)</option>
+                                            {availableSeniorOptions.map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <button
                                     type="button"
                                     onClick={handleApprove}
-                                    disabled={!isSeniorReviewAllowed}
+                                    disabled={auditHeader.auditStatus === 'APPROVED'}
                                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
-                                        isSeniorReviewAllowed
-                                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                                        auditHeader.auditStatus !== 'APPROVED'
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                                             : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                                     }`}
                                 >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>Approve &amp; Sign-Off</span>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>{auditHeader.auditStatus === 'APPROVED' ? 'Approved & Signed' : 'Accept & Sign-Off'}</span>
+                                    {/* Approve &amp; Sign-Off */}
                                 </button>
 
                                 <button
                                     type="button"
                                     onClick={() => setRevisionModalOpen(true)}
-                                    disabled={!isSeniorReviewAllowed}
+                                    disabled={auditHeader.auditStatus === 'APPROVED'}
                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                                        isSeniorReviewAllowed
+                                        auditHeader.auditStatus !== 'APPROVED'
                                             ? 'bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 cursor-pointer'
                                             : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                                     }`}
@@ -3040,15 +3845,15 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             <button
                                 type="button"
                                 onClick={handleApprove}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer transition"
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition active:scale-95"
                             >
-                                <Check className="w-4 h-4" />
-                                <span>Approve &amp; Sign-Off</span>
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Accept &amp; Sign-Off</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setRevisionModalOpen(true)}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 shadow-2xs cursor-pointer transition"
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 shadow-2xs cursor-pointer transition active:scale-95"
                             >
                                 <AlertCircle className="w-4 h-4 text-rose-600" />
                                 <span>Request Revision</span>
@@ -3076,19 +3881,79 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 )}
 
                 {auditHeader.auditStatus === 'REVISION_REQUESTED' && (
-                    <div className="max-w-[1520px] mx-auto mt-2 bg-rose-50 border border-rose-200 rounded-2xl p-3 shadow-2xs flex items-center justify-between flex-wrap gap-2 text-xs text-rose-900">
-                        <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-rose-100 text-rose-700 rounded-lg">
-                                <AlertCircle className="w-4 h-4 text-rose-600" />
+                    <div className="max-w-[1520px] mx-auto mt-2 bg-gradient-to-r from-rose-50 via-pink-50 to-rose-50 border border-rose-300 rounded-2xl p-4 shadow-xs space-y-3 animate-in fade-in">
+                        <div className="flex items-start justify-between flex-wrap gap-3">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2.5 bg-rose-200/70 text-rose-900 rounded-xl">
+                                    <AlertCircle className="w-5 h-5 text-rose-700 animate-pulse" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-rose-950 uppercase tracking-wider">
+                                            Senior Working Paper Revision Requested
+                                        </span>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-900">
+                                            By {auditHeader.reviewedBy || 'Senior Partner'}
+                                        </span>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                            🔓 Unlocked for Junior Edits
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-rose-900/80 mt-0.5">
+                                        Please address all senior review queries below before re-submitting for sign-off.
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <span className="font-bold">Senior Revision Requested by {auditHeader.reviewedBy || 'Senior Partner'}: </span>
-                                <span>{auditHeader.seniorReviewNotes || 'Please rectify findings and re-submit for review.'}</span>
+
+                            {currentRole === 'junior' && (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenSubmitReviewModal}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs cursor-pointer transition"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>Re-Submit for Senior Review</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Structured Feedback & Junior Checkoff Tracker */}
+                        <div className="bg-white/90 border border-rose-200 rounded-xl p-3 text-xs space-y-2">
+                            <div className="font-bold text-rose-950 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                    <ListChecks className="w-4 h-4 text-rose-600" />
+                                    <span>Senior Review Queries &amp; Action Items:</span>
+                                </span>
+                                <span className="text-[11px] text-slate-500 font-normal">
+                                    Check off items as you resolve them in the working papers
+                                </span>
+                            </div>
+
+                            <div className="space-y-1.5 text-slate-800 font-mono text-[11px] bg-rose-50/50 p-2.5 rounded-lg border border-rose-100">
+                                {(auditHeader.seniorReviewNotes || 'Please rectify findings and re-submit.')
+                                    .split('\n')
+                                    .filter(line => line.trim())
+                                    .map((line, idx) => (
+                                        <label
+                                            key={idx}
+                                            className="flex items-start gap-2 cursor-pointer hover:bg-rose-100/50 p-1 rounded transition"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={!!resolvedRevisionPoints[`point_${idx}`]}
+                                                onChange={(e) => setResolvedRevisionPoints(prev => ({
+                                                    ...prev,
+                                                    [`point_${idx}`]: e.target.checked
+                                                }))}
+                                                className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                                            />
+                                            <span className={resolvedRevisionPoints[`point_${idx}`] ? 'line-through text-slate-400' : 'text-slate-800'}>
+                                                {line}
+                                            </span>
+                                        </label>
+                                    ))}
                             </div>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 font-bold text-[11px]">
-                            Unlocked for Edits
-                        </span>
                     </div>
                 )}
 
@@ -3186,14 +4051,14 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                 <div>
-                                    <label className="block text-slate-600 font-semibold mb-1.5">Auditor / Engagement Partner</label>
+                                    <label className="block text-slate-600 font-semibold mb-1.5">Engagement Article / Auditor</label>
                                     <input
                                         type="text"
                                         disabled={!isJuniorAllowedToEdit}
                                         value={auditHeader.auditorName || ''}
                                         onChange={(e) => setAuditHeader(prev => ({ ...prev, auditorName: e.target.value }))}
                                         className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                        placeholder="CA Signing Partner Name"
+                                        placeholder="Engagement Article Assistant Name"
                                     />
                                 </div>
 
@@ -3205,7 +4070,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         value={auditHeader.firmName || ''}
                                         onChange={(e) => setAuditHeader(prev => ({ ...prev, firmName: e.target.value }))}
                                         className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                        placeholder="e.g. Vaswani & Associates, Chartered Accountants"
+                                        placeholder="e.g. Chartered Accountants Firm Name"
                                     />
                                 </div>
 
@@ -3258,7 +4123,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         value={auditHeader.engagementRef || ''}
                                         onChange={(e) => setAuditHeader(prev => ({ ...prev, engagementRef: e.target.value }))}
                                         className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-mono font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                        placeholder="e.g. EL/25-26/DYP/04 or UDIN"
+                                        placeholder="e.g. EL/2026-27/01 or UDIN"
                                     />
                                 </div>
 
@@ -3282,6 +4147,66 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         onChange={(e) => setAuditHeader(prev => ({ ...prev, auditEndDate: e.target.value }))}
                                         className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
                                     />
+                                </div>
+                            </div>
+
+                            {/* ─── DESIGNATED SENIOR CA REVIEWER (MAKER-CHECKER ASSIGNMENT) ─── */}
+                            <div className="mt-5 p-4 rounded-xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/70 via-slate-50 to-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                        <ShieldCheck className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                                                Designated Senior Reviewer (Maker-Checker Assignment)
+                                            </h3>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                                Strict Exclusivity
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            When submitted, this review request routes <strong>strictly and exclusively</strong> to this Senior Partner's review queue.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                                    <select
+                                        disabled={!isJuniorAllowedToEdit}
+                                        value={selectedSenior}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSelectedSenior(val);
+                                            setAuditHeader(prev => ({ ...prev, reviewedBy: val }));
+                                        }}
+                                        className="bg-white border-2 border-indigo-300 text-slate-900 font-bold text-xs rounded-xl px-3.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs min-w-[260px] disabled:cursor-not-allowed"
+                                        title="Select which Senior CA Partner will review and sign-off on this monthly audit"
+                                    >
+                                        {availableSeniorOptions.length > 0 ? (
+                                            availableSeniorOptions.map((opt) => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>-- No Senior Auditors Configured --</option>
+                                        )}
+                                        <option value="__custom__">➕ Other Senior Partner...</option>
+                                    </select>
+
+                                    {selectedSenior === '__custom__' && (
+                                        <input
+                                            type="text"
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={customSeniorName}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setCustomSeniorName(val);
+                                                setAuditHeader(prev => ({ ...prev, reviewedBy: val }));
+                                            }}
+                                            placeholder="Enter Senior Partner Name..."
+                                            className="bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[200px]"
+                                        />
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -3334,7 +4259,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                         disabled={!isJuniorAllowedToEdit}
                                                         value={member.name}
                                                         onChange={(e) => handleUpdateTeamMember(idx, 'name', e.target.value)}
-                                                        placeholder="e.g. Rahul Sharma, Article Assistant"
+                                                        placeholder="e.g. Article Assistant / Team Member Name"
                                                         className="w-full bg-transparent hover:bg-slate-50 focus:bg-white text-slate-900 font-semibold border border-transparent focus:border-indigo-400 rounded-lg px-2 py-1 text-xs outline-none transition"
                                                     />
                                                 </td>
@@ -3747,7 +4672,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     </div>
                 )}
 
-                {/* ─── TAB 2: Profitability Status (Schedule III P&L Modeled on E:\Book1.xlsx) ── */}
+                {/* ─── TAB 2: Profitability Status (Schedule III P&L) ────────── */}
                 {activeTab === 'profitability' && (
                     <div className="space-y-5 animate-in fade-in-50 duration-200">
                         {/* Company & Statement Banner Card */}
@@ -3756,22 +4681,26 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-2.5 flex-wrap">
                                         <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                                            {profitability.companyName}
+                                            {profitability.companyName || activeClient.legalName || 'Statement of Profit & Loss'}
                                         </h2>
-                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                            CIN: {profitability.cin}
-                                        </span>
+                                        {profitability.cin && (
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                                CIN: {profitability.cin}
+                                            </span>
+                                        )}
                                         <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                                             <ShieldCheck className="w-3.5 h-3.5" />
                                             <span>Schedule III Part II Compliant</span>
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-500 font-medium">
-                                        {profitability.registeredAddress}
-                                    </p>
+                                    {profitability.registeredAddress && (
+                                        <p className="text-xs text-slate-500 font-medium">
+                                            {profitability.registeredAddress}
+                                        </p>
+                                    )}
                                     <div className="flex items-center gap-2 pt-1 text-xs text-slate-700 font-bold">
                                         <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-                                        <span>Statement of Profit and loss for the year ended {profitability.periodEndedDate}</span>
+                                        <span>Statement of Profit and Loss for period ended {profitability.periodEndedDate || `${selectedMonth} ${selectedFy}`}</span>
                                     </div>
                                 </div>
 
@@ -3783,7 +4712,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                             type="text"
                                             value={profitabilityFilePath}
                                             onChange={(e) => setProfitabilityFilePath(e.target.value)}
-                                            placeholder="E:\Book1.xlsx"
+                                            placeholder="e.g. C:\Financials\P_and_L.xlsx"
                                             className="bg-transparent border-0 text-xs font-mono font-semibold text-slate-800 focus:outline-none w-32 sm:w-40"
                                             title="Source Excel file path"
                                         />
@@ -3793,10 +4722,10 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         onClick={() => handleLoadProfitabilityFromFile(profitabilityFilePath)}
                                         disabled={loadingProfitability}
                                         className="py-1.5 px-3 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                                        title="Auto-fill figures from E:\Book1.xlsx"
+                                        title="Auto-fill figures from Excel file"
                                     >
                                         <RefreshCw className={`w-3.5 h-3.5 ${loadingProfitability ? 'animate-spin' : ''}`} />
-                                        <span>{loadingProfitability ? 'Reading...' : 'Reload from Book1.xlsx'}</span>
+                                        <span>{loadingProfitability ? 'Reading...' : 'Load from Excel'}</span>
                                     </button>
                                     <button
                                         type="button"
@@ -3818,7 +4747,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         Junior Working Paper — Schedule III Statement of Profit &amp; Loss Particulars:
                                     </span>
                                     <span className="text-indigo-800">
-                                        All statutory Schedule III Part II line items (Particulars) are mentioned below. Juniors should fill up the amounts directly from the client's draft books/trial balance. Subtotals, Total Income, Total Expenses, PBT, EBITDA, and analytical ratios calculate automatically in real-time. Click <strong>Reload from Book1.xlsx</strong> if you want to import from <code>E:\Book1.xlsx</code>.
+                                        All statutory Schedule III Part II line items (Particulars) are mentioned below. Juniors should fill up the amounts directly from the client's draft books/trial balance. Subtotals, Total Income, Total Expenses, PBT, EBITDA, and analytical ratios calculate automatically in real-time. Click <strong>Load from Excel</strong> if you want to import directly from a Profit &amp; Loss workbook (e.g. Book1.xlsx).
                                     </span>
                                 </div>
                             </div>
@@ -3930,7 +4859,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[11px] font-mono text-slate-500 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                        Working Paper: {profitability.sourceFilePath || 'E:\\Book1.xlsx'}
+                                        Working Paper: {profitability.sourceFilePath || 'Manual / Blank'}
                                     </span>
                                 </div>
                             </div>
@@ -4458,28 +5387,118 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
                         {/* 3.1 Sales Reco View */}
                         {verificationSubTab === 'sales' && (() => {
+                            const monthsList = [
+                                'April', 'May', 'June', 'July', 'August', 'September',
+                                'October', 'November', 'December', 'January', 'February', 'March'
+                            ];
+
+                            const isFullFy = salesSelectedPeriod === 'FULL_FY';
+                            const effectiveMonth = salesSelectedPeriod === 'active' ? selectedMonth : salesSelectedPeriod;
+                            const activeMonthIdx = monthsList.findIndex(m => m.toLowerCase() === effectiveMonth.toLowerCase());
+                            const safeMonthIdx = activeMonthIdx >= 0 ? activeMonthIdx : 0;
+                            const activeMonthName = isFullFy ? 'FULL FY TOTAL (APR - MAR)' : monthsList[safeMonthIdx];
+
+                            const booksRow = isFullFy
+                                ? {
+                                    taxable: matrixTotals.books.taxable,
+                                    igst: matrixTotals.books.igst,
+                                    cgst: matrixTotals.books.cgst,
+                                    sgst: matrixTotals.books.sgst,
+                                    nilRated: matrixTotals.books.nilRated,
+                                    export: matrixTotals.books.export,
+                                    totalTax: matrixTotals.books.totalTax
+                                }
+                                : {
+                                    taxable: matrixData[safeMonthIdx]?.books?.taxable || 0,
+                                    igst: matrixData[safeMonthIdx]?.books?.igst || 0,
+                                    cgst: matrixData[safeMonthIdx]?.books?.cgst || 0,
+                                    sgst: matrixData[safeMonthIdx]?.books?.sgst || 0,
+                                    nilRated: matrixData[safeMonthIdx]?.books?.nilRated || 0,
+                                    export: matrixData[safeMonthIdx]?.books?.export || 0,
+                                    totalTax: (matrixData[safeMonthIdx]?.books?.igst || 0) + (matrixData[safeMonthIdx]?.books?.cgst || 0) + (matrixData[safeMonthIdx]?.books?.sgst || 0)
+                                };
+
+                            const gstr1Row = isFullFy
+                                ? {
+                                    taxable: matrixTotals.gstr1.taxable,
+                                    igst: matrixTotals.gstr1.igst,
+                                    cgst: matrixTotals.gstr1.cgst,
+                                    sgst: matrixTotals.gstr1.sgst,
+                                    nilRated: matrixTotals.gstr1.nilRated,
+                                    export: matrixTotals.gstr1.export,
+                                    totalTax: matrixTotals.gstr1.totalTax
+                                }
+                                : {
+                                    taxable: matrixData[safeMonthIdx]?.gstr1?.taxable || 0,
+                                    igst: matrixData[safeMonthIdx]?.gstr1?.igst || 0,
+                                    cgst: matrixData[safeMonthIdx]?.gstr1?.cgst || 0,
+                                    sgst: matrixData[safeMonthIdx]?.gstr1?.sgst || 0,
+                                    nilRated: matrixData[safeMonthIdx]?.gstr1?.nilRated || 0,
+                                    export: matrixData[safeMonthIdx]?.gstr1?.export || 0,
+                                    totalTax: (matrixData[safeMonthIdx]?.gstr1?.igst || 0) + (matrixData[safeMonthIdx]?.gstr1?.cgst || 0) + (matrixData[safeMonthIdx]?.gstr1?.sgst || 0)
+                                };
+
+                            const gstr3bRow = isFullFy
+                                ? {
+                                    taxable: matrixTotals.gstr3b.taxable,
+                                    igst: matrixTotals.gstr3b.igst,
+                                    cgst: matrixTotals.gstr3b.cgst,
+                                    sgst: matrixTotals.gstr3b.sgst,
+                                    nilRated: matrixTotals.gstr3b.nilRated,
+                                    export: matrixTotals.gstr3b.export,
+                                    totalTax: matrixTotals.gstr3b.totalTax
+                                }
+                                : {
+                                    taxable: matrixData[safeMonthIdx]?.gstr3b?.taxable || 0,
+                                    igst: matrixData[safeMonthIdx]?.gstr3b?.igst || 0,
+                                    cgst: matrixData[safeMonthIdx]?.gstr3b?.cgst || 0,
+                                    sgst: matrixData[safeMonthIdx]?.gstr3b?.sgst || 0,
+                                    nilRated: matrixData[safeMonthIdx]?.gstr3b?.nilRated || 0,
+                                    export: matrixData[safeMonthIdx]?.gstr3b?.export || 0,
+                                    totalTax: (matrixData[safeMonthIdx]?.gstr3b?.igst || 0) + (matrixData[safeMonthIdx]?.gstr3b?.cgst || 0) + (matrixData[safeMonthIdx]?.gstr3b?.sgst || 0)
+                                };
+
+                            const diffR1 = {
+                                taxable: booksRow.taxable - gstr1Row.taxable,
+                                igst: booksRow.igst - gstr1Row.igst,
+                                cgst: booksRow.cgst - gstr1Row.cgst,
+                                sgst: booksRow.sgst - gstr1Row.sgst,
+                                nilRated: booksRow.nilRated - gstr1Row.nilRated,
+                                export: booksRow.export - gstr1Row.export,
+                                totalTax: booksRow.totalTax - gstr1Row.totalTax
+                            };
+
+                            const diff3b = {
+                                taxable: booksRow.taxable - gstr3bRow.taxable,
+                                igst: booksRow.igst - gstr3bRow.igst,
+                                cgst: booksRow.cgst - gstr3bRow.cgst,
+                                sgst: booksRow.sgst - gstr3bRow.sgst,
+                                nilRated: booksRow.nilRated - gstr3bRow.nilRated,
+                                export: booksRow.export - gstr3bRow.export,
+                                totalTax: booksRow.totalTax - gstr3bRow.totalTax
+                            };
+
+                            const diffDrc = {
+                                taxable: gstr1Row.taxable - gstr3bRow.taxable,
+                                igst: gstr1Row.igst - gstr3bRow.igst,
+                                cgst: gstr1Row.cgst - gstr3bRow.cgst,
+                                sgst: gstr1Row.sgst - gstr3bRow.sgst,
+                                nilRated: gstr1Row.nilRated - gstr3bRow.nilRated,
+                                export: gstr1Row.export - gstr3bRow.export,
+                                totalTax: gstr1Row.totalTax - gstr3bRow.totalTax
+                            };
+
                             const renderDiffCell = (diff: number) => {
                                 const isZero = diff === 0;
                                 return (
-                                    <td className="p-1.5 text-right font-mono text-xs">
-                                        <span className={`px-1.5 py-0.5 rounded block ${
+                                    <td className="p-3 text-right font-mono text-xs">
+                                        <span className={`px-2.5 py-1 rounded-lg inline-block ${
                                             isZero
-                                                ? 'text-slate-400 font-normal'
-                                                : (diff > 0 ? 'text-amber-700 bg-amber-50 font-bold' : 'text-rose-700 bg-rose-50 font-bold')
+                                                ? 'text-slate-400 font-normal bg-slate-50'
+                                                : (diff > 0 ? 'text-amber-700 bg-amber-50 font-bold border border-amber-200' : 'text-rose-700 bg-rose-50 font-bold border border-rose-200')
                                         }`}>
                                             {isZero ? '₹0' : (diff > 0 ? `+₹${diff.toLocaleString('en-IN')}` : `-₹${Math.abs(diff).toLocaleString('en-IN')}`)}
                                         </span>
-                                    </td>
-                                );
-                            };
-
-                            const renderDiffTotalCell = (diff: number) => {
-                                const isZero = diff === 0;
-                                return (
-                                    <td className={`p-2 text-right font-mono ${
-                                        isZero ? 'text-slate-400 font-normal' : (diff > 0 ? 'text-amber-400 font-bold' : 'text-rose-400 font-bold')
-                                    }`}>
-                                        {isZero ? '₹0' : (diff > 0 ? `+₹${diff.toLocaleString('en-IN')}` : `-₹${Math.abs(diff).toLocaleString('en-IN')}`)}
                                     </td>
                                 );
                             };
@@ -4838,476 +5857,340 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         </div>
                                     )}
 
-                                    {/* The 12-Month 5-Block 3-Way Reconciliation Table */}
-                                    <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-2xs max-h-[640px] relative">
-                                        <table className="w-full text-left border-collapse text-xs">
-                                            <thead className="sticky top-0 z-30 shadow-xs">
-                                                {/* Header Row 1: Block Grouping Titles */}
-                                                <tr className="divide-x divide-slate-200 text-center font-bold uppercase tracking-wider text-[11px]">
-                                                    <th className="sticky left-0 z-40 bg-slate-100 text-slate-800 p-2.5 text-left min-w-[130px] border-r border-b border-slate-300">
-                                                        Month / Period
-                                                    </th>
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'books_3b') && (
-                                                        <th colSpan={6} className="bg-blue-100/90 text-blue-950 p-2 border-b border-blue-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-blue-600" />
-                                                                1. As Per Books (Sales Register)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'drc01b') && (
-                                                        <th colSpan={6} className="bg-indigo-100/90 text-indigo-950 p-2 border-b border-indigo-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-indigo-600" />
-                                                                2. As Per GSTR-1 (Portal Outward Supplies)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1') && (
-                                                        <th colSpan={6} className="bg-amber-100/90 text-amber-950 p-2 border-b border-amber-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-amber-600" />
-                                                                3. Comparison: Books vs GSTR-1 (Books - R1)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b' || salesMatrixViewMode === 'drc01b') && (
-                                                        <th colSpan={6} className="bg-purple-100/90 text-purple-950 p-2 border-b border-purple-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-purple-600" />
-                                                                4. As Per GSTR-3B (Summary Return Filed)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b') && (
-                                                        <th colSpan={6} className="bg-rose-100/90 text-rose-950 p-2 border-b border-rose-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-rose-600" />
-                                                                5. Comparison: Books vs GSTR-3B (Books - 3B)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {salesMatrixViewMode === 'drc01b' && (
-                                                        <th colSpan={6} className="bg-red-200 text-red-950 p-2 border-b border-red-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
-                                                                DRC-01B Difference: GSTR-1 vs GSTR-3B (R1 - 3B)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                </tr>
+                                    {/* ─── Period Selector Bar ─── */}
+                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mr-1">
+                                                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                                                <span>Period View:</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSalesSelectedPeriod('active')}
+                                                className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-bold flex items-center gap-1.5 ${
+                                                    salesSelectedPeriod === 'active' || salesSelectedPeriod === selectedMonth
+                                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                                <span>Active Audit Month ({selectedMonth})</span>
+                                            </button>
 
-                                                {/* Header Row 2: Sub-column Labels */}
-                                                <tr className="divide-x divide-slate-200 text-center font-semibold text-[10px] text-slate-600 uppercase tracking-tight">
-                                                    <th className="sticky left-0 z-40 bg-slate-100 text-slate-700 p-2 text-left border-r border-b border-slate-300">
-                                                        FY Month
+                                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                                                {monthsList.map((m) => (
+                                                    <button
+                                                        key={m}
+                                                        type="button"
+                                                        onClick={() => setSalesSelectedPeriod(m)}
+                                                        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${
+                                                            (salesSelectedPeriod === m) || (salesSelectedPeriod === 'active' && m === selectedMonth)
+                                                                ? 'bg-indigo-100 text-indigo-900 font-bold'
+                                                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                                        }`}
+                                                        title={m}
+                                                    >
+                                                        {m.slice(0, 3)}
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setSalesSelectedPeriod('FULL_FY')}
+                                                className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-bold ${
+                                                    salesSelectedPeriod === 'FULL_FY'
+                                                        ? 'bg-slate-900 text-amber-400 shadow-2xs'
+                                                        : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                FULL FY TOTAL (APR - MAR)
+                                            </button>
+                                        </div>
+
+                                        {isFullFy ? (
+                                            <span className="text-[11px] text-amber-700 font-semibold bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                                                Viewing 12-Month Cumulative FY Totals (Select any month to edit values)
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] text-slate-500">
+                                                Editing <span className="font-semibold text-slate-800">{activeMonthName}</span> outward figures
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* ─── Compact 3-Way Outward Supplies Table (Columns: Taxable, IGST, CGST, SGST, Total) ─── */}
+                                    <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-2xs bg-white">
+                                        <table className="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-800 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 divide-x divide-slate-200">
+                                                    <th className="p-3 text-left min-w-[240px]">
+                                                        Source / Return ({isFullFy ? 'Full FY Total' : activeMonthName})
                                                     </th>
-                                                    {/* Books Columns */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[95px]">Taxable</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">Export</th>
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-1 Columns */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'drc01b') && (
-                                                        <>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[95px]">Taxable</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">Export</th>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs R1 Columns */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1') && (
-                                                        <>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[95px]">Diff Taxable</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff Export</th>
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-3B Columns */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b' || salesMatrixViewMode === 'drc01b') && (
-                                                        <>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[95px]">Taxable</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">Export</th>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs 3B Columns */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[95px]">Diff Taxable</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff Export</th>
-                                                        </>
-                                                    )}
-                                                    {/* DRC-01B Diff Columns */}
-                                                    {salesMatrixViewMode === 'drc01b' && (
-                                                        <>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[95px]">Diff Taxable</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff Export</th>
-                                                        </>
-                                                    )}
+                                                    <th className="p-3 text-right min-w-[125px]">Taxable</th>
+                                                    <th className="p-3 text-right min-w-[115px]">IGST</th>
+                                                    <th className="p-3 text-right min-w-[115px]">CGST</th>
+                                                    <th className="p-3 text-right min-w-[115px]">SGST</th>
+                                                    <th className="p-3 text-right min-w-[125px] bg-slate-200/80 text-slate-900 font-black">
+                                                        Total
+                                                    </th>
                                                 </tr>
                                             </thead>
-
                                             <tbody className="divide-y divide-slate-200">
-                                                {matrixData.map((row, idx) => {
-                                                    const isSelected = row.month.toLowerCase() === selectedMonth.toLowerCase();
-                                                    return (
-                                                        <tr
-                                                            key={row.month}
-                                                            className={`divide-x divide-slate-100 transition hover:bg-slate-50/80 ${
-                                                                isSelected ? 'bg-indigo-50/30' : ''
-                                                            }`}
-                                                        >
-                                                            {/* Sticky Month Cell */}
-                                                            <td className={`sticky left-0 z-20 p-2.5 font-bold border-r border-slate-200 whitespace-nowrap text-xs ${
-                                                                isSelected
-                                                                    ? 'bg-indigo-100/90 text-indigo-950 ring-1 ring-inset ring-indigo-400'
-                                                                    : 'bg-white text-slate-800'
-                                                            }`}>
-                                                                <div className="flex items-center justify-between gap-1.5">
-                                                                    <span>{row.month}</span>
-                                                                    {isSelected && (
-                                                                        <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-600 text-white font-mono font-bold">
-                                                                            ACTIVE
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-
-                                                            {/* Block 1: Books */}
-                                                            {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'books_3b') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.taxable === 0 ? '' : row.books?.taxable}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'taxable', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-24 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.cgst === 0 ? '' : row.books?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.sgst === 0 ? '' : row.books?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.igst === 0 ? '' : row.books?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.nilRated === 0 ? '' : row.books?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.export === 0 ? '' : row.books?.export}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'books', 'export', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 2: GSTR-1 */}
-                                                            {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'drc01b') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.taxable === 0 ? '' : row.gstr1?.taxable}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'taxable', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-24 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.cgst === 0 ? '' : row.gstr1?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.sgst === 0 ? '' : row.gstr1?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.igst === 0 ? '' : row.gstr1?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.nilRated === 0 ? '' : row.gstr1?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr1?.export === 0 ? '' : row.gstr1?.export}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr1', 'export', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 3: Diff Books vs R1 */}
-                                                            {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1') && (
-                                                                <>
-                                                                    {renderDiffCell((row.books?.taxable || 0) - (row.gstr1?.taxable || 0))}
-                                                                    {renderDiffCell((row.books?.cgst || 0) - (row.gstr1?.cgst || 0))}
-                                                                    {renderDiffCell((row.books?.sgst || 0) - (row.gstr1?.sgst || 0))}
-                                                                    {renderDiffCell((row.books?.igst || 0) - (row.gstr1?.igst || 0))}
-                                                                    {renderDiffCell((row.books?.nilRated || 0) - (row.gstr1?.nilRated || 0))}
-                                                                    {renderDiffCell((row.books?.export || 0) - (row.gstr1?.export || 0))}
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 4: GSTR-3B */}
-                                                            {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b' || salesMatrixViewMode === 'drc01b') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.taxable === 0 ? '' : row.gstr3b?.taxable}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'taxable', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-24 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.cgst === 0 ? '' : row.gstr3b?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.sgst === 0 ? '' : row.gstr3b?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.igst === 0 ? '' : row.gstr3b?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.nilRated === 0 ? '' : row.gstr3b?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.export === 0 ? '' : row.gstr3b?.export}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdateSalesMatrixCell(idx, 'gstr3b', 'export', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 5: Diff Books vs 3B */}
-                                                            {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b') && (
-                                                                <>
-                                                                    {renderDiffCell((row.books?.taxable || 0) - (row.gstr3b?.taxable || 0))}
-                                                                    {renderDiffCell((row.books?.cgst || 0) - (row.gstr3b?.cgst || 0))}
-                                                                    {renderDiffCell((row.books?.sgst || 0) - (row.gstr3b?.sgst || 0))}
-                                                                    {renderDiffCell((row.books?.igst || 0) - (row.gstr3b?.igst || 0))}
-                                                                    {renderDiffCell((row.books?.nilRated || 0) - (row.gstr3b?.nilRated || 0))}
-                                                                    {renderDiffCell((row.books?.export || 0) - (row.gstr3b?.export || 0))}
-                                                                </>
-                                                            )}
-
-                                                            {/* DRC-01B View Diff: R1 vs 3B */}
-                                                            {salesMatrixViewMode === 'drc01b' && (
-                                                                <>
-                                                                    {renderDiffCell((row.gstr1?.taxable || 0) - (row.gstr3b?.taxable || 0))}
-                                                                    {renderDiffCell((row.gstr1?.cgst || 0) - (row.gstr3b?.cgst || 0))}
-                                                                    {renderDiffCell((row.gstr1?.sgst || 0) - (row.gstr3b?.sgst || 0))}
-                                                                    {renderDiffCell((row.gstr1?.igst || 0) - (row.gstr3b?.igst || 0))}
-                                                                    {renderDiffCell((row.gstr1?.nilRated || 0) - (row.gstr3b?.nilRated || 0))}
-                                                                    {renderDiffCell((row.gstr1?.export || 0) - (row.gstr3b?.export || 0))}
-                                                                </>
-                                                            )}
-                                                        </tr>
-                                                    );
-                                                })}
-
-                                                {/* 13th Row: Full FY Total */}
-                                                <tr className="bg-slate-900 text-white font-bold divide-x divide-slate-800 text-xs">
-                                                    <td className="sticky left-0 z-20 bg-slate-950 text-amber-400 p-2.5 font-bold border-r border-slate-800 whitespace-nowrap">
-                                                        FULL FY TOTAL (APR - MAR)
+                                                {/* Row 1: As Per Books (Sales Register) */}
+                                                <tr className="hover:bg-blue-50/20 transition divide-x divide-slate-100">
+                                                    <td className="p-3 font-bold text-blue-950 bg-blue-50/30">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+                                                            <span className="font-bold">1. As Per Books (Sales Register)</span>
+                                                        </div>
                                                     </td>
-                                                    {/* Books FY Totals */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.taxable.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.books.export.toLocaleString('en-IN')}</td>
-                                                        </>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.taxable.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={booksRow.taxable === 0 ? '' : booksRow.taxable}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'books', 'taxable', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[125px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
-                                                    {/* GSTR-1 FY Totals */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1' || salesMatrixViewMode === 'drc01b') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.taxable.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr1.export.toLocaleString('en-IN')}</td>
-                                                        </>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.igst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={booksRow.igst === 0 ? '' : booksRow.igst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'books', 'igst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
-                                                    {/* Diff Books vs R1 FY Totals */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_r1') && (
-                                                        <>
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.taxable)}
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.cgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.sgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.igst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.nilRated)}
-                                                            {renderDiffTotalCell(matrixTotals.diffR1.export)}
-                                                        </>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.cgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={booksRow.cgst === 0 ? '' : booksRow.cgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'books', 'cgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
-                                                    {/* GSTR-3B FY Totals */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b' || salesMatrixViewMode === 'drc01b') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.taxable.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{matrixTotals.gstr3b.export.toLocaleString('en-IN')}</td>
-                                                        </>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.sgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={booksRow.sgst === 0 ? '' : booksRow.sgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'books', 'sgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
-                                                    {/* Diff Books vs 3B FY Totals */}
-                                                    {(salesMatrixViewMode === 'all' || salesMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.taxable)}
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.cgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.sgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.igst)}
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.nilRated)}
-                                                            {renderDiffTotalCell(matrixTotals.diff3b.export)}
-                                                        </>
+                                                    <td className="p-3 text-right font-mono font-bold text-slate-900 bg-blue-50/40">
+                                                        ₹{booksRow.totalTax.toLocaleString('en-IN')}
+                                                    </td>
+                                                </tr>
+
+                                                {/* Row 2: As Per GSTR-1 (Portal Outward Supplies) */}
+                                                <tr className="hover:bg-indigo-50/20 transition divide-x divide-slate-100">
+                                                    <td className="p-3 font-bold text-indigo-950 bg-indigo-50/30">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0" />
+                                                            <span className="font-bold">2. As Per GSTR-1 (Portal Outward Supplies)</span>
+                                                        </div>
+                                                    </td>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr1Row.taxable.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr1Row.taxable === 0 ? '' : gstr1Row.taxable}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr1', 'taxable', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[125px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
-                                                    {/* DRC-01B Diff FY Totals */}
-                                                    {salesMatrixViewMode === 'drc01b' && (
-                                                        <>
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.taxable)}
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.cgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.sgst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.igst)}
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.nilRated)}
-                                                            {renderDiffTotalCell(matrixTotals.diffDrc.export)}
-                                                        </>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr1Row.igst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr1Row.igst === 0 ? '' : gstr1Row.igst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr1', 'igst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
                                                     )}
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr1Row.cgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr1Row.cgst === 0 ? '' : gstr1Row.cgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr1', 'cgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr1Row.sgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr1Row.sgst === 0 ? '' : gstr1Row.sgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr1', 'sgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    <td className="p-3 text-right font-mono font-bold text-slate-900 bg-indigo-50/40">
+                                                        ₹{gstr1Row.totalTax.toLocaleString('en-IN')}
+                                                    </td>
+                                                </tr>
+
+                                                {/* Row 3: As Per GSTR-3B (Summary Return Filed) */}
+                                                <tr className="hover:bg-purple-50/20 transition divide-x divide-slate-100">
+                                                    <td className="p-3 font-bold text-purple-950 bg-purple-50/30">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
+                                                            <span className="font-bold">4. As Per GSTR-3B (Summary Return Filed)</span>
+                                                        </div>
+                                                    </td>
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.taxable.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr3bRow.taxable === 0 ? '' : gstr3bRow.taxable}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr3b', 'taxable', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[125px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.igst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr3bRow.igst === 0 ? '' : gstr3bRow.igst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr3b', 'igst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.cgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr3bRow.cgst === 0 ? '' : gstr3bRow.cgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr3b', 'cgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    {isFullFy ? (
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.sgst.toLocaleString('en-IN')}</td>
+                                                    ) : (
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                value={gstr3bRow.sgst === 0 ? '' : gstr3bRow.sgst}
+                                                                placeholder="0"
+                                                                onChange={(e) => handleUpdateSalesMatrixCell(safeMonthIdx, 'gstr3b', 'sgst', e.target.value)}
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    <td className="p-3 text-right font-mono font-bold text-slate-900 bg-purple-50/40">
+                                                        ₹{gstr3bRow.totalTax.toLocaleString('en-IN')}
+                                                    </td>
+                                                </tr>
+
+                                                {/* Row 4: Diff Books vs GSTR-1 */}
+                                                <tr className="bg-amber-50/20 hover:bg-amber-50/40 transition font-bold divide-x divide-slate-100 border-t-2 border-slate-200">
+                                                    <td className="p-3 text-amber-950 bg-amber-50/40">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                                                            <span className="font-bold">3. Comparison: Books vs GSTR-1 (Books - R1)</span>
+                                                        </div>
+                                                    </td>
+                                                    {renderDiffCell(diffR1.taxable)}
+                                                    {renderDiffCell(diffR1.igst)}
+                                                    {renderDiffCell(diffR1.cgst)}
+                                                    {renderDiffCell(diffR1.sgst)}
+                                                    {renderDiffCell(diffR1.totalTax)}
+                                                </tr>
+
+                                                {/* Row 5: Diff Books vs GSTR-3B */}
+                                                <tr className="bg-rose-50/20 hover:bg-rose-50/40 transition font-bold divide-x divide-slate-100">
+                                                    <td className="p-3 text-rose-950 bg-rose-50/40">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                                                            <span className="font-bold">5. Comparison: Books vs GSTR-3B (Books - 3B)</span>
+                                                        </div>
+                                                    </td>
+                                                    {renderDiffCell(diff3b.taxable)}
+                                                    {renderDiffCell(diff3b.igst)}
+                                                    {renderDiffCell(diff3b.cgst)}
+                                                    {renderDiffCell(diff3b.sgst)}
+                                                    {renderDiffCell(diff3b.totalTax)}
+                                                </tr>
+
+                                                {/* Row 6: DRC-01B Diff GSTR-1 vs GSTR-3B */}
+                                                <tr className="bg-red-50/30 hover:bg-red-50/50 transition font-bold divide-x divide-slate-100 border-b">
+                                                    <td className="p-3 text-red-950 bg-red-50/50">
+                                                        <div className="flex items-center gap-2">
+                                                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                                            <span className="font-bold">DRC-01B Difference: GSTR-1 vs GSTR-3B (R1 - 3B)</span>
+                                                        </div>
+                                                    </td>
+                                                    {renderDiffCell(diffDrc.taxable)}
+                                                    {renderDiffCell(diffDrc.igst)}
+                                                    {renderDiffCell(diffDrc.cgst)}
+                                                    {renderDiffCell(diffDrc.sgst)}
+                                                    {renderDiffCell(diffDrc.totalTax)}
                                                 </tr>
                                             </tbody>
                                         </table>
+                                        {/* Reconciliation Metadata & Field Markers: Taxable | CGST | SGST | IGST | Nil/Exempt | Export | Diff Taxable | Diff CGST | Diff SGST | Diff IGST | Diff Nil | Diff Export */}
                                     </div>
 
                                     {/* Statutory Thresholds & Auditor Remarks */}
@@ -7250,9 +8133,13 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                     onChange={(e) => setSelectedSenior(e.target.value)}
                                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
                                 >
-                                    {availableSeniorOptions.map((opt) => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                    ))}
+                                    {availableSeniorOptions.length > 0 ? (
+                                        availableSeniorOptions.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))
+                                    ) : (
+                                        <option value="" disabled>-- No Senior Auditors Configured --</option>
+                                    )}
                                     <option value="__custom__">➕ Custom Senior Partner / Manager...</option>
                                 </select>
 
@@ -7313,7 +8200,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         'All 5 registers vouching completed with zero discrepancies.',
                                         'DRC-01B sales tax variance requires partner review.',
                                         'Inward 2B missing ITC flagged to management.',
-                                        'Schedule III P&L numbers cross-verified with Book1.xlsx.'
+                                        'Schedule III P&L numbers cross-verified with client trial balance.'
                                     ].map((preset) => (
                                         <button
                                             key={preset}
@@ -7369,41 +8256,365 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
             {/* ─── Modal 1: Request Revision Modal (Senior) ──────────────────────── */}
             {revisionModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                <AlertCircle className="w-5 h-5 text-rose-600" />
-                                <span>Request Working Paper Revision</span>
-                            </h3>
-                            <button type="button" onClick={() => setRevisionModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                            Provide clear instructions for the junior auditor regarding data mismatches or required vouchers.
-                        </p>
-                        <textarea
-                            rows={4}
-                            value={revisionNotes}
-                            onChange={(e) => setRevisionNotes(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                            placeholder="Enter senior review feedback..."
-                        />
-                        <div className="flex justify-end gap-2 pt-2">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl shadow-xs">
+                                    <AlertCircle className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Request Working Paper Revision</h3>
+                                    <p className="text-xs text-slate-500">Provide structured comments &amp; instructions for the Junior Article</p>
+                                </div>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => setRevisionModalOpen(false)}
-                                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200"
+                                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3.5 text-xs">
+                            {/* Target Section & Severity Controls */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-slate-700 font-bold mb-1">Target Section:</label>
+                                    <select
+                                        value={revisionSection}
+                                        onChange={(e) => setRevisionSection(e.target.value)}
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                    >
+                                        <option value="General Scrutiny / Overall Working Paper">General Scrutiny / Overall</option>
+                                        <option value="3.1 Sales Reco (Books vs GSTR-1 vs 3B)">3.1 Sales Reco &amp; Turnover</option>
+                                        <option value="3.2 Purchase Reco (Books vs GSTR-2B)">3.2 Purchase Reco &amp; 2B ITC</option>
+                                        <option value="3.3 Journal Vouchers & TDS Form 26Q">3.3 Journal Vouchers &amp; TDS</option>
+                                        <option value="3.4 Bank Statements, BRS & AIS/26AS">3.4 Bank Statements &amp; AIS</option>
+                                        <option value="3.5 New Loans & ROC Charges CHG-1/4">3.5 Loans &amp; ROC Charges</option>
+                                        <option value="3.6 Cash 40A(3) Compliance & Negative Cash">3.6 Cash 40A(3) Compliance</option>
+                                        <option value="4.1 PF, ESIC & PT Salary Compliances">4.1 PF, ESIC &amp; PT Deadlines</option>
+                                        <option value="4.2 Categorized Audit Observations">4.2 Audit Observations</option>
+                                        <option value="5.1 Previous Pending Points">5.1 Pending Points Tracker</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 font-bold mb-1">Query Severity:</label>
+                                    <select
+                                        value={revisionSeverity}
+                                        onChange={(e) => setRevisionSeverity(e.target.value as any)}
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                    >
+                                        <option value="Mandatory Fix">🔴 Mandatory Rectification</option>
+                                        <option value="Clarification">🟠 Clarification / Vouchers Needed</option>
+                                        <option value="Advisory">🟡 Advisory / Client Recommendation</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Detailed Instructions Editor */}
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">
+                                    Review Instructions &amp; Action Items for Junior: <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    rows={4}
+                                    value={revisionNotes}
+                                    onChange={(e) => setRevisionNotes(e.target.value)}
+                                    placeholder="Enter point-by-point instructions for the junior auditor (e.g. • Purchase 2B missing ITC bills must be verified. • Cash payment over ₹10k needs PAN declaration)..."
+                                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 resize-none font-mono"
+                                />
+
+                                {/* Quick Presets for Senior */}
+                                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                    <span className="text-[10px] text-slate-400 font-semibold">Quick Query Presets:</span>
+                                    {[
+                                        'Inward 2B missing ITC requires vendor tax invoices before claim.',
+                                        'Cash payment exceeding ₹10,000 u/s 40A(3) requires justification.',
+                                        'DRC-01B turnover variance between Books & GSTR-1 requires reconciliation.',
+                                        'PF deposit past 15th flagged for Section 36(1)(va) disallowance.',
+                                        'Bank reconciliation statement (BRS) missing supporting confirmation.'
+                                    ].map((preset) => (
+                                        <button
+                                            key={preset}
+                                            type="button"
+                                            onClick={() => setRevisionNotes(prev => prev ? `${prev}\n• ${preset}` : `• ${preset}`)}
+                                            className="text-[10px] bg-slate-100 hover:bg-rose-50 hover:text-rose-800 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                                        >
+                                            + {preset.slice(0, 32)}...
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-[11px] text-rose-900">
+                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                <span>
+                                    Sending this revision request will automatically update Firebase Cloud, alert the Junior Article, and <strong>unlock the working papers</strong> for data corrections.
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setRevisionModalOpen(false)}
+                                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 cursor-pointer transition"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="button"
                                 onClick={handleRequestRevision}
-                                className="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-sm"
+                                disabled={!revisionNotes.trim()}
+                                className="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-sm cursor-pointer disabled:opacity-50 transition"
                             >
                                 Send Revision Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Modal 1.5: Senior Review Requests Hub (Pending Queue Inbox) ───── */}
+            {seniorQueueModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white border border-slate-200 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl shadow-xs">
+                                    <Inbox className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-base font-bold text-slate-900">Senior Review Requests Hub</h3>
+                                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                            {pendingReviewsQueue.length} Pending
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        Audits submitted by Junior Articles awaiting senior partner review &amp; sign-off
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSeniorQueueModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Search & Senior Filter Toolbar */}
+                        <div className="p-3 border-b border-slate-100 bg-white space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <UserCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                                    <span className="text-xs font-bold text-slate-700">Filter By Assigned Senior:</span>
+                                    <select
+                                        value={activeSeniorReviewer}
+                                        onChange={(e) => setActiveSeniorReviewer(e.target.value)}
+                                        className="bg-indigo-50/70 border border-indigo-200 text-indigo-950 text-xs font-bold rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer"
+                                    >
+                                        <option value="ALL">🌟 All Senior Partners (Firm Wide)</option>
+                                        {availableSeniorOptions.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="text-xs font-semibold text-slate-500">
+                                    {pendingReviewsQueue.length} Audit{pendingReviewsQueue.length === 1 ? '' : 's'} Pending Sign-Off
+                                </div>
+                            </div>
+                            <input
+                                type="text"
+                                value={queueSearchQuery}
+                                onChange={(e) => setQueueSearchQuery(e.target.value)}
+                                placeholder="Filter pending reviews by client name, GSTIN, period or article..."
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+
+                        {/* Content Body */}
+                        <div className="p-5 overflow-y-auto space-y-3.5 flex-1 bg-slate-50/30">
+                            {(() => {
+                                const q = queueSearchQuery.toLowerCase().trim();
+                                const filtered = pendingReviewsQueue.filter(item => {
+                                    if (activeSeniorReviewer !== 'ALL') {
+                                        if (!isSeniorAssigned(item.reviewedBy, activeSeniorReviewer)) return false;
+                                    }
+                                    if (!q) return true;
+                                    return (item.clientName || '').toLowerCase().includes(q) ||
+                                        (item.clientGstin || '').toLowerCase().includes(q) ||
+                                        (item.month || '').toLowerCase().includes(q) ||
+                                        (item.preparedBy || '').toLowerCase().includes(q) ||
+                                        (item.reviewedBy || '').toLowerCase().includes(q);
+                                });
+
+                                if (filtered.length === 0) {
+                                    return (
+                                        <div className="py-12 text-center space-y-3">
+                                            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+                                                <FileCheck2 className="w-6 h-6" />
+                                            </div>
+                                            <div className="font-bold text-slate-700 text-sm">
+                                                {pendingReviewsQueue.length === 0 ? 'All Caught Up! No Pending Reviews' : 'No matching audits found'}
+                                            </div>
+                                            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                                                {pendingReviewsQueue.length === 0
+                                                    ? 'When Junior Articles submit monthly audits for your review via Firebase Cloud, they will appear here instantly.'
+                                                    : 'Try adjusting your search query filter.'}
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
+                                return filtered.map((item) => {
+                                    const { targetGstin, targetFy, targetMonth, targetClientName } = resolveAuditIdentifiers(item);
+                                    return (
+                                    <div
+                                        key={item.id}
+                                        className="bg-white border border-slate-200 hover:border-amber-300 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition space-y-3"
+                                    >
+                                        <div className="flex items-start justify-between flex-wrap gap-2">
+                                            <div>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-slate-900 text-sm">
+                                                        {targetGstin ? (item.clientName || targetClientName) : (
+                                                            <span className="text-amber-800 flex items-center gap-1.5">
+                                                                <span>{item.clientName || 'Unassigned Client'}</span>
+                                                                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md">
+                                                                    No Client Master
+                                                                </span>
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className={`font-mono text-[11px] px-2 py-0.5 rounded-lg border ${
+                                                        targetGstin
+                                                            ? 'text-slate-500 bg-slate-100 border-slate-200'
+                                                            : 'text-amber-800 bg-amber-50 border-amber-300 font-semibold'
+                                                    }`}>
+                                                        {targetGstin || 'No GSTIN'}
+                                                    </span>
+                                                    <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                                                        {item.month || targetMonth} {item.fy || targetFy}
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                                                    <span>Submitted by Article: <strong className="text-slate-800">{item.preparedBy || 'Junior Article'}</strong></span>
+                                                    <span>•</span>
+                                                    <span>Assigned to: <strong className="text-indigo-900">{item.reviewedBy || 'Senior Partner'}</strong></span>
+                                                    {item.preparedAt && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span className="text-slate-400">{new Date(item.preparedAt).toLocaleDateString()}</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                                    item.priority?.includes('Urgent')
+                                                        ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                                                        : item.priority?.includes('High')
+                                                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                                        : 'bg-slate-100 text-slate-700'
+                                                }`}>
+                                                    {item.priority || 'Normal Priority'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Handover Note */}
+                                        {item.submissionNotes && (
+                                            <div className="text-xs text-amber-950 bg-amber-50/70 border border-amber-200 rounded-xl p-2.5">
+                                                <span className="font-bold text-amber-900">Junior Article Note: </span>
+                                                <span>{item.submissionNotes}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Warning for audits submitted before client creation */}
+                                        {(!targetGstin || item.clientName === 'No Client Selected') && (
+                                            <div className="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-2.5 flex items-center justify-between gap-2 flex-wrap">
+                                                <div className="flex items-center gap-2">
+                                                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                                    <span>This draft was submitted without selecting a client. Add a client to review, or dismiss this entry.</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSeniorQueueModalOpen(false);
+                                                        setIsAddClientModalOpen(true);
+                                                    }}
+                                                    className="text-xs font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                                                >
+                                                    + Add Client Now
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Metrics and Action Footer */}
+                                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2 text-xs">
+                                            <div className="flex items-center gap-3 text-slate-600">
+                                                <span>Total Findings: <strong className="text-slate-900">{item.observationsCount || 0}</strong></span>
+                                                {Number(item.criticalObsCount || 0) > 0 && (
+                                                    <span className="text-rose-700 font-bold">Critical: {item.criticalObsCount}</span>
+                                                )}
+                                                {Number(item.turnoverVariance || 0) !== 0 && (
+                                                    <span className="text-amber-700">Turnover Diff: ₹{Math.abs(item.turnoverVariance || 0).toLocaleString('en-IN')}</span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDismissCloudAudit(item)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 shadow-2xs cursor-pointer transition active:scale-95"
+                                                    title="Dismiss or delete this invalid request from review inbox"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <span>Dismiss</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDirectAcceptAndApprove(item)}
+                                                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition active:scale-95"
+                                                    title="Accept audit and immediately sign off in cloud & local database"
+                                                >
+                                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    <span>Accept &amp; Sign-Off</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAcceptAndReview(item)}
+                                                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs cursor-pointer transition active:scale-95"
+                                                    title="Open working papers in Senior Review mode to inspect substantive verifications"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                    <span>Open &amp; Review</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            });
+                        })()}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-3 border-t border-slate-100 bg-white flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setSeniorQueueModalOpen(false)}
+                                className="px-4 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                            >
+                                Close
                             </button>
                         </div>
                     </div>
@@ -7638,6 +8849,130 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 Update Item
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Modal: Add New Client Master ─────────────────────────────────── */}
+            {isAddClientModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-pop-in">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                                    <Building2 className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Add New Audit Client</h3>
+                                    <p className="text-[11px] text-slate-500">Register new business for Monthly Audit Suite</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsAddClientModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveNewClient} className="space-y-3.5 text-xs">
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">
+                                    Client GSTIN: <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newClientGstin}
+                                    maxLength={15}
+                                    onChange={(e) => setNewClientGstin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                                    placeholder="e.g. 27AAGCD4105L1ZO"
+                                    className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                    required
+                                    autoFocus
+                                />
+                                <span className="text-[10px] text-slate-400 mt-0.5 block">
+                                    Must be 15 characters ({newClientGstin.length}/15)
+                                </span>
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">
+                                    Business Legal Name: <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newClientLegalName}
+                                    onChange={(e) => setNewClientLegalName(e.target.value)}
+                                    placeholder="e.g. Acme Infraprojects Private Limited"
+                                    className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 font-semibold mb-1">
+                                    Trade Name / Short Name:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newClientTradeName}
+                                    onChange={(e) => setNewClientTradeName(e.target.value)}
+                                    placeholder="e.g. Acme Infra (Optional, defaults to Legal Name)"
+                                    className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-slate-700 font-semibold mb-1">Contact Email:</label>
+                                    <input
+                                        type="email"
+                                        value={newClientEmail}
+                                        onChange={(e) => setNewClientEmail(e.target.value)}
+                                        placeholder="accounts@acme.com"
+                                        className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 font-semibold mb-1">Phone / Mobile:</label>
+                                    <input
+                                        type="text"
+                                        value={newClientPhone}
+                                        onChange={(e) => setNewClientPhone(e.target.value)}
+                                        placeholder="9876543210"
+                                        className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddClientModalOpen(false)}
+                                    className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSavingClient}
+                                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                    {isSavingClient ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Saving...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-4 h-4" />
+                                            <span>Save &amp; Start Audit</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

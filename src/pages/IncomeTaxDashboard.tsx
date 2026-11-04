@@ -67,7 +67,7 @@ const CurrencyInput = ({ value, onChange, disabled, placeholder, className }: Cu
 
   return (
     <div className="relative flex items-center w-full">
-      <span className="absolute left-3 text-zinc-500 text-xs font-semibold select-none">₹</span>
+      <span className="absolute left-3 text-slate-500 text-xs font-semibold select-none">₹</span>
       <Input
         type="text"
         value={displayValue}
@@ -79,7 +79,7 @@ const CurrencyInput = ({ value, onChange, disabled, placeholder, className }: Cu
         onBlur={() => setFocused(false)}
         disabled={disabled}
         placeholder={placeholder || '0'}
-        className={`pl-7 text-right font-mono tracking-tight bg-zinc-950/40 border-zinc-800 focus:border-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+        className={`pl-7 text-right font-mono tracking-tight bg-slate-100 border-slate-200 focus:border-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
       />
     </div>
   );
@@ -91,10 +91,10 @@ const CurrencyInput = ({ value, onChange, disabled, placeholder, className }: Cu
 const StatutoryTooltip = ({ section, explanation }: { section: string; explanation: string }) => {
   return (
     <span className="group relative inline-flex items-center ml-1.5 cursor-help select-none">
-      <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded hover:bg-blue-500/20 hover:text-blue-300 transition-colors uppercase tracking-wider">
+      <span className="text-[9px] font-bold text-blue-700 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded hover:bg-blue-500/20 hover:text-blue-300 transition-colors uppercase tracking-wider">
         {section}
       </span>
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 z-50 normal-case font-normal leading-relaxed text-center">
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 bg-slate-50 border border-slate-200 text-slate-700 text-[10px] rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 z-50 normal-case font-normal leading-relaxed text-center">
         {explanation}
         <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-950"></span>
       </span>
@@ -303,8 +303,8 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
       a.download = filenameMatch?.[1] || `Form_26AS_Extract_${Date.now()}.xlsx`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
       a.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
 
       setLevitateStatus('done');
       toast({
@@ -1510,7 +1510,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
     a.href = url;
     a.download = `Tax_Computation_${profile.financial_year}.xlsx`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
 
     toast({ title: 'Excel Export Complete', description: 'Live-formula tax workbook downloaded successfully.' });
     } catch (err: any) {
@@ -1533,36 +1533,44 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
   const isNonIndividual = profile.entity_type !== 'INDIVIDUAL' && profile.entity_type !== 'HUF' && profile.entity_type !== 'AOP_BOI';
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl animate-in fade-in zoom-in-95 duration-500">
+    <div className="container mx-auto p-2 sm:p-4 max-w-7xl animate-in fade-in zoom-in-95 duration-500">
 
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-zinc-800 pb-6">
-        <div className="flex items-center gap-4">
+      {/* ─── TOP ELEVATED HEADER BAR (Suite 06 · Live) ─── */}
+      <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+        <div className="flex items-center gap-3">
           {onBack && (
-            <Button
-              variant="outline"
-              size="icon"
+            <button
               onClick={onBack}
-              className="border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:text-white rounded-xl h-10 w-10 hover:border-zinc-700 transition-colors"
+              className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+              title="Return to Master Central Hub"
             >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            </button>
           )}
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200/70 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
+            <Landmark className="w-5 h-5" />
+          </div>
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2">
-              <Landmark className="w-8 h-8 text-blue-500" />
-              Tax Liability Computation
-            </h1>
-            <p className="text-zinc-400 mt-1 text-sm">Professional Indian Income Tax Engine for {profile.financial_year}</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                Income Tax Liability &amp; Regime Sandbox
+              </h1>
+              <span className="text-[10px] font-mono font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 uppercase tracking-wider">
+                Suite 06 · Live
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-mono">
+              Old vs New Regime (Sec 115BAC) Simulator, Chapter VI-A Deductions &amp; Marginal Relief
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {assessment && (
             <>
-              <Button onClick={handleDownloadExcel} variant="outline" size="lg" className="border-emerald-700/50 hover:bg-emerald-900/30 text-emerald-400 rounded-xl px-6 transition-all">
+              <Button onClick={handleDownloadExcel} variant="outline" size="lg" className="border-emerald-700/50 hover:bg-emerald-900/30 text-emerald-700 font-bold rounded-xl px-6 transition-all">
                 <FileSpreadsheet className="mr-2 h-5 w-5" /> Export Excel
               </Button>
-              <Button onClick={handleDownloadPDF} variant="outline" size="lg" className="border-zinc-700 hover:bg-zinc-800 text-zinc-300 rounded-xl px-6 transition-all">
+              <Button onClick={handleDownloadPDF} variant="outline" size="lg" className="border-slate-300 hover:bg-zinc-800 text-slate-700 rounded-xl px-6 transition-all">
                 <Download className="mr-2 h-5 w-5" /> Download Report
               </Button>
             </>
@@ -1575,21 +1583,21 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
             )}
           </Button>
         </div>
-      </div>
+      </header>
 
       {/* AIS/26AS JSON Import Dropzone */}
       <div className="mb-8">
-        <label className="group flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-zinc-800/80 hover:border-blue-500/50 rounded-2xl bg-zinc-950/20 hover:bg-zinc-950/40 transition-all cursor-pointer relative overflow-hidden">
+        <label className="group flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200/80 hover:border-blue-500/50 rounded-2xl bg-slate-50/50 hover:bg-slate-100 transition-all cursor-pointer relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="flex items-center justify-center space-x-4 select-none relative z-10">
-            <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 group-hover:text-blue-400 group-hover:border-blue-500/20 transition-all">
+            <div className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 group-hover:text-blue-700 font-bold group-hover:border-blue-500/20 transition-all">
               <Upload className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-[11px] font-bold text-zinc-300 group-hover:text-white transition-colors uppercase tracking-wider">
+              <p className="text-[11px] font-bold text-slate-700 group-hover:text-blue-700 transition-colors uppercase tracking-wider">
                 {uploadingAis ? 'Uploading & Ingesting...' : 'Drag & Drop AIS / 26AS (JSON)'}
               </p>
-              <p className="text-[9px] text-zinc-500 mt-0.5">
+              <p className="text-[9px] text-slate-500 mt-0.5">
                 Only authentic JSON schemas supported. Real-time PAN lock validation active.
               </p>
             </div>
@@ -1610,30 +1618,30 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
           levitateStatus === 'error' 
             ? 'border-red-500/50 bg-red-950/10 h-32' 
             : levitateStatus === 'done'
-            ? 'border-emerald-500/50 bg-emerald-950/10 h-32'
+            ? 'border-emerald-500/50 bg-emerald-50 border-emerald-200 h-32'
             : levitateStatus !== 'idle'
-            ? 'border-amber-500/50 bg-amber-950/10 h-32 animate-pulse'
-            : 'border-zinc-800/80 hover:border-emerald-500/50 bg-zinc-950/20 hover:bg-zinc-950/40 h-24'
+            ? 'border-amber-500/50 bg-amber-50 border-amber-200 h-32 animate-pulse'
+            : 'border-slate-200/80 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-slate-100 h-24'
         }`}>
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="flex items-center justify-center space-x-4 select-none relative z-10">
             <div className={`p-2 rounded-xl border transition-all ${
               levitateStatus === 'error'
-                ? 'bg-red-950 border-red-500/30 text-red-400'
+                ? 'bg-red-950 border-red-500/30 text-rose-600 font-bold'
                 : levitateStatus === 'done'
-                ? 'bg-emerald-950 border-emerald-500/30 text-emerald-400'
+                ? 'bg-emerald-50 border-emerald-200 border-emerald-500/30 text-emerald-700 font-bold'
                 : levitateStatus !== 'idle'
-                ? 'bg-amber-950 border-amber-500/30 text-amber-400'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-400 group-hover:text-emerald-400 group-hover:border-emerald-500/20'
+                ? 'bg-amber-950 border-amber-500/30 text-amber-700 font-bold'
+                : 'bg-white border-slate-200 text-slate-600 group-hover:text-emerald-700 font-bold group-hover:border-emerald-500/20'
             }`}>
               <FileSpreadsheet className="w-4 h-4" />
             </div>
             <div>
               <p className={`text-[11px] font-bold transition-colors uppercase tracking-wider ${
-                levitateStatus === 'error' ? 'text-red-300'
-                : levitateStatus === 'done' ? 'text-emerald-300'
-                : levitateStatus !== 'idle' ? 'text-amber-300'
-                : 'text-zinc-300 group-hover:text-white'
+                levitateStatus === 'error' ? 'text-rose-700'
+                : levitateStatus === 'done' ? 'text-emerald-700'
+                : levitateStatus !== 'idle' ? 'text-amber-700'
+                : 'text-slate-700 group-hover:text-emerald-700'
               }`}>
                 {levitateStatus === 'idle' && 'Form 26AS PDF / TXT → Excel (Secure In-Memory Converter)'}
                 {levitateStatus === 'validating' && '🔒 Validating File...'}
@@ -1643,7 +1651,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 {levitateStatus === 'error' && '❌ Extraction Failed'}
               </p>
               <p className={`text-[9px] mt-0.5 ${
-                levitateStatus === 'error' ? 'text-red-400' : 'text-zinc-500'
+                levitateStatus === 'error' ? 'text-rose-600 font-bold' : 'text-slate-500'
               }`}>
                 {levitateStatus === 'error' 
                   ? levitateError 
@@ -1670,20 +1678,20 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
         <div className="lg:col-span-7 space-y-8">
 
           {/* PROFILE CARD */}
-          <Card className="bg-[#141419] border-zinc-800 shadow-xl overflow-hidden relative">
+          <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-xl overflow-hidden relative">
             <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-            <CardHeader className="pb-4 border-b border-zinc-900">
-              <CardTitle className="text-md flex items-center gap-2 font-bold tracking-wide uppercase text-zinc-400 text-xs">
-                <ShieldCheck className="w-4.5 h-4.5 text-zinc-500" /> Profile & Regime Configuration
+            <CardHeader className="pb-4 border-b border-slate-200">
+              <CardTitle className="text-md flex items-center gap-2 font-bold tracking-wide uppercase text-slate-600 text-xs">
+                <ShieldCheck className="w-4.5 h-4.5 text-slate-500" /> Profile & Regime Configuration
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Entity Type Selection */}
               <div className="space-y-2">
-                <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Entity Type</Label>
+                <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold">Entity Type</Label>
                 <Select value={profile.entity_type} onValueChange={(v) => setProfile({ ...profile, entity_type: v })}>
-                  <SelectTrigger className="bg-zinc-950 border-zinc-800 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                  <SelectTrigger className="bg-slate-50 border-slate-200 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border-slate-200">
                     <SelectItem value="INDIVIDUAL">Individual</SelectItem>
                     <SelectItem value="HUF">HUF</SelectItem>
                     <SelectItem value="PARTNERSHIP_FIRM">Partnership Firm</SelectItem>
@@ -1696,10 +1704,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
               {/* Financial Year */}
               <div className="space-y-2">
-                <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Financial Year</Label>
+                <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold">Financial Year</Label>
                 <Select value={profile.financial_year} onValueChange={(v) => setProfile({ ...profile, financial_year: v })}>
-                  <SelectTrigger className="bg-zinc-950 border-zinc-800 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                  <SelectTrigger className="bg-slate-50 border-slate-200 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border-slate-200">
                     <SelectItem value="FY2025-26">FY 2025-26 (AY 2026-27)</SelectItem>
                     <SelectItem value="FY2026-27">FY 2026-27 (AY 2027-28)</SelectItem>
                   </SelectContent>
@@ -1709,24 +1717,24 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
               {/* Taxpayer Age (Conditional) */}
               {profile.entity_type !== 'PARTNERSHIP_FIRM' && profile.entity_type !== 'LLP' && profile.entity_type !== 'DOMESTIC_COMPANY' && (
                 <div className="space-y-2">
-                  <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Taxpayer Age</Label>
-                  <Input type="number" value={profile.age} onChange={(e) => setProfile({ ...profile, age: Number(e.target.value) })} className="bg-zinc-950 border-zinc-800 text-right font-mono" />
+                  <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold">Taxpayer Age</Label>
+                  <Input type="number" value={profile.age} onChange={(e) => setProfile({ ...profile, age: Number(e.target.value) })} className="bg-slate-50 border-slate-200 text-right font-mono" />
                 </div>
               )}
 
               {/* Tax Regime Switch (Conditional) */}
               {profile.entity_type !== 'PARTNERSHIP_FIRM' && profile.entity_type !== 'LLP' && profile.entity_type !== 'DOMESTIC_COMPANY' && (
                 <div className="space-y-2 col-span-1">
-                  <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold flex justify-between">
+                  <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold flex justify-between">
                     Regime
-                    <span className={isNewRegime ? 'text-green-400 font-extrabold' : 'text-orange-400 font-extrabold'}>
+                    <span className={isNewRegime ? 'text-green-400 font-extrabold' : 'text-amber-700 font-bold font-extrabold'}>
                       {isNewRegime ? 'NEW' : 'OLD'}
                     </span>
                   </Label>
-                  <div className="flex items-center justify-between bg-zinc-950 border border-zinc-800 px-4 rounded-lg h-10">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Old</span>
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 px-4 rounded-lg h-10">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Old</span>
                     <Switch checked={isNewRegime} onCheckedChange={(v) => setProfile({ ...profile, opted_for_new_regime: v })} className="data-[state=checked]:bg-green-500" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">New</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">New</span>
                   </div>
                 </div>
               )}
@@ -1734,13 +1742,13 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
               {/* Company Turnover < 400cr Switch (Conditional) */}
               {profile.entity_type === 'DOMESTIC_COMPANY' && (
                 <div className="space-y-2">
-                  <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">
+                  <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold">
                     Turnover &lt; ₹400 Cr
                   </Label>
-                  <div className="flex items-center justify-between bg-zinc-950 border border-zinc-800 px-4 rounded-lg h-10">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">No</span>
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 px-4 rounded-lg h-10">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">No</span>
                     <Switch checked={profile.company_turnover_under_400cr} onCheckedChange={(v) => setProfile({ ...profile, company_turnover_under_400cr: v })} className="data-[state=checked]:bg-blue-500" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Yes</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Yes</span>
                   </div>
                 </div>
               )}
@@ -1748,10 +1756,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
               {/* Company Tax Provision Select (Conditional) */}
               {profile.entity_type === 'DOMESTIC_COMPANY' && (
                 <div className="space-y-2 col-span-1">
-                  <Label className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Tax Provision</Label>
+                  <Label className="text-xs text-slate-600 uppercase tracking-wider font-semibold">Tax Provision</Label>
                   <Select value={profile.corporate_tax_section} onValueChange={(v) => setProfile({ ...profile, corporate_tax_section: v })}>
-                    <SelectTrigger className="bg-zinc-950 border-zinc-800 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                    <SelectTrigger className="bg-slate-50 border-slate-200 focus:ring-1 focus:ring-blue-500"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-white border-slate-200">
                       <SelectItem value="NORMAL">Normal Corporate Rates</SelectItem>
                       <SelectItem value="SEC_115BAA">Section 115BAA (22%)</SelectItem>
                       <SelectItem value="SEC_115BAB">Section 115BAB (15%)</SelectItem>
@@ -1763,51 +1771,51 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
           </Card>
 
           {/* INCOME HEADS (TABS) */}
-          <Card className="bg-[#141419] border-zinc-800 shadow-xl overflow-hidden">
-            <CardHeader className="pb-0 border-b border-zinc-900">
+          <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-xl overflow-hidden">
+            <CardHeader className="pb-0 border-b border-slate-200">
               <div className="flex items-center gap-2 mb-4">
-                <IndianRupee className="w-5 h-5 text-emerald-500" />
-                <CardTitle className="text-sm font-bold tracking-wide uppercase text-zinc-400 text-xs">Five Heads of Income</CardTitle>
+                <IndianRupee className="w-5 h-5 text-emerald-700 font-bold" />
+                <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-600 text-xs">Five Heads of Income</CardTitle>
               </div>
               <Tabs defaultValue="salary" className="w-full">
-                <TabsList className="bg-zinc-950 p-1 w-full justify-start overflow-x-auto rounded-none border-b border-zinc-800 h-11">
-                  <TabsTrigger value="salary" className="rounded-md text-xs px-4 py-2 data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Salary</TabsTrigger>
-                  <TabsTrigger value="hp" className="rounded-md text-xs px-4 py-2 data-[state=active]:bg-zinc-900 data-[state=active]:text-white">House Property</TabsTrigger>
-                  <TabsTrigger value="business" className="rounded-md text-xs px-4 py-2 data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Business (PGBP)</TabsTrigger>
-                  <TabsTrigger value="cg" className="rounded-md text-xs px-4 py-2 data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Capital Gains</TabsTrigger>
-                  <TabsTrigger value="other" className="rounded-md text-xs px-4 py-2 data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Other Sources</TabsTrigger>
+                <TabsList className="bg-slate-100 p-1 w-full justify-start overflow-x-auto rounded-none border-b border-slate-200 h-11">
+                  <TabsTrigger value="salary" className="rounded-md text-xs px-4 py-2 font-semibold text-slate-700 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-bold data-[state=active]:shadow-xs">Salary</TabsTrigger>
+                  <TabsTrigger value="hp" className="rounded-md text-xs px-4 py-2 font-semibold text-slate-700 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-bold data-[state=active]:shadow-xs">House Property</TabsTrigger>
+                  <TabsTrigger value="business" className="rounded-md text-xs px-4 py-2 font-semibold text-slate-700 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-bold data-[state=active]:shadow-xs">Business (PGBP)</TabsTrigger>
+                  <TabsTrigger value="cg" className="rounded-md text-xs px-4 py-2 font-semibold text-slate-700 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-bold data-[state=active]:shadow-xs">Capital Gains</TabsTrigger>
+                  <TabsTrigger value="other" className="rounded-md text-xs px-4 py-2 font-semibold text-slate-700 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-bold data-[state=active]:shadow-xs">Other Sources</TabsTrigger>
                 </TabsList>
 
-                <div className="p-6 bg-zinc-900/10">
+                <div className="p-6 bg-white/10">
 
                   {/* SALARY TAB */}
                   <TabsContent value="salary" className="space-y-6 mt-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Salary Ledger</h3>
-                        <p className="text-[10px] text-zinc-500">Calculate section 16 deductions, HRA & retirement exemptions.</p>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Salary Ledger</h3>
+                        <p className="text-[10px] text-slate-500">Calculate section 16 deductions, HRA & retirement exemptions.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setIsSalaryOpen(true)}
-                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-400 text-xs rounded-xl px-4 h-9 transition-all"
+                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-700 font-bold text-xs rounded-xl px-4 h-9 transition-all"
                       >
                         <Calculator className="w-3.5 h-3.5 mr-2" />
                         Enter Details
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-zinc-800/40 p-4 rounded-xl bg-zinc-950/20">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-slate-200/40 p-4 rounded-xl bg-slate-50/50">
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Gross Salary
                           <StatutoryTooltip section="u/s 17(1)" explanation="Includes basic salary, dearness allowance, bonus, gratuity, and all taxable perquisites." />
                         </Label>
                         <CurrencyInput value={salary.gross} onChange={(v) => setSalary({ ...salary, gross: v })} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Less: Exempt Allowances
                           <StatutoryTooltip section="u/s 10" explanation="Includes House Rent Allowance (HRA), Leave Travel Allowance (LTA), and other statutory allowances." />
                         </Label>
@@ -1815,9 +1823,9 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                       </div>
                     </div>
 
-                    <div className="bg-blue-950/20 border border-blue-900/30 rounded-xl p-4 flex justify-between items-center shadow-inner">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex justify-between items-center shadow-inner">
                       <span className="text-blue-300 text-xs font-bold uppercase tracking-wider">Net Salary (before Standard Deduction)</span>
-                      <span className="font-mono text-lg font-bold text-blue-400">{formatINR(netSalary)}</span>
+                      <span className="font-mono text-lg font-bold text-blue-700 font-bold">{formatINR(netSalary)}</span>
                     </div>
                   </TabsContent>
 
@@ -1825,37 +1833,37 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   <TabsContent value="hp" className="space-y-6 mt-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">House Property Ledger</h3>
-                        <p className="text-[10px] text-zinc-500">Manage multiple SOP/LOP properties, NAV calculations, & Section 24 limits.</p>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">House Property Ledger</h3>
+                        <p className="text-[10px] text-slate-500">Manage multiple SOP/LOP properties, NAV calculations, & Section 24 limits.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setIsHpOpen(true)}
-                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-400 text-xs rounded-xl px-4 h-9 transition-all"
+                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-700 font-bold text-xs rounded-xl px-4 h-9 transition-all"
                       >
                         <Calculator className="w-3.5 h-3.5 mr-2" />
                         Enter Details
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border border-zinc-800/40 p-4 rounded-xl bg-zinc-950/20">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border border-slate-200/40 p-4 rounded-xl bg-slate-50/50">
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold">Gross Annual Value (GAV)</Label>
+                        <Label className="text-slate-600 text-xs font-semibold">Gross Annual Value (GAV)</Label>
                         <CurrencyInput value={houseProperty.gav} onChange={(v) => setHouseProperty({ ...houseProperty, gav: v })} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold">Municipal Taxes Paid</Label>
+                        <Label className="text-slate-600 text-xs font-semibold">Municipal Taxes Paid</Label>
                         <CurrencyInput value={houseProperty.municipalTaxes} onChange={(v) => setHouseProperty({ ...houseProperty, municipalTaxes: v })} />
                       </div>
-                      <div className={`space-y-2 p-3 rounded-lg border transition-colors ${isNewRegime && houseProperty.gav === 0 ? 'bg-zinc-950/50 border-dashed border-zinc-800 opacity-60' : 'bg-transparent border-transparent'}`}>
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                      <div className={`space-y-2 p-3 rounded-lg border transition-colors ${isNewRegime && houseProperty.gav === 0 ? 'bg-slate-50/50 border-dashed border-slate-200 opacity-60' : 'bg-transparent border-transparent'}`}>
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Interest on Loan
                           <StatutoryTooltip section="u/s 24(b)" explanation="Deduction for interest paid on home loan. Self-occupied property deduction is capped at Rs. 2 Lakhs (Old regime only)." />
                         </Label>
                         <CurrencyInput value={houseProperty.interest24b} disabled={isNewRegime && houseProperty.gav === 0} onChange={(v) => setHouseProperty({ ...houseProperty, interest24b: v })} />
                         {isNewRegime && houseProperty.gav === 0 && (
-                          <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-medium mt-1 inline-block">
+                          <span className="text-[9px] bg-red-500/10 text-rose-600 font-bold border border-red-500/20 px-2 py-0.5 rounded font-medium mt-1 inline-block">
                             Not applicable under New Regime (Self-occupied)
                           </span>
                         )}
@@ -1867,30 +1875,30 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   <TabsContent value="business" className="space-y-6 mt-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Business & Profession (PGBP) Ledger</h3>
-                        <p className="text-[10px] text-zinc-500">Resolve presumptive taxation (44AD/ADA/AE) or regular business books with Sec 32 depreciation.</p>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Business & Profession (PGBP) Ledger</h3>
+                        <p className="text-[10px] text-slate-500">Resolve presumptive taxation (44AD/ADA/AE) or regular business books with Sec 32 depreciation.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setIsPgbpOpen(true)}
-                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-400 text-xs rounded-xl px-4 h-9 transition-all"
+                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-700 font-bold text-xs rounded-xl px-4 h-9 transition-all"
                       >
                         <Calculator className="w-3.5 h-3.5 mr-2" />
                         Enter Details
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-zinc-800/40 p-4 rounded-xl bg-zinc-950/20">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-slate-200/40 p-4 rounded-xl bg-slate-50/50">
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Net Profit as per P&L
                           <StatutoryTooltip section="Sec 28" explanation="Net profits and gains from business or profession before adjusting for Income Tax depreciation." />
                         </Label>
                         <CurrencyInput value={business.netProfit} onChange={(v) => setBusiness({ ...business, netProfit: v })} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Depreciation Adjustment
                           <StatutoryTooltip section="Sec 32" explanation="Depreciation calculated as per Income Tax Rules, 1962 (to be reduced from book profits)." />
                         </Label>
@@ -1903,47 +1911,47 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   <TabsContent value="cg" className="space-y-6 mt-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Capital Gains Ledger</h3>
-                        <p className="text-[10px] text-zinc-500">Add transactions, auto-abolish indexation post Finance Act 2024, & check SDV limits.</p>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Capital Gains Ledger</h3>
+                        <p className="text-[10px] text-slate-500">Add transactions, auto-abolish indexation post Finance Act 2024, & check SDV limits.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setIsCgOpen(true)}
-                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-400 text-xs rounded-xl px-4 h-9 transition-all"
+                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-700 font-bold text-xs rounded-xl px-4 h-9 transition-all"
                       >
                         <Calculator className="w-3.5 h-3.5 mr-2" />
                         Enter Details
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border border-zinc-800/40 p-4 rounded-xl bg-zinc-950/20">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border border-slate-200/40 p-4 rounded-xl bg-slate-50/50">
                       <div className="space-y-4">
-                        <h3 className="font-bold text-emerald-400 border-b border-zinc-800 pb-2 text-xs uppercase tracking-wider">Short-Term (STCG)</h3>
+                        <h3 className="font-bold text-emerald-700 font-bold border-b border-slate-200 pb-2 text-xs uppercase tracking-wider">Short-Term (STCG)</h3>
                         <div className="space-y-2">
-                          <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                          <Label className="text-slate-600 text-xs font-semibold flex items-center">
                             Equity Shares / Units
                             <StatutoryTooltip section="Sec 111A" explanation="Short-term capital gains on equity shares/units subject to STT. Taxed at flat 20% (increased in Budget 2024)." />
                           </Label>
                           <CurrencyInput value={capitalGains.stcg111A} onChange={(v) => setCapitalGains({ ...capitalGains, stcg111A: v })} />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-zinc-400 text-xs font-semibold">Other Assets (Taxed at Slabs)</Label>
+                          <Label className="text-slate-600 text-xs font-semibold">Other Assets (Taxed at Slabs)</Label>
                           <CurrencyInput value={capitalGains.stcgOther} onChange={(v) => setCapitalGains({ ...capitalGains, stcgOther: v })} />
                         </div>
                       </div>
 
                       <div className="space-y-4">
-                        <h3 className="font-bold text-purple-400 border-b border-zinc-800 pb-2 text-xs uppercase tracking-wider">Long-Term (LTCG)</h3>
+                        <h3 className="font-bold text-purple-400 border-b border-slate-200 pb-2 text-xs uppercase tracking-wider">Long-Term (LTCG)</h3>
                         <div className="space-y-2">
-                          <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                          <Label className="text-slate-600 text-xs font-semibold flex items-center">
                             Equity Shares / Units
                             <StatutoryTooltip section="Sec 112A" explanation="Taxed at flat 12.5% on gains exceeding Rs. 1.25 Lakhs without indexation benefit (Budget 2024 update)." />
                           </Label>
                           <CurrencyInput value={capitalGains.ltcg112A} onChange={(v) => setCapitalGains({ ...capitalGains, ltcg112A: v })} />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                          <Label className="text-slate-600 text-xs font-semibold flex items-center">
                             Other Assets (No Indexation)
                             <StatutoryTooltip section="Sec 112" explanation="Taxed at flat 12.5% for all assets without indexation benefit under the revised Budget rules." />
                           </Label>
@@ -1957,31 +1965,31 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   <TabsContent value="other" className="space-y-6 mt-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
                       <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Other Sources & Clubbing Ledger</h3>
-                        <p className="text-[10px] text-zinc-500">Manage interest, dividends, gifts, taxable LIPs, and minor/spouse clubbing u/s 64.</p>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Other Sources & Clubbing Ledger</h3>
+                        <p className="text-[10px] text-slate-500">Manage interest, dividends, gifts, taxable LIPs, and minor/spouse clubbing u/s 64.</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setIsIfosOpen(true)}
-                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-400 text-xs rounded-xl px-4 h-9 transition-all"
+                        className="border-blue-500/30 hover:border-blue-500 hover:bg-blue-500/10 text-blue-700 font-bold text-xs rounded-xl px-4 h-9 transition-all"
                       >
                         <Calculator className="w-3.5 h-3.5 mr-2" />
                         Enter Details
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border border-zinc-800/40 p-4 rounded-xl bg-zinc-950/20">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border border-slate-200/40 p-4 rounded-xl bg-slate-50/50">
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold">Interest Income</Label>
+                        <Label className="text-slate-600 text-xs font-semibold">Interest Income</Label>
                         <CurrencyInput value={otherSources.interest} onChange={(v) => setOtherSources({ ...otherSources, interest: v })} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold">Dividend Income</Label>
+                        <Label className="text-slate-600 text-xs font-semibold">Dividend Income</Label>
                         <CurrencyInput value={otherSources.dividend} onChange={(v) => setOtherSources({ ...otherSources, dividend: v })} />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-zinc-400 text-xs font-semibold flex items-center">
+                        <Label className="text-slate-600 text-xs font-semibold flex items-center">
                           Casual Income
                           <StatutoryTooltip section="Sec 115BB/H" explanation="Includes Winnings from Lotteries, Game Shows, and Crypto Asset Transfers. Taxed at flat 30% without deductions." />
                         </Label>
@@ -1996,14 +2004,14 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
           </Card>
 
           {/* DEDUCTIONS CARD */}
-          <Card className="bg-[#141419] border-zinc-800 shadow-xl overflow-hidden relative">
+          <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-xl overflow-hidden relative">
             <div className={`absolute top-0 left-0 w-1 h-full ${isNewRegime ? 'bg-orange-500/60' : 'bg-purple-600'}`}></div>
-            <CardHeader className="pb-4 border-b border-zinc-900">
-              <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-zinc-400 text-xs">
+            <CardHeader className="pb-4 border-b border-slate-200">
+              <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-slate-600 text-xs">
                 <div className="flex items-center gap-2">
-                  <FileText className="w-4.5 h-4.5 text-zinc-500" /> Chapter VI-A Deductions
+                  <FileText className="w-4.5 h-4.5 text-slate-500" /> Chapter VI-A Deductions
                 </div>
-                {isNewRegime && <span className="text-[10px] font-extrabold bg-orange-500/10 border border-orange-500/20 text-orange-400 px-3 py-1 rounded-full uppercase tracking-wider">Restricted (New Regime)</span>}
+                {isNewRegime && <span className="text-[10px] font-extrabold bg-orange-500/10 border border-orange-500/20 text-amber-700 font-bold px-3 py-1 rounded-full uppercase tracking-wider">Restricted (New Regime)</span>}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6">
@@ -2022,16 +2030,16 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                     <div
                       key={item.key}
                       className={`space-y-2 p-3 rounded-xl border transition-all ${isItemDisabled
-                          ? 'bg-zinc-950/50 border-dashed border-zinc-800/80 opacity-40'
-                          : 'bg-zinc-950/20 border-zinc-800/40 hover:border-zinc-800'
+                          ? 'bg-slate-50/50 border-dashed border-slate-200/80 opacity-40'
+                          : 'bg-slate-50/50 border-slate-200/40 hover:border-slate-200'
                         }`}
                     >
-                      <Label className="text-zinc-400 text-xs font-semibold flex items-center justify-between">
+                      <Label className="text-slate-600 text-xs font-semibold flex items-center justify-between">
                         <span className="flex items-center">
                           {item.key}
                           <StatutoryTooltip section={item.key} explanation={item.exp} />
                         </span>
-                        <span className="text-[9px] text-zinc-500 font-mono">{item.limit}</span>
+                        <span className="text-[9px] text-slate-500 font-mono">{item.limit}</span>
                       </Label>
                       <CurrencyInput
                         value={deductions[item.key] || 0}
@@ -2039,7 +2047,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                         onChange={(v) => setDeductions({ ...deductions, [item.key]: v })}
                       />
                       {isItemDisabled && (
-                        <span className="text-[8px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-medium mt-1 inline-block select-none">
+                        <span className="text-[8px] bg-red-500/10 text-rose-600 font-bold border border-red-500/20 px-2 py-0.5 rounded font-medium mt-1 inline-block select-none">
                           {isNonIndividual ? 'Not applicable for this entity' : 'Not applicable under New Regime'}
                         </span>
                       )}
@@ -2051,10 +2059,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
           </Card>
 
           {/* TAX CREDITS / PREPAID TAXES CARD */}
-          <Card className="bg-[#141419] border-zinc-800 shadow-xl overflow-hidden mt-6 relative">
+          <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-xl overflow-hidden mt-6 relative">
             <div className="absolute top-0 left-0 w-1 h-full bg-cyan-600"></div>
-            <CardHeader className="pb-4 border-b border-zinc-900">
-              <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-zinc-400 text-xs">
+            <CardHeader className="pb-4 border-b border-slate-200">
+              <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-slate-600 text-xs">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4.5 h-4.5 text-cyan-500" />
                   Tax Credits & Prepaid Taxes
@@ -2071,9 +2079,9 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 ].map((item) => (
                   <div
                     key={item.key}
-                    className="space-y-2 p-3 rounded-xl border transition-all bg-zinc-950/20 border-zinc-800/40 hover:border-cyan-800/50"
+                    className="space-y-2 p-3 rounded-xl border transition-all bg-slate-50/50 border-slate-200/40 hover:border-cyan-800/50"
                   >
-                    <Label className="text-zinc-400 text-xs font-semibold flex items-center justify-between">
+                    <Label className="text-slate-600 text-xs font-semibold flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <span className="text-sm">{item.icon}</span>
                         {item.label}
@@ -2092,10 +2100,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
           {/* COMPLIANCE DISCLOSURES CARD (INFORMATION ONLY) */}
           {complianceDisclosures.length > 0 && (
-            <Card className="bg-[#141419] border-zinc-800 shadow-xl overflow-hidden mt-6 relative border-dashed">
+            <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-xl overflow-hidden mt-6 relative border-dashed">
               <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50"></div>
-              <CardHeader className="pb-4 border-b border-zinc-900">
-                <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-zinc-400 text-xs">
+              <CardHeader className="pb-4 border-b border-slate-200">
+                <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-slate-600 text-xs">
                   <div className="flex items-center gap-2">
                     <Info className="w-4.5 h-4.5 text-amber-500" /> Statutory Compliance Disclosures (Information Only)
                   </div>
@@ -2106,17 +2114,17 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
               </CardHeader>
               <CardContent className="pt-6">
                 <div className="space-y-4 text-xs">
-                  <p className="text-zinc-500 text-[10px]">
+                  <p className="text-slate-500 text-[10px]">
                     The following high-value financial transactions were reported in the SFT node of your AIS document. Under statutory rules, these are reported for monitoring and are not mapped to taxable income heads:
                   </p>
-                  <div className="divide-y divide-zinc-900 border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/20">
+                  <div className="divide-y divide-slate-200 border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50">
                     {complianceDisclosures.map((disc, index) => (
-                      <div key={index} className="flex justify-between items-center p-3 hover:bg-zinc-900/10 transition-colors">
+                      <div key={index} className="flex justify-between items-center p-3 hover:bg-white/10 transition-colors">
                         <div>
-                          <div className="font-bold text-zinc-300">{disc.source}</div>
-                          <div className="text-[9px] text-zinc-500 font-mono mt-0.5">{disc.description}</div>
+                          <div className="font-bold text-slate-700">{disc.source}</div>
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">{disc.description}</div>
                         </div>
-                        <div className="font-mono text-zinc-400 font-bold">
+                        <div className="font-mono text-slate-600 font-bold">
                           {formatINR(disc.amount)}
                         </div>
                       </div>
@@ -2131,24 +2139,24 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
         {/* RIGHT COLUMN: COMPUTATION SUMMARY (STICKY) */}
         <div className="lg:col-span-5">
           <div className="sticky top-6">
-            <Card className="bg-[#141419] border-zinc-800 shadow-2xl overflow-hidden relative">
+            <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-2xl overflow-hidden relative">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
 
-              <CardHeader className="p-4 border-b border-zinc-900 bg-zinc-950/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 space-y-0">
+              <CardHeader className="p-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 space-y-0">
                 <div className="flex items-center gap-2">
                   <PieChart className="w-5 h-5 text-blue-500" />
                   <div>
-                    <h2 className="text-sm font-bold text-white uppercase tracking-wider">Computation Statement</h2>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">Symmetrical Comparison Model</p>
+                    <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Computation Statement</h2>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Symmetrical Comparison Model</p>
                   </div>
                 </div>
                 {assessment && (
                   <div className="flex items-center gap-2">
-                    <div className="bg-zinc-950 p-1 rounded-lg border border-zinc-800 flex">
+                    <div className="bg-slate-50 p-1 rounded-lg border border-slate-200 flex">
                       <button
                         type="button"
                         onClick={() => setSummaryView('statement')}
-                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-md transition-colors ${summaryView === 'statement' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-md transition-colors ${summaryView === 'statement' ? 'bg-blue-600 text-white font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-semibold'
                           }`}
                       >
                         Statement
@@ -2156,7 +2164,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                       <button
                         type="button"
                         onClick={() => setSummaryView('worksheet')}
-                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-md transition-colors ${summaryView === 'worksheet' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-md transition-colors ${summaryView === 'worksheet' ? 'bg-blue-600 text-white font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-semibold'
                           }`}
                       >
                         Worksheet
@@ -2165,14 +2173,14 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                     <Button
                       onClick={handleDownloadExcel}
                       size="sm"
-                      className="bg-emerald-950 border border-emerald-800/50 hover:bg-emerald-900 text-emerald-400 rounded-lg text-xs h-8 px-3"
+                      className="bg-emerald-50 border-emerald-200 border border-emerald-800/50 hover:bg-emerald-900 text-emerald-700 font-bold rounded-lg text-xs h-8 px-3"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" /> Excel
                     </Button>
                     <Button
                       onClick={handleDownloadPDF}
                       size="sm"
-                      className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs h-8 px-3"
+                      className="bg-white border border-slate-200 hover:bg-zinc-800 text-slate-700 rounded-lg text-xs h-8 px-3"
                     >
                       <Download className="w-3.5 h-3.5 mr-1.5" /> Export PDF
                     </Button>
@@ -2186,21 +2194,21 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                     <div>
                       {/* Optimal Regime Banner */}
                       {!isNonIndividual && (
-                        <div className="bg-emerald-950/40 border border-emerald-500/20 px-4 py-3 rounded-xl mx-4 mt-4 flex items-center justify-between shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+                        <div className="bg-emerald-50 border border-emerald-200/90 px-4 py-3 rounded-xl mx-4 mt-4 flex items-center justify-between shadow-xs">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-700 font-bold">
                               <TrendingUp className="w-4 h-4" />
                             </div>
                             <div>
-                              <span className="text-[9px] font-bold text-emerald-400/80 uppercase tracking-widest block">Optimal Choice</span>
-                              <span className="text-xs font-bold text-white">
+                              <span className="text-[9px] font-bold text-emerald-800 font-bold uppercase tracking-wider block">Optimal Choice</span>
+                              <span className="text-xs font-bold text-emerald-950">
                                 {assessment.recommendation === 'NEW' ? 'New Regime u/s 115BAC' : 'Old Regime'}
                               </span>
                             </div>
                           </div>
                           <div className="text-right">
-                            <span className="text-[9px] font-bold text-emerald-400/80 uppercase tracking-widest block">Net Savings</span>
-                            <span className="text-xs font-mono font-bold text-emerald-400">
+                            <span className="text-[9px] font-bold text-emerald-700 font-bold/80 uppercase tracking-widest block">Net Savings</span>
+                            <span className="text-sm font-mono font-black text-emerald-700">
                               {formatINR(assessment.savings)}
                             </span>
                           </div>
@@ -2208,9 +2216,9 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                       )}
 
                       <ScrollArea className="h-[calc(100vh-270px)] max-h-[580px] px-4 py-4">
-                        <table className="w-full text-xs text-zinc-300 border-collapse">
+                        <table className="w-full text-xs text-slate-700 border-collapse">
                           <thead>
-                            <tr className="text-zinc-500 border-b border-zinc-900 uppercase tracking-widest text-[9px] font-bold">
+                            <tr className="text-slate-500 border-b border-slate-200 uppercase tracking-widest text-[9px] font-bold">
                               <th className="pb-2 text-left font-semibold">Tax Head / Component</th>
                               {isNonIndividual ? (
                                 <th className="pb-2 text-right font-semibold pr-2">Statutory Tax Liability</th>
@@ -2223,7 +2231,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                               )}
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-zinc-900">
+                          <tbody className="divide-y divide-slate-200">
                             {(() => {
                               const stmtRows = [];
                               
@@ -2303,26 +2311,26 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
                               let rowBg = '';
                               if (row.grandTotal) {
-                                rowBg = 'bg-zinc-950 font-bold border-y-2 border-zinc-800';
+                                rowBg = 'bg-slate-50 font-bold border-y-2 border-slate-200';
                               } else if (row.highlight) {
-                                rowBg = 'bg-zinc-900/60 font-semibold border-y border-zinc-900';
+                                rowBg = 'bg-white/60 font-semibold border-y border-slate-200';
                               } else if (hasVariance) {
                                 rowBg = 'bg-orange-500/[0.02]';
                               }
 
                               return (
-                                <tr key={idx} className={`${rowBg} text-[11px] group transition-colors hover:bg-zinc-900/30`}>
-                                  <td className={`py-2.5 text-zinc-400 pl-1 ${row.indent ? 'pl-4 text-zinc-500' : ''}`} style={{ whiteSpace: 'pre' }}>{row.label}</td>
+                                <tr key={idx} className={`${rowBg} text-[11px] group transition-colors hover:bg-white/30`}>
+                                  <td className={`py-2.5 text-slate-600 pl-1 ${row.indent ? 'pl-4 text-slate-500' : ''}`} style={{ whiteSpace: 'pre' }}>{row.label}</td>
                                   {isNonIndividual ? (
-                                    <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-red-400' : row.orange ? 'text-orange-400' : row.green ? 'text-emerald-400' : row.greenText ? 'text-emerald-500' : ''}`}>
+                                    <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-rose-600 font-bold' : row.orange ? 'text-amber-700 font-bold' : row.green ? 'text-emerald-700 font-bold' : row.greenText ? 'text-emerald-700 font-bold' : ''}`}>
                                       {formatINR(row.newVal)}
                                     </td>
                                   ) : (
                                     <>
-                                      <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-red-400' : row.orange ? 'text-orange-400' : row.green ? 'text-emerald-400' : row.greenText ? 'text-emerald-500' : ''}`}>
+                                      <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-rose-600 font-bold' : row.orange ? 'text-amber-700 font-bold' : row.green ? 'text-emerald-700 font-bold' : row.greenText ? 'text-emerald-700 font-bold' : ''}`}>
                                         {formatINR(row.oldVal)}
                                       </td>
-                                      <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-red-400' : row.orange ? 'text-orange-400' : row.green ? 'text-emerald-400' : row.greenText ? 'text-emerald-500' : ''}`}>
+                                      <td className={`py-2.5 text-right font-mono pr-2 ${row.red ? 'text-rose-600 font-bold' : row.orange ? 'text-amber-700 font-bold' : row.green ? 'text-emerald-700 font-bold' : row.greenText ? 'text-emerald-700 font-bold' : ''}`}>
                                         {formatINR(row.newVal)}
                                       </td>
                                       <td className="py-2.5 text-center">
@@ -2339,17 +2347,17 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                         </table>
 
                         {/* Collapsible Accordion: Statutory Notes */}
-                        <div className="mt-6 border-t border-zinc-800/80 pt-4">
+                        <div className="mt-6 border-t border-slate-200/80 pt-4">
                           <button
                             type="button"
                             onClick={() => setShowNotes(!showNotes)}
-                            className="w-full flex items-center justify-between text-zinc-400 hover:text-white transition-colors py-2 text-xs font-bold uppercase tracking-wider"
+                            className="w-full flex items-center justify-between text-slate-700 hover:text-slate-900 transition-colors py-2 text-xs font-bold uppercase tracking-wider"
                           >
                             <span className="flex items-center gap-1.5">
-                              <FileText className="w-4 h-4 text-blue-500" />
+                              <FileText className="w-4 h-4 text-blue-600" />
                               Statutory Notes & Disclosures
                             </span>
-                            <span className="text-[10px] text-zinc-500">{showNotes ? 'Hide [▲]' : 'Show [▼]'}</span>
+                            <span className="text-[10px] text-slate-500 font-bold">{showNotes ? 'Hide [▲]' : 'Show [▼]'}</span>
                           </button>
 
                           {showNotes && (
@@ -2374,21 +2382,21 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
                                 if (mergedNotes.length === 0) {
                                   return (
-                                    <p className="text-[10px] text-zinc-500 italic p-2 border border-zinc-800/50 border-dashed rounded-lg text-center">
+                                    <p className="text-[10px] text-slate-500 italic p-2 border border-slate-200/50 border-dashed rounded-lg text-center">
                                       No special statutory overrides or rebates triggered for this calculation.
                                     </p>
                                   );
                                 }
 
                                 return mergedNotes.map((note: any, idx: number) => (
-                                  <div key={idx} className="bg-zinc-950/60 border border-zinc-800/50 p-2.5 rounded-lg flex flex-col gap-1.5">
+                                  <div key={idx} className="bg-slate-50/60 border border-slate-200/50 p-2.5 rounded-lg flex flex-col gap-1.5">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-[10px] font-bold text-white leading-none">{note.lineItem}</span>
-                                      <span className="text-[8px] bg-blue-500/10 text-blue-400 font-extrabold px-1.5 py-0.5 rounded tracking-wide uppercase leading-none border border-blue-500/20">
+                                      <span className="text-[10px] font-bold text-slate-900 leading-none">{note.lineItem}</span>
+                                      <span className="text-[8px] bg-blue-500/10 text-blue-700 font-bold font-extrabold px-1.5 py-0.5 rounded tracking-wide uppercase leading-none border border-blue-500/20">
                                         {note.applicableSection}
                                       </span>
                                     </div>
-                                    <p className="text-[10px] text-zinc-400 leading-relaxed font-normal">{note.rationaleString}</p>
+                                    <p className="text-[10px] text-slate-600 leading-relaxed font-normal">{note.rationaleString}</p>
                                   </div>
                                 ));
                               })()}
@@ -2405,96 +2413,96 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                         {/* Old Regime Audit */}
                         <div className="space-y-4">
                           <div className="border-l-2 border-orange-500 pl-3">
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Old Tax Regime Worksheet</h3>
-                            <p className="text-[10px] text-zinc-500 mt-0.5">Slab & statutory surcharge math audit</p>
+                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Old Tax Regime Worksheet</h3>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Slab & statutory surcharge math audit</p>
                           </div>
 
-                          <table className="w-full text-[10px] text-zinc-400 border-collapse">
+                          <table className="w-full text-[10px] text-slate-600 border-collapse">
                             <thead>
-                              <tr className="border-b border-zinc-800 text-zinc-500 font-semibold uppercase tracking-wider text-[8px]">
+                              <tr className="border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[8px]">
                                 <th className="pb-1.5 text-left">Slab Range</th>
                                 <th className="pb-1.5 text-right">Rate</th>
                                 <th className="pb-1.5 text-right">Income in Slab</th>
                                 <th className="pb-1.5 text-right">Tax Generated</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-zinc-900 font-mono">
+                            <tbody className="divide-y divide-slate-200 font-mono">
                               {assessment.oldRegimeAssessment.calculationSheet.slabBreakdown.map((row: any, idx: number) => (
-                                <tr key={idx} className="hover:bg-zinc-900/20">
+                                <tr key={idx} className="hover:bg-white/20">
                                   <td className="py-2 text-left font-sans">{row.slabRange}</td>
                                   <td className="py-2 text-right">{row.ratePercentage}%</td>
                                   <td className="py-2 text-right">{formatINR(row.taxableAmountInSlab)}</td>
-                                  <td className="py-2 text-right text-white">{formatINR(row.taxGenerated)}</td>
+                                  <td className="py-2 text-right text-slate-900 font-bold">{formatINR(row.taxGenerated)}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
 
                           {/* Surcharge & Cess Verification block */}
-                          <div className="bg-zinc-950/50 border border-zinc-900/40 p-3 rounded-xl space-y-2.5 text-[10px]">
+                          <div className="bg-slate-50/50 border border-slate-200 p-3 rounded-xl space-y-2.5 text-[10px]">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
-                              <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">Surcharge Formula u/s 2(3):</span>
-                              <span className="font-mono text-zinc-300 text-right leading-relaxed">
+                              <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Surcharge Formula u/s 2(3):</span>
+                              <span className="font-mono text-slate-700 text-right leading-relaxed">
                                 (Base Tax {formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)} × {assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%)
                                 - {formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.marginalReliefSubtracted)}
-                                = <strong className="text-emerald-400">{formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}</strong>
+                                = <strong className="text-emerald-700 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}</strong>
                               </span>
                             </div>
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 border-t border-zinc-900/80 pt-2">
-                              <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">Health & Ed. Cess (4%):</span>
-                              <span className="font-mono text-zinc-300 text-right leading-relaxed">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 border-t border-slate-200 pt-2">
+                              <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Health & Ed. Cess (4%):</span>
+                              <span className="font-mono text-slate-700 text-right leading-relaxed">
                                 {formatINR(assessment.oldRegimeAssessment.calculationSheet.cessDetails.taxPlusSurcharge)} × 4%
-                                = <strong className="text-emerald-400">{formatINR(assessment.oldRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</strong>
+                                = <strong className="text-emerald-700 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</strong>
                               </span>
                             </div>
                           </div>
                         </div>
 
-                        <Separator className="my-6 bg-zinc-900" />
+                        <Separator className="my-6 bg-white" />
 
                         {/* New Regime Audit */}
                         <div className="space-y-4">
                           <div className="border-l-2 border-green-500 pl-3">
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">New Tax Regime Worksheet (115BAC)</h3>
-                            <p className="text-[10px] text-zinc-500 mt-0.5">Slab & statutory surcharge math audit</p>
+                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">New Tax Regime Worksheet (115BAC)</h3>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Slab & statutory surcharge math audit</p>
                           </div>
 
-                          <table className="w-full text-[10px] text-zinc-400 border-collapse">
+                          <table className="w-full text-[10px] text-slate-600 border-collapse">
                             <thead>
-                              <tr className="border-b border-zinc-800 text-zinc-500 font-semibold uppercase tracking-wider text-[8px]">
+                              <tr className="border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[8px]">
                                 <th className="pb-1.5 text-left">Slab Range</th>
                                 <th className="pb-1.5 text-right">Rate</th>
                                 <th className="pb-1.5 text-right">Income in Slab</th>
                                 <th className="pb-1.5 text-right">Tax Generated</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-zinc-900 font-mono">
+                            <tbody className="divide-y divide-slate-200 font-mono">
                               {assessment.newRegimeAssessment.calculationSheet.slabBreakdown.map((row: any, idx: number) => (
-                                <tr key={idx} className="hover:bg-zinc-900/20">
-                                  <td className="py-2 text-left font-sans">{row.slabRange}</td>
-                                  <td className="py-2 text-right">{row.ratePercentage}%</td>
-                                  <td className="py-2 text-right">{formatINR(row.taxableAmountInSlab)}</td>
-                                  <td className="py-2 text-right text-white">{formatINR(row.taxGenerated)}</td>
+                                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                  <td className="py-2 text-left font-sans text-slate-800 font-medium">{row.slabRange}</td>
+                                  <td className="py-2 text-right text-slate-800">{row.ratePercentage}%</td>
+                                  <td className="py-2 text-right text-slate-800">{formatINR(row.taxableAmountInSlab)}</td>
+                                  <td className="py-2 text-right text-slate-900 font-bold">{formatINR(row.taxGenerated)}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
 
                           {/* Surcharge & Cess Verification block */}
-                          <div className="bg-zinc-950/50 border border-zinc-900/40 p-3 rounded-xl space-y-2.5 text-[10px]">
+                          <div className="bg-slate-50/50 border border-slate-200 p-3 rounded-xl space-y-2.5 text-[10px]">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
-                              <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">Surcharge Formula u/s 2(3):</span>
-                              <span className="font-mono text-zinc-300 text-right leading-relaxed">
+                              <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Surcharge Formula u/s 2(3):</span>
+                              <span className="font-mono text-slate-700 text-right leading-relaxed">
                                 (Base Tax {formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)} × {assessment.newRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%)
                                 - {formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.marginalReliefSubtracted)}
-                                = <strong className="text-emerald-400">{formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}</strong>
+                                = <strong className="text-emerald-700 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}</strong>
                               </span>
                             </div>
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 border-t border-zinc-900/80 pt-2">
-                              <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">Health & Ed. Cess (4%):</span>
-                              <span className="font-mono text-zinc-300 text-right leading-relaxed">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 border-t border-slate-200 pt-2">
+                              <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Health & Ed. Cess (4%):</span>
+                              <span className="font-mono text-slate-700 text-right leading-relaxed">
                                 {formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.taxPlusSurcharge)} × 4%
-                                = <strong className="text-emerald-400">{formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</strong>
+                                = <strong className="text-emerald-700 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</strong>
                               </span>
                             </div>
                           </div>
@@ -2517,29 +2525,29 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 const hasCredits = totalPrepaidTaxes > 0;
 
                 return (
-                <div className="bg-zinc-950 border-t border-zinc-900 p-5 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-10 relative">
+                <div className="bg-slate-50 border-t border-slate-200 p-5 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-10 relative">
                   <div className="flex justify-between items-center mb-3">
-                    <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">{hasCredits ? 'Net Tax Payable / Refund' : 'Final Statutory Tax Liability'}</span>
-                    <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded text-blue-400 font-bold">
+                    <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{hasCredits ? 'Net Tax Payable / Refund' : 'Final Statutory Tax Liability'}</span>
+                    <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded text-blue-700 font-bold font-bold">
                       FY {profile.financial_year}
                     </span>
                   </div>
 
                   {isNonIndividual ? (
                     <div className="space-y-3">
-                      <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-950/10 text-center">
-                        <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Total Statutory Tax Liability</div>
-                        <div className="text-2xl font-black font-mono mt-1.5 text-blue-400">
+                      <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-50 border-blue-200 text-center">
+                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Statutory Tax Liability</div>
+                        <div className="text-2xl font-black font-mono mt-1.5 text-blue-700 font-bold">
                           {formatINR(assessment.newRegimeAssessment.totalTaxLiability)}
                         </div>
-                        <div className="text-[10px] text-zinc-500 mt-1 font-medium">Effective Tax Rate: {assessment.newRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
+                        <div className="text-[10px] text-slate-500 mt-1 font-medium">Effective Tax Rate: {assessment.newRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
                       </div>
                       {hasCredits && (
-                        <div className={`p-4 rounded-xl border text-center ${newNetPayable <= 0 ? 'border-emerald-500/30 bg-emerald-950/10' : 'border-amber-500/30 bg-amber-950/10'}`}>
-                          <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                        <div className={`p-4 rounded-xl border text-center ${newNetPayable <= 0 ? 'border-emerald-500/30 bg-emerald-50 border-emerald-200' : 'border-amber-500/30 bg-amber-50 border-amber-200'}`}>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                             {newNetPayable <= 0 ? '🎉 Refund Due' : 'Net Tax Payable'}
                           </div>
-                          <div className={`text-2xl font-black font-mono mt-1.5 ${newNetPayable <= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          <div className={`text-2xl font-black font-mono mt-1.5 ${newNetPayable <= 0 ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}`}>
                             {newNetPayable <= 0 ? `(${formatINR(Math.abs(newNetPayable))})` : formatINR(newNetPayable)}
                           </div>
                           <div className="text-[9px] text-zinc-600 mt-1 font-medium">After TDS {formatINR(taxCredits.tdsDeducted)} + Adv.Tax {formatINR(taxCredits.advanceTaxPaid)} + SAT {formatINR(taxCredits.selfAssessmentTax)}</div>
@@ -2550,45 +2558,45 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-4">
                         {/* Old Regime Summary */}
-                        <div className={`p-3 rounded-xl border transition-all ${assessment.recommendation === 'OLD' ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-zinc-900/30 border-zinc-800/80'}`}>
-                          <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider flex justify-between">
+                        <div className={`p-3 rounded-xl border transition-all ${assessment.recommendation === 'OLD' ? 'bg-emerald-50 border-emerald-300' : 'bg-white/30 border-slate-200/80'}`}>
+                          <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider flex justify-between">
                             Old Regime
-                            {assessment.recommendation === 'OLD' && <span className="text-emerald-400 font-black">Best</span>}
+                            {assessment.recommendation === 'OLD' && <span className="text-emerald-700 font-bold font-black">Best</span>}
                           </div>
-                          <div className={`text-lg font-bold font-mono mt-1 ${assessment.recommendation === 'OLD' ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                          <div className={`text-lg font-bold font-mono mt-1 ${assessment.recommendation === 'OLD' ? 'text-emerald-700 font-bold' : 'text-slate-600'}`}>
                             {formatINR(assessment.oldRegimeAssessment.totalTaxLiability)}
                           </div>
-                          <div className="text-[9px] text-zinc-500 mt-0.5 font-medium">Eff. Rate: {assessment.oldRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
+                          <div className="text-[9px] text-slate-500 mt-0.5 font-medium">Eff. Rate: {assessment.oldRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
                         </div>
 
                         {/* New Regime Summary */}
-                        <div className={`p-3 rounded-xl border transition-all ${assessment.recommendation === 'NEW' ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-zinc-900/30 border-zinc-800/80'}`}>
-                          <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider flex justify-between">
+                        <div className={`p-3 rounded-xl border transition-all ${assessment.recommendation === 'NEW' ? 'bg-emerald-50 border-emerald-300' : 'bg-white/30 border-slate-200/80'}`}>
+                          <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider flex justify-between">
                             New Regime
-                            {assessment.recommendation === 'NEW' && <span className="text-emerald-400 font-black">Best</span>}
+                            {assessment.recommendation === 'NEW' && <span className="text-emerald-700 font-bold font-black">Best</span>}
                           </div>
-                          <div className={`text-lg font-bold font-mono mt-1 ${assessment.recommendation === 'NEW' ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                          <div className={`text-lg font-bold font-mono mt-1 ${assessment.recommendation === 'NEW' ? 'text-emerald-700 font-bold' : 'text-slate-600'}`}>
                             {formatINR(assessment.newRegimeAssessment.totalTaxLiability)}
                           </div>
-                          <div className="text-[9px] text-zinc-500 mt-0.5 font-medium">Eff. Rate: {assessment.newRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
+                          <div className="text-[9px] text-slate-500 mt-0.5 font-medium">Eff. Rate: {assessment.newRegimeAssessment.effectiveTaxRate.toFixed(2)}%</div>
                         </div>
                       </div>
 
                       {hasCredits && (
                         <div className="grid grid-cols-2 gap-4">
-                          <div className={`p-3 rounded-xl border transition-all ${oldNetPayable <= 0 ? 'bg-emerald-950/15 border-emerald-500/25' : 'bg-amber-950/10 border-amber-500/25'}`}>
-                            <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
+                          <div className={`p-3 rounded-xl border transition-all ${oldNetPayable <= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                            <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
                               {oldNetPayable <= 0 ? 'Old — Refund' : 'Old — Payable'}
                             </div>
-                            <div className={`text-base font-bold font-mono mt-1 ${oldNetPayable <= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            <div className={`text-base font-bold font-mono mt-1 ${oldNetPayable <= 0 ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}`}>
                               {oldNetPayable <= 0 ? `(${formatINR(Math.abs(oldNetPayable))})` : formatINR(oldNetPayable)}
                             </div>
                           </div>
-                          <div className={`p-3 rounded-xl border transition-all ${newNetPayable <= 0 ? 'bg-emerald-950/15 border-emerald-500/25' : 'bg-amber-950/10 border-amber-500/25'}`}>
-                            <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">
+                          <div className={`p-3 rounded-xl border transition-all ${newNetPayable <= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                            <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
                               {newNetPayable <= 0 ? 'New — Refund' : 'New — Payable'}
                             </div>
-                            <div className={`text-base font-bold font-mono mt-1 ${newNetPayable <= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            <div className={`text-base font-bold font-mono mt-1 ${newNetPayable <= 0 ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}`}>
                               {newNetPayable <= 0 ? `(${formatINR(Math.abs(newNetPayable))})` : formatINR(newNetPayable)}
                             </div>
                           </div>
@@ -2598,10 +2606,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   )}
 
                   <div className="mt-4 flex gap-3">
-                    <Button onClick={handleDownloadExcel} variant="outline" className="flex-1 border-emerald-800/50 hover:bg-emerald-900/30 text-emerald-400 rounded-xl text-xs h-10 font-bold tracking-wide">
+                    <Button onClick={handleDownloadExcel} variant="outline" className="flex-1 border-emerald-800/50 hover:bg-emerald-900/30 text-emerald-700 font-bold rounded-xl text-xs h-10 font-bold tracking-wide">
                       <FileSpreadsheet className="w-4 h-4 mr-2" /> Excel
                     </Button>
-                    <Button onClick={handleDownloadPDF} variant="outline" className="flex-1 border-zinc-800 hover:bg-zinc-900 rounded-xl text-xs h-10 font-bold tracking-wide">
+                    <Button onClick={handleDownloadPDF} variant="outline" className="flex-1 border-slate-200 hover:bg-white rounded-xl text-xs h-10 font-bold tracking-wide">
                       <Download className="w-4 h-4 mr-2" /> Export PDF
                     </Button>
                     <Button onClick={handleCalculate} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-10 font-black uppercase tracking-wide transition-all shadow-lg shadow-blue-600/20">
@@ -2617,10 +2625,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
       {/* Annexure I: Step-by-Step Mathematical Breakdown */}
       {assessment && (
-        <Card className="bg-[#141419] border-zinc-800 shadow-2xl overflow-hidden mt-8 relative">
+        <Card className="bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-2xl overflow-hidden mt-8 relative">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-          <CardHeader className="p-5 border-b border-zinc-900 bg-zinc-950/40">
-            <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-white">
+          <CardHeader className="p-5 border-b border-slate-200 bg-slate-50/80">
+            <CardTitle className="text-md flex justify-between items-center font-bold tracking-wide uppercase text-slate-900">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-500" />
                 Annexure I: Step-by-Step Mathematical Breakdown
@@ -2633,12 +2641,12 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 {/* Flat Rate Tax calculation card */}
                 <div className="space-y-4">
                   <div className="border-l-2 border-blue-500 pl-3">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Statutory Tax Calculation Worksheet</h3>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">Flat tax rate & statutory surcharge verification</p>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Statutory Tax Calculation Worksheet</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Flat tax rate & statutory surcharge verification</p>
                   </div>
 
-                  <div className="bg-zinc-950/50 border border-zinc-800/50 p-5 rounded-xl space-y-4 text-xs font-mono text-zinc-300">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-sm font-bold text-white border-b border-zinc-900 pb-3 gap-2">
+                  <div className="bg-slate-50/50 border border-slate-200/50 p-5 rounded-xl space-y-4 text-xs font-mono text-slate-700">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-sm font-bold text-slate-900 border-b border-slate-200 pb-3 gap-2">
                       <span className="font-sans text-xs sm:text-sm">Flat Rate Formula:</span>
                       <span>
                         Net Income {formatINR(assessment.newRegimeAssessment.totalNetTaxableIncome)} × {assessment.newRegimeAssessment.calculationSheet.slabBreakdown[0].ratePercentage}%
@@ -2646,27 +2654,27 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                       </span>
                     </div>
                     <div className="flex justify-between items-center pt-1.5">
-                      <span className="text-zinc-500 font-sans font-medium">Base Tax:</span>
+                      <span className="text-slate-500 font-sans font-medium">Base Tax:</span>
                       <span className="font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)}</span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-3">
-                      <span className="text-zinc-500 font-sans font-medium flex items-center gap-1.5">
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-3">
+                      <span className="text-slate-500 font-sans font-medium flex items-center gap-1.5">
                         Surcharge ({assessment.newRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%):
                         {assessment.newRegimeAssessment.calculationSheet.surchargeDetails.marginalReliefSubtracted > 0 && (
-                          <span className="text-[9px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded">Marginal Relief Applied</span>
+                          <span className="text-[9px] bg-amber-500/10 border border-amber-500/20 text-amber-700 font-bold px-1.5 py-0.2 rounded">Marginal Relief Applied</span>
                         )}
                       </span>
                       <span className="font-bold">
                         {formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-3">
-                      <span className="text-zinc-500 font-sans font-medium">Health & Education Cess (4%):</span>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-3">
+                      <span className="text-slate-500 font-sans font-medium">Health & Education Cess (4%):</span>
                       <span className="font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-800 pt-3 text-sm font-bold text-white">
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-3 text-sm font-bold text-slate-900">
                       <span className="font-sans">Total Tax Liability:</span>
-                      <span className="text-emerald-400">{formatINR(assessment.newRegimeAssessment.totalTaxLiability)}</span>
+                      <span className="text-emerald-700 font-bold">{formatINR(assessment.newRegimeAssessment.totalTaxLiability)}</span>
                     </div>
                   </div>
                 </div>
@@ -2676,27 +2684,27 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 {/* Old Regime Slab Breakdowns */}
                 <div className="space-y-4">
                   <div className="border-l-2 border-orange-500 pl-3">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Old Tax Regime Worksheet</h3>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">Slab & statutory surcharge math audit</p>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Old Tax Regime Worksheet</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Slab & statutory surcharge math audit</p>
                   </div>
 
-                  <div className="border border-zinc-800/80 rounded-xl overflow-hidden">
-                    <table className="w-full text-xs text-zinc-400 border-collapse">
+                  <div className="border border-slate-200/80 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs text-slate-600 border-collapse">
                       <thead>
-                        <tr className="bg-zinc-950 border-b border-zinc-800 text-zinc-500 font-semibold uppercase tracking-wider text-[9px]">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[9px]">
                           <th className="p-3 text-left">Slab Bracket</th>
                           <th className="p-3 text-right">Tax Rate</th>
                           <th className="p-3 text-right">Income in Slab</th>
                           <th className="p-3 text-right">Computed Tax</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-900 font-mono text-[11px]">
+                      <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
                         {assessment.oldRegimeAssessment.calculationSheet.slabBreakdown.map((row: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-zinc-900/20">
-                            <td className="p-3 text-left font-sans text-zinc-300">{row.slabRange}</td>
-                            <td className="p-3 text-right text-zinc-300">{row.ratePercentage}%</td>
-                            <td className="p-3 text-right text-zinc-300">{formatINR(row.taxableAmountInSlab)}</td>
-                            <td className="p-3 text-right text-white font-bold">{formatINR(row.taxGenerated)}</td>
+                          <tr key={idx} className="hover:bg-white/20">
+                            <td className="p-3 text-left font-sans text-slate-700">{row.slabRange}</td>
+                            <td className="p-3 text-right text-slate-700">{row.ratePercentage}%</td>
+                            <td className="p-3 text-right text-slate-700">{formatINR(row.taxableAmountInSlab)}</td>
+                            <td className="p-3 text-right text-slate-900 font-bold">{formatINR(row.taxGenerated)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2704,20 +2712,20 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   </div>
 
                   {/* Surcharge & Cess Verification block */}
-                  <div className="bg-zinc-950/50 border border-zinc-800/50 p-4 rounded-xl space-y-3 text-xs">
+                  <div className="bg-slate-50/50 border border-slate-200/50 p-4 rounded-xl space-y-3 text-xs">
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-500 font-medium">Base Tax:</span>
-                      <span className="font-mono text-zinc-300 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)}</span>
+                      <span className="text-slate-500 font-medium">Base Tax:</span>
+                      <span className="font-mono text-slate-700 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)}</span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-2.5">
-                      <span className="text-zinc-500 font-medium">Surcharge ({assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%):</span>
-                      <span className="font-mono text-zinc-300 font-bold">
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
+                      <span className="text-slate-500 font-medium">Surcharge ({assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%):</span>
+                      <span className="font-mono text-slate-700 font-bold">
                         {formatINR(assessment.oldRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-2.5">
-                      <span className="text-zinc-500 font-medium">Health & Education Cess (4%):</span>
-                      <span className="font-mono text-zinc-300 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</span>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
+                      <span className="text-slate-500 font-medium">Health & Education Cess (4%):</span>
+                      <span className="font-mono text-slate-700 font-bold">{formatINR(assessment.oldRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</span>
                     </div>
                   </div>
                 </div>
@@ -2725,27 +2733,27 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 {/* New Regime Slab Breakdowns */}
                 <div className="space-y-4">
                   <div className="border-l-2 border-green-500 pl-3">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">New Tax Regime Worksheet (115BAC)</h3>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">Slab & statutory surcharge math audit</p>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">New Tax Regime Worksheet (115BAC)</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Slab & statutory surcharge math audit</p>
                   </div>
 
-                  <div className="border border-zinc-800/80 rounded-xl overflow-hidden">
-                    <table className="w-full text-xs text-zinc-400 border-collapse">
+                  <div className="border border-slate-200/80 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs text-slate-600 border-collapse">
                       <thead>
-                        <tr className="bg-zinc-950 border-b border-zinc-800 text-zinc-500 font-semibold uppercase tracking-wider text-[9px]">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[9px]">
                           <th className="p-3 text-left">Slab Bracket</th>
                           <th className="p-3 text-right">Tax Rate</th>
                           <th className="p-3 text-right">Income in Slab</th>
                           <th className="p-3 text-right">Computed Tax</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-900 font-mono text-[11px]">
+                      <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
                         {assessment.newRegimeAssessment.calculationSheet.slabBreakdown.map((row: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-zinc-900/20">
-                            <td className="p-3 text-left font-sans text-zinc-300">{row.slabRange}</td>
-                            <td className="p-3 text-right text-zinc-300">{row.ratePercentage}%</td>
-                            <td className="p-3 text-right text-zinc-300">{formatINR(row.taxableAmountInSlab)}</td>
-                            <td className="p-3 text-right text-white font-bold">{formatINR(row.taxGenerated)}</td>
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-3 text-left font-sans text-slate-800 font-medium">{row.slabRange}</td>
+                            <td className="p-3 text-right text-slate-800">{row.ratePercentage}%</td>
+                            <td className="p-3 text-right text-slate-800">{formatINR(row.taxableAmountInSlab)}</td>
+                            <td className="p-3 text-right text-slate-900 font-bold">{formatINR(row.taxGenerated)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2753,20 +2761,20 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                   </div>
 
                   {/* Surcharge & Cess Verification block */}
-                  <div className="bg-zinc-950/50 border border-zinc-800/50 p-4 rounded-xl space-y-3 text-xs">
+                  <div className="bg-slate-50/50 border border-slate-200/50 p-4 rounded-xl space-y-3 text-xs">
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-500 font-medium">Base Tax:</span>
-                      <span className="font-mono text-zinc-300 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)}</span>
+                      <span className="text-slate-500 font-medium">Base Tax:</span>
+                      <span className="font-mono text-slate-700 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.baseTaxAmount)}</span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-2.5">
-                      <span className="text-zinc-500 font-medium">Surcharge ({assessment.newRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%):</span>
-                      <span className="font-mono text-zinc-300 font-bold">
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
+                      <span className="text-slate-500 font-medium">Surcharge ({assessment.newRegimeAssessment.calculationSheet.surchargeDetails.appliedRate}%):</span>
+                      <span className="font-mono text-slate-700 font-bold">
                         {formatINR(assessment.newRegimeAssessment.calculationSheet.surchargeDetails.netSurcharge)}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center border-t border-zinc-900/80 pt-2.5">
-                      <span className="text-zinc-500 font-medium">Health & Education Cess (4%):</span>
-                      <span className="font-mono text-zinc-300 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</span>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
+                      <span className="text-slate-500 font-medium">Health & Education Cess (4%):</span>
+                      <span className="font-mono text-slate-700 font-bold">{formatINR(assessment.newRegimeAssessment.calculationSheet.cessDetails.cessAmount)}</span>
                     </div>
                   </div>
                 </div>
@@ -2779,33 +2787,33 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
       {/* Reconciliation Modal */}
       {aisImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <Card className="w-full max-w-4xl bg-[#141419] border-zinc-800 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
+          <Card className="w-full max-w-4xl bg-white border border-slate-200/80 shadow-xs border-slate-200 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
             
-            <CardHeader className="pb-4 border-b border-zinc-900 flex flex-row items-center justify-between">
+            <CardHeader className="pb-4 border-b border-slate-200 flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-md font-bold uppercase tracking-wider text-white">AIS/26AS Ingestion & Reconciliation Screen</CardTitle>
-                <p className="text-[10px] text-zinc-500 mt-1">Verify suggested income head mapping before committing to ledger records.</p>
+                <CardTitle className="text-md font-bold uppercase tracking-wider text-slate-900">AIS/26AS Ingestion & Reconciliation Screen</CardTitle>
+                <p className="text-[10px] text-slate-500 mt-1">Verify suggested income head mapping before committing to ledger records.</p>
               </div>
               <Button 
                 variant="ghost" 
                 size="icon" 
                 onClick={() => setAisImportModalOpen(false)}
-                className="text-zinc-400 hover:text-white rounded-xl h-8 w-8 hover:bg-zinc-900"
+                className="text-slate-600 hover:text-slate-900 rounded-xl h-8 w-8 hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </Button>
             </CardHeader>
             
             <CardContent className="pt-6 space-y-6">
-              <ScrollArea className="h-[400px] rounded-lg border border-zinc-800/80 bg-zinc-950/20">
-                <table className="w-full text-xs text-zinc-300 border-collapse">
+              <ScrollArea className="h-[400px] rounded-lg border border-slate-200/80 bg-slate-50/50">
+                <table className="w-full text-xs text-slate-700 border-collapse">
                   <thead>
-                    <tr className="text-zinc-500 border-b border-zinc-900 uppercase tracking-widest text-[9px] font-bold bg-zinc-950/40">
+                    <tr className="bg-slate-100 text-slate-800 border-b-2 border-slate-200 uppercase tracking-wider text-[10px] font-bold">
                       <th className="py-3 px-4 text-center w-12">
                         <input
                           type="checkbox"
-                          className="accent-blue-600 rounded bg-zinc-950 border-zinc-800"
+                          className="accent-blue-600 rounded bg-slate-50 border-slate-200"
                           checked={selectedAisIds.length === aisImportData.length}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -2822,16 +2830,16 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                       <th className="py-3 px-4 text-center w-56 font-semibold">Suggested Income Head</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-900 font-normal">
+                  <tbody className="divide-y divide-slate-200 font-normal">
                     {aisImportData.map((row, idx) => {
                       const fp = `${(row.source || '').trim()}_${Number(row.amount)}_${(row.sectionCode || '').trim()}`;
                       const isDuplicate = importedFingerprints.includes(fp);
                       return (
-                        <tr key={row.id} className="hover:bg-zinc-900/30 transition-colors">
+                        <tr key={row.id} className="hover:bg-white/30 transition-colors">
                           <td className="py-2.5 px-4 text-center">
                             <input
                               type="checkbox"
-                              className="accent-blue-600 rounded bg-zinc-950 border-zinc-800"
+                              className="accent-blue-600 rounded bg-slate-50 border-slate-200"
                               checked={selectedAisIds.includes(row.id)}
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -2844,19 +2852,19 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                           </td>
                           <td className="py-2.5 px-2">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-white text-[11px]">{row.source}</span>
+                              <span className="font-bold text-slate-900 text-[11px]">{row.source}</span>
                               {isDuplicate && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 animate-pulse">
                                   ⚠️ Potential Duplicate (Already Imported)
                                 </span>
                               )}
                             </div>
-                            <div className="text-[9px] text-zinc-500 font-mono mt-0.5">{row.description}</div>
+                            <div className="text-[9px] text-slate-500 font-mono mt-0.5">{row.description}</div>
                           </td>
-                        <td className="py-2.5 px-2 text-right font-mono text-[11px] font-bold text-zinc-300">
+                        <td className="py-2.5 px-2 text-right font-mono text-[11px] font-bold text-slate-700">
                           {formatINR(row.amount)}
                         </td>
-                        <td className="py-2.5 px-2 text-right font-mono text-[11px] text-red-400">
+                        <td className="py-2.5 px-2 text-right font-mono text-[11px] text-rose-600 font-bold">
                           {row.tds > 0 ? formatINR(row.tds) : '-'}
                         </td>
                         <td className="py-2.5 px-4">
@@ -2868,10 +2876,10 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                               setAisImportData(updated);
                             }}
                           >
-                            <SelectTrigger className="bg-zinc-950 border-zinc-800 h-8 text-[11px] focus:ring-1 focus:ring-blue-500">
+                            <SelectTrigger className="bg-slate-50 border-slate-200 h-8 text-[11px] focus:ring-1 focus:ring-blue-500">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-zinc-800 text-[11px]">
+                            <SelectContent className="bg-white border-slate-200 text-[11px]">
                               <SelectItem value="SALARY">Salary Income</SelectItem>
                               <SelectItem value="BUSINESS">Business (PGBP)</SelectItem>
                               <SelectItem value="CAPITAL_GAINS">Capital Gains</SelectItem>
@@ -2892,7 +2900,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
                 <Button 
                   variant="outline" 
                   onClick={() => setAisImportModalOpen(false)}
-                  className="border-zinc-800 hover:bg-zinc-900 text-zinc-400 rounded-xl"
+                  className="border-slate-200 hover:bg-white text-slate-600 rounded-xl"
                 >
                   Cancel
                 </Button>

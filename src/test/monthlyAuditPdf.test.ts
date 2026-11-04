@@ -25,13 +25,13 @@ describe('Suite 08: Monthly Audit Executive Client PDF Generator', () => {
             header: {
                 ...autoResult.header,
                 auditStatus: 'APPROVED',
-                preparedBy: 'Junior Article Assistant',
-                reviewedBy: 'CA Harsh Vaswani, FCA',
+                preparedBy: 'Audit Associate',
+                reviewedBy: 'Lead Engagement Article',
                 turnoverVariance: 500000,
-                firmName: 'Vaswani & Associates, Chartered Accountants',
-                membershipNo: '143892',
-                firmRegistrationNo: '117365W',
-                engagementRef: 'VAS/AUD/2025-26/OCT-01',
+                firmName: '',
+                membershipNo: '',
+                firmRegistrationNo: '',
+                engagementRef: 'AUD/2025-26/OCT-01',
                 auditType: 'Monthly Statutory & Internal Audit',
                 auditStartDate: '2025-11-01',
                 auditEndDate: '2025-11-05'
@@ -157,7 +157,7 @@ describe('Suite 08: Monthly Audit Executive Client PDF Generator', () => {
 
         expect(result).toBeDefined();
         expect(result.doc).toBeDefined();
-        expect(result.doc.getNumberOfPages()).toBe(5);
+        expect(result.doc.getNumberOfPages()).toBe(3);
         expect(result.fileName).toContain('Monthly_Audit_Report_DYP_INFRAPROJECTS');
         expect(result.fileName.endsWith('.pdf')).toBe(true);
         expect(result.base64.length).toBeGreaterThan(1000);

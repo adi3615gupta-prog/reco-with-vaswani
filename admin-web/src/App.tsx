@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, query, where, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
-import { Power, Key, ShieldCheck, Activity, Lock, Users, UserPlus, FileText, Download, Building, Plus } from 'lucide-react';
+import { Power, Key, ShieldCheck, Activity, Lock, Users, UserPlus, FileText, Download, Building, Plus, Laptop } from 'lucide-react';
 import './index.css';
 
 const firebaseConfig = {
@@ -30,6 +30,9 @@ function App() {
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [recoHistory, setRecoHistory] = useState<any[]>([]);
 
+  const [newName, setNewName] = useState('');
+  const [newDesignation, setNewDesignation] = useState('');
+  const [newDepartment, setNewDepartment] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('user');
@@ -129,21 +132,64 @@ function App() {
   const createNetworkAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword || !activeOffice) return;
-    // No limit on network accounts
- 
+
+    const finalName = newName.trim() || newUsername.trim();
+    const finalDesignation = newDesignation.trim() || (newRole === 'Senior Auditor' ? 'Senior Auditor' : newRole === 'Admin' ? 'Administrator' : 'Article Assistant');
+    const finalDepartment = newDepartment.trim() || 'Audit & Assurance';
+
     await addDoc(collection(db, 'network_users'), {
+      name: finalName,
+      designation: finalDesignation,
+      department: finalDepartment,
       username: newUsername.toLowerCase().trim(),
-      password: newPassword, // In production, hash this
+      password: newPassword,
       role: newRole,
       created_at: serverTimestamp(),
       is_active: 1,
       office_id: activeOffice,
-      device_id: null
+      device_id: null,
+      current_device_id: null,
+      status: 'offline'
     });
+    setNewName('');
+    setNewDesignation('');
+    setNewDepartment('');
     setNewUsername('');
     setNewPassword('');
     setNewRole('user');
-    alert(`Network Account Created for Office: ${activeOffice} with role ${newRole}`);
+    alert(`User account created: "${finalName}" (${finalDesignation} • ${finalDepartment}) for Office: ${activeOffice}`);
+  };
+
+  const updateKeySeats = async (keyId: string, currentSeats: number, delta: number) => {
+    const updated = Math.max(1, (Number(currentSeats) || 1) + delta);
+    try {
+      await updateDoc(doc(db, 'serial_keys', keyId), { max_devices: updated });
+    } catch (err: any) {
+      alert("Failed to update seat limit: " + err.message);
+    }
+  };
+
+  const createMultiPcKey = async () => {
+    if (!activeOffice) return;
+    const seatsStr = prompt("Enter allowed number of PCs for this Serial Key:", "5");
+    if (!seatsStr) return;
+    const seats = Math.max(1, parseInt(seatsStr, 10) || 5);
+    const newKey = `${activeOffice}-${Math.random().toString(36).substring(2, 8).toUpperCase()}-MULTI`;
+    try {
+      await setDoc(doc(db, 'serial_keys', newKey), {
+        key: newKey,
+        is_active: 1,
+        key_type: 'client',
+        device_id: null,
+        bound_devices: [],
+        max_devices: seats,
+        office_id: activeOffice,
+        created_at: serverTimestamp()
+      });
+      alert(`New Multi-PC Serial Key created: ${newKey} (${seats} PCs allowed)!`);
+    } catch (err: any) {
+      alert("Failed to create key: " + err.message);
+    }
   };
 
   const toggleNetworkUser = async (userId: string, currentStatus: number) => {
@@ -151,8 +197,8 @@ function App() {
   };
 
   const unbindNetworkUser = async (userId: string) => {
-    if (confirm("Unbind this user? This will log them out from their current PC and let them log in on another PC.")) {
-      await updateDoc(doc(db, 'network_users', userId), { device_id: null });
+    if (confirm("Release active session for this user? This will mark them offline and allow them to log in on any computer immediately.")) {
+      await updateDoc(doc(db, 'network_users', userId), { device_id: null, current_device_id: null, status: 'offline' });
     }
   };
 
@@ -221,8 +267,8 @@ function App() {
   };
 
   const unbindKey = async (keyId: string) => {
-    if (confirm(`Are you sure you want to unbind this key? This will allow it to be used on a new computer.`)) {
-      await updateDoc(doc(db, 'serial_keys', keyId), { device_id: null, bound_mac: null });
+    if (confirm(`Are you sure you want to unbind all PCs from this key? This will clear all bound PCs and allow new computers to activate up to the seat limit.`)) {
+      await updateDoc(doc(db, 'serial_keys', keyId), { device_id: null, bound_mac: null, bound_devices: [] });
     }
   };
 
@@ -377,43 +423,78 @@ function App() {
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>Create network accounts</p>
                     </div>
                     <form onSubmit={createNetworkAccount}>
-                    <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                        <Users size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '1rem', top: '1rem' }} />
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>Full Name</label>
                         <input 
-                        type="text" 
-                        placeholder="Username" 
-                        className="input-field"
-                        style={{ paddingLeft: '2.5rem', marginBottom: 0 }}
-                        value={newUsername} 
-                        onChange={e => setNewUsername(e.target.value)} 
+                          type="text" 
+                          placeholder="e.g. Rahul Sharma" 
+                          className="input-field"
+                          style={{ marginBottom: 0 }}
+                          value={newName} 
+                          onChange={e => setNewName(e.target.value)} 
                         />
                     </div>
-                    <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                        <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '1rem', top: '1rem' }} />
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>Designation</label>
                         <input 
-                        type="password" 
-                        placeholder="Password" 
-                        className="input-field"
-                        style={{ paddingLeft: '2.5rem', marginBottom: 0 }}
-                        value={newPassword} 
-                        onChange={e => setNewPassword(e.target.value)} 
+                          type="text" 
+                          placeholder="e.g. Article Assistant / Senior Auditor / Manager" 
+                          className="input-field"
+                          style={{ marginBottom: 0 }}
+                          value={newDesignation} 
+                          onChange={e => setNewDesignation(e.target.value)} 
+                        />
+                    </div>
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>Department</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Statutory Audit / GST Compliance / Direct Tax" 
+                          className="input-field"
+                          style={{ marginBottom: 0 }}
+                          value={newDepartment} 
+                          onChange={e => setNewDepartment(e.target.value)} 
+                        />
+                    </div>
+                    <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+                        <Users size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '1rem', top: '0.85rem' }} />
+                        <input 
+                          type="text" 
+                          placeholder="User ID / Username" 
+                          className="input-field"
+                          style={{ paddingLeft: '2.5rem', marginBottom: 0 }}
+                          value={newUsername} 
+                          onChange={e => setNewUsername(e.target.value)} 
+                          required
+                        />
+                    </div>
+                    <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+                        <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '1rem', top: '0.85rem' }} />
+                        <input 
+                          type="password" 
+                          placeholder="Password" 
+                          className="input-field"
+                          style={{ paddingLeft: '2.5rem', marginBottom: 0 }}
+                          value={newPassword} 
+                          onChange={e => setNewPassword(e.target.value)} 
+                          required
                         />
                     </div>
                     <div style={{ marginBottom: '1.25rem' }}>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>Assign Role</label>
+                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>Assign Role</label>
                         <select 
                           value={newRole} 
                           onChange={e => setNewRole(e.target.value)}
                           className="input-field"
                           style={{ width: '100%', height: '40px', backgroundColor: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-panel)', borderRadius: '8px', color: 'white', padding: '0 0.75rem', fontSize: '0.85rem', outline: 'none' }}
                         >
-                          <option value="user" style={{ backgroundColor: '#0f172a' }}>Standard User</option>
-                          <option value="Senior Auditor" style={{ backgroundColor: '#0f172a' }}>Senior Auditor</option>
-                          <option value="Admin" style={{ backgroundColor: '#0f172a' }}>Administrator</option>
+                          <option value="user" style={{ backgroundColor: '#0f172a' }}>Standard User (Junior Article)</option>
+                          <option value="Senior Auditor" style={{ backgroundColor: '#0f172a' }}>Senior Auditor / Reviewer</option>
+                          <option value="Admin" style={{ backgroundColor: '#0f172a' }}>Administrator / Partner</option>
                         </select>
                     </div>
-                    <button type="submit" className="btn-blue" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                        Create Account <UserPlus size={16} />
+                    <button type="submit" className="btn-blue" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%', padding: '0.65rem' }}>
+                        Create User Account <UserPlus size={16} />
                     </button>
                     </form>
 
@@ -421,20 +502,23 @@ function App() {
                         <h3 style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Created Users</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }}>
                             {networkUsers.map((user) => (
-                                <div key={user.id} style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-panel)', borderRadius: '6px', fontSize: '0.8rem', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div key={user.id} style={{ padding: '0.6rem 0.75rem', backgroundColor: 'rgba(0,0,0,0.25)', border: '1px solid var(--border-panel)', borderRadius: '8px', fontSize: '0.8rem', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontWeight: 700 }}>{user.username}</span>
-                                            <span style={{ fontSize: '0.65rem', color: '#60a5fa', fontWeight: 600, marginTop: '0.15rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{user.role || 'user'}</span>
+                                            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{user.name || user.username}</span>
+                                            <span style={{ fontSize: '0.7rem', color: '#93c5fd', fontWeight: 500 }}>
+                                                {user.designation || user.role || 'Article Assistant'} • <span style={{ color: 'var(--text-muted)' }}>{user.department || 'Audit'}</span>
+                                            </span>
+                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>ID: @{user.username}</span>
                                         </div>
-                                        <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', backgroundColor: user.status === 'online' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.1)', color: user.status === 'online' ? 'var(--accent-green)' : 'var(--text-muted)' }}>
-                                            {user.status === 'online' ? 'ONLINE' : 'OFFLINE'}
+                                        <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: user.status === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.1)', color: user.status === 'online' ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+                                            {user.status === 'online' ? '● ONLINE' : '○ OFFLINE'}
                                         </span>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                        {user.device_id && (
-                                            <button onClick={() => unbindNetworkUser(user.id)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.65rem', backgroundColor: 'transparent', border: '1px solid var(--accent-yellow)', color: 'var(--accent-yellow)', borderRadius: '4px', cursor: 'pointer' }}>
-                                                UNBIND
+                                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                        {(user.current_device_id || user.device_id || user.status === 'online') && (
+                                            <button onClick={() => unbindNetworkUser(user.id)} title="Release active PC session" style={{ padding: '0.25rem 0.5rem', fontSize: '0.65rem', backgroundColor: 'transparent', border: '1px solid var(--accent-yellow)', color: 'var(--accent-yellow)', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
+                                                RELEASE SESSION
                                             </button>
                                         )}
                                         <button 
@@ -446,7 +530,8 @@ function App() {
                                                 border: 'none', 
                                                 color: 'white', 
                                                 borderRadius: '4px', 
-                                                cursor: 'pointer' 
+                                                cursor: 'pointer',
+                                                fontWeight: 600
                                             }}
                                         >
                                             {user.is_active === 0 ? 'ACTIVATE' : 'RESTRICT'}
@@ -473,50 +558,98 @@ function App() {
                     </div>
                 </div>
 
-                {/* LICENSE MANAGEMENT */}
+                {/* LICENSE MANAGEMENT (MULTI-PC SEAT CAPACITY) */}
                 <div className="panel" style={{ margin: 0 }}>
-                    <div className="panel-header" style={{ marginBottom: '0.5rem', justifyContent: 'center' }}>
-                    <Key size={16} color="var(--accent-yellow)" />
-                    <span style={{ fontSize: '0.85rem' }}>LICENSE MANAGEMENT</span>
+                    <div className="panel-header" style={{ marginBottom: '0.5rem', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Key size={16} color="var(--accent-yellow)" />
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>SERIAL KEYS &amp; MULTI-PC SEATS</span>
+                        </div>
+                        <button 
+                            onClick={createMultiPcKey} 
+                            style={{ fontSize: '0.7rem', padding: '0.25rem 0.6rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                        >
+                            <Plus size={12} /> New Key
+                        </button>
                     </div>
-                    <p style={{ color: 'var(--accent-green)', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '1.5rem', textTransform: 'uppercase', textAlign: 'center' }}>
-                    LIMIT: UNLIMITED CLIENTS
+                    <p style={{ color: 'var(--accent-green)', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '1rem', textTransform: 'uppercase' }}>
+                        POLICY: 1 SERIAL KEY &rarr; MULTIPLE PCS (FLEXIBLE SEATS)
                     </p>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {keys.filter(k => k.key_type === 'server').map(keyData => (
-                        <div key={keyData.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-card)' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxWidth: '60%' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.75rem', wordBreak: 'break-all' }}>{keyData.key}</span>
-                            <span style={{ fontSize: '0.55rem', fontWeight: 700, padding: '0.1rem 0.3rem', backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
-                                {keyData.key_type.toUpperCase()}
-                            </span>
-                            <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: keyData.status === 'online' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.1)', color: keyData.status === 'online' ? 'var(--accent-green)' : 'var(--text-muted)' }}>
-                                {keyData.status === 'online' ? 'ONLINE' : 'OFFLINE'}
-                            </span>
-                            {keyData.device_id ? (
-                                <span style={{ fontSize: '0.55rem', fontWeight: 700, color: 'var(--accent-red)' }}>[BOUND]</span>
-                            ) : (
-                                <span style={{ fontSize: '0.55rem', fontWeight: 700, color: 'var(--accent-green)' }}>[FREE]</span>
-                            )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {keys.map(keyData => {
+                        const maxDevices = Number(keyData.max_devices) || 1;
+                        const boundDevices = Array.isArray(keyData.bound_devices) 
+                            ? keyData.bound_devices 
+                            : (keyData.device_id ? [keyData.device_id] : []);
+                        const activeCount = boundDevices.length;
+                        const isLimitReached = activeCount >= maxDevices;
+
+                        return (
+                            <div key={keyData.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-card)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxWidth: '65%' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.75rem', wordBreak: 'break-all' }}>{keyData.key}</span>
+                                        <span style={{ fontSize: '0.55rem', fontWeight: 700, padding: '0.1rem 0.35rem', backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
+                                            {(keyData.key_type || 'CLIENT').toUpperCase()}
+                                        </span>
+                                        <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: keyData.is_active === 1 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: keyData.is_active === 1 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                            {keyData.is_active === 1 ? 'ACTIVE' : 'REVOKED'}
+                                        </span>
+                                    </div>
+                                    
+                                    {/* PC Seat Controls */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                                        <span style={{ fontSize: '0.7rem', color: isLimitReached ? '#f87171' : '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            <Laptop size={12} />
+                                            {activeCount} / {maxDevices} PCs Used
+                                        </span>
+                                        
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
+                                            <button 
+                                                onClick={() => updateKeySeats(keyData.id, maxDevices, -1)} 
+                                                title="Decrease allowed PCs" 
+                                                style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
+                                            >
+                                                -
+                                            </button>
+                                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--accent-yellow)', minWidth: '16px', textAlign: 'center' }}>
+                                                {maxDevices}
+                                            </span>
+                                            <button 
+                                                onClick={() => updateKeySeats(keyData.id, maxDevices, 1)} 
+                                                title="Increase allowed PCs" 
+                                                style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                                    {activeCount > 0 && (
+                                        <button 
+                                            onClick={() => unbindKey(keyData.id)} 
+                                            title="Unbind all registered PCs from this key"
+                                            className="btn-reset" 
+                                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent-yellow)', borderColor: 'var(--accent-yellow)' }}
+                                        >
+                                            RESET PCS
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => toggleKey(keyData.id, keyData.is_active)} 
+                                        className={`btn-power ${keyData.is_active === 1 ? 'enabled' : ''}`}
+                                        style={{ width: '28px', height: '28px' }}
+                                        title={keyData.is_active === 1 ? 'Revoke Key' : 'Activate Key'}
+                                    >
+                                        <Power size={14} />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div style={{ display: 'flex', gap: '0.25rem' }}>
-                            {keyData.device_id && (
-                                <button onClick={() => unbindKey(keyData.id)} className="btn-reset" style={{ padding: '0.4rem', fontSize: '0.6rem' }}>UNBIND</button>
-                            )}
-                            <button 
-                            onClick={() => toggleKey(keyData.id, keyData.is_active)} 
-                            className={`btn-power ${keyData.is_active === 1 ? 'enabled' : ''}`}
-                            style={{ width: '28px', height: '28px' }}
-                            >
-                            <Power size={14} />
-                            </button>
-                        </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     </div>
                 </div>
 

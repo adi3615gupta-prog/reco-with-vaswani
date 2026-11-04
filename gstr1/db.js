@@ -32,6 +32,15 @@ export function initGstr1Database(db) {
 
         db.run(`ALTER TABLE gstr1_batches ADD COLUMN requested_at INTEGER`, () => {});
 
+        // Clean up stale requested batches older than 2 hours (GST Portal TTL is 20-min wait)
+        db.run(
+            `UPDATE gstr1_batches 
+             SET status = 'CANCELLED', requested_at = NULL 
+             WHERE status = 'REQUESTED' AND requested_at IS NOT NULL AND requested_at < ?`,
+            [Date.now() - 2 * 60 * 60 * 1000],
+            () => {}
+        );
+
         // Table 2: Line-item invoices from GSTR-1 (Outward Supplies)
         db.run(`CREATE TABLE IF NOT EXISTS gstr1_invoices (
             id TEXT PRIMARY KEY,

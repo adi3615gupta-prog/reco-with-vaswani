@@ -10,6 +10,7 @@ export interface GeminiContext {
   gstin?: string;
   fy?: string;
   module?: string;
+  userName?: string;
 }
 
 export interface GeminiStatus {
@@ -42,7 +43,7 @@ export async function sendChatMessageWithMeta(
 
   const data = await res.json();
   if (!res.ok) {
-    const errorMsg = data.error || `HTTP ${res.status}: Failed to get response from Sourav`;
+    const errorMsg = data.error || `HTTP ${res.status}: Failed to get response from AI Assistant`;
     const err: any = new Error(errorMsg);
     err.unconfigured = data.unconfigured;
     err.status = res.status;
@@ -150,12 +151,18 @@ export async function pushGeminiToCloud(
 /**
  * Action target to human-readable label and navigation route mapping.
  */
-export const ACTION_NAV_TARGETS: Record<string, { label: string; tabId?: string; route?: string }> = {
+export const ACTION_NAV_TARGETS: Record<string, { label: string; tabId?: string; route?: string; isControl?: boolean }> = {
   reco: { label: 'Open 2B vs Books Reco', route: 'reco' },
   ims: { label: 'Open IMS Decision Hub', route: 'returns', tabId: 'ims' },
   '3b': { label: 'Open GSTR-3B Working Sheet', route: 'returns', tabId: 'gstr3b' },
   reversal: { label: 'Open GSTR-3B Table 4(B) Reversals & Allocations', route: 'returns', tabId: 'gstr3b' },
   reversals: { label: 'Open GSTR-3B Table 4(B) Reversals & Allocations', route: 'returns', tabId: 'gstr3b' },
+  view_allocations: { label: 'Open GSTR-3B Table 4(B) Reversals & Allocations', route: 'returns', tabId: 'gstr3b' },
+  matrix: { label: 'Open 12-Month Comparative FY Matrix', route: 'returns', tabId: 'matrix' },
+  export_excel: { label: 'Download GSTR-3B Working Excel', route: 'returns', tabId: 'gstr3b', isControl: true },
+  export_pdf: { label: 'Download GSTR-3B Statement PDF', route: 'returns', tabId: 'gstr3b', isControl: true },
+  toggle_edit: { label: 'Toggle Working Sheet Edit Mode', route: 'returns', tabId: 'gstr3b', isControl: true },
+  lock_sheet: { label: 'Lock Active Month Working Sheet', route: 'returns', tabId: 'gstr3b', isControl: true },
   gstr1: { label: 'Open GSTR-1 Sales Console', route: 'returns', tabId: 'gstr1' },
   notices: { label: 'Open GST Notices & Orders Suite', route: 'notices' },
   tds: { label: 'Open TDS Consolidator', route: 'tds-reco' },
@@ -176,6 +183,7 @@ export interface ParsedAction {
   clientName?: string;
   fy?: string;
   month?: string;
+  isControlAction?: boolean;
 }
 
 /**
@@ -217,23 +225,40 @@ export function normalizeActionMonth(input?: string): string | undefined {
 }
 
 /**
- * Parse [ACTION:navigate:<target>] tags with optional :gstin, :fy, and :month parameters.
+ * Trigger direct software control action across all mounted components.
+ */
+export function triggerSoftwareAction(detail: {
+  action: string;
+  target?: string;
+  gstin?: string;
+  clientName?: string;
+  fy?: string;
+  month?: string;
+}) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('software-action', { detail }));
+}
+
+/**
+ * Parse [ACTION:navigate:<target>] or [ACTION:control:<target>] tags with optional :gstin, :fy, and :month parameters.
  * Examples:
  *   [ACTION:navigate:3b]
  *   [ACTION:navigate:3b:27AAGCD4105L1ZO]
  *   [ACTION:navigate:reversal:27AAGCD4105L1ZO:2026-27:September]
- *   [ACTION:navigate:reversal:27AAGCD4105L1ZO:26-27:sept]
+ *   [ACTION:control:export_excel:27AAGCD4105L1ZO:2026-27:September]
+ *   [ACTION:control:toggle_edit]
  */
 export function extractActionTags(rawText: string): {
   cleanText: string;
   actions: ParsedAction[];
 } {
   const actions: ParsedAction[] = [];
-  const regex = /\[ACTION:navigate:([^\]]+)\]/gi;
+  const regex = /\[ACTION:(navigate|control):([^\]]+)\]/gi;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(rawText)) !== null) {
-    const rawContent = match[1].trim();
+    const actionType = match[1].toLowerCase();
+    const rawContent = match[2].trim();
     const parts = rawContent.split(':').map(p => p.trim());
     if (parts.length === 0) continue;
 
@@ -269,6 +294,7 @@ export function extractActionTags(rawText: string): {
       }
     }
 
+    const isControlAction = actionType === 'control' || Boolean(targetInfo.isControl);
     const actionKey = [targetKey, gstinParam, fyParam, monthParam].filter(Boolean).join(':');
     if (!actions.some(a => [a.target, a.gstin, a.fy, a.month].filter(Boolean).join(':') === actionKey)) {
       let label = targetInfo.label;
@@ -287,6 +313,7 @@ export function extractActionTags(rawText: string): {
         gstin: gstinParam,
         fy: fyParam,
         month: monthParam,
+        isControlAction,
       });
     }
   }

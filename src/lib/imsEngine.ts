@@ -841,7 +841,7 @@ export async function generateCredentialsTemplateExcel(
  */
 export async function parseCredentialsImportExcel(file: File): Promise<ClientCredentialRecord[]> {
   const data = await file.arrayBuffer();
-  const wb = XLSX.read(data, { type: 'array' });
+  const wb = XLSX.read(new Uint8Array(data), { type: 'array' });
   
   // Pick best sheet: search for sheet named credentials/client/vault/gst, fallback to sheet 0
   let targetSheet = wb.Sheets[wb.SheetNames[0]];
@@ -858,6 +858,7 @@ export async function parseCredentialsImportExcel(file: File): Promise<ClientCre
   let headerRowIdx = -1;
   let gstinCol = -1;
   let tradeCol = -1;
+  let legalCol = -1;
   let userCol = -1;
   let passCol = -1;
   let phoneCol = -1;
@@ -870,6 +871,7 @@ export async function parseCredentialsImportExcel(file: File): Promise<ClientCre
 
     let r_gstin = -1;
     let r_trade = -1;
+    let r_legal = -1;
     let r_user = -1;
     let r_pass = -1;
     let r_phone = -1;
@@ -884,7 +886,9 @@ export async function parseCredentialsImportExcel(file: File): Promise<ClientCre
       if (val.includes('GSTIN') || val === 'GST' || val === 'GST NO' || val === 'GST NUMBER' || val.includes('UIN')) {
         r_gstin = c;
       }
-      if ((val.includes('TRADE') || val.includes('BUSINESS') || val.includes('CLIENT') || val.includes('FIRM') || val.includes('PARTY') || val.includes('COMPANY') || val.includes('NAME')) && !val.includes('USER')) {
+      if (val.includes('LEGAL') || val.includes('TAXPAYER NAME')) {
+        r_legal = c;
+      } else if ((val.includes('TRADE') || val.includes('BUSINESS') || val.includes('CLIENT') || val.includes('FIRM') || val.includes('PARTY') || val.includes('COMPANY') || val.includes('NAME')) && !val.includes('USER')) {
         r_trade = c;
       }
       if (val.includes('USER') || val.includes('LOGIN') || val.includes('PORTAL ID')) {
@@ -901,10 +905,11 @@ export async function parseCredentialsImportExcel(file: File): Promise<ClientCre
       }
     }
 
-    if (r_gstin !== -1 && (r_user !== -1 || r_pass !== -1 || r_trade !== -1 || r_phone !== -1 || r_email !== -1)) {
+    if (r_gstin !== -1 && (r_user !== -1 || r_pass !== -1 || r_trade !== -1 || r_legal !== -1 || r_phone !== -1 || r_email !== -1)) {
       headerRowIdx = r;
       gstinCol = r_gstin;
       tradeCol = r_trade;
+      legalCol = r_legal;
       userCol = r_user;
       passCol = r_pass;
       phoneCol = r_phone;
@@ -955,10 +960,12 @@ export async function parseCredentialsImportExcel(file: File): Promise<ClientCre
     const pass = passCol !== -1 ? String(row[passCol] || '').trim() : '';
     const phone = phoneCol !== -1 ? String(row[phoneCol] || '').trim().replace(/\.0$/, '') : '';
     const email = emailCol !== -1 ? String(row[emailCol] || '').trim() : '';
+    const legal = legalCol !== -1 ? String(row[legalCol] || '').trim() : trade;
 
     records.push({
       gstin,
-      trade_name: trade,
+      trade_name: trade || legal || gstin,
+      legal_name: legal || trade || gstin,
       portal_username: user,
       portal_password: pass,
       phone,

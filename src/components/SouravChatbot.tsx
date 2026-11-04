@@ -12,7 +12,9 @@ import {
   User,
   ArrowRight,
   ShieldCheck,
-  ChevronDown
+  ChevronDown,
+  Pin,
+  PinOff
 } from 'lucide-react';
 import {
   sendChatMessage,
@@ -133,6 +135,8 @@ interface SouravChatbotProps {
   gstin?: string;
   financialYear?: string;
   activeModule?: string;
+  userName?: string;
+  loginUser?: string;
   onNavigate?: (route: string, tabId?: string, clientInfo?: { gstin?: string; clientName?: string }) => void;
   onOpenSettings?: (tab?: string) => void;
 }
@@ -142,14 +146,86 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   gstin = '',
   financialYear = '2024-25',
   activeModule = 'General Dashboard',
+  userName,
+  loginUser,
   onNavigate,
   onOpenSettings,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+  const [executedActionKeys, setExecutedActionKeys] = useState<Set<string>>(new Set());
+
+  // Derive dynamic AI name from logged-in user name
+  const rawUser = userName || loginUser || (typeof window !== 'undefined' ? (localStorage.getItem('np_user_name') || localStorage.getItem('np_user') || '') : '') || '';
+  const cleanName = rawUser.replace(/^(ca|adv|dr|mr|ms|mrs)\.?\s+/i, '').trim();
+  const aiName = cleanName.split(/\s+/)[0] || cleanName || 'AI';
+  const aiInitial = (aiName.charAt(0) || 'A').toUpperCase();
+
+  // Hover expand & auto-shrink timer
+  const shrinkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isMouseOverRef = useRef(false);
+
+  const handleMouseEnter = () => {
+    isMouseOverRef.current = true;
+    if (shrinkTimerRef.current) {
+      clearTimeout(shrinkTimerRef.current);
+      shrinkTimerRef.current = null;
+    }
+    setIsOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    isMouseOverRef.current = false;
+    if (isPinned) {
+      return;
+    }
+    if (shrinkTimerRef.current) {
+      clearTimeout(shrinkTimerRef.current);
+    }
+    shrinkTimerRef.current = setTimeout(() => {
+      if (!isMouseOverRef.current && !isPinned) {
+        setIsOpen(false);
+      }
+    }, 200);
+  };
+
+  const handleClickIcon = () => {
+    if (shrinkTimerRef.current) {
+      clearTimeout(shrinkTimerRef.current);
+      shrinkTimerRef.current = null;
+    }
+    setIsOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 150);
+  };
+
+  const handleCloseOrMinimize = () => {
+    if (shrinkTimerRef.current) {
+      clearTimeout(shrinkTimerRef.current);
+      shrinkTimerRef.current = null;
+    }
+    setIsPinned(false);
+    setIsOpen(false);
+  };
+
+  const handleTogglePin = () => {
+    setIsPinned((prev) => {
+      const next = !prev;
+      toast.info(next ? 'Assistant pinned open' : 'Auto-shrink on mouse leave enabled');
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (shrinkTimerRef.current) {
+        clearTimeout(shrinkTimerRef.current);
+      }
+    };
+  }, []);
 
   // Quick API key setup banner state
   const [quickApiKey, setQuickApiKey] = useState('');
@@ -175,8 +251,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
     if (isOpen) {
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        inputRef.current?.focus();
-      }, 150);
+      }, 100);
     }
   }, [isOpen, messages, isLoading]);
 
@@ -196,23 +271,22 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       gstin: gstin || undefined,
       fy: financialYear,
       module: activeModule,
+      userName: aiName,
     };
 
     try {
       const { reply, fastPath } = await sendChatMessageWithMeta(prompt, context, messages);
       setMessages([...updatedHistory, { role: 'model', text: reply }]);
 
-      // If instant navigation command detected and matched single target, auto-execute navigation immediately!
-      if (fastPath) {
-        const { actions } = extractActionTags(reply);
-        if (actions.length === 1) {
-          const act = actions[0];
-          handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month);
-        }
+      // Direct Software Interaction: Auto-execute software navigation & control actions immediately!
+      const { actions } = extractActionTags(reply);
+      if (actions.length === 1) {
+        const act = actions[0];
+        handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month, true);
       }
     } catch (err: any) {
       console.error('[SouravChatbot Error]:', err);
-      let errorResponse = 'An error occurred while connecting to Sourav. Please check your internet or API key.';
+      let errorResponse = `An error occurred while connecting to ${aiName}. Please check your internet or API key.`;
       if (err.unconfigured || err.message?.includes('not configured')) {
         setIsConfigured(false);
         setShowKeyInput(true);
@@ -267,7 +341,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
         ...prev,
         {
           role: 'model',
-          text: `✨ **Gemini API Key synced from ${res.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'}!** Sourav AI is now active and ready to assist you.`,
+          text: `✨ **Gemini API Key synced from ${res.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'}!** ${aiName} AI is now active and ready to assist you.`,
         },
       ]);
       toast.success('Synced from Cloud License', {
@@ -287,14 +361,18 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
     gstin?: string,
     clientName?: string,
     fy?: string,
-    month?: string
+    month?: string,
+    isAuto = false
   ) => {
     const targetInfo = ACTION_NAV_TARGETS[target];
     if (!targetInfo) return;
 
+    const actionKey = [target, gstin, fy, month].filter(Boolean).join(':');
+    setExecutedActionKeys(prev => new Set(prev).add(actionKey));
+
     if (target === 'settings') {
       if (onOpenSettings) onOpenSettings('ai');
-      setIsOpen(false);
+      if (!isAuto) setIsOpen(false);
       toast.success('Navigated to AI Settings');
       return;
     }
@@ -347,10 +425,32 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       );
     }
 
-    // Auto-minimize/close drawer so the user can immediately interact with the navigated module
-    setIsOpen(false);
+    // Forward direct software actions (Excel/PDF Export, Edit Mode, Locks, Allocation Workbench)
+    if (targetInfo.isControl || ['export_excel', 'export_pdf', 'toggle_edit', 'lock_sheet', 'view_allocations', 'reversal'].includes(target)) {
+      window.dispatchEvent(
+        new CustomEvent('software-action', {
+          detail: {
+            action: target,
+            target,
+            gstin,
+            clientName,
+            fy,
+            month,
+          },
+        })
+      );
+    }
+
     const extraDetails = [clientName || gstin, month, fy].filter(Boolean).join(' • ');
-    toast.success(`Opening ${targetInfo.label}${extraDetails ? ` • ${extraDetails}` : ''}`);
+    if (targetInfo.isControl) {
+      toast.success(`⚡ Executed: ${targetInfo.label}${extraDetails ? ` (${extraDetails})` : ''}`);
+    } else {
+      toast.success(`⚡ ${isAuto ? 'Auto-Applied in Software' : 'Opening'}: ${targetInfo.label}${extraDetails ? ` (${extraDetails})` : ''}`);
+    }
+
+    if (!isAuto) {
+      setIsOpen(false);
+    }
   };
 
   const handleClearChat = () => {
@@ -359,39 +459,33 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   };
 
   return (
-    <>
-      {/* 1. Floating Action Bubble (Bottom-Right) */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {!isOpen ? (
-          <button
-            onClick={() => setIsOpen(true)}
-            aria-label="Open Sourav AI Assistant"
-            className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 font-semibold shadow-xl shadow-amber-500/25 border border-amber-300/60 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
-          >
-            <div className="relative">
-              <Sparkles className="w-5 h-5 text-slate-950 animate-spin-slow" />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-2 ring-white animate-pulse" />
-            </div>
-            <span className="text-sm tracking-tight font-bold">✨ Sourav AI</span>
-          </button>
-        ) : null}
-      </div>
+    <div
+      className={`fixed bottom-6 right-6 z-50 flex flex-col items-end transition-all duration-300 ${
+        isOpen ? 'w-[410px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-5rem)]' : 'w-auto h-auto'
+      }`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* 1. Chat Drawer Panel (Smooth Expand & Shrink Animation with Spring Easing) */}
+      <div
+        className={`w-[410px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-5rem)] bg-[#0d1117] text-slate-100 border border-amber-500/30 rounded-2xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-300 ease-out ${
+          isOpen
+            ? 'opacity-100 scale-100 translate-y-0 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(245,158,11,0.2)] pointer-events-auto'
+            : 'opacity-0 scale-75 translate-y-6 pointer-events-none select-none absolute bottom-0 right-0'
+        }`}
+      >
+        {/* Luminous amber accent top edge */}
+        <div className="h-0.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 shrink-0" />
 
-      {/* 2. Slide-In Chat Drawer Panel */}
-      {isOpen && (
-        <div
-          className="fixed bottom-6 right-6 z-50 w-[410px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-5rem)] bg-[#0d1117] text-slate-100 border border-slate-800 shadow-2xl rounded-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-200"
-          style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 30px rgba(245, 158, 11, 0.15)' }}
-        >
-          {/* Header */}
-          <div className="px-4 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between shrink-0 backdrop-blur-md">
+        {/* Header */}
+        <div className="px-4 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between shrink-0 backdrop-blur-md">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 font-bold text-sm shadow-sm">
                 <Sparkles className="w-4 h-4 fill-slate-950 text-slate-950" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-slate-100 tracking-tight">Sourav · AI Copilot</span>
+                  <span className="font-bold text-sm text-slate-100 tracking-tight">{aiName} · AI Copilot</span>
                   <span
                     className={`inline-block w-2 h-2 rounded-full ${
                       isConfigured ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
@@ -399,8 +493,12 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                     title={isConfigured ? 'AI Active' : 'Configuration Required'}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
                   <span>Compliance Co-Pilot</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-amber-400/80 text-[9px]">
+                    {isPinned ? '📌 Pinned' : '⚡ Auto-shrinks'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -426,14 +524,25 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                 </button>
               )}
               <button
-                onClick={() => setIsOpen(false)}
-                title="Minimize Assistant"
+                onClick={handleTogglePin}
+                title={isPinned ? 'Pinned open (Click to enable auto-shrink on mouse leave)' : 'Auto-shrinks on mouse leave (Click to pin open)'}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isPinned
+                    ? 'text-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {isPinned ? <Pin className="w-3.5 h-3.5 rotate-45 text-amber-300" /> : <PinOff className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={handleCloseOrMinimize}
+                title="Minimize / Shrink to Icon"
                 className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={handleCloseOrMinimize}
                 title="Close Assistant"
                 className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
@@ -516,7 +625,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5 text-slate-300">
                 <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm">
                   <Sparkles className="w-4 h-4" />
-                  <span>Welcome to Sourav AI!</span>
+                  <span>Welcome to {aiName} AI!</span>
                 </div>
                 <p className="leading-relaxed">
                   I'm your intelligent compliance co-pilot. I know all statutory GST laws, return rules, and the 12 modules in this software.
@@ -571,7 +680,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                 >
                   {!isUser && (
                     <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 text-slate-950 font-bold flex items-center justify-center shrink-0 mt-0.5 text-[11px]">
-                      S
+                      {aiInitial}
                     </div>
                   )}
 
@@ -589,16 +698,34 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                     {/* Interactive Action Buttons (Pills) */}
                     {actions.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        {actions.map((act, aIdx) => (
-                          <button
-                            key={aIdx}
-                            onClick={() => handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-all cursor-pointer hover:border-amber-400 shadow-sm"
-                          >
-                            <span>{act.label}</span>
-                            <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
-                          </button>
-                        ))}
+                        {actions.map((act, aIdx) => {
+                          const actionKey = [act.target, act.gstin, act.fy, act.month].filter(Boolean).join(':');
+                          const isExecuted = executedActionKeys.has(actionKey);
+                          return (
+                            <button
+                              key={aIdx}
+                              onClick={() => handleActionClick(act.target, act.gstin, act.clientName, act.fy, act.month, false)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer shadow-sm ${
+                                isExecuted
+                                  ? 'bg-emerald-950/70 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/70'
+                                  : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 hover:border-amber-400'
+                              }`}
+                            >
+                              {isExecuted ? (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  <span>⚡ Auto-Applied: {act.label}</span>
+                                  <span className="text-[10px] font-bold text-emerald-400 ml-1">✓ Active</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>{act.label}</span>
+                                  <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -616,7 +743,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
             {isLoading && (
               <div className="flex gap-2.5 justify-start">
                 <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 text-slate-950 font-bold flex items-center justify-center shrink-0 mt-0.5 text-[11px]">
-                  S
+                  {aiInitial}
                 </div>
                 <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-xs bg-slate-900 border border-slate-800 text-slate-400 flex items-center gap-2">
                   <div className="flex items-center gap-1">
@@ -624,7 +751,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms' }} />
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
-                  <span className="text-[11px] text-slate-400">Sourav is thinking...</span>
+                  <span className="text-[11px] text-slate-400">{aiName} is thinking...</span>
                 </div>
               </div>
             )}
@@ -642,7 +769,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything about GST, 2B vs Books, or tasks..."
+              placeholder={`Ask ${aiName} about GST, returns, 2B vs Books, or tasks...`}
               disabled={isLoading}
               className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/70 transition-colors disabled:opacity-50"
             />
@@ -658,8 +785,31 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
               )}
             </button>
           </form>
-        </div>
-      )}
-    </>
+      </div>
+
+      {/* 2. Floating Action Launcher Button (Smooth scale in/out) */}
+      <div
+        className={`transition-all duration-300 ease-out origin-bottom-right ${
+          !isOpen
+            ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 scale-50 translate-y-2 pointer-events-none select-none absolute bottom-0 right-0'
+        }`}
+      >
+        <button
+          onClick={handleClickIcon}
+          aria-label={`Open ${aiName} AI Assistant`}
+          className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 font-semibold shadow-xl shadow-amber-500/25 border border-amber-300/70 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+        >
+          {/* Ambient Pulsing Radar Ring */}
+          <span className="absolute -inset-1 rounded-full bg-amber-400/30 animate-ping opacity-35" />
+          
+          <div className="relative">
+            <Sparkles className="w-5 h-5 text-slate-950 animate-spin-slow" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-2 ring-white animate-pulse" />
+          </div>
+          <span className="text-sm tracking-tight font-bold">✨ {aiName} AI</span>
+        </button>
+      </div>
+    </div>
   );
 };

@@ -234,7 +234,7 @@ export function computeBooksTdsLiability(
         const cleanName = txn.partyName.toUpperCase().trim();
         const groupKey = isMissing
             ? `NOPAN-${cleanName}_${resolvedSection}`
-            : `${cleanName}_${rawPan}_${resolvedSection}`;
+            : `${rawPan}_${resolvedSection}`;
 
         if (!partySectionTotals[groupKey]) {
             partySectionTotals[groupKey] = {
@@ -695,8 +695,7 @@ export function reconcileTds(
                 matchedTraces.set(tKeyExact, books);
                 matchMethods.set(bKey, 'PAN');
                 unmatchedBooks.delete(bKey);
-                // Do not delete tKeyExact if other party names share the same PAN
-                // unmatchedTraces.delete(tKeyExact);
+                unmatchedTraces.delete(tKeyExact);
                 continue;
             }
 
@@ -755,7 +754,7 @@ export function reconcileTds(
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                         let allowed = true;
-                        if (confirmedMatches && confirmedMatches.length > 0) {
+                        if (confirmedMatches !== undefined) {
                             allowed = confirmedMatches.some(cm => 
                                 normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
                                 normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
@@ -776,7 +775,7 @@ export function reconcileTds(
                         const tracesNormName = normalizePartyName(traces.partyName);
                         if (booksNormName === tracesNormName) {
                             let allowed = true;
-                            if (confirmedMatches && confirmedMatches.length > 0) {
+                            if (confirmedMatches !== undefined) {
                                 allowed = confirmedMatches.some(cm => 
                                     normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
                                     normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
@@ -797,7 +796,7 @@ export function reconcileTds(
                     const tracesNormName = normalizePartyName(traces.partyName);
                     if (booksNormName === tracesNormName) {
                         let allowed = true;
-                        if (confirmedMatches && confirmedMatches.length > 0) {
+                        if (confirmedMatches !== undefined) {
                             allowed = confirmedMatches.some(cm => 
                                 normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
                                 normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
@@ -856,7 +855,7 @@ export function reconcileTds(
 
                         if (sim >= highestSim) {
                             let allowed = true;
-                            if (confirmedMatches && confirmedMatches.length > 0) {
+                            if (confirmedMatches !== undefined) {
                                 allowed = confirmedMatches.some(cm => 
                                     normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
                                     normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
@@ -891,7 +890,7 @@ export function reconcileTds(
 
                         if (sim >= highestSim) {
                             let allowed = true;
-                            if (confirmedMatches && confirmedMatches.length > 0) {
+                            if (confirmedMatches !== undefined) {
                                 allowed = confirmedMatches.some(cm => 
                                     normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
                                     normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)

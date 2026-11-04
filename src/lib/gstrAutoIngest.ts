@@ -11,6 +11,7 @@
 
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
+import { safeApiFetch } from './api';
 import {
   GSTR3BMonthKey,
   GSTR3BMonthData,
@@ -24,8 +25,12 @@ export interface Gstr1IngestSummary {
   gstin: string;
   period: string; // e.g. "042024" or "April 2024"
   monthKey?: GSTR3BMonthKey;
-  fileType: 'JSON' | 'EXCEL';
+  fileType: 'JSON' | 'EXCEL' | 'PDF';
   fileName: string;
+  arn?: string;
+  arnDate?: string;
+  legalName?: string;
+  tradeName?: string;
   counts: {
     b2b: number;
     b2cl: number;
@@ -1092,7 +1097,25 @@ export async function parseAnyReturnsFile(file: File): Promise<IngestResult> {
       }
     }
 
-    return { error: `Unsupported file type: ${file.name}. Please upload .json, .xlsx, or .zip return files.` };
+    // 4. PDF Files (GSTR-1 Filed Return Summary PDF)
+    if (nameLower.endsWith('.pdf')) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await safeApiFetch('/api/returns/extract-gstr1-pdf', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.gstr1) {
+        if (data?.error && (data.error.includes('route not found') || data.error.includes('Cannot POST'))) {
+          throw new Error('Backend server needs a restart. Please press Ctrl+C in your terminal and run "npm start" to activate the new GSTR-1 PDF route.');
+        }
+        throw new Error(data.error || 'Failed to extract data from GSTR-1 PDF');
+      }
+      return { gstr1: data.gstr1 };
+    }
+
+    return { error: `Unsupported file type: ${file.name}. Please upload .json, .xlsx, .zip, or .pdf return files.` };
   } catch (err: any) {
     return { error: `Failed to parse ${file.name}: ${err?.message || 'Invalid format'}` };
   }
@@ -1127,24 +1150,22 @@ export function applyReturnsToAnnualWorking(
     month.outward.creditNote = { ...breakdowns.creditNote };
     month.outward.advanceReceived = { ...breakdowns.advanceReceived };
     month.outward.advanceAdjusted = { ...breakdowns.advanceAdjusted };
+    if (breakdowns.rcmOutward && (breakdowns.rcmOutward.total > 0 || breakdowns.rcmOutward.taxable > 0)) {
+      month.outward.rcmOutward = { ...breakdowns.rcmOutward };
+    }
 
     // If GSTR-1 had client GSTIN and firm profile has none, adopt it
     if (gstr1.gstin && (!cloned.profile.gstin || cloned.profile.gstin === 'Not Specified')) {
       cloned.profile.gstin = gstr1.gstin;
     }
+    // If GSTR-1 had client legal name and firm profile has none, adopt it
+    if (gstr1.legalName && (!cloned.profile.firmName || cloned.profile.firmName === 'CLIENT' || cloned.profile.firmName === 'Not Specified')) {
+      cloned.profile.firmName = gstr1.legalName;
+    }
   }
 
   // 2. Apply GSTR-2B Inward Supplies & ITC
   if (gstr2b) {
-    // Table 4(A)(5) All other ITC (strictly non-RCM)
-    month.inward.itc2b = {
-      taxable: Number(gstr2b.eligibleItc.taxable || 0),
-      cgst: Number(gstr2b.eligibleItc.cgst || 0),
-      sgst: Number(gstr2b.eligibleItc.sgst || 0),
-      igst: Number(gstr2b.eligibleItc.igst || 0),
-      total: Number(gstr2b.eligibleItc.total || 0) || (Number(gstr2b.eligibleItc.cgst || 0) + Number(gstr2b.eligibleItc.sgst || 0) + Number(gstr2b.eligibleItc.igst || 0))
-    };
-
     // Inward RCM liability Table 3.1(d) & Table 4(A)(3) (kept strictly separate!)
     if (gstr2b.rcmInward && (gstr2b.rcmInward.total > 0 || gstr2b.rcmInward.taxable > 0 || gstr2b.rcmInward.cgst > 0)) {
       month.outward.rcmTransport = { ...gstr2b.rcmInward };
@@ -1171,6 +1192,20 @@ export function applyReturnsToAnnualWorking(
     if (gstr2b.ineligibleItc && (gstr2b.ineligibleItc.total > 0 || gstr2b.ineligibleItc.taxable > 0)) {
       month.inward.itcReversed = { ...gstr2b.ineligibleItc };
     }
+
+    // Row 33: "ITC as per GSTR 2B" receives Total B2B Inward Supplies minus RCM
+    const round2Num = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    month.inward.itc2b = {
+      taxable: round2Num(Number(gstr2b.eligibleItc.taxable || 0)),
+      cgst: round2Num(Number(gstr2b.eligibleItc.cgst || 0)),
+      sgst: round2Num(Number(gstr2b.eligibleItc.sgst || 0)),
+      igst: round2Num(Number(gstr2b.eligibleItc.igst || 0)),
+      total: round2Num(
+        Number(gstr2b.eligibleItc.cgst || 0) +
+        Number(gstr2b.eligibleItc.sgst || 0) +
+        Number(gstr2b.eligibleItc.igst || 0)
+      )
+    };
 
     // Adopt GSTIN if empty
     if (gstr2b.gstin && (!cloned.profile.gstin || cloned.profile.gstin === 'Not Specified')) {

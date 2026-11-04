@@ -244,6 +244,41 @@ export function AppShell({
     return () => window.removeEventListener('open-settings', handleOpenSettings);
   }, []);
 
+  // Listen for global client-selected and internal app-navigate events
+  useEffect(() => {
+    const handleGlobalNav = (e: any) => {
+      const { route, tabId, clientName, trade_name, legal_name } = e.detail || {};
+      if (route) setAppRoute(route as any);
+      if (tabId && setReturnsTab) {
+        if (tabId === 'ims') setReturnsTab('ims2b');
+        else if (tabId === 'gstr3b') setReturnsTab('working3b');
+        else if (tabId === 'matrix') setReturnsTab('matrix');
+        else if (tabId === 'gstr1') setReturnsTab('gstr1_downloader');
+        else if (tabId === '2b' || tabId === 'gstr2b') setReturnsTab('gstr2b_downloader');
+        else setReturnsTab(tabId as any);
+      }
+      const name = trade_name || legal_name || clientName;
+      if (name && setCompanyName) {
+        setCompanyName(name);
+      }
+    };
+
+    const handleClientSelected = (e: any) => {
+      const { trade_name, legal_name, clientName } = e.detail || {};
+      const name = trade_name || legal_name || clientName;
+      if (name && setCompanyName) {
+        setCompanyName(name);
+      }
+    };
+
+    window.addEventListener('app-navigate', handleGlobalNav);
+    window.addEventListener('client-selected', handleClientSelected);
+    return () => {
+      window.removeEventListener('app-navigate', handleGlobalNav);
+      window.removeEventListener('client-selected', handleClientSelected);
+    };
+  }, [setAppRoute, setReturnsTab, setCompanyName]);
+
   const togglePin = () => {
     setIsPinned(prev => {
       const next = !prev;
@@ -565,94 +600,10 @@ export function AppShell({
         "flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300",
         isPinned ? "pl-[17rem]" : "pl-[4.75rem]"
       )}>
-        {/* Standardized Top Header (Hidden on Returns to allow Elevated Floating Navbar) */}
-        {appRoute !== 'returns' && (
-          <header className="sticky top-0 z-40 bg-[#F8FAFC]/85 backdrop-blur-md border-b border-slate-200/60 px-6 py-2.5 flex items-center justify-between gap-4 shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
-              {/* Live Bridge Status Pill */}
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-[11px] font-medium text-emerald-700 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Tally Port 9000 Connected</span>
-              </div>
-            </div>
-
-            {/* Right Header Controls */}
-            <div className="flex items-center gap-2.5">
-              {/* FY Badge Pill */}
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200/80 rounded-full text-xs font-medium text-slate-700 shadow-xs cursor-pointer hover:bg-slate-50 transition-colors">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span className="font-mono font-semibold">FY {financialYear || '2024-25'}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-
-              {/* Notifications Bell */}
-              <button
-                type="button"
-                className="relative w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors shadow-xs"
-                title="Notifications"
-              >
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
-              </button>
-
-              {/* Client Quick Switcher */}
-              <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200">
-                <div className="text-right">
-                  <div className="text-xs font-bold text-slate-900 truncate max-w-[160px]">
-                    {companyName || 'DYP INFRAPROJECTS'}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    27AAGCD4105L1ZO
-                  </div>
-                </div>
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-                  {getInitials(companyName || 'DYP INFRAPROJECTS')}
-                </div>
-              </div>
-
-              {/* Optional Utilities */}
-              <div className="flex items-center gap-1 pl-1">
-                {onOpenHistory && (
-                  <button
-                    type="button"
-                    onClick={onOpenHistory}
-                    className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                    title="History & Backups"
-                  >
-                    <History className="w-4 h-4" />
-                  </button>
-                )}
-
-                {onOpenUserGuide && (
-                  <button
-                    type="button"
-                    onClick={onOpenUserGuide}
-                    className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                    title="User Guide"
-                  >
-                    <BookOpen className="w-4 h-4" />
-                  </button>
-                )}
-
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={onLogout}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
-                    title="Logout"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </header>
-        )}
-
-        {/* Dynamic Module Content View */}
+        {/* Dynamic Module Content View - Shifted upwards with clean minimal padding */}
         <main className={cn(
           "flex-1 overflow-y-auto relative bg-[#F8FAFC]",
-          appRoute === 'returns' ? "p-0" : "px-4 py-2 sm:px-6 sm:py-3"
+          appRoute === 'returns' ? "p-0" : "px-3 py-1.5 sm:px-6 sm:py-2"
         )}>
           <div className={cn(
             "w-full",
@@ -695,10 +646,14 @@ export function AppShell({
         isOpen={isSettingsOpen}
         initialTab={settingsActiveTab}
         onClose={() => setIsSettingsOpen(false)}
+        onLogout={onLogout}
+        loginUser={userName || loginUser}
       />
 
-      {/* 5. SOURAV UNIVERSAL AI ASSISTANT CHATBOT */}
+      {/* 5. UNIVERSAL AI ASSISTANT CHATBOT */}
       <SouravChatbot
+        userName={userName || loginUser}
+        loginUser={loginUser}
         clientName={companyName}
         financialYear={financialYear}
         activeModule={appRoute}

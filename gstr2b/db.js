@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 
 // ─── 1. DATABASE SCHEMA INITIALIZATION ──────────────────────────────────────
 export function initGstr2bDatabase(db) {
@@ -74,6 +74,21 @@ export function initGstr2bDatabase(db) {
         db.run(`CREATE INDEX IF NOT EXISTS idx_gstr2b_invoices_batch ON gstr2b_invoices(batch_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gstr2b_invoices_client ON gstr2b_invoices(client_gstin, return_period)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gstr1_summaries_client ON gstr1_summaries(client_gstin, return_period)`);
+
+        // Table 4: GSTR-3B Inward ITC Allocations & Audit Trail
+        db.run(`CREATE TABLE IF NOT EXISTS gstr3b_itc_allocations (
+            id TEXT PRIMARY KEY,
+            client_gstin TEXT NOT NULL,
+            return_period TEXT NOT NULL,
+            invoice_id TEXT NOT NULL,
+            target_table TEXT NOT NULL,
+            notes TEXT,
+            allocated_by TEXT DEFAULT 'User',
+            created_at INTEGER,
+            updated_at INTEGER,
+            UNIQUE(client_gstin, return_period, invoice_id)
+        )`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_gstr3b_itc_alloc_client ON gstr3b_itc_allocations(client_gstin, return_period)`);
 
         // Migration: add separated RCM, CDNR, IMPG, ISD columns if not present
         const addCol = (colDef) => {
@@ -369,9 +384,12 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                 if (rowPeriod) affectedPeriods.add(rowPeriod);
             }
 
+            let txError = null;
             // Clean out stale invoices for affected periods so duplicate/corrupted records are cleanly replaced
             for (const p of affectedPeriods) {
-                db.run('DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?', [clientGstin, p]);
+                db.run('DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?', [clientGstin, p], (delErr) => {
+                    if (delErr && !txError) txError = delErr;
+                });
             }
 
             const stmt = db.prepare(`
@@ -400,7 +418,7 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
             `);
 
             for (const inv of invoices) {
-                const id = randomUUID();
+                if (txError) break;
                 const rawSec = (inv.section || 'B2B').toUpperCase();
                 const normSec = rawSec.includes('CDNRA') ? 'CDNRA'
                     : rawSec.includes('CDNR') ? 'CDNR'
@@ -417,6 +435,8 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                 const rowPeriod = (inv.return_period && String(inv.return_period).trim().length >= 4)
                     ? String(inv.return_period).trim()
                     : returnPeriod;
+                const invKey = `${(clientGstin || '').trim()}|${rowPeriod}|${normSec}|${normCtin}|${normInum}|${normDate}`.toUpperCase();
+                const id = inv.id || createHash('md5').update(invKey).digest('hex');
 
                 if (rowPeriod) affectedPeriods.add(rowPeriod);
 
@@ -426,13 +446,20 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                     inv.pos || null, inv.rchrg || 'N', inv.itc_available || 'Y', inv.itc_reason || null,
                     inv.txval || 0, inv.igst || 0, inv.cgst || 0, inv.sgst || 0, inv.cess || 0,
                     inv.total_val || 0, inv.source_period || null, inv.filing_date || null, now
-                ]);
+                ], (runErr) => {
+                    if (runErr && !txError) txError = runErr;
+                });
             }
 
             stmt.finalize();
 
             db.run('COMMIT', async (commitErr) => {
-                if (commitErr) return reject(commitErr);
+                if (txError || commitErr) {
+                    const errToReport = txError || commitErr;
+                    console.error('[GSTR-2B DB] Error during bulk insert, rolling back:', errToReport.message);
+                    db.run('ROLLBACK', () => reject(errToReport));
+                    return;
+                }
 
                 try {
                     let lastMetrics = null;
@@ -539,6 +566,291 @@ export function markGstr2bMonthNilSynced(db, clientGstin, returnPeriod, excelPat
         db.run(query, [batchId, clientGstin.toUpperCase(), returnPeriod, excelPath, jsonPath, now, now, now], (err) => {
             if (err) return reject(err);
             resolve({ success: true, status: 'NIL_SYNCED', totalInvoices: 0 });
+        });
+    });
+}
+
+// ─── 6. GSTR-3B INWARD ITC ALLOCATIONS & AUDIT TRACK RECORD ─────────────────
+
+function emptyCategorySummary() {
+    return { count: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 };
+}
+
+function addToCategory(cat, inv) {
+    cat.count += 1;
+    cat.taxable += (inv.txval || 0);
+    cat.igst += (inv.igst || 0);
+    cat.cgst += (inv.cgst || 0);
+    cat.sgst += (inv.sgst || 0);
+    cat.cess += (inv.cess || 0);
+    cat.total += (inv.totalTax || inv.total_tax || 0);
+}
+
+function roundCategory(cat) {
+    cat.taxable = Math.round((cat.taxable + Number.EPSILON) * 100) / 100;
+    cat.igst = Math.round((cat.igst + Number.EPSILON) * 100) / 100;
+    cat.cgst = Math.round((cat.cgst + Number.EPSILON) * 100) / 100;
+    cat.sgst = Math.round((cat.sgst + Number.EPSILON) * 100) / 100;
+    cat.cess = Math.round((cat.cess + Number.EPSILON) * 100) / 100;
+    cat.total = Math.round((cat.total + Number.EPSILON) * 100) / 100;
+}
+
+export function getInvoicesWithAllocations(db, clientGstin, returnPeriod) {
+    return new Promise((resolve, reject) => {
+        if (!clientGstin || !returnPeriod) {
+            return reject(new Error('clientGstin and returnPeriod are required'));
+        }
+
+        // Self-healing: Ensure allocations table exists
+        db.run(`CREATE TABLE IF NOT EXISTS gstr3b_itc_allocations (
+            id TEXT PRIMARY KEY,
+            client_gstin TEXT NOT NULL,
+            return_period TEXT NOT NULL,
+            invoice_id TEXT NOT NULL,
+            target_table TEXT NOT NULL,
+            notes TEXT,
+            allocated_by TEXT DEFAULT 'User',
+            created_at INTEGER,
+            updated_at INTEGER,
+            UNIQUE(client_gstin, return_period, invoice_id)
+        )`, () => {
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            let mName = returnPeriod.match(/[a-zA-Z]+/)?.[0] || '';
+            let yMatch = returnPeriod.match(/\d{4}/)?.[0] || '';
+            if (!mName && /^\d{6}$/.test(returnPeriod)) {
+                const mIdx = parseInt(returnPeriod.substring(0, 2), 10) - 1;
+                mName = monthNames[mIdx] || '';
+                yMatch = returnPeriod.substring(2);
+            }
+
+            let wherePeriod = `(i.return_period = ? OR i.return_period LIKE ? OR i.return_period LIKE ?)`;
+            let params = [
+                clientGstin.toUpperCase(),
+                returnPeriod,
+                `%${mName || returnPeriod}%`,
+                `%${returnPeriod.replace(',', '')}%`
+            ];
+
+            if (mName && yMatch) {
+                wherePeriod = `(i.return_period = ? OR (i.return_period LIKE ? AND i.return_period LIKE ?) OR i.return_period LIKE ?)`;
+                params = [
+                    clientGstin.toUpperCase(),
+                    returnPeriod,
+                    `%${mName}%`,
+                    `%${yMatch}%`,
+                    `%${returnPeriod.replace(',', '')}%`
+                ];
+            }
+
+            const query = `
+            SELECT 
+                i.id,
+                i.batch_id,
+                i.client_gstin,
+                i.return_period,
+                i.section,
+                i.ctin,
+                COALESCE(i.supplier_name, i.ctin) as supplier_name,
+                i.inum,
+                i.idt,
+                COALESCE(i.inv_typ, 'Regular') as inv_typ,
+                i.pos,
+                COALESCE(i.rchrg, 'N') as rchrg,
+                COALESCE(i.itc_available, 'Y') as itc_available,
+                i.itc_reason,
+                COALESCE(i.txval, 0) as txval,
+                COALESCE(i.igst, 0) as igst,
+                COALESCE(i.cgst, 0) as cgst,
+                COALESCE(i.sgst, 0) as sgst,
+                COALESCE(i.cess, 0) as cess,
+                COALESCE(i.total_val, 0) as total_val,
+                (COALESCE(i.igst, 0) + COALESCE(i.cgst, 0) + COALESCE(i.sgst, 0) + COALESCE(i.cess, 0)) as total_tax,
+                COALESCE(a.target_table, 
+                    CASE 
+                        WHEN UPPER(i.rchrg) = 'Y' THEN '4A3'
+                        WHEN UPPER(i.inv_typ) LIKE '%CBW%' OR UPPER(i.section) LIKE '%IMPG%' THEN '4A1'
+                        WHEN UPPER(i.itc_available) = 'N' THEN '4D1'
+                        ELSE '4A5'
+                    END
+                ) as target_table,
+                a.notes,
+                a.allocated_by,
+                a.updated_at as allocated_at
+            FROM gstr2b_invoices i
+            LEFT JOIN gstr3b_itc_allocations a 
+                ON UPPER(a.client_gstin) = UPPER(i.client_gstin) 
+                AND a.invoice_id = i.id
+            WHERE UPPER(i.client_gstin) = ? AND ${wherePeriod}
+            ORDER BY 
+                CASE 
+                    WHEN UPPER(i.section) LIKE '%B2B%' THEN 1 
+                    WHEN UPPER(i.section) LIKE '%CDNR%' THEN 2 
+                    ELSE 3 
+                END,
+                i.idt DESC, i.inum ASC
+        `;
+
+        db.all(query, params, (err, rows) => {
+            if (err) return reject(err);
+
+            const summary = {
+                totalInvoices: 0,
+                totalTaxable: 0,
+                totalTax: 0,
+                eligible_4a5: emptyCategorySummary(),
+                temporary_4b2: emptyCategorySummary(),
+                permanent_4b1: emptyCategorySummary(),
+                ineligible_4d1: emptyCategorySummary(),
+                ineligible_4d2: emptyCategorySummary(),
+                rcm_4a3: emptyCategorySummary(),
+                import_4a1: emptyCategorySummary(),
+                deferred: emptyCategorySummary()
+            };
+
+            const invoices = (rows || []).map(r => {
+                const inv = {
+                    id: r.id,
+                    batchId: r.batch_id,
+                    clientGstin: r.client_gstin,
+                    returnPeriod: r.return_period,
+                    section: r.section,
+                    ctin: r.ctin,
+                    supplierName: r.supplier_name,
+                    invoiceNo: r.inum,
+                    invoiceDate: r.idt,
+                    invoiceType: r.inv_typ,
+                    pos: r.pos,
+                    reverseCharge: r.rchrg,
+                    itcAvailable: r.itc_available,
+                    itcReason: r.itc_reason,
+                    txval: Math.round(((parseFloat(r.txval) || 0) + Number.EPSILON) * 100) / 100,
+                    igst: Math.round(((parseFloat(r.igst) || 0) + Number.EPSILON) * 100) / 100,
+                    cgst: Math.round(((parseFloat(r.cgst) || 0) + Number.EPSILON) * 100) / 100,
+                    sgst: Math.round(((parseFloat(r.sgst) || 0) + Number.EPSILON) * 100) / 100,
+                    cess: Math.round(((parseFloat(r.cess) || 0) + Number.EPSILON) * 100) / 100,
+                    totalVal: Math.round(((parseFloat(r.total_val) || 0) + Number.EPSILON) * 100) / 100,
+                    totalTax: Math.round(((parseFloat(r.total_tax) || 0) + Number.EPSILON) * 100) / 100,
+                    targetTable: r.target_table || '4A5',
+                    notes: r.notes || '',
+                    allocatedBy: r.allocated_by || 'User',
+                    allocatedAt: r.allocated_at || null
+                };
+
+                summary.totalInvoices += 1;
+                summary.totalTaxable += inv.txval;
+                summary.totalTax += inv.totalTax;
+
+                switch (inv.targetTable) {
+                    case '4A5':
+                        addToCategory(summary.eligible_4a5, inv);
+                        break;
+                    case '4B2':
+                        addToCategory(summary.temporary_4b2, inv);
+                        break;
+                    case '4B1':
+                        addToCategory(summary.permanent_4b1, inv);
+                        break;
+                    case '4D1':
+                        addToCategory(summary.ineligible_4d1, inv);
+                        break;
+                    case '4D2':
+                        addToCategory(summary.ineligible_4d2, inv);
+                        break;
+                    case '4A3':
+                        addToCategory(summary.rcm_4a3, inv);
+                        break;
+                    case '4A1':
+                        addToCategory(summary.import_4a1, inv);
+                        break;
+                    case 'DEFERRED':
+                        addToCategory(summary.deferred, inv);
+                        break;
+                    default:
+                        addToCategory(summary.eligible_4a5, inv);
+                        break;
+                }
+
+                return inv;
+            });
+
+            summary.totalTaxable = Math.round((summary.totalTaxable + Number.EPSILON) * 100) / 100;
+            summary.totalTax = Math.round((summary.totalTax + Number.EPSILON) * 100) / 100;
+            roundCategory(summary.eligible_4a5);
+            roundCategory(summary.temporary_4b2);
+            roundCategory(summary.permanent_4b1);
+            roundCategory(summary.ineligible_4d1);
+            roundCategory(summary.ineligible_4d2);
+            roundCategory(summary.rcm_4a3);
+            roundCategory(summary.import_4a1);
+            roundCategory(summary.deferred);
+
+            resolve({
+                clientGstin: clientGstin.toUpperCase(),
+                returnPeriod,
+                summary,
+                invoices
+            });
+        });
+        });
+    });
+}
+
+export function bulkSaveItcAllocations(db, clientGstin, returnPeriod, allocations) {
+    return new Promise((resolve, reject) => {
+        if (!clientGstin || !returnPeriod || !Array.isArray(allocations)) {
+            return reject(new Error('Invalid arguments for bulkSaveItcAllocations'));
+        }
+
+        if (allocations.length === 0) {
+            return resolve({ success: true, updatedCount: 0 });
+        }
+
+        const now = Date.now();
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+
+            const stmt = db.prepare(`
+                INSERT INTO gstr3b_itc_allocations (
+                    id, client_gstin, return_period, invoice_id,
+                    target_table, notes, allocated_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(client_gstin, return_period, invoice_id) DO UPDATE SET
+                    target_table = excluded.target_table,
+                    notes = excluded.notes,
+                    allocated_by = excluded.allocated_by,
+                    updated_at = excluded.updated_at
+            `);
+
+            for (const item of allocations) {
+                const id = item.id || randomUUID();
+                const invId = item.invoiceId || item.invoice_id || item.id;
+                const target = item.targetTable || item.target_table || '4A5';
+                const notes = item.notes || '';
+                const user = item.allocatedBy || item.allocated_by || 'User';
+                const retPeriod = item.returnPeriod || item.return_period || returnPeriod;
+
+                stmt.run([
+                    id,
+                    clientGstin.toUpperCase(),
+                    retPeriod,
+                    invId,
+                    target,
+                    notes,
+                    user,
+                    now,
+                    now
+                ]);
+            }
+
+            stmt.finalize();
+
+            db.run('COMMIT', (err) => {
+                if (err) {
+                    db.run('ROLLBACK');
+                    return reject(err);
+                }
+                resolve({ success: true, updatedCount: allocations.length });
+            });
         });
     });
 }

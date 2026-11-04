@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { exec } from 'child_process';
 import { initGstr1Database, bulkSaveGstr1Invoices } from './gstr1/db.js';
 import { parseGstr1Excel, parseGstr1Json, parseGstr1Zip } from './gstr1/parsers.js';
 import { runGstr1Autopilot } from './gstr1/autopilot.js';
@@ -11,8 +12,12 @@ const XLSX = xlsxModule.default || xlsxModule;
 /**
  * setupGstr1Routes — Express API controller for GSTR-1 Auto Downloader & Full Year Consolidator
  */
-export default function setupGstr1Routes(app, db) {
+export default function setupGstr1Routes(app, db, authenticateToken = (req, res, next) => next()) {
+    const auth = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/gstr1', auth);
+
     const browserState = { current: null };
+    const activeBrowsers = new Map(); // GSTIN -> { current: Browser }
 
     // Initialize Database Tables & Indexes
     initGstr1Database(db);
@@ -360,9 +365,10 @@ export default function setupGstr1Routes(app, db) {
         db.all(query, params, (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
             if (period && period !== 'ALL') {
+                const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
                 db.get(
-                    `SELECT * FROM gstr1_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ?)`,
-                    [gstin.toUpperCase(), period, `%${period}%`],
+                    `SELECT * FROM gstr1_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?) ORDER BY updated_at DESC LIMIT 1`,
+                    [gstin.toUpperCase(), period, `%${period}%`, `%${mMatch}%`],
                     (bErr, batchRow) => {
                         res.json({
                             success: true,
@@ -384,9 +390,9 @@ export default function setupGstr1Routes(app, db) {
         });
     });
 
-    // ─── 4. PLAYWRIGHT AUTOPILOT GSTR-1 DOWNLOADER ──────────────────────────
+    // ─── 4. PLAYWRIGHT AUTOPILOT GSTR-1 DOWNLOADER (OFFLINE JSON/EXCEL) ────
     app.post('/api/gstr1/portal-sync-browser', async (req, res) => {
-        const { gstin, returnPeriod, financialYear, isFullYear, targetMonth, isDownloadOnly } = req.body;
+        const { gstin, returnPeriod, financialYear, isFullYear, targetMonth, isDownloadOnly, downloadFormat } = req.body;
         if (!gstin) {
             return res.status(400).json({ success: false, error: 'gstin required' });
         }
@@ -399,6 +405,29 @@ export default function setupGstr1Routes(app, db) {
             isFullYear: Boolean(isFullYear),
             targetMonth: targetMonth || null,
             isDownloadOnly: Boolean(isDownloadOnly),
+            downloadFormat: downloadFormat || 'JSON',
+            req,
+            res,
+            browserState
+        });
+    });
+
+    // ─── 4B. PLAYWRIGHT AUTOPILOT GSTR-1 PDF DOWNLOADER & INJECTOR ──────────
+    app.post('/api/gstr1/portal-sync-pdf', async (req, res) => {
+        const { gstin, returnPeriod, financialYear, targetMonth } = req.body;
+        if (!gstin) {
+            return res.status(400).json({ success: false, error: 'gstin required' });
+        }
+
+        await runGstr1Autopilot({
+            db,
+            gstin,
+            returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
+            financialYear,
+            isFullYear: false,
+            targetMonth: targetMonth || null,
+            isDownloadOnly: true,
+            downloadFormat: 'PDF',
             req,
             res,
             browserState
@@ -448,7 +477,8 @@ export default function setupGstr1Routes(app, db) {
 
                                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                                 res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                                res.send(buf);
+                                res.setHeader('Content-Length', buf.length);
+                                res.end(buf);
                             } catch (xErr) {
                                 res.status(500).json({ success: false, error: xErr.message });
                             }
@@ -549,6 +579,75 @@ export default function setupGstr1Routes(app, db) {
                 });
             });
         });
+    });
+
+    // ─── 8. CANCEL / ABORT ACTIVE AUTOPILOT BROWSER SESSION ───────────────────
+    app.post('/api/gstr1/cancel', async (req, res) => {
+        try {
+            const g = String(req.body?.gstin || req.body?.client_gstin || '').trim().toUpperCase();
+            if (g && activeBrowsers.has(g)) {
+                const targetState = activeBrowsers.get(g);
+                if (targetState && targetState.current) {
+                    console.log(`[GSTR-1 Autopilot] Force closing browser for ${g} on user cancel request`);
+                    await targetState.current.close().catch(() => {});
+                    targetState.current = null;
+                }
+                activeBrowsers.delete(g);
+            } else if (browserState && browserState.current) {
+                console.log('[GSTR-1 Autopilot] Force closing fallback browser on user cancel request');
+                await browserState.current.close().catch(() => {});
+                browserState.current = null;
+            }
+            const p = String(req.body?.returnPeriod || req.body?.period || '').trim();
+            const m = String(req.body?.month || req.body?.selectedMonth || (p.match(/^[a-zA-Z]+/)?.[0]) || '').trim();
+
+            if (g && (p || m)) {
+                await new Promise((resolve) => {
+                    const monthPattern = m ? `%${m}%` : `%${p}%`;
+                    db.run(
+                        `UPDATE gstr1_batches 
+                         SET status = 'CANCELLED', requested_at = NULL, updated_at = ? 
+                         WHERE UPPER(client_gstin) = ? 
+                           AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?)`,
+                        [Date.now(), g, p, `%${p}%`, monthPattern],
+                        (uErr) => {
+                            if (uErr) console.warn('[GSTR-1 Autopilot] Note: batch cancel update warning:', uErr.message);
+                            resolve();
+                        }
+                    );
+                });
+            }
+            res.json({ success: true, message: 'Browser session terminated and GSTR-1 auto-download cancelled' });
+        } catch (e) {
+            console.error('[GSTR-1 Autopilot] Error canceling browser session:', e.message);
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // ─── 9. BRING BROWSER WINDOW TO FRONT (MANUAL OVERRIDE) ────────────────────
+    app.post('/api/gstr1/bring-to-front', (req, res) => {
+        try {
+            const browserPid = browserState.current && typeof browserState.current.process === 'function' ? browserState.current.process()?.pid : null;
+            let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
+            if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+            psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+            psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+            psParts.push(`$wshell.AppActivate('Login');`);
+            psParts.push(`$wshell.AppActivate('Chrome');`);
+            psParts.push(`$wshell.AppActivate('Chromium');`);
+            const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
+            exec(psCmd, () => {});
+
+            if (browserPid) {
+                const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
+                if (fs.existsSync(bringPath)) {
+                    exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {});
+                }
+            }
+            res.json({ success: true, message: 'Window focus triggered' });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
     });
 }
 

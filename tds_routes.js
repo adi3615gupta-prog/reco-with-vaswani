@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-export default function setupTdsRoutes(app, db) {
+export default function setupTdsRoutes(app, db, authenticateToken = (req, res, next) => next()) {
     // Initialize TDS Tables
     db.serialize(() => {
         // 1. TDS rules master table
@@ -1511,8 +1511,14 @@ export default function setupTdsRoutes(app, db) {
         );
     });
 
-    // API: Reset all TDS Module Tables (except TDS Rules)
-    app.post('/api/tds/reset', (req, res) => {
+    // API: Reset all TDS Module Tables (except TDS Rules) - Admin Only with Confirmation
+    app.post('/api/tds/reset', authenticateToken, (req, res) => {
+        if (!req.user || req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Unauthorized: Admin role required to reset TDS data' });
+        }
+        if (req.body?.confirm !== 'RESET_ALL_TDS_DATA') {
+            return res.status(400).json({ success: false, error: 'Confirmation payload missing. Please provide confirm: "RESET_ALL_TDS_DATA"' });
+        }
         db.serialize(() => {
             db.run('DELETE FROM Recon_Results', (err) => { if (err) console.error("Reset Recon_Results error:", err); });
             db.run('DELETE FROM Tally_Transactions', (err) => { if (err) console.error("Reset Tally_Transactions error:", err); });
@@ -1520,7 +1526,7 @@ export default function setupTdsRoutes(app, db) {
             db.run('DELETE FROM Tally_Group_Mappings', (err) => { if (err) console.error("Reset Tally_Group_Mappings error:", err); });
             db.run('DELETE FROM Party_Masters', [], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
+                res.json({ success: true, message: 'All TDS module transaction tables reset successfully' });
             });
         });
     });
@@ -1529,17 +1535,15 @@ export default function setupTdsRoutes(app, db) {
     // LOCAL PC RECONCILIATION SNAPSHOTS (Offline Local Disk & SQLite Storage)
     // =========================================================================
 
-    // List all saved local sessions
+    // List all saved local sessions (Lazy Loading: Only metadata & summary, payload loaded on-demand)
     app.get('/api/tds/local-snapshots', (req, res) => {
-        db.all('SELECT id, company_name, financial_year, created_at, machine_name, summary_json, payload_json FROM Local_Snapshots ORDER BY created_at DESC', [], (err, rows) => {
+        db.all('SELECT id, company_name, financial_year, created_at, machine_name, summary_json FROM Local_Snapshots ORDER BY created_at DESC', [], (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json(rows.map(r => {
                 let summaryObj = null;
-                let payloadObj = null;
                 try { summaryObj = r.summary_json ? JSON.parse(r.summary_json) : null; } catch(e) {}
-                try { payloadObj = r.payload_json ? JSON.parse(r.payload_json) : null; } catch(e) {}
-                const modType = payloadObj?.moduleType || summaryObj?.moduleType || 'gst-reco';
-                const modName = payloadObj?.moduleName || summaryObj?.moduleName || (modType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+                const modType = summaryObj?.moduleType || 'gst-reco';
+                const modName = summaryObj?.moduleName || (modType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
                 return {
                     id: r.id,
                     name: `Snapshot_${(r.company_name || 'Company').replace(/\s+/g, '_')}_${r.financial_year || ''}_${r.created_at ? r.created_at.substring(0,10) : ''}.json`,
@@ -1555,8 +1559,28 @@ export default function setupTdsRoutes(app, db) {
         });
     });
 
+    // Helper to get active Reco History directory from app_config or fallback
+    function getActiveRecoHistoryDir() {
+        return new Promise((resolve) => {
+            db.get("SELECT value FROM app_config WHERE key = 'reco_history_path'", [], (err, row) => {
+                if (!err && row && row.value) {
+                    const customPath = path.resolve(String(row.value).trim().replace(/^["']|["']$/g, ''));
+                    try {
+                        if (!fs.existsSync(customPath)) fs.mkdirSync(customPath, { recursive: true });
+                        return resolve(customPath);
+                    } catch (e) {}
+                }
+                const defaultPath = path.resolve(process.env.USER_DATA_PATH || '.', 'reco_history');
+                if (!fs.existsSync(defaultPath)) {
+                    try { fs.mkdirSync(defaultPath, { recursive: true }); } catch (e) {}
+                }
+                resolve(defaultPath);
+            });
+        });
+    }
+
     // Save session snapshot locally to SQLite & disk
-    app.post('/api/tds/local-snapshots/save', (req, res) => {
+    app.post('/api/tds/local-snapshots/save', async (req, res) => {
         try {
             const { payload } = req.body;
             if (!payload || !payload.companyName) {
@@ -1567,22 +1591,24 @@ export default function setupTdsRoutes(app, db) {
             const fy = payload.financialYear || '2024-25';
             const createdAt = payload.createdAt || new Date().toISOString();
             const machineName = payload.machineName || os.hostname();
-            const summaryJson = JSON.stringify(payload.summary || {});
+            const summaryObj = { ...(payload.summary || {}) };
+            summaryObj.moduleType = payload.moduleType || summaryObj.moduleType || 'gst-reco';
+            summaryObj.moduleName = payload.moduleName || summaryObj.moduleName || (summaryObj.moduleType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+            const summaryJson = JSON.stringify(summaryObj);
             const payloadJson = JSON.stringify(payload);
 
             db.run(
                 `INSERT OR REPLACE INTO Local_Snapshots (id, company_name, financial_year, created_at, machine_name, summary_json, payload_json)
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 [snapshotId, companyName, fy, createdAt, machineName, summaryJson, payloadJson],
-                function (err) {
+                async function (err) {
                     if (err) {
                         console.error('Save Local_Snapshot DB error:', err);
                         return res.status(500).json({ error: err.message });
                     }
 
                     try {
-                        const historyDir = path.join(process.env.USER_DATA_PATH || '.', 'reco_history');
-                        if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
+                        const historyDir = await getActiveRecoHistoryDir();
                         const filePath = path.join(historyDir, `${snapshotId}.json`);
                         fs.writeFileSync(filePath, payloadJson, 'utf8');
                     } catch (fsErr) {
@@ -1606,11 +1632,12 @@ export default function setupTdsRoutes(app, db) {
 
     // Get full payload to restore local session
     app.get('/api/tds/local-snapshots/:id', (req, res) => {
-        db.get('SELECT payload_json FROM Local_Snapshots WHERE id = ?', [req.params.id], (err, row) => {
+        db.get('SELECT payload_json FROM Local_Snapshots WHERE id = ?', [req.params.id], async (err, row) => {
             if (err) return res.status(500).json({ error: err.message });
             if (!row || !row.payload_json) {
                 try {
-                    const filePath = path.join(process.env.USER_DATA_PATH || '.', 'reco_history', `${req.params.id}.json`);
+                    const historyDir = await getActiveRecoHistoryDir();
+                    const filePath = path.join(historyDir, `${req.params.id}.json`);
                     if (fs.existsSync(filePath)) {
                         const fileContent = fs.readFileSync(filePath, 'utf8');
                         return res.json(JSON.parse(fileContent));
@@ -1628,10 +1655,11 @@ export default function setupTdsRoutes(app, db) {
 
     // Delete local snapshot
     app.delete('/api/tds/local-snapshots/:id', (req, res) => {
-        db.run('DELETE FROM Local_Snapshots WHERE id = ?', [req.params.id], function (err) {
+        db.run('DELETE FROM Local_Snapshots WHERE id = ?', [req.params.id], async function (err) {
             if (err) return res.status(500).json({ error: err.message });
             try {
-                const filePath = path.join(process.env.USER_DATA_PATH || '.', 'reco_history', `${req.params.id}.json`);
+                const historyDir = await getActiveRecoHistoryDir();
+                const filePath = path.join(historyDir, `${req.params.id}.json`);
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             } catch (fErr) {}
             res.json({ success: true });

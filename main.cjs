@@ -102,7 +102,6 @@ function initializeUpdater() {
 }
 
 let mainWindow = null;
-let copilotWindow = null;
 let tray = null;
 let isQuitting = false;
 let backendProcess = null;
@@ -357,12 +356,6 @@ function updateTrayContextMenu() {
           }
         }
       },
-      {
-        label: 'Toggle Sourav AI Copilot (Ctrl+Alt+S)',
-        click: () => {
-          toggleCopilotWindow();
-        }
-      },
       { type: 'separator' },
       {
         label: 'Start with Windows (Background)',
@@ -423,98 +416,6 @@ function createTray() {
   }
 }
 
-async function createCopilotWindow() {
-  if (copilotWindow) return;
-
-  try {
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
-    
-    // Initial compact floating orb at bottom right
-    const orbSize = 64;
-    const initialX = Math.max(0, screenW - orbSize - 24);
-    const initialY = Math.max(0, screenH - orbSize - 40);
-
-    const iconPath = getAppIconPath();
-
-    copilotWindow = new BrowserWindow({
-      width: orbSize,
-      height: orbSize,
-      x: initialX,
-      y: initialY,
-      frame: false,
-      transparent: true,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      resizable: false,
-      focusable: true,
-      hasShadow: false,
-      backgroundColor: '#00000000',
-      icon: iconPath,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        webSecurity: true,
-        preload: path.join(__dirname, 'preload.js')
-      }
-    });
-
-    copilotWindow.setAlwaysOnTop(true, 'screen-saver');
-    copilotWindow.setVisibleOnAllWorkspaces(true);
-
-    const baseUrl = await getFrontendBaseUrl();
-    const copilotUrl = baseUrl.startsWith('file://')
-      ? `${baseUrl}#/copilot-desktop`
-      : `${baseUrl}/#/copilot-desktop`;
-
-    logMain(`Loading copilotWindow from: ${copilotUrl}`);
-    await copilotWindow.loadURL(copilotUrl);
-
-    copilotWindow.on('closed', () => {
-      copilotWindow = null;
-    });
-
-    logMain('copilotWindow created and loaded successfully (always-on-top desktop overlay)');
-  } catch (err) {
-    logMain(`createCopilotWindow error: ${err.message}`);
-  }
-}
-
-async function toggleCopilotWindow() {
-  if (!copilotWindow) {
-    await createCopilotWindow();
-    return;
-  }
-  if (!copilotWindow.isVisible()) {
-    copilotWindow.show();
-  }
-  copilotWindow.focus();
-  copilotWindow.webContents.send('copilot_toggle_state');
-}
-
-function registerGlobalHotkeys() {
-  try {
-    const hotkeys = ['CommandOrControl+Alt+S', 'CommandOrControl+Shift+S'];
-    for (const hotkey of hotkeys) {
-      try {
-        const registered = globalShortcut.register(hotkey, () => {
-          logMain(`Global hotkey ${hotkey} triggered.`);
-          toggleCopilotWindow();
-        });
-        if (registered) {
-          logMain(`Global hotkey ${hotkey} registered successfully.`);
-        } else {
-          logMain(`Could not register global hotkey ${hotkey}`);
-        }
-      } catch (e) {
-        logMain(`Error registering ${hotkey}: ${e.message}`);
-      }
-    }
-  } catch (err) {
-    logMain(`registerGlobalHotkeys error: ${err.message}`);
-  }
-}
-
 app.whenReady().then(async () => {
   logMain('app.whenReady triggered');
   
@@ -555,8 +456,6 @@ app.whenReady().then(async () => {
 
   createTray();
   await createWindow(currentAppMode);
-  await createCopilotWindow();
-  registerGlobalHotkeys();
 
   // Initialize updater after window is ready
   initializeUpdater();
@@ -741,35 +640,51 @@ ipcMain.handle('scan_network', async () => {
 
     let activeServers = [];
     let pending = 255;
-    let timeout = setTimeout(() => resolve(activeServers[0] || null), 2000); // 2 second max timeout
+    let timeout = setTimeout(() => resolve(activeServers[0] || null), 3000);
 
-    for (let i = 1; i <= 255; i++) {
-        const ip = `${subnet}.${i}`;
-        const req = http.get(`http://${ip}:3001/api/ping`, { timeout: 1000 }, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try {
-                    const json = JSON.parse(data);
-                    if (json.isServer) activeServers.push({ ip, pcName: json.pcName });
-                } catch (e) {}
-                checkDone();
-            });
-        }).on('error', () => checkDone()).on('timeout', () => { req.destroy(); checkDone(); });
-        
-        function checkDone() {
-            pending--;
-            if (pending === 0) {
-                clearTimeout(timeout);
-                resolve(activeServers[0] || null);
-            }
+    const checkDone = () => {
+      pending--;
+      if (pending === 0) {
+        clearTimeout(timeout);
+        resolve(activeServers[0] || null);
+      }
+    };
+
+    const pingHost = (i) => {
+      const ip = `${subnet}.${i}`;
+      const req = http.get(`http://${ip}:3001/api/ping`, { timeout: 1000 }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.isServer) activeServers.push({ ip, pcName: json.pcName });
+          } catch (e) {}
+          checkDone();
+        });
+      }).on('error', () => checkDone()).on('timeout', () => { req.destroy(); checkDone(); });
+    };
+
+    // Stagger in batches of 30 to prevent socket flood spikes
+    const BATCH_SIZE = 30;
+    for (let batch = 0; batch < Math.ceil(255 / BATCH_SIZE); batch++) {
+      setTimeout(() => {
+        const start = batch * BATCH_SIZE + 1;
+        const end = Math.min(255, start + BATCH_SIZE - 1);
+        for (let i = start; i <= end; i++) {
+          pingHost(i);
         }
+      }, batch * 40);
     }
   });
 });
 
 // --- Tally Integration ---
-ipcMain.handle('fetch_tally_data', async (event, { port = 9000, xmlPayload }) => {
+ipcMain.handle('fetch_tally_data', async (event, params) => {
+  const { port = 9000, xmlPayload } = params || {};
+  if (!xmlPayload || typeof xmlPayload !== 'string') {
+    return Promise.reject('Invalid or missing xmlPayload string');
+  }
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
@@ -828,37 +743,8 @@ ipcMain.handle('set_startup_settings', (_event, enabled) => {
   }
 });
 
-ipcMain.on('resize_copilot', (_event, { expanded }) => {
-  if (!copilotWindow) return;
-  try {
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
-    if (expanded) {
-      const width = 420;
-      const height = 640;
-      copilotWindow.setBounds({
-        x: Math.max(0, screenW - width - 20),
-        y: Math.max(0, screenH - height - 30),
-        width,
-        height
-      });
-    } else {
-      const orbSize = 64;
-      copilotWindow.setBounds({
-        x: Math.max(0, screenW - orbSize - 24),
-        y: Math.max(0, screenH - orbSize - 40),
-        width: orbSize,
-        height: orbSize
-      });
-    }
-  } catch (e) {
-    logMain(`resize_copilot error: ${e.message}`);
-  }
-});
-
-ipcMain.on('toggle_copilot', () => {
-  toggleCopilotWindow();
-});
+ipcMain.on('resize_copilot', () => {});
+ipcMain.on('toggle_copilot', () => {});
 
 ipcMain.on('navigate_app', (_event, data) => {
   logMain(`navigate_app bridge invoked: ${JSON.stringify(data)}`);

@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 import {
     initGstNoticesDatabase,
     upsertNotice,
@@ -8,12 +9,16 @@ import {
     saveAttachment,
     getAttachmentsByNoticeId,
     saveNoticeReply,
-    getNoticesSummary
+    getNoticesSummary,
+    deleteNotice,
+    clearDemoNotices
 } from './notices/db.js';
 import { runNoticesAutopilot } from './notices/autopilot.js';
 
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
 export function setupNoticesRoutes(app, db) {
-    const browserState = { current: null };
+    const activeBrowsers = new Map();
 
     // Initialize Database Tables & Indexes
     initGstNoticesDatabase(db);
@@ -24,6 +29,17 @@ export function setupNoticesRoutes(app, db) {
         if (!gstin) {
             return res.status(400).json({ success: false, error: 'gstin required' });
         }
+        const clientKey = String(gstin).trim().toUpperCase();
+        const clientBrowserState = {
+            get current() {
+                return activeBrowsers.get(clientKey) || null;
+            },
+            set current(b) {
+                if (b) activeBrowsers.set(clientKey, b);
+                else activeBrowsers.delete(clientKey);
+            }
+        };
+
         runNoticesAutopilot({
             db,
             gstin,
@@ -31,17 +47,27 @@ export function setupNoticesRoutes(app, db) {
             portal_password,
             req,
             res,
-            browserState
+            browserState: clientBrowserState
         });
     });
 
     // ─── 0.1 CANCEL RUNNING AUTOPILOT ──────────────────────────────────────
     app.post('/api/notices/autopilot/cancel', async (req, res) => {
         try {
-            if (browserState.current) {
-                console.log('[Notices API] Cancelling active Playwright browser process');
-                await browserState.current.close().catch(() => {});
-                browserState.current = null;
+            const { gstin } = req.body || {};
+            const clientKey = gstin ? String(gstin).trim().toUpperCase() : null;
+
+            if (clientKey && activeBrowsers.has(clientKey)) {
+                console.log(`[Notices API] Cancelling active Playwright browser process for GSTIN: ${clientKey}`);
+                const b = activeBrowsers.get(clientKey);
+                activeBrowsers.delete(clientKey);
+                if (b) await b.close().catch(() => {});
+            } else if (!clientKey && activeBrowsers.size > 0) {
+                for (const [key, b] of activeBrowsers.entries()) {
+                    console.log(`[Notices API] Cancelling active Playwright browser process for GSTIN: ${key}`);
+                    activeBrowsers.delete(key);
+                    if (b) await b.close().catch(() => {});
+                }
             }
             res.json({ success: true, message: 'Autopilot session cancelled' });
         } catch (e) {
@@ -134,7 +160,26 @@ export function setupNoticesRoutes(app, db) {
             if (!fs.existsSync(filePath)) {
                 return res.status(404).json({ success: false, error: 'File does not exist on disk' });
             }
-            res.download(filePath, row.file_name);
+            const stats = fs.statSync(filePath);
+            if (stats.size === 0) {
+                return res.status(422).json({ success: false, error: 'File is empty (0 bytes). Download was interrupted or incomplete.' });
+            }
+
+            const rawName = row.file_name || path.basename(filePath);
+            const ext = path.extname(rawName).toLowerCase() || (row.file_type === 'PDF' ? '.pdf' : row.file_type === 'ZIP' ? '.zip' : '');
+            const finalName = rawName.includes('.') ? rawName : `${rawName}${ext}`;
+
+            let contentType = 'application/octet-stream';
+            if (ext === '.pdf' || row.file_type === 'PDF') contentType = 'application/pdf';
+            else if (ext === '.xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            else if (ext === '.zip' || row.file_type === 'ZIP') contentType = 'application/zip';
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', stats.size);
+            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(finalName)}"`);
+
+            const readStream = fs.createReadStream(filePath);
+            readStream.pipe(res);
         });
     });
 
@@ -211,6 +256,152 @@ export function setupNoticesRoutes(app, db) {
             res.send(buffer);
         } catch (err) {
             console.error('[Notices API] Error exporting annexure:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 9. UPLOAD NOTICE PDF / DOCUMENT & EXTRACT TEXT ────────────────────────
+    app.post('/api/notices/upload-pdf', upload.single('file'), async (req, res) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ success: false, error: 'No notice file provided' });
+            }
+
+            const fileName = req.file.originalname || 'Notice_Document.pdf';
+            const fileBuffer = req.file.buffer;
+            let extractedText = '';
+
+            if (fileName.toLowerCase().endsWith('.pdf') || req.file.mimetype === 'application/pdf') {
+                try {
+                    const pdfMod = await import('pdf-parse');
+                    const PDFParseClass = pdfMod.PDFParse || pdfMod.default?.PDFParse;
+                    if (PDFParseClass) {
+                        const parser = new PDFParseClass({ data: fileBuffer });
+                        extractedText = await parser.getText();
+                    } else if (typeof pdfMod.default === 'function') {
+                        const parsed = await pdfMod.default(fileBuffer);
+                        extractedText = parsed.text || '';
+                    } else {
+                        extractedText = fileBuffer.toString('utf-8');
+                    }
+                } catch (pdfErr) {
+                    console.warn('[Notices API] pdf-parse warning, attempting utf-8 stream fallback:', pdfErr.message);
+                    extractedText = fileBuffer.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ');
+                }
+            } else {
+                extractedText = fileBuffer.toString('utf-8');
+            }
+
+            // Extract GSTINs, sections, and amounts heuristically
+            const gstinMatch = extractedText.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b/);
+            const refMatch = extractedText.match(/\b(?:Reference|Ref|Notice No|ARN)[\s:-]*([A-Z0-9\/-]{8,30})\b/i);
+            const dinMatch = extractedText.match(/\bDIN[\s:-]*([0-9A-Z]{15,25})\b/i);
+            const rupeeMatch = extractedText.match(/₹\s*([0-9,]+)/);
+
+            const detectedGstin = gstinMatch ? gstinMatch[0] : (req.body.gstin || '27AAFCV1234A1Z5');
+            const detectedRef = refMatch ? refMatch[1] : `NOTICE-${Date.now()}`;
+            const detectedDin = dinMatch ? dinMatch[1] : '';
+            const detectedAmount = rupeeMatch ? parseInt(rupeeMatch[1].replace(/,/g, ''), 10) : 500000;
+
+            const isAsmt = /ASMT-?10|Section\s*61|Rule\s*99/i.test(extractedText);
+            const isDrc01b = /DRC-?01B|Rule\s*88C/i.test(extractedText);
+            const noticeType = isAsmt ? 'ASMT-10' : (isDrc01b ? 'DRC-01B' : 'DRC-01');
+
+            const newNotice = {
+                id: `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                client_gstin: detectedGstin,
+                portal_source: 'PDF_UPLOAD',
+                notice_type: noticeType,
+                form_description: `Uploaded ${noticeType} Notice`,
+                reference_no: detectedRef,
+                din: detectedDin,
+                financial_year: '2023-24',
+                tax_period: 'Annual',
+                issue_date: new Date().toISOString().split('T')[0],
+                due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+                issuing_officer: 'The Proper Officer',
+                issuing_jurisdiction: 'Jurisdictional GST Circle',
+                section_cited: isAsmt ? 'Section 61' : 'Section 73',
+                tax_demanded: detectedAmount,
+                interest_demanded: Math.round(detectedAmount * 0.25),
+                penalty_demanded: 0,
+                total_demanded: Math.round(detectedAmount * 1.25),
+                status: 'PENDING_REPLY',
+                raw_notice_text: extractedText
+            };
+
+            await upsertNotice(db, newNotice);
+
+            res.json({
+                success: true,
+                notice: newNotice,
+                rawText: extractedText,
+                message: 'Notice PDF processed and saved to local database.'
+            });
+        } catch (err) {
+            console.error('[Notices API] Error processing PDF upload:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 10. SAVE / LOAD PRELOADED DEMO NOTICE ────────────────────────────────
+    app.post('/api/notices/save-demo', async (req, res) => {
+        try {
+            const demo = req.body;
+            if (!demo || !demo.clientGstin || !demo.referenceNo) {
+                return res.status(400).json({ success: false, error: 'Invalid demo notice payload' });
+            }
+
+            const noticeRecord = {
+                id: demo.id || `demo_${Date.now()}`,
+                client_gstin: demo.clientGstin,
+                portal_source: 'DEMO_SIMULATOR',
+                notice_type: demo.formCode || 'ASMT-10',
+                form_description: demo.title,
+                reference_no: demo.referenceNo,
+                din: demo.din || '',
+                financial_year: demo.financialYear || '2018-19',
+                tax_period: demo.taxPeriod || 'Annual',
+                issue_date: demo.issueDate,
+                due_date: demo.dueDate,
+                issuing_officer: demo.issuingOfficer,
+                issuing_jurisdiction: demo.jurisdiction,
+                section_cited: demo.statutorySection,
+                tax_demanded: demo.taxDemanded || 0,
+                interest_demanded: demo.interestDemanded || 0,
+                penalty_demanded: demo.penaltyDemanded || 0,
+                total_demanded: demo.totalDemanded || 0,
+                status: 'PENDING_REPLY',
+                raw_notice_text: demo.rawText
+            };
+
+            await upsertNotice(db, noticeRecord);
+            res.json({ success: true, notice: noticeRecord });
+        } catch (err) {
+            console.error('[Notices API] Error saving demo notice:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 11. DELETE NOTICE ─────────────────────────────────────────────────────
+    app.delete('/api/notices/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await deleteNotice(db, id);
+            res.json({ success: true, ...result });
+        } catch (err) {
+            console.error('[Notices API] Error deleting notice:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 12. CLEAR ALL DEMO NOTICES ───────────────────────────────────────────
+    app.post('/api/notices/clear-demos', async (req, res) => {
+        try {
+            const result = await clearDemoNotices(db);
+            res.json({ success: true, ...result, message: 'All demo simulator records removed from database.' });
+        } catch (err) {
+            console.error('[Notices API] Error clearing demo notices:', err);
             res.status(500).json({ success: false, error: err.message });
         }
     });

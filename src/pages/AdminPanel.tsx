@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, User, Lock, EyeOff, Eye, ShieldBan, ShieldAlert, Trash2, Activity, Network, MonitorSmartphone, Globe, Clock, Video, MonitorPlay, MessageSquare, FileSearch, CloudDownload, LogOut, X, ArrowRight, Key, Unlock, Zap, Power, RefreshCw, Server, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Plus, Minus, User, Lock, EyeOff, Eye, ShieldBan, ShieldAlert, Trash2, Activity, Network, MonitorSmartphone, Globe, Clock, Video, MonitorPlay, MessageSquare, FileSearch, CloudDownload, LogOut, X, ArrowRight, Key, Unlock, Zap, Power, RefreshCw, Server, AlertCircle, Briefcase, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { getApiBase, getAuthToken } from '@/lib/api';
@@ -23,12 +23,34 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, themeStyles }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<'network' | 'audit' | 'analytics'>('network');
+  const [newName, setNewName] = useState('');
+  const [newDesignation, setNewDesignation] = useState('');
+  const [newDepartment, setNewDepartment] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('user');
   const [showNewPass, setShowNewPass] = useState(false);
-  const [managedUsers, setManagedUsers] = useState<{id: number, username: string, role: string}[]>([]);
-  const [serialKeys, setSerialKeys] = useState<{id: number, key: string, is_active: number, device_id: string | null, key_type: string}[]>([]);
+  const [newKeySeats, setNewKeySeats] = useState(3);
+  const [managedUsers, setManagedUsers] = useState<Array<{
+    id: any;
+    username: string;
+    name?: string;
+    designation?: string;
+    department?: string;
+    role: string;
+    is_active?: number;
+    status?: string;
+    current_device_id?: string | null;
+  }>>([]);
+  const [serialKeys, setSerialKeys] = useState<Array<{
+    id: any;
+    key: string;
+    is_active: number;
+    device_id: string | null;
+    key_type: string;
+    max_devices?: number;
+    bound_devices?: string[];
+  }>>([]);
   const [activeSessionsList, setActiveSessionsList] = useState<ActiveSession[]>([]);
   const [bannedUsers, setBannedUsers] = useState<Record<string, boolean>>({});
   const [anydeskIds, setAnydeskIds] = useState<Record<string, string>>(() => {
@@ -131,7 +153,14 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${getAuthToken()}`
         },
-        body: JSON.stringify({ username: uname, password: newPassword, role: newRole })
+        body: JSON.stringify({
+          name: newName.trim() || uname,
+          designation: newDesignation.trim(),
+          department: newDepartment.trim(),
+          username: uname,
+          password: newPassword,
+          role: newRole
+        })
       });
       
       if (!res.ok) {
@@ -140,10 +169,13 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
         return;
       }
 
+      setNewName('');
+      setNewDesignation('');
+      setNewDepartment('');
       setNewUsername('');
       setNewPassword('');
       setNewRole('user');
-      toast.success(`User '${uname}' created successfully with role '${newRole}'!`);
+      toast.success(`User '${uname}' created successfully!`);
       // Refresh user list immediately
       const res2 = await fetch(`${getApiBase()}/api/users`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
       const updatedUsers = await res2.json();
@@ -169,12 +201,67 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
     } catch (err) { toast.error('Failed to update key status'); }
   };
 
+  const handleUpdateKeySeats = async (key: string, currentSeats: number, delta: number) => {
+    const newSeats = Math.max(1, currentSeats + delta);
+    try {
+      const res = await fetch(`${getApiBase()}/api/keys/${key}/seats`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({ max_devices: newSeats })
+      });
+      if (res.ok) {
+        setSerialKeys(prev => prev.map(k => k.key === key ? { ...k, max_devices: newSeats } : k));
+        toast.success(`Key ${key} seats updated to ${newSeats} PCs`);
+      } else {
+        toast.error('Failed to update PC seats');
+      }
+    } catch {
+      toast.error('Network error updating seats');
+    }
+  };
+
+  const handleCreateMultiPcKey = async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({ max_devices: newKeySeats, key_type: 'PRO' })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`Created Multi-PC Key: ${data.key} (${data.max_devices} PCs)`);
+        fetchStaticData();
+      } else {
+        toast.error(data.error || 'Failed to create key');
+      }
+    } catch {
+      toast.error('Network error creating key');
+    }
+  };
+
   const handleUnbindKey = async (key: string) => {
     try {
       await fetch(`${getApiBase()}/api/keys/${key}/unbind`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
-      setSerialKeys(prev => prev.map(k => k.key === key ? { ...k, device_id: null } : k));
-      toast.success(`Key unbound. It can now be used on a new PC.`);
+      setSerialKeys(prev => prev.map(k => k.key === key ? { ...k, device_id: null, bound_devices: [] } : k));
+      toast.success(`Key ${key} reset! All bound PC seats cleared.`);
     } catch (err) { toast.error('Failed to unbind key'); }
+  };
+
+  const handleReleaseUserSession = async (uname: string) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/users/${uname}/release-session`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      });
+      if (res.ok) {
+        setManagedUsers(prev => prev.map(u => u.username === uname ? { ...u, status: 'offline', current_device_id: null } : u));
+        toast.success(`Active session for '${uname}' released. User can now log in from any PC.`);
+      } else {
+        toast.error('Failed to release session');
+      }
+    } catch {
+      toast.error('Network error releasing session');
+    }
   };
 
   const handleRemoveUser = async (uname: string) => {
@@ -247,7 +334,7 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
     a.href = url;
     a.download = `Reconciliation_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
     toast.success('Audit history exported successfully!');
   };
 
@@ -327,63 +414,282 @@ export default function AdminPanel({ handleLogout, setIsAdmin, setShowHome, them
         <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
           <div className="lg:col-span-1 space-y-6">
             <form onSubmit={handleAddUser} className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl shadow-2xl">
-              <div className="text-center mb-6"><h2 className="text-xl font-bold text-white mb-1 tracking-tight">Access Control</h2><p className="text-xs text-slate-400 font-medium">Create network accounts</p></div>
-              <div className="space-y-4 mb-6">
-                <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="Username" className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 text-sm text-white focus:border-blue-500 outline-none" required /></div>
-                <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type={showNewPass ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password" className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-10 text-sm text-white focus:border-blue-500 outline-none" required /><button type="button" onClick={() => setShowNewPass(!showNewPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">{showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
+              <div className="text-center mb-5">
+                <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Access Control & Staff Directory</h2>
+                <p className="text-xs text-slate-400 font-medium">Create floating network accounts for auditors & staff</p>
+              </div>
+              <div className="space-y-3 mb-5">
+                {/* Full Name */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Full Name *</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input 
+                      type="text" 
+                      value={newName} 
+                      onChange={e => setNewName(e.target.value)} 
+                      placeholder="e.g. Ramesh Vaswani" 
+                      className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 text-xs text-white focus:border-blue-500 outline-none" 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                {/* Designation & Department */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Designation *</label>
+                    <div className="relative">
+                      <Briefcase className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                      <input 
+                        type="text" 
+                        value={newDesignation} 
+                        onChange={e => setNewDesignation(e.target.value)} 
+                        placeholder="e.g. Senior Partner / Article" 
+                        className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-2 text-xs text-white focus:border-blue-500 outline-none" 
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Department *</label>
+                    <div className="relative">
+                      <Building2 className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                      <input 
+                        type="text" 
+                        value={newDepartment} 
+                        onChange={e => setNewDepartment(e.target.value)} 
+                        placeholder="e.g. Statutory Audit" 
+                        className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-2 text-xs text-white focus:border-blue-500 outline-none" 
+                        required 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* User ID / Username */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">User ID / Login Username *</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input 
+                      type="text" 
+                      value={newUsername} 
+                      onChange={e => setNewUsername(e.target.value)} 
+                      placeholder="Username (e.g. ramesh, article1)" 
+                      className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 text-xs text-white focus:border-blue-500 outline-none" 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Password *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input 
+                      type={showNewPass ? "text" : "password"} 
+                      value={newPassword} 
+                      onChange={e => setNewPassword(e.target.value)} 
+                      placeholder="Enter strong password" 
+                      className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-9 text-xs text-white focus:border-blue-500 outline-none" 
+                      required 
+                    />
+                    <button type="button" onClick={() => setShowNewPass(!showNewPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                      {showNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Assign Role */}
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Assign Role</label>
-                  <select value={newRole} onChange={e => setNewRole(e.target.value)} className="w-full h-10 bg-slate-950 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-blue-500 outline-none">
-                    <option value="user">Standard User</option>
-                    <option value="Senior Auditor">Senior Auditor</option>
+                  <select 
+                    value={newRole} 
+                    onChange={e => setNewRole(e.target.value)} 
+                    className="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg px-3 text-xs text-white focus:border-blue-500 outline-none"
+                  >
+                    <option value="user">Standard User / Article</option>
+                    <option value="Senior Auditor">Senior Auditor / Partner</option>
                     <option value="Admin">Administrator</option>
                   </select>
                 </div>
               </div>
-              <button type="submit" className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2">Create Account <Plus className="w-4 h-4" /></button>
+              <button type="submit" className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                Create Network Account <Plus className="w-4 h-4" />
+              </button>
             </form>
+
+            {/* MANAGED USERS DIRECTORY */}
             {managedUsers.length > 0 && (
               <div className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl shadow-2xl">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Managed Users</h3>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {managedUsers.map(({ username: uname, role }) => (
-                    <div key={uname} className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/50">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-slate-200">{uname}</span>
-                        <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider mt-0.5">{role || 'user'}</span>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-blue-400" /> Managed Users ({managedUsers.length})
+                  </h3>
+                  <span className="text-[10px] text-slate-400">Floating Sessions Active</span>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {managedUsers.map((u) => {
+                    const uname = u.username;
+                    const isOnline = u.status === 'online';
+                    return (
+                      <div key={uname} className="flex items-center justify-between bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60 hover:border-slate-700 transition">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-white">{u.name || uname}</span>
+                            <span className={'text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ' + (isOnline ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400')}>
+                              {isOnline ? '🟢 Online' : '⚪ Offline'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <span className="font-mono text-slate-300">@{uname}</span>
+                            {u.designation && <span>• {u.designation}</span>}
+                            {u.department && <span>({u.department})</span>}
+                          </div>
+                          {isOnline && u.current_device_id && (
+                            <div className="text-[9px] text-emerald-400/80 font-mono mt-0.5">
+                              Device: {u.current_device_id.slice(0, 16)}...
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {isOnline && (
+                            <button 
+                              type="button"
+                              onClick={() => handleReleaseUserSession(uname)} 
+                              className="p-1.5 text-amber-400 hover:bg-amber-500/10 rounded-md transition-colors" 
+                              title="Release Session (Allow login on other PC)"
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button 
+                            type="button"
+                            onClick={() => handleBanToggle(uname, !!bannedUsers[uname])} 
+                            className={'p-1.5 rounded-md transition-colors ' + (bannedUsers[uname] ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20' : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10')} 
+                            title={bannedUsers[uname] ? "Unrestrict User" : "Restrict User"}
+                          >
+                            {bannedUsers[uname] ? <ShieldBan className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveUser(uname)} 
+                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors" 
+                            title="Delete User"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => handleBanToggle(uname, !!bannedUsers[uname])} className={`p-1.5 rounded-md transition-colors ${bannedUsers[uname] ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20' : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'}`} title={bannedUsers[uname] ? "Unrestrict User" : "Restrict User"}>{bannedUsers[uname] ? <ShieldBan className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}</button>
-                        <button onClick={() => handleRemoveUser(uname)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors" title="Delete User"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
             
-            {/* LICENSE MANAGEMENT CARD */}
+            {/* MULTI-PC LICENSE MANAGEMENT CARD */}
             <div className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl shadow-2xl mt-6">
-              <div className="text-center mb-5">
-                 <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
-                    <Key className="w-4 h-4 text-amber-400" /> License Management
+              <div className="flex items-center justify-between mb-4">
+                 <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400" /> Multi-PC Serial Keys
                  </h3>
-                 <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1.5">Limit: Unlimited Clients</p>
+                 <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">1 Key &rarr; Multiple PCs</span>
               </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {serialKeys.map(({ key, is_active, device_id, key_type }) => (
-                  <div key={key} className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/50">
-                     <span className={`text-xs font-mono font-bold tracking-wider flex items-center gap-2 ${is_active ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
-                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase">{key_type}</span>
-                       {key}
-                       {device_id && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 uppercase tracking-widest">In Use</span>}
-                     </span>
-                     <div className="flex items-center gap-2">
-                        {device_id && <button onClick={() => handleUnbindKey(key)} className="p-1.5 rounded-md transition-colors text-blue-400 hover:bg-blue-500/10" title="Unbind PC"><Unlock className="w-3.5 h-3.5" /></button>}
-                        <button onClick={() => handleToggleKey(key, is_active)} className={`p-1.5 rounded-md transition-colors ${is_active ? 'text-amber-400 hover:bg-amber-500/10' : 'text-emerald-400 hover:bg-emerald-500/10'}`} title={is_active ? "Revoke Key" : "Activate Key"}>{is_active ? <ShieldBan className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}</button>
-                     </div>
+
+              {/* Generate New Multi-PC Key */}
+              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl mb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Create New Multi-PC Key</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
+                    <span className="text-[10px] text-slate-400 font-semibold">Allowed PCs:</span>
+                    <input 
+                      type="number" 
+                      min={1} 
+                      max={50} 
+                      value={newKeySeats} 
+                      onChange={e => setNewKeySeats(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-12 bg-transparent text-center font-bold text-xs text-white outline-none" 
+                    />
                   </div>
-                ))}
+                  <button 
+                    type="button" 
+                    onClick={handleCreateMultiPcKey}
+                    className="flex-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg px-3 py-1.5 font-bold text-xs flex items-center justify-center gap-1 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Generate Key
+                  </button>
+                </div>
+              </div>
+
+              {/* Serial Keys List */}
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {serialKeys.map((k) => {
+                  const keyStr = k.key;
+                  const maxSeats = k.max_devices !== undefined ? Number(k.max_devices) : 1;
+                  const boundCount = Array.isArray(k.bound_devices) ? k.bound_devices.length : (k.device_id ? 1 : 0);
+                  const isFull = boundCount >= maxSeats;
+
+                  return (
+                    <div key={keyStr} className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/50 hover:border-slate-700 transition">
+                       <div className="flex items-center justify-between">
+                         <span className={'text-xs font-mono font-bold tracking-wider flex items-center gap-1.5 ' + (k.is_active ? 'text-amber-300' : 'text-slate-500 line-through')}>
+                           <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-300 uppercase">{k.key_type || 'PRO'}</span>
+                           {keyStr}
+                         </span>
+                         <div className="flex items-center gap-1">
+                            <button 
+                              type="button" 
+                              onClick={() => handleUnbindKey(keyStr)} 
+                              className="p-1 rounded-md transition text-blue-400 hover:bg-blue-500/10" 
+                              title="Reset all bound PCs (free seats)"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => handleToggleKey(keyStr, k.is_active)} 
+                              className={'p-1 rounded-md transition ' + (k.is_active ? 'text-amber-400 hover:bg-amber-500/10' : 'text-emerald-400 hover:bg-emerald-500/10')} 
+                              title={k.is_active ? "Revoke Key" : "Activate Key"}
+                            >
+                              {k.is_active ? <ShieldBan className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                            </button>
+                         </div>
+                       </div>
+
+                       {/* Multi-PC Seat Controls */}
+                       <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 font-semibold text-[10px]">Seats:</span>
+                            <span className={'font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ' + (isFull ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300')}>
+                              {boundCount} / {maxSeats} PCs Used
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button 
+                              type="button" 
+                              onClick={() => handleUpdateKeySeats(keyStr, maxSeats, -1)}
+                              disabled={maxSeats <= 1}
+                              className="w-5 h-5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-200 flex items-center justify-center transition font-bold"
+                              title="Decrease allowed PCs"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="font-mono text-xs px-1 text-slate-200">{maxSeats}</span>
+                            <button 
+                              type="button" 
+                              onClick={() => handleUpdateKeySeats(keyStr, maxSeats, 1)}
+                              className="w-5 h-5 bg-slate-800 hover:bg-slate-700 rounded text-slate-200 flex items-center justify-center transition font-bold"
+                              title="Increase allowed PCs"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                       </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

@@ -32,13 +32,21 @@ function formatGeneratedTimestamp() {
 }
 
 export function getInvoiceMonthIndex(inv) {
-    const periodStr = String(inv.return_period || '').toLowerCase();
+    const periodStr = String(inv.return_period || '').trim().toLowerCase();
     for (let i = 0; i < MONTH_ORDER.length; i++) {
         if (periodStr.includes(MONTH_ORDER[i].toLowerCase())) return i;
     }
-    const origStr = String(inv.original_period || '').toLowerCase();
+    const origStr = String(inv.original_period || '').trim().toLowerCase();
     for (let i = 0; i < MONTH_ORDER.length; i++) {
         if (origStr.includes(MONTH_ORDER[i].toLowerCase())) return i;
+    }
+    // Check 6-digit numeric portal period MMYYYY (e.g. 112024, 042024, 012025)
+    const numPeriodMatch = periodStr.match(/^(\d{2})(\d{4})$/) || origStr.match(/^(\d{2})(\d{4})$/);
+    if (numPeriodMatch) {
+        const m = parseInt(numPeriodMatch[1], 10);
+        if (m >= 1 && m <= 12) {
+            return (m >= 4) ? (m - 4) : (m + 8);
+        }
     }
     if (inv.idt) {
         const str = String(inv.idt);

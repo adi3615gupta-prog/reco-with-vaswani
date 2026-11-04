@@ -9,6 +9,7 @@ import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 import nodemailer from 'nodemailer';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
+import { getActiveDataPathFromDb, syncCredentialsWithCentral, pushSingleClientToVault } from './credentialsVaultSync.js';
 
 /**
  * Standardizes invoice dates (ISO YYYY-MM-DD or DD/MM/YYYY) to standard DD-MM-YYYY
@@ -39,8 +40,13 @@ function normalizeImsDate(d) {
  * - Automatic dynamic GSTR-2B eligible ITC calculation
  * - Bridge to GSTR-3B Table 4 & official GSTN IMS Action payload generation
  */
-export default function setupImsRoutes(app, db) {
-    let activeBrowserInstance = null;
+export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    const activeBrowsers = new Map();
+
+    async function resolveDataPath() {
+        return await getActiveDataPathFromDb(db, defaultUserDataPath);
+    }
 
     // ─── 1. DATABASE SCHEMA INITIALIZATION ──────────────────────────────────────
     db.serialize(() => {
@@ -1130,11 +1136,20 @@ export default function setupImsRoutes(app, db) {
         });
     });
 
-    // ─── 12. FETCH CLIENT CREDENTIALS VAULT ───────────────────────────────────
-    app.get('/api/ims/credentials', (req, res) => {
+    // ─── 12. FETCH CLIENT CREDENTIALS VAULT (MULTI-PC AUTO-SYNC) ──────────────
+    app.get('/api/ims/credentials', async (req, res) => {
+        try {
+            const dataPath = await resolveDataPath();
+            // Automatically synchronize with central network vault before returning
+            await syncCredentialsWithCentral(db, dataPath);
+        } catch (syncErr) {
+            console.warn('[IMS Credentials] Central vault sync error on GET:', syncErr.message);
+        }
+
         db.all(`
-            SELECT id, gstin, trade_name, legal_name, phone, email, portal_username, portal_password
+            SELECT id, gstin, trade_name, legal_name, phone, email, address, portal_username, portal_password, last_updated
             FROM clients
+            WHERE is_deleted = 0 OR is_deleted IS NULL
             ORDER BY trade_name COLLATE NOCASE ASC
         `, [], (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: 'Database error fetching credentials' });
@@ -1152,9 +1167,9 @@ export default function setupImsRoutes(app, db) {
         });
     });
 
-    // ─── 13. UPDATE SINGLE CLIENT CREDENTIALS ─────────────────────────────────
-    app.post('/api/ims/credentials/update', (req, res) => {
-        const { gstin, portal_username, portal_password, phone, email, trade_name } = req.body;
+    // ─── 13. UPDATE SINGLE CLIENT CREDENTIALS (SYNC TO CENTRAL VAULT) ──────────
+    app.post('/api/ims/credentials/update', authMiddleware, async (req, res) => {
+        const { gstin, portal_username, portal_password, phone, email, address, trade_name, legal_name } = req.body;
         if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
 
         const cleanGstin = String(gstin).trim().toUpperCase();
@@ -1163,61 +1178,110 @@ export default function setupImsRoutes(app, db) {
         const cleanPass = portal_password !== undefined ? String(portal_password).trim() : null;
         const cleanPhone = phone !== undefined ? String(phone).trim() : null;
         const cleanEmail = email !== undefined ? String(email).trim() : null;
+        const cleanAddress = address !== undefined ? String(address).trim() : null;
         const cleanTrade = trade_name !== undefined ? String(trade_name).trim() : null;
+        const cleanLegal = legal_name !== undefined ? String(legal_name).trim() : (cleanTrade || null);
+        const now = Date.now();
 
         db.run(`
-            INSERT INTO clients (id, gstin, trade_name, legal_name, phone, email, portal_username, portal_password)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clients (id, gstin, trade_name, legal_name, phone, email, address, portal_username, portal_password, last_updated, is_deleted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             ON CONFLICT(gstin) DO UPDATE SET
                 portal_username = COALESCE(?, portal_username),
                 portal_password = COALESCE(?, portal_password),
                 phone = COALESCE(?, phone),
                 email = COALESCE(?, email),
-                trade_name = COALESCE(?, trade_name)
+                address = COALESCE(?, address),
+                trade_name = COALESCE(?, trade_name),
+                legal_name = COALESCE(?, legal_name),
+                last_updated = ?,
+                is_deleted = 0
         `, [
             id,
             cleanGstin,
             cleanTrade || cleanGstin,
-            cleanTrade || cleanGstin,
+            cleanLegal || cleanTrade || cleanGstin,
             cleanPhone,
             cleanEmail,
+            cleanAddress,
             cleanUser,
             cleanPass,
+            now,
             cleanUser,
             cleanPass,
             cleanPhone,
             cleanEmail,
-            cleanTrade
-        ], function(err) {
+            cleanAddress,
+            cleanTrade,
+            cleanLegal,
+            now
+        ], async function(err) {
             if (err) return res.status(500).json({ success: false, error: 'Failed updating client credentials' });
+
+            // Push immediately to Central Vault in Data Path
+            try {
+                const dataPath = await resolveDataPath();
+                pushSingleClientToVault(dataPath, {
+                    id,
+                    gstin: cleanGstin,
+                    trade_name: cleanTrade || cleanGstin,
+                    legal_name: cleanLegal || cleanTrade || cleanGstin,
+                    phone: cleanPhone,
+                    email: cleanEmail,
+                    address: cleanAddress,
+                    portal_username: cleanUser,
+                    portal_password: cleanPass,
+                    last_updated: now,
+                    is_deleted: 0
+                });
+            } catch (vErr) {
+                console.warn('[IMS Credentials] Failed pushing single client to central vault:', vErr.message);
+            }
+
             res.json({ success: true, message: 'Credentials updated successfully', changes: this.changes });
         });
     });
 
-    // ─── 13b. DELETE A CLIENT ──────────────────────────────────────────────────
+    // ─── 13b. DELETE A CLIENT (SOFT-DELETE SYNC ACROSS LAN) ────────────────────
     app.delete('/api/ims/clients/:gstin', (req, res) => {
         const { gstin } = req.params;
         if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
 
+        const cleanGstin = String(gstin).trim().toUpperCase();
+        const now = Date.now();
+
         db.serialize(() => {
-            db.run('DELETE FROM clients WHERE gstin = ?', [gstin]);
-            db.run('DELETE FROM ims_batches WHERE client_gstin = ?', [gstin]);
-            db.run('DELETE FROM ims_invoices WHERE client_gstin = ?', [gstin]);
-            db.run('DELETE FROM ims_review_tokens WHERE client_gstin = ?', [gstin], function(err) {
+            // Soft delete in clients table with timestamp so LAN peers don't resurrect it
+            db.run('UPDATE clients SET is_deleted = 1, last_updated = ? WHERE gstin = ?', [now, cleanGstin]);
+            db.run('DELETE FROM ims_batches WHERE client_gstin = ?', [cleanGstin]);
+            db.run('DELETE FROM ims_invoices WHERE client_gstin = ?', [cleanGstin]);
+            db.run('DELETE FROM ims_review_tokens WHERE client_gstin = ?', [cleanGstin], async function(err) {
                 if (err) return res.status(500).json({ success: false, error: 'Failed deleting client' });
-                res.json({ success: true, message: `Client ${gstin} deleted successfully` });
+
+                // Propagate soft-delete to central vault
+                try {
+                    const dataPath = await resolveDataPath();
+                    pushSingleClientToVault(dataPath, {
+                        gstin: cleanGstin,
+                        is_deleted: 1,
+                        last_updated: now
+                    });
+                } catch (vErr) {
+                    console.warn('[IMS Credentials] Error pushing client deletion to central vault:', vErr.message);
+                }
+
+                res.json({ success: true, message: `Client ${cleanGstin} deleted successfully` });
             });
         });
     });
 
-    // ─── 14. BULK IMPORT CREDENTIALS FROM EXCEL/JSON ──────────────────────────
-    app.post('/api/ims/credentials/bulk-import', (req, res) => {
+    // ─── 14. BULK IMPORT CREDENTIALS FROM EXCEL/JSON (MULTI-PC SYNC) ──────────
+    app.post('/api/ims/credentials/bulk-import', async (req, res) => {
         const { clients, deleteMissing = true } = req.body;
         if (!Array.isArray(clients) || clients.length === 0) {
             return res.status(400).json({ success: false, error: 'clients array is required' });
         }
 
-        // Map valid clients by GSTIN
         const validClientsMap = new Map();
         for (const c of clients) {
             const gstin = String(c.gstin || '').trim().toUpperCase().replace(/[\s-]/g, '');
@@ -1230,7 +1294,9 @@ export default function setupImsRoutes(app, db) {
             return res.status(400).json({ success: false, error: 'No valid GSTINs found in imported clients' });
         }
 
-        db.all('SELECT gstin FROM clients', (err, existingRows) => {
+        const now = Date.now();
+
+        db.all('SELECT gstin FROM clients WHERE is_deleted = 0 OR is_deleted IS NULL', (err, existingRows) => {
             if (err) return res.status(500).json({ success: false, error: 'Failed reading existing clients' });
 
             const existingGstins = new Set((existingRows || []).map(r => r.gstin));
@@ -1252,15 +1318,15 @@ export default function setupImsRoutes(app, db) {
             db.serialize(() => {
                 db.run('BEGIN TRANSACTION');
 
-                // 1. Delete clients missing from sheet (if deleteMissing enabled)
+                // 1. Soft delete clients missing from sheet (if deleteMissing enabled)
                 if (toDeleteGstins.length > 0) {
-                    const deleteClientStmt = db.prepare('DELETE FROM clients WHERE gstin = ?');
+                    const deleteClientStmt = db.prepare('UPDATE clients SET is_deleted = 1, last_updated = ? WHERE gstin = ?');
                     const deleteBatchesStmt = db.prepare('DELETE FROM ims_batches WHERE client_gstin = ?');
                     const deleteInvoicesStmt = db.prepare('DELETE FROM ims_invoices WHERE client_gstin = ?');
                     const deleteTokensStmt = db.prepare('DELETE FROM ims_review_tokens WHERE client_gstin = ?');
 
                     for (const g of toDeleteGstins) {
-                        deleteClientStmt.run(g);
+                        deleteClientStmt.run(now, g);
                         deleteBatchesStmt.run(g);
                         deleteInvoicesStmt.run(g);
                         deleteTokensStmt.run(g);
@@ -1272,17 +1338,20 @@ export default function setupImsRoutes(app, db) {
                     deleteTokensStmt.finalize();
                 }
 
-                // 2. Upsert all clients from the sheet (altering every detail as per sheet)
+                // 2. Upsert all clients from the sheet
                 const upsertStmt = db.prepare(`
-                    INSERT INTO clients (id, gstin, trade_name, legal_name, phone, email, portal_username, portal_password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO clients (id, gstin, trade_name, legal_name, phone, email, address, portal_username, portal_password, last_updated, is_deleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                     ON CONFLICT(gstin) DO UPDATE SET
                         trade_name = excluded.trade_name,
                         legal_name = excluded.legal_name,
                         phone = excluded.phone,
                         email = excluded.email,
+                        address = excluded.address,
                         portal_username = excluded.portal_username,
-                        portal_password = excluded.portal_password
+                        portal_password = excluded.portal_password,
+                        last_updated = excluded.last_updated,
+                        is_deleted = 0
                 `);
 
                 for (const [gstin, c] of validClientsMap.entries()) {
@@ -1291,6 +1360,7 @@ export default function setupImsRoutes(app, db) {
                     const cleanLegal = String(c.legal_name || c.legalName || c.trade_name || c.tradeName || '').trim() || cleanTrade;
                     const cleanPhone = String(c.phone || '').trim().replace(/\.0$/, '');
                     const cleanEmail = String(c.email || '').trim();
+                    const cleanAddress = String(c.address || '').trim();
                     const cleanUser = String(c.portal_username || c.portalUsername || '').trim();
                     const cleanPass = String(c.portal_password || c.portalPassword || '').trim();
 
@@ -1301,19 +1371,30 @@ export default function setupImsRoutes(app, db) {
                         cleanLegal,
                         cleanPhone,
                         cleanEmail,
+                        cleanAddress,
                         cleanUser,
-                        cleanPass
+                        cleanPass,
+                        now
                     ]);
                 }
 
                 upsertStmt.finalize();
 
-                db.run('COMMIT', (commitErr) => {
+                db.run('COMMIT', async (commitErr) => {
                     if (commitErr) return res.status(500).json({ success: false, error: 'Commit failed on bulk credentials import' });
+
+                    // Synchronize the complete bulk-imported state to the central network vault
+                    try {
+                        const dataPath = await resolveDataPath();
+                        await syncCredentialsWithCentral(db, dataPath);
+                    } catch (syncErr) {
+                        console.warn('[IMS Credentials] Bulk import central vault sync warning:', syncErr.message);
+                    }
+
                     res.json({
                         success: true,
                         message: `Successfully synchronized ${validClientsMap.size} clients (${toDeleteGstins.length} deleted, ${addedCount} added, ${updatedCount} altered)`,
-                        importedCount: validClientsMap.size,
+                        total: validClientsMap.size,
                         deletedCount: toDeleteGstins.length,
                         addedCount,
                         updatedCount
@@ -1321,6 +1402,36 @@ export default function setupImsRoutes(app, db) {
                 });
             });
         });
+    });
+
+    // ─── 14b. EXPLICIT MULTI-PC CENTRAL VAULT SYNCHRONIZATION ──────────────────
+    app.post('/api/ims/credentials/sync-vault', async (req, res) => {
+        try {
+            const dataPath = await resolveDataPath();
+            const result = await syncCredentialsWithCentral(db, dataPath);
+            res.json(result);
+        } catch (err) {
+            console.error('[IMS Credentials] Sync vault error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ─── 14c. GET CENTRAL VAULT SYNC STATUS ────────────────────────────────────
+    app.get('/api/ims/credentials/sync-status', async (req, res) => {
+        try {
+            const dataPath = await resolveDataPath();
+            const vault = readCentralVault(dataPath);
+            const clients = vault.clients || {};
+            const total = Object.values(clients).filter(c => !c.is_deleted).length;
+            res.json({
+                success: true,
+                dataPath,
+                lastSyncedAt: vault.last_synced_at || 0,
+                totalCentralClients: total
+            });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
     });
 
     // ─── 14b. DIRECT ARCHIVE UPLOAD (ZIP / XLSX / JSON) ────────────────────────
@@ -1430,6 +1541,27 @@ export default function setupImsRoutes(app, db) {
     });
 
     // ─── 15. LIVE BROWSER IMS AUTOMATION VIA PLAYWRIGHT ─────────────────────────
+    app.post('/api/ims/cancel', async (req, res) => {
+        try {
+            const { gstin } = req.body || {};
+            const gstinKey = gstin ? String(gstin).trim().toUpperCase() : null;
+            if (gstinKey && activeBrowsers.has(gstinKey)) {
+                console.log(`[IMS Automation] Cancelling active browser for GSTIN ${gstinKey}`);
+                const b = activeBrowsers.get(gstinKey);
+                activeBrowsers.delete(gstinKey);
+                if (b) await b.close().catch(() => {});
+            } else if (!gstinKey && activeBrowsers.size > 0) {
+                for (const [key, b] of activeBrowsers.entries()) {
+                    activeBrowsers.delete(key);
+                    if (b) await b.close().catch(() => {});
+                }
+            }
+            res.json({ success: true, message: 'IMS session cancelled' });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
     app.post('/api/ims/portal-sync-browser', async (req, res) => {
         const { gstin, period, username: customUser, password: customPass, phase, forceFresh } = req.body;
         if (!gstin) {
@@ -1502,7 +1634,7 @@ export default function setupImsRoutes(app, db) {
             try {
                 await activeBrowserInstance.close().catch(() => {});
             } catch (e) {}
-            activeBrowserInstance = null;
+            if (gstinKey) activeBrowsers.delete(gstinKey);
         }
 
         let browser;
@@ -1523,12 +1655,14 @@ export default function setupImsRoutes(app, db) {
             // Strategy: Directly launch dedicated visible browser (Chrome first, Chromium, then Edge fallback)
             const launchRes = await launchAutopilotBrowser(playwright.chromium, browserLaunchOptions);
             browser = launchRes.browser;
+            if (gstinKey) activeBrowsers.set(gstinKey, browser);
 
             const context = await browser.newContext({ viewport: null, acceptDownloads: true });
             const page = await context.newPage();
 
             // Close browser cleanly if user aborts HTTP request from UI
             req.on('close', async () => {
+                if (gstinKey) activeBrowsers.delete(gstinKey);
                 if (browser && !capturedJson) {
                     console.log('[IMS Automation] Request cancelled by user, closing browser');
                     await browser.close().catch(() => {});
@@ -2578,7 +2712,7 @@ export default function setupImsRoutes(app, db) {
                 });
             } else if (hasNoRecordsInIms) {
                 await browser.close().catch(() => {});
-                activeBrowserInstance = null;
+                if (gstinKey) activeBrowsers.delete(gstinKey);
 
                 const batchId = randomUUID();
                 const now = Date.now();
@@ -2642,7 +2776,7 @@ export default function setupImsRoutes(app, db) {
                 }
             } else if (isGenerationRequested) {
                 await browser.close().catch(() => {});
-                activeBrowserInstance = null;
+                if (gstinKey) activeBrowsers.delete(gstinKey);
 
                 const reqTime = generationRequestedTimestamp || Date.now();
                 const reqBatchId = randomUUID();
@@ -2959,6 +3093,12 @@ export default function setupImsRoutes(app, db) {
                         <p style="color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
                             Sent at: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST)
                         </p>
+                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #64748b; line-height: 1.6;">
+                            <div>⚡ Powered by <strong style="color: #0f172a;">AUDIT WITH VASWANI</strong> | GST Compliance &amp; Audit Automation Suite</div>
+                            <div style="margin-top: 3px; color: #475569;">
+                                Developed by <strong>Sourav Vaswani</strong> • Contact: <a href="tel:8989998663" style="color: #0284c7; text-decoration: none; font-weight: 600;">8989998663</a> • Email: <a href="mailto:sourav.vaswani01@gmail.com" style="color: #0284c7; text-decoration: none; font-weight: 600;">sourav.vaswani01@gmail.com</a>
+                            </div>
+                        </div>
                     </div>
                 `
             });
@@ -3282,6 +3422,12 @@ export default function setupImsRoutes(app, db) {
             ${caPhone ? `<div>Helpdesk Contact: ${caPhone}</div>` : ''}
             <div style="margin-top: 8px; color: #94a3b8; font-size: 11px;">
                 This is an automated compliance notification regarding GST Invoice Management System.
+            </div>
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #64748b; line-height: 1.6;">
+                <div>⚡ Powered by <strong style="color: #0f172a;">AUDIT WITH VASWANI</strong> | GST Compliance &amp; Audit Automation Suite</div>
+                <div style="margin-top: 3px; color: #475569;">
+                    Developed by <strong>Sourav Vaswani</strong> • Contact: <a href="tel:8989998663" style="color: #0284c7; text-decoration: none; font-weight: 600;">8989998663</a> • Email: <a href="mailto:sourav.vaswani01@gmail.com" style="color: #0284c7; text-decoration: none; font-weight: 600;">sourav.vaswani01@gmail.com</a>
+                </div>
             </div>
         </div>
     </div>

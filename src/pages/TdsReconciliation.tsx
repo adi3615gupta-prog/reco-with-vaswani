@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    ArrowLeft, UploadCloud, Database, Settings2, FileSpreadsheet, CheckCircle2, Trash2, GitCompare, Activity, AlertTriangle, Download, Search, Server, Loader2, RefreshCw, X, ShieldAlert, Edit2, Check, Plus, FileText, ChevronDown, ChevronRight, ChevronUp, Zap, Users, ArrowRight, Wallet, Eye, EyeOff, CalendarClock
+    ArrowLeft, UploadCloud, Database, Settings2, FileSpreadsheet, CheckCircle2, Trash2, GitCompare, Activity, AlertTriangle, Download, Search, Server, Loader2, RefreshCw, X, ShieldAlert, Edit2, Check, Plus, FileText, ChevronDown, ChevronRight, ChevronUp, Zap, Users, ArrowRight, Wallet, Eye, EyeOff, CalendarClock, History, HardDrive
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx-js-style';
@@ -11,6 +11,7 @@ import { exportTdsReport, computeAdvanceTdsAudit, computeMultiLedgerPans, export
 import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo } from '@/lib/tallyApi';
 import { getApiBase, getAuthToken } from '@/lib/api';
 import { saveLocalRecoSnapshot } from '@/lib/gdrive';
+import { RecoHistoryModal } from '@/components/RecoHistoryModal';
 
 // Phase 1: Statutory TDS Master Data
 export interface TdsSection {
@@ -63,21 +64,21 @@ function CollapsibleSection({ title, subtitle, icon: Icon, children, defaultOpen
 }) {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     return (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between p-5 hover:bg-slate-800/30 transition-colors group">
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden transition-all">
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors group">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg"><Icon className="w-5 h-5 text-purple-400" /></div>
+                    <div className="w-10 h-10 bg-indigo-50 border border-indigo-200/80 rounded-xl flex items-center justify-center text-indigo-600 shadow-2xs"><Icon className="w-5 h-5" /></div>
                     <div className="text-left">
-                        <h2 className="text-lg font-bold text-white">{title}</h2>
-                        {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+                        <h2 className="text-base font-bold text-slate-900">{title}</h2>
+                        {subtitle && <p className="text-xs text-slate-500 mt-0.5 font-medium">{subtitle}</p>}
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
                     {badge}
-                    {isOpen ? <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" /> : <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />}
+                    {isOpen ? <ChevronUp className="w-5 h-5 text-slate-600 group-hover:text-slate-700 transition-colors" /> : <ChevronDown className="w-5 h-5 text-slate-600 group-hover:text-slate-700 transition-colors" />}
                 </div>
             </button>
-            {isOpen && <div className="p-5 pt-0 border-t border-slate-800/50">{children}</div>}
+            {isOpen && <div className="p-5 pt-0 border-t border-slate-100">{children}</div>}
         </div>
     );
 }
@@ -85,7 +86,7 @@ function CollapsibleSection({ title, subtitle, icon: Icon, children, defaultOpen
 // ─── Stepper Component ───────────────────────────────────────
 function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string; icon: React.ElementType; ready: boolean; info?: string; disabled?: boolean }[]; activeStep: number; onStepClick: (i: number) => void }) {
     return (
-        <div className="flex items-stretch gap-1 bg-slate-950/50 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md">
+        <div className="flex items-stretch gap-1 bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-xs">
             {steps.map((step, i) => {
                 const Icon = step.icon;
                 const isActive = activeStep === i;
@@ -95,27 +96,27 @@ function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string
                         key={i}
                         onClick={() => !isDisabled && onStepClick(i)}
                         disabled={isDisabled}
-                        className={`flex-1 min-w-0 relative py-3 px-3 rounded-xl font-bold text-xs transition-all flex flex-col items-center gap-1.5 group ${isActive
-                                ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/30'
+                        className={`flex-1 min-w-0 relative py-2.5 px-3 rounded-xl font-bold text-xs transition-all flex flex-col items-center gap-1 group ${isActive
+                                ? 'bg-indigo-600 text-white shadow-xs'
                                 : isDisabled
                                     ? 'text-slate-600 cursor-not-allowed opacity-40'
-                                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                             }`}
                     >
                         <div className="flex items-center gap-2">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${step.ready && !isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${step.ready && !isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                     isActive ? 'bg-white/20 text-white' :
-                                        'bg-slate-800 text-slate-500 border border-slate-700'
+                                        'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
                                 {step.ready && !isActive ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span>{i + 1}</span>}
                             </div>
                             <Icon className="w-4 h-4 hidden sm:block" />
                         </div>
                         <span className="truncate max-w-full text-[11px] tracking-wide uppercase">{step.label}</span>
-                        {step.info && <span className={`text-[9px] font-medium truncate max-w-full ${isActive ? 'text-white/60' : 'text-slate-500'}`}>{step.info}</span>}
+                        {step.info && <span className={`text-[9px] font-medium truncate max-w-full ${isActive ? 'text-white/80' : 'text-slate-500'}`}>{step.info}</span>}
                         {i < steps.length - 1 && (
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 hidden lg:block">
-                                <ChevronRight className={`w-3.5 h-3.5 ${isActive ? 'text-purple-300' : 'text-slate-700'}`} />
+                                <ChevronRight className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-200' : 'text-slate-700'}`} />
                             </div>
                         )}
                     </button>
@@ -133,16 +134,16 @@ function StatusFilterChips({ active, onChange, counts }: { active: StatusFilter;
     const getChipStyle = (status: string, isActive: boolean) => {
         if (isActive) {
             switch (status) {
-                case 'Matched': return 'bg-emerald-500 text-white shadow-emerald-900/30';
-                case 'Short Deducted': return 'bg-amber-500 text-white shadow-amber-900/30';
-                case 'Excess Deducted': return 'bg-purple-500 text-white shadow-purple-900/30';
-                case 'Missing in 26Q': return 'bg-rose-500 text-white shadow-rose-900/30';
-                case 'Missing in Books': return 'bg-blue-500 text-white shadow-blue-900/30';
-                case 'Under Threshold': return 'bg-slate-600 text-white shadow-slate-900/30';
-                default: return 'bg-purple-600 text-white shadow-purple-900/30';
+                case 'Matched': return 'bg-emerald-600 text-white shadow-xs';
+                case 'Short Deducted': return 'bg-amber-600 text-white shadow-xs';
+                case 'Excess Deducted': return 'bg-indigo-600 text-white shadow-xs';
+                case 'Missing in 26Q': return 'bg-rose-600 text-white shadow-xs';
+                case 'Missing in Books': return 'bg-blue-600 text-white shadow-xs';
+                case 'Under Threshold': return 'bg-slate-700 text-white shadow-xs';
+                default: return 'bg-indigo-600 text-white shadow-xs';
             }
         }
-        return 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-700/60 border border-slate-700/50';
+        return 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-slate-200 shadow-2xs font-semibold';
     };
     return (
         <div className="flex flex-wrap gap-2">
@@ -150,7 +151,7 @@ function StatusFilterChips({ active, onChange, counts }: { active: StatusFilter;
                 <button
                     key={s}
                     onClick={() => onChange(s)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all shadow-md ${getChipStyle(s, active === s)}`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${getChipStyle(s, active === s)}`}
                 >
                     {s} {counts[s] !== undefined && <span className="ml-1 opacity-70">({counts[s]})</span>}
                 </button>
@@ -164,9 +165,50 @@ function StatusFilterChips({ active, onChange, counts }: { active: StatusFilter;
 // ═════════════════════════════════════════════════════════════
 export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const [activeStep, setActiveStep] = useState(0);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
     // Database Seed Rules
     const [rules, setRules] = useState<TdsSection[]>(FALLBACK_TDS_SECTIONS);
+
+    const handleRestoreTdsSession = (payload: any) => {
+        if (payload.results) {
+            setReconResults(payload.results);
+            setActiveStep(4);
+        }
+        if (payload.summary) {
+            setReconSummary(payload.summary);
+        }
+        if (payload.financialYear) {
+            setSelectedFY(payload.financialYear);
+        }
+        toast.success(`Restored TDS Session: ${payload.companyName || 'Snapshot'} (${payload.financialYear || selectedFY})`);
+    };
+
+    const handleSaveTdsRun = async () => {
+        if (!reconResults) {
+            toast.error("No active reconciliation results to save");
+            return;
+        }
+        try {
+            toast.loading("Saving TDS run to SQLite database...");
+            await saveLocalRecoSnapshot({
+                version: '1.0',
+                timestamp: new Date().toISOString(),
+                companyName: companyInfo?.name || 'Company',
+                financialYear: selectedFY,
+                mode: 'input',
+                moduleType: 'tds-reco',
+                moduleName: 'TDS Audit & Reconciliation',
+                results: reconResults,
+                summary: reconSummary,
+            });
+            toast.dismiss();
+            toast.success(`Saved TDS reconciliation for '${companyInfo?.name || 'Company'}' (${selectedFY}) to SQLite!`);
+        } catch (err: any) {
+            toast.dismiss();
+            toast.error("Save failed", { description: err.message });
+        }
+    };
 
     // Group Mapping State (Database-backed templates)
     const [groupMappings, setGroupMappings] = useState<{ id: string; expenseGroup: string; subGroup: string; subGroup2: string; sectionCode: string }[]>([]);
@@ -737,7 +779,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         a.href = url;
         a.download = 'TDS_Ledger_Mappings_Template.xlsx';
         a.click();
-        window.URL.revokeObjectURL(url);
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
     };
 
     const handleRemoveUnmappedLedgers = async () => {
@@ -880,7 +922,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         a.href = url;
         a.download = 'TDS_Group_Mappings_Template.xlsx';
         a.click();
-        window.URL.revokeObjectURL(url);
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
     };
 
     const importGroupMappings = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1290,7 +1332,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             case 'Excess Deducted': return 'bg-purple-500/15 text-purple-400 border-purple-500/30';
             case 'Missing in 26Q': return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
             case 'Missing in Books': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-            default: return 'bg-slate-800 text-slate-300 border-slate-700';
+            default: return 'bg-slate-800 text-slate-700 border-slate-700';
         }
     };
 
@@ -1370,29 +1412,57 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const fmtAmt = (val: number) => '₹' + Math.abs(val).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
     return (
-        <div className="w-full max-w-6xl mx-auto space-y-5 silk-reveal">
+        <div className="w-full max-w-6xl mx-auto space-y-3 silk-reveal">
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-800 pb-5">
-                <div>
-                    <button onClick={onBack} className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] mb-3 transition-colors">
-                        <ArrowLeft className="w-3 h-3" /> Back to Hub
+            <header className="bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+                <div className="flex items-center gap-3">
+                    <button onClick={onBack} className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group" title="Return to Master Central Hub">
+                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
                     </button>
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-                        <FileSpreadsheet className="w-8 h-8 text-purple-500" /> TDS Reconciliation
-                    </h1>
-                    <p className="text-slate-400 font-medium mt-1 text-sm">Map expenses → Ingest data → Review vendors → Audit variances</p>
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                        <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+                                TDS Reconciliation & TRACES Consolidator
+                            </h1>
+                            <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 uppercase tracking-wider">
+                                Suite 02 · Live
+                            </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-mono">
+                            Map expenses → Ingest data → Review vendors → Audit variances & Form 26Q
+                        </p>
+                    </div>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex items-center gap-2.5 w-full md:w-auto">
                     {partyBalances.size > 0 && (
-                        <div className="px-3 py-1.5 bg-teal-500/10 border border-teal-500/20 rounded-lg text-[10px] font-bold text-teal-400 flex items-center gap-1.5">
+                        <div className="px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-xl text-xs font-bold text-teal-700 flex items-center gap-1.5 shadow-2xs">
                             <Wallet className="w-3.5 h-3.5" /> {partyBalances.size} balances scanned
                         </div>
                     )}
-                    <button onClick={handleFullReset} className="h-9 px-4 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 hover:border-red-500/35 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-red-950/20 ml-auto md:ml-0" title="Resets Tally database tables, files, and results to start fresh">
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" /> Full Reset
+                    <button
+                        onClick={() => setIsHistoryOpen(true)}
+                        className="h-9 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="View and restore saved TDS reconciliation sessions from SQLite database"
+                    >
+                        <History className="w-3.5 h-3.5 text-indigo-600" /> Saved Runs
+                    </button>
+                    {reconResults && (
+                        <button
+                            onClick={handleSaveTdsRun}
+                            className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                            title="Save current TDS reconciliation run to SQLite database"
+                        >
+                            <HardDrive className="w-3.5 h-3.5" /> Save TDS Run
+                        </button>
+                    )}
+                    <button onClick={handleFullReset} className="h-9 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs ml-auto md:ml-0 cursor-pointer" title="Resets Tally database tables, files, and results to start fresh">
+                        <Trash2 className="w-3.5 h-3.5" /> Full Reset
                     </button>
                 </div>
-            </div>
+            </header>
 
             {/* Navigation Stepper */}
             <StepperNav steps={steps} activeStep={activeStep} onStepClick={setActiveStep} />
@@ -1402,11 +1472,11 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                 <div className="space-y-5 animate-pop-in">
 
                     {/* Financial Year Selector */}
-                    <div className="bg-gradient-to-r from-purple-950/40 to-indigo-950/30 border border-purple-500/20 rounded-2xl p-5 shadow-xl">
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
-                                <h3 className="text-lg font-bold text-white flex items-center gap-2"><CalendarClock className="w-5 h-5 text-purple-400" /> Financial Year</h3>
-                                <p className="text-xs text-slate-400 mt-0.5">Select the assessment period for TDS reconciliation</p>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><CalendarClock className="w-5 h-5 text-indigo-600" /> Financial Year</h3>
+                                <p className="text-xs text-slate-500 mt-0.5 font-medium">Select the assessment period for TDS reconciliation</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 {FY_OPTIONS.map(fy => (
@@ -1414,8 +1484,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                         key={fy}
                                         onClick={() => { setSelectedFY(fy); const yr = parseInt(fy.split('-')[0]); setFromDate(`${yr}-04-01`); setToDate(`${yr + 1}-03-31`); }}
                                         className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${selectedFY === fy
-                                            ? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-900/30'
-                                            : 'bg-slate-900/60 text-slate-400 border-slate-700 hover:border-purple-500/50 hover:text-white'
+                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-white'
                                         }`}
                                     >
                                         FY {fy}
@@ -1426,15 +1496,15 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     </div>
 
                     {/* Tally Live API Connection */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                        <h3 className="text-lg font-bold text-white mb-1.5 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-400" /> Tally Data Ingestion</h3>
-                        <p className="text-xs text-slate-400 mb-5">Fetch ledger balances and transactions directly from TallyPrime via Live API.</p>
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+                        <h3 className="text-base font-bold text-slate-900 mb-1.5 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-600" /> Tally Data Ingestion</h3>
+                        <p className="text-xs text-slate-500 mb-5 font-medium">Fetch ledger balances and transactions directly from TallyPrime via Live API.</p>
                         
-                        <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
+                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                             <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-bold text-slate-300 flex items-center gap-2"><Server className="w-4 h-4 text-teal-400" /> Live Tally API Connection</span>
+                                <span className="text-xs font-bold text-slate-800 flex items-center gap-2"><Server className="w-4 h-4 text-teal-600" /> Live Tally API Connection</span>
                                 <div className="flex items-center gap-2">
-                                    <input type="number" value={tallyPort} onChange={e => setTallyPort(Number(e.target.value))} className="w-20 h-7 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" />
+                                    <input type="number" value={tallyPort} onChange={e => setTallyPort(Number(e.target.value))} className="w-20 h-7 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold focus:border-indigo-500 outline-none" />
                                     <button onClick={connectToTally} disabled={connectionStatus === 'connecting'} className="h-7 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded text-xs font-bold transition-colors shadow-lg shadow-teal-900/20 disabled:opacity-50">{connectionStatus === 'connecting' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}</button>
                                 </div>
                             </div>
@@ -1442,13 +1512,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                                     <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded w-fit border border-emerald-500/20"><CheckCircle2 className="w-3 h-3" /> Connected: {companyInfo?.name}</div>
                                     <div className="flex gap-2">
-                                        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="flex-1 h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white focus:border-teal-500 outline-none" />
-                                        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="flex-1 h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white focus:border-teal-500 outline-none" />
+                                        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="flex-1 h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 focus:border-indigo-500 outline-none" />
+                                        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="flex-1 h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold focus:border-teal-500 outline-none" />
                                         <button onClick={handleFetchTally} disabled={isFetchingTally} className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-bold transition-colors flex items-center gap-2">{isFetchingTally ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Fetch Vouchers</button>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3 pt-1">
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Purchase Vouchers</label><input type="text" value={customPurchaseVouchers} onChange={e => handleCustomPurchaseChange(e.target.value)} placeholder="e.g. Purchase GST" className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2.5 text-xs text-white placeholder-slate-600 focus:border-purple-500 outline-none" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Journal Vouchers</label><input type="text" value={customJournalVouchers} onChange={e => handleCustomJournalChange(e.target.value)} placeholder="e.g. TDS Journal" className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2.5 text-xs text-white placeholder-slate-600 focus:border-purple-500 outline-none" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Purchase Vouchers</label><input type="text" value={customPurchaseVouchers} onChange={e => handleCustomPurchaseChange(e.target.value)} placeholder="e.g. Purchase GST" className="w-full h-8 bg-white border border-slate-300 rounded px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-purple-500 outline-none" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Journal Vouchers</label><input type="text" value={customJournalVouchers} onChange={e => handleCustomJournalChange(e.target.value)} placeholder="e.g. TDS Journal" className="w-full h-8 bg-white border border-slate-300 rounded px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-purple-500 outline-none" /></div>
                                     </div>
                                     {tallyDirectData && <div className="text-xs text-indigo-300 font-medium pt-1">✅ {tallyDirectData.length} expense/payment vouchers fetched.</div>}
                                 </div>
@@ -1457,7 +1527,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     </div>
 
                     {/* Strict Mode Toggle Checkbox */}
-                    <div className="bg-slate-900/40 border border-purple-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
+                    <div className="bg-white border border-indigo-200/80 rounded-2xl p-4 flex items-center justify-between shadow-xs">
                         <div className="flex items-center gap-3">
                             <input 
                                 type="checkbox" 
@@ -1467,33 +1537,33 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
                             />
                             <div>
-                                <label htmlFor="strictModeCheckbox" className="text-xs font-bold text-white cursor-pointer flex items-center gap-2">
+                                <label htmlFor="strictModeCheckbox" className="text-xs font-bold text-slate-900 cursor-pointer flex items-center gap-2">
                                     <ShieldAlert className="w-4 h-4 text-purple-400" />
                                     Strict Reconciliation Mode: Use ONLY explicitly mapped expense ledgers
                                 </label>
-                                <p className="text-[11px] text-slate-400 mt-0.5">When checked, unmapped ledgers will be strictly ignored and excluded from TDS calculations.</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">When checked, unmapped ledgers will be strictly ignored and excluded from TDS calculations.</p>
                             </div>
                         </div>
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${strictModeOnlyMapped ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-400'}`}>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${strictModeOnlyMapped ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-600'}`}>
                             {strictModeOnlyMapped ? 'Strict Mode ON' : 'Standard Mode'}
                         </span>
                     </div>
 
                     {/* Unmapped Fetched Ledgers Section */}
                     {tallyDirectData && unmappedFetchedLedgers.length > 0 && (
-                        <div className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 shadow-xl">
+                        <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
                                     <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
                                         <AlertTriangle className="w-4 h-4 text-amber-400" />
                                         Unmapped Fetched Ledgers ({unmappedFetchedLedgers.length})
                                     </h4>
-                                    <p className="text-xs text-slate-400 mt-0.5">Assign TDS sections directly here or use the Ledger Mapping section below.</p>
+                                    <p className="text-xs text-slate-600 mt-0.5">Assign TDS sections directly here or use the Ledger Mapping section below.</p>
                                 </div>
                             </div>
-                            <div className="max-h-60 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950/50">
+                            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50">
                                 <table className="w-full text-left text-xs">
-                                    <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                                    <thead className="bg-slate-50 text-slate-600 sticky top-0 border-b border-slate-200">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Ledger Name</th>
                                             <th className="px-3 py-2 font-medium">Assign TDS Section</th>
@@ -1501,8 +1571,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     </thead>
                                     <tbody className="divide-y divide-slate-800/40">
                                         {unmappedFetchedLedgers.map((ledgerName, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-800/20">
-                                                <td className="px-3 py-2 text-white font-medium">{ledgerName}</td>
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="px-3 py-2 text-slate-900 font-semibold">{ledgerName}</td>
                                                 <td className="px-3 py-2">
                                                     <select 
                                                         defaultValue=""
@@ -1511,7 +1581,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                                 handleUpdateLedgerConfig(ledgerName, { sectionCode: e.target.value, isTdsLedger: false });
                                                             }
                                                         }}
-                                                        className="h-7 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-purple-300 font-medium focus:border-purple-500 outline-none"
+                                                        className="h-7 bg-white border border-slate-300 rounded px-2 text-xs text-indigo-700 font-bold font-medium focus:border-purple-500 outline-none"
                                                     >
                                                         <option value="">-- Unmapped (Select Section) --</option>
                                                         {rules.map((r, ri) => (
@@ -1533,20 +1603,20 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     {suggestions.length > 0 && (
                         <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/60 border border-indigo-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden">
                             <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                            <h2 className="text-lg font-bold text-white mb-1.5 flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-indigo-400" /> Suggested Auto-Mappings</h2>
-                            <p className="text-xs text-slate-400 mb-4">Verify these suggested section mappings and confirm to save.</p>
-                            <div className="max-h-[250px] overflow-y-auto border border-slate-800/80 rounded-xl overflow-hidden mb-4 bg-slate-950/40">
+                            <h2 className="text-lg font-bold text-slate-900 mb-1.5 flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-indigo-400" /> Suggested Auto-Mappings</h2>
+                            <p className="text-xs text-slate-600 mb-4">Verify these suggested section mappings and confirm to save.</p>
+                            <div className="max-h-[250px] overflow-y-auto border border-slate-200 rounded-xl overflow-hidden mb-4 bg-slate-50">
                                 <table className="w-full text-left text-sm whitespace-nowrap">
-                                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
                                         <tr><th className="px-4 py-2.5 font-medium w-12 text-center">✓</th><th className="px-4 py-2.5 font-medium">Ledger Name</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium">Confidence</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800/50">
                                         {suggestions.map((s, i) => (
                                             <tr key={i} className="hover:bg-indigo-900/10 transition-colors">
                                                 <td className="px-4 py-2.5 text-center"><input type="checkbox" checked={!!selectedSuggestions[s.ledgerName]} onChange={(e) => setSelectedSuggestions({ ...selectedSuggestions, [s.ledgerName]: e.target.checked })} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700" /></td>
-                                                <td className="px-4 py-2.5 text-white font-medium">{s.ledgerName}</td>
-                                                <td className="px-4 py-2.5"><select value={suggestedSections[s.ledgerName] || s.suggestedSection} onChange={(e) => setSuggestedSections({ ...suggestedSections, [s.ledgerName]: e.target.value })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none">{rules.map(r => <option key={r.old_section} value={r.old_section}>{r.old_section} - {r.nature_of_payment}</option>)}</select></td>
-                                                <td className="px-4 py-2.5">{s.isProbable ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">HIGH</span> : <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 rounded text-[10px] font-bold">LOW</span>}</td>
+                                                <td className="px-4 py-2.5 text-slate-900 font-semibold">{s.ledgerName}</td>
+                                                <td className="px-4 py-2.5"><select value={suggestedSections[s.ledgerName] || s.suggestedSection} onChange={(e) => setSuggestedSections({ ...suggestedSections, [s.ledgerName]: e.target.value })} className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:border-purple-500 outline-none">{rules.map(r => <option key={r.old_section} value={r.old_section}>{r.old_section} - {r.nature_of_payment}</option>)}</select></td>
+                                                <td className="px-4 py-2.5">{s.isProbable ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">HIGH</span> : <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-600 rounded text-[10px] font-bold">LOW</span>}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -1561,20 +1631,20 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                         badge={groupMappings.length > 0 ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">{groupMappings.length} templates</span> : undefined}>
                         <div className="space-y-4 pt-4">
                             <div className="flex justify-end gap-2 mb-2">
-                                <button onClick={exportGroupMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700"><Download className="w-3 h-3" /> Export</button>
-                                <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importGroupMappings} /></label>
+                                <button onClick={exportGroupMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold"><Download className="w-3 h-3" /> Export</button>
+                                <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importGroupMappings} /></label>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-slate-950 rounded-xl border border-slate-800">
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Expense Group</label><input type="text" value={newExpenseGroup} onChange={e => setNewExpenseGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Indirect Expenses" className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group</label><input type="text" value={newSubGroup} onChange={e => setNewSubGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Professional Fees" className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group 2</label><input type="text" value={newSubGroup2} onChange={e => setNewSubGroup2(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="Optional" className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">TDS Section</label><select value={newGroupSectionCode} onChange={e => setNewGroupSectionCode(e.target.value)} className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Expense Group</label><input type="text" value={newExpenseGroup} onChange={e => setNewExpenseGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Indirect Expenses" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
+                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group</label><input type="text" value={newSubGroup} onChange={e => setNewSubGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Professional Fees" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
+                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group 2</label><input type="text" value={newSubGroup2} onChange={e => setNewSubGroup2(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="Optional" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
+                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">TDS Section</label><select value={newGroupSectionCode} onChange={e => setNewGroupSectionCode(e.target.value)} className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
                                 <div className="md:col-span-4 flex justify-end"><button onClick={handleAddGroupMapping} className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors">Add Template</button></div>
                             </div>
                             {groupMappings.length > 0 && (
-                                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20">
-                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400"><tr><th className="px-4 py-2.5 font-medium">Expense Group Path</th><th className="px-4 py-2.5 font-medium text-center">TDS Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
-                                        <tbody className="divide-y divide-slate-800/50">{groupMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-800/30"><td className="px-4 py-2.5 text-white font-medium">{map.expenseGroup}{map.subGroup && ` > ${map.subGroup}`}{map.subGroup2 && ` > ${map.subGroup2}`}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-mono text-xs font-bold text-purple-400">{map.sectionCode}</span></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveGroupMapping(map.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="px-4 py-2.5 font-medium">Expense Group Path</th><th className="px-4 py-2.5 font-medium text-center">TDS Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
+                                        <tbody className="divide-y divide-slate-800/50">{groupMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-slate-900 font-semibold">{map.expenseGroup}{map.subGroup && ` > ${map.subGroup}`}{map.subGroup2 && ` > ${map.subGroup2}`}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-mono text-xs font-bold text-purple-400">{map.sectionCode}</span></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveGroupMapping(map.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
                                     </table>
                                 </div>
                             )}
@@ -1590,25 +1660,25 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 const unmappedCount = ledgerMappings.length - mappedCount;
                                 return (
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
-                                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+                                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200">
                                             <button
                                                 type="button"
                                                 onClick={() => setLedgerFilterMode('mapped')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'mapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'mapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
                                             >
                                                 Mapped Only ({mappedCount})
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => setLedgerFilterMode('all')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'all' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'all' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
                                             >
                                                 All ({ledgerMappings.length})
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => setLedgerFilterMode('unmapped')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'unmapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'unmapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
                                             >
                                                 Unmapped ({unmappedCount})
                                             </button>
@@ -1633,16 +1703,16 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                     <Trash2 className="w-3 h-3" /> Remove Unmapped ({unmappedCount})
                                                 </button>
                                             )}
-                                            <button onClick={exportLedgerMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700"><Download className="w-3 h-3" /> Export</button>
-                                            <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importLedgerMappings} /></label>
+                                            <button onClick={exportLedgerMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold"><Download className="w-3 h-3" /> Export</button>
+                                            <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importLedgerMappings} /></label>
                                         </div>
                                     </div>
                                 );
                             })()}
-                            <div className="flex flex-col md:flex-row gap-3 p-4 bg-slate-950 rounded-xl border border-slate-800">
-                                <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tally Ledger Name</label><input type="text" value={newLedgerName} onChange={e => setNewLedgerName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddMapping()} placeholder="e.g. Audit Fees" className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none" /></div>
-                                <div className="flex items-center gap-2 md:mt-5 px-2"><input type="checkbox" id="isNewLedgerTds" checked={isNewLedgerTds} onChange={e => setIsNewLedgerTds(e.target.checked)} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700 cursor-pointer" /><label htmlFor="isNewLedgerTds" className="text-xs font-medium text-slate-300 cursor-pointer select-none whitespace-nowrap">TDS Tax Ledger</label></div>
-                                <div className="w-full md:w-56"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Section</label><select value={newSectionCode} onChange={e => setNewSectionCode(e.target.value)} disabled={isNewLedgerTds} className="w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-3 text-sm text-white focus:border-purple-500 outline-none disabled:opacity-40">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
+                            <div className="flex flex-col md:flex-row gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tally Ledger Name</label><input type="text" value={newLedgerName} onChange={e => setNewLedgerName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddMapping()} placeholder="e.g. Audit Fees" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
+                                <div className="flex items-center gap-2 md:mt-5 px-2"><input type="checkbox" id="isNewLedgerTds" checked={isNewLedgerTds} onChange={e => setIsNewLedgerTds(e.target.checked)} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700 cursor-pointer" /><label htmlFor="isNewLedgerTds" className="text-xs font-medium text-slate-700 cursor-pointer select-none whitespace-nowrap">TDS Tax Ledger</label></div>
+                                <div className="w-full md:w-56"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Section</label><select value={newSectionCode} onChange={e => setNewSectionCode(e.target.value)} disabled={isNewLedgerTds} className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none disabled:opacity-40">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
                                 <div className="flex items-end"><button onClick={handleAddMapping} className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors whitespace-nowrap">Add Ledger</button></div>
                             </div>
                             {(() => {
@@ -1655,13 +1725,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     filteredMappings = ledgerMappings.filter(m => importedLedgerNames.has(m.ledgerName.toLowerCase().trim()));
                                 }
                                 return filteredMappings.length > 0 ? (
-                                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20 max-h-[300px] overflow-y-auto">
-                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium">Tally Ledger</th><th className="px-4 py-2.5 font-medium text-center w-32">TDS Tax?</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
-                                        <tbody className="divide-y divide-slate-800/50">{filteredMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-800/30"><td className="px-4 py-2.5 text-white font-medium flex items-center gap-2">{map.ledgerName}{map.inheritedGroupName && !map.sectionCode && (<span className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[9px] font-bold text-indigo-400 whitespace-nowrap" title={`Inherited from group mapping: ${map.inheritedGroupName}`}>Group: {map.inheritedGroupName}</span>)}</td><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={map.isTdsLedger} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { isTdsLedger: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5"><select value={map.sectionCode || map.inheritedSectionCode || ''} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { sectionCode: e.target.value || null })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"><option value="">-- Unmapped (Select Section) --</option>{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveMapping(map.ledgerName)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[300px] overflow-y-auto">
+                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium">Tally Ledger</th><th className="px-4 py-2.5 font-medium text-center w-32">TDS Tax?</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
+                                        <tbody className="divide-y divide-slate-800/50">{filteredMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-slate-900 font-semibold flex items-center gap-2">{map.ledgerName}{map.inheritedGroupName && !map.sectionCode && (<span className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[9px] font-bold text-indigo-400 whitespace-nowrap" title={`Inherited from group mapping: ${map.inheritedGroupName}`}>Group: {map.inheritedGroupName}</span>)}</td><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={map.isTdsLedger} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { isTdsLedger: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5"><select value={map.sectionCode || map.inheritedSectionCode || ''} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { sectionCode: e.target.value || null })} className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:border-purple-500 outline-none"><option value="">-- Unmapped (Select Section) --</option>{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveMapping(map.ledgerName)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
                                     </table>
                                 </div>
                             ) : (
-                                <div className="p-6 text-center text-xs text-slate-500 border border-slate-800/60 rounded-xl bg-slate-950/30">
+                                <div className="p-6 text-center text-xs text-slate-500 border border-slate-200 rounded-xl bg-slate-50">
                                     No ledgers match current filter mode ({ledgerFilterMode}). Switch tab above or add a ledger.
                                 </div>
                             );
@@ -1680,21 +1750,21 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             {/* ═══════════════ STEP 1: Form 26Q INGESTION ═══════════════ */}
             {activeStep === 1 && (
                 <div className="space-y-5 animate-pop-in">
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
                         <div className="flex items-center justify-between mb-1.5">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> Form 26Q (TRACES)</h3>
+                            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> Form 26Q (TRACES)</h3>
                             <button onClick={export26QTemplate} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1.5 rounded-lg border border-emerald-500/20"><Download className="w-3 h-3" /> Template</button>
                         </div>
-                        <p className="text-xs text-slate-400 mb-5">Upload Form 26Q Excel file from TRACES. Must have columns: <b>PAN, Name, Section, Amount Paid, TDS Deposited</b>.</p>
+                        <p className="text-xs text-slate-600 mb-5">Upload Form 26Q Excel file from TRACES. Must have columns: <b>PAN, Name, Section, Amount Paid, TDS Deposited</b>.</p>
                         {!form26qFile ? <FileUploadZone onFileSelect={async (f) => { setForm26qFile(f); toast.success('Form 26Q Loaded'); }} label="Upload Form 26Q" description="Accepts Excel (.xlsx)" /> : <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between"><div className="flex items-center gap-3"><CheckCircle2 className="text-emerald-400 w-5 h-5" /><span className="text-emerald-100 font-medium text-sm">{form26qFile.name}</span></div><button onClick={() => setForm26qFile(null)} className="text-emerald-400 hover:text-white"><X className="w-4 h-4" /></button></div>}
                     </div>
 
                     <CollapsibleSection title="Alternative Ingestion Methods (ITR JSON / Manual Grid)" subtitle="Upload filed ITR JSON or type transactions manually inside browser grid" icon={Settings2} defaultOpen={false}>
                         <div className="space-y-5 pt-4">
                             {/* Channel Tabs */}
-                            <div className="flex border-b border-slate-800 pb-2 gap-4">
+                            <div className="flex border-b border-slate-200 pb-2 gap-4">
                                 {(['ITR_JSON', 'MANUAL'] as const).map(ch => (
-                                    <button key={ch} onClick={() => setTdsIngestChannel(ch === 'ITR_JSON' ? 'ITR_JSON' : 'MANUAL')} className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${tdsIngestChannel === ch ? 'text-purple-400 border-b-2 border-purple-400 font-extrabold' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    <button key={ch} onClick={() => setTdsIngestChannel(ch === 'ITR_JSON' ? 'ITR_JSON' : 'MANUAL')} className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${tdsIngestChannel === ch ? 'text-purple-400 border-b-2 border-purple-400 font-extrabold' : 'text-slate-500 hover:text-slate-700'}`}>
                                         {ch === 'ITR_JSON' ? 'ITR JSON Upload' : 'Manual Grid Entry'}
                                     </button>
                                 ))}
@@ -1702,13 +1772,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                             {/* ITR JSON */}
                             {tdsIngestChannel === 'ITR_JSON' && (
-                                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                                    <h3 className="text-lg font-bold text-white mb-1.5 flex items-center gap-2"><FileText className="w-5 h-5 text-emerald-400" /> ITR JSON file (TDS Credit)</h3>
-                                    <p className="text-xs text-slate-400 mb-5">Upload filed ITR JSON. Auto-extracts all TDS deductions from Schedule TDS.</p>
+                                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+                                    <h3 className="text-lg font-bold text-slate-900 mb-1.5 flex items-center gap-2"><FileText className="w-5 h-5 text-emerald-400" /> ITR JSON file (TDS Credit)</h3>
+                                    <p className="text-xs text-slate-600 mb-5">Upload filed ITR JSON. Auto-extracts all TDS deductions from Schedule TDS.</p>
                                     {!itrJsonFile ? (<FileUploadZone onFileSelect={handleItrFileUpload} label="Upload ITR JSON" description="Accepts .json" accepted=".json" />) : (
                                         <div className="space-y-3">
                                             <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between"><div className="flex items-center gap-3"><CheckCircle2 className="text-emerald-400 w-5 h-5" /><span className="text-emerald-100 font-medium text-sm">{itrJsonFile.name}</span></div><button onClick={() => { setItrJsonFile(null); setItrParsedTdsRecords(null); }} className="text-emerald-400 hover:text-white"><X className="w-4 h-4" /></button></div>
-                                            {itrParsedTdsRecords && (<div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Parsed {itrParsedTdsRecords.length} TDS Credits</div><div className="max-h-[140px] overflow-y-auto text-[11px] text-slate-400 font-mono space-y-1 divide-y divide-slate-900">{itrParsedTdsRecords.map((r, idx) => (<div key={idx} className="pt-1 first:pt-0 flex justify-between"><span>{r.partyName.slice(0, 15)}.. ({r.partyPan})</span><span className="text-emerald-400 font-bold">₹{r.tdsDeducted.toLocaleString()}</span></div>))}</div></div>)}
+                                            {itrParsedTdsRecords && (<div className="p-3 bg-slate-50 rounded-xl border border-slate-200"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Parsed {itrParsedTdsRecords.length} TDS Credits</div><div className="max-h-[140px] overflow-y-auto text-[11px] text-slate-600 font-mono space-y-1 divide-y divide-slate-900">{itrParsedTdsRecords.map((r, idx) => (<div key={idx} className="pt-1 first:pt-0 flex justify-between"><span>{r.partyName.slice(0, 15)}.. ({r.partyPan})</span><span className="text-emerald-400 font-bold">₹{r.tdsDeducted.toLocaleString()}</span></div>))}</div></div>)}
                                         </div>
                                     )}
                                 </div>
@@ -1717,37 +1787,37 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                             {/* Manual Grid */}
                             {tdsIngestChannel === 'MANUAL' && (
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
-                                        <div><h3 className="text-lg font-bold text-white flex items-center gap-2"><Database className="w-5 h-5 text-indigo-400" /> Books Transactions</h3><p className="text-xs text-slate-400">Manually insert transactions from books.</p></div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Date</label><input type="date" value={newManualBook.date} onChange={e => setNewManualBook({ ...newManualBook, date: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Party Name</label><input type="text" placeholder="Vendor Name" value={newManualBook.partyName} onChange={e => setNewManualBook({ ...newManualBook, partyName: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN</label><input type="text" placeholder="ABCDE1234F" value={newManualBook.partyPan} onChange={e => setNewManualBook({ ...newManualBook, partyPan: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white font-mono" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Ledger</label><input type="text" placeholder="e.g. Audit Fees" value={newManualBook.ledgerName} onChange={e => setNewManualBook({ ...newManualBook, ledgerName: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Gross Amt (₹)</label><input type="number" placeholder="100000" value={newManualBook.amount} onChange={e => setNewManualBook({ ...newManualBook, amount: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Actual TDS (₹)</label><input type="number" placeholder="10000" value={newManualBook.actualTds} onChange={e => setNewManualBook({ ...newManualBook, actualTds: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Voucher No</label><input type="text" placeholder="Optional" value={newManualBook.voucherNo} onChange={e => setNewManualBook({ ...newManualBook, voucherNo: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-3">
+                                        <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-400" /> Books Transactions</h3><p className="text-xs text-slate-600">Manually insert transactions from books.</p></div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Date</label><input type="date" value={newManualBook.date} onChange={e => setNewManualBook({ ...newManualBook, date: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Party Name</label><input type="text" placeholder="Vendor Name" value={newManualBook.partyName} onChange={e => setNewManualBook({ ...newManualBook, partyName: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN</label><input type="text" placeholder="ABCDE1234F" value={newManualBook.partyPan} onChange={e => setNewManualBook({ ...newManualBook, partyPan: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold font-mono" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Ledger</label><input type="text" placeholder="e.g. Audit Fees" value={newManualBook.ledgerName} onChange={e => setNewManualBook({ ...newManualBook, ledgerName: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Gross Amt (₹)</label><input type="number" placeholder="100000" value={newManualBook.amount} onChange={e => setNewManualBook({ ...newManualBook, amount: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Actual TDS (₹)</label><input type="number" placeholder="10000" value={newManualBook.actualTds} onChange={e => setNewManualBook({ ...newManualBook, actualTds: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Voucher No</label><input type="text" placeholder="Optional" value={newManualBook.voucherNo} onChange={e => setNewManualBook({ ...newManualBook, voucherNo: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
                                             <div className="flex items-end"><button onClick={handleAddManualBookRow} className="w-full h-8 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center justify-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button></div>
                                         </div>
-                                        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20 max-h-[180px] overflow-y-auto">
-                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Party</th><th className="px-3 py-2">Ledger</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
-                                                <tbody className="divide-y divide-slate-800/50">{manualBooksTransactions.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No rows yet. Add transactions above.</td></tr>) : manualBooksTransactions.map(r => (<tr key={r.id} className="hover:bg-slate-800/20"><td className="px-3 py-1.5 text-slate-300 font-mono">{r.date}</td><td className="px-3 py-1.5 text-white font-medium truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-slate-300">{r.ledgerName}</td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amount.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-purple-300 font-mono">₹{r.actualTdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualBookRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
+                                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[180px] overflow-y-auto">
+                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Party</th><th className="px-3 py-2">Ledger</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
+                                                <tbody className="divide-y divide-slate-800/50">{manualBooksTransactions.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No rows yet. Add transactions above.</td></tr>) : manualBooksTransactions.map(r => (<tr key={r.id} className="hover:bg-slate-50"><td className="px-3 py-1.5 text-slate-700 font-mono">{r.date}</td><td className="px-3 py-1.5 text-slate-900 font-semibold truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-slate-700">{r.ledgerName}</td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amount.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-purple-300 font-mono">₹{r.actualTdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualBookRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
                                             </table>
                                         </div>
                                     </div>
-                                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
-                                        <div><h3 className="text-lg font-bold text-white flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> TDS / TRACES Records</h3><p className="text-xs text-slate-400">Manually insert TDS declarations from returns or Form 26AS.</p></div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN/TAN</label><input type="text" placeholder="ABCDE1234F" value={newManualTds.partyPan} onChange={e => setNewManualTds({ ...newManualTds, partyPan: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white font-mono" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Name</label><input type="text" placeholder="Deductor Name" value={newManualTds.partyName} onChange={e => setNewManualTds({ ...newManualTds, partyName: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Section</label><select value={newManualTds.section} onChange={e => setNewManualTds({ ...newManualTds, section: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section}</option>)}</select></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Amount Paid (₹)</label><input type="number" placeholder="100000" value={newManualTds.amountPaid} onChange={e => setNewManualTds({ ...newManualTds, amountPaid: e.target.value })} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">TDS Deposited (₹)</label><input type="number" placeholder="10000" value={newManualTds.tdsDeducted} onChange={e => setNewManualTds({ ...newManualTds, tdsDeducted: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-slate-900 border border-slate-700 rounded px-2 text-xs text-white" /></div>
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-3">
+                                        <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> TDS / TRACES Records</h3><p className="text-xs text-slate-600">Manually insert TDS declarations from returns or Form 26AS.</p></div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN/TAN</label><input type="text" placeholder="ABCDE1234F" value={newManualTds.partyPan} onChange={e => setNewManualTds({ ...newManualTds, partyPan: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold font-mono" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Name</label><input type="text" placeholder="Deductor Name" value={newManualTds.partyName} onChange={e => setNewManualTds({ ...newManualTds, partyName: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Section</label><select value={newManualTds.section} onChange={e => setNewManualTds({ ...newManualTds, section: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section}</option>)}</select></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Amount Paid (₹)</label><input type="number" placeholder="100000" value={newManualTds.amountPaid} onChange={e => setNewManualTds({ ...newManualTds, amountPaid: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
+                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">TDS Deposited (₹)</label><input type="number" placeholder="10000" value={newManualTds.tdsDeducted} onChange={e => setNewManualTds({ ...newManualTds, tdsDeducted: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
                                             <div className="flex items-end"><button onClick={handleAddManualTdsRow} className="w-full h-8 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center justify-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button></div>
                                         </div>
-                                        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20 max-h-[180px] overflow-y-auto">
-                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0"><tr><th className="px-3 py-2">PAN</th><th className="px-3 py-2">Name</th><th className="px-3 py-2 text-center">Section</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
-                                                <tbody className="divide-y divide-slate-800/50">{manualTdsRecords.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No TDS records yet. Add rows above.</td></tr>) : manualTdsRecords.map(r => (<tr key={r.id} className="hover:bg-slate-800/20"><td className="px-3 py-1.5 font-mono text-slate-400">{r.partyPan}</td><td className="px-3 py-1.5 text-white font-medium truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-center"><span className="px-1.5 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-bold text-[10px] text-purple-400">{r.section}</span></td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amountPaid.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-emerald-400 font-mono">₹{r.tdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualTdsRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
+                                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[180px] overflow-y-auto">
+                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0"><tr><th className="px-3 py-2">PAN</th><th className="px-3 py-2">Name</th><th className="px-3 py-2 text-center">Section</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
+                                                <tbody className="divide-y divide-slate-800/50">{manualTdsRecords.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No TDS records yet. Add rows above.</td></tr>) : manualTdsRecords.map(r => (<tr key={r.id} className="hover:bg-slate-50"><td className="px-3 py-1.5 font-mono text-slate-600">{r.partyPan}</td><td className="px-3 py-1.5 text-slate-900 font-semibold truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-center"><span className="px-1.5 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-bold text-[10px] text-purple-400">{r.section}</span></td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amountPaid.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-emerald-400 font-mono">₹{r.tdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualTdsRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
                                             </table>
                                         </div>
                                     </div>
@@ -1769,11 +1839,11 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
             {/* ═══════════════ STEP 2: VENDOR MASTERS ═══════════════ */}
             {activeStep === 2 && (
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl animate-pop-in">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs animate-pop-in">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
                         <div>
-                            <h2 className="text-lg font-bold text-white mb-0.5">Vendor Master Profile</h2>
-                            <p className="text-xs text-slate-400">Review vendor PAN mappings, Entity Types, and <b>Closing Balances</b>. Edit missing records.</p>
+                            <h2 className="text-lg font-bold text-slate-900 mb-0.5">Vendor Master Profile</h2>
+                            <p className="text-xs text-slate-600">Review vendor PAN mappings, Entity Types, and <b>Closing Balances</b>. Edit missing records.</p>
                         </div>
                         <div className="flex items-center gap-3 w-full sm:w-auto">
                             {connectionStatus === 'connected' && (
@@ -1783,13 +1853,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                             )}
                             <div className="relative flex-1 sm:w-56">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                <input type="text" value={partySearchTerm} onChange={(e) => setPartySearchTerm(e.target.value)} placeholder="Search vendors, PANs..." className="w-full h-9 bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 text-sm text-white focus:border-purple-500 outline-none" />
+                                <input type="text" value={partySearchTerm} onChange={(e) => setPartySearchTerm(e.target.value)} placeholder="Search vendors, PANs..." className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 text-sm text-white focus:border-purple-500 outline-none" />
                             </div>
                         </div>
                     </div>
-                    <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20 max-h-[500px] overflow-y-auto">
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[500px] overflow-y-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
                                 <tr><th className="px-4 py-2.5 font-medium">Vendor Name</th><th className="px-4 py-2.5 font-medium">PAN</th><th className="px-4 py-2.5 font-medium">Entity Type</th><th className="px-4 py-2.5 font-medium text-right">Closing Balance</th><th className="px-4 py-2.5 font-medium text-center w-24">Action</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
@@ -1802,16 +1872,16 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     const pAlpha = pUpper.replace(/[^A-Z0-9]/g, '');
                                     const bal = partyBalances.get(pUpper) ?? partyBalances.get(pClean) ?? partyBalances.get(pAlpha) ?? 0;
                                     return (
-                                        <tr key={p.id} className="hover:bg-slate-800/20">
-                                            <td className="px-4 py-2.5 text-white font-medium max-w-[250px] truncate" title={p.party_name}>{p.party_name}</td>
-                                            <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
+                                        <tr key={p.id} className="hover:bg-slate-50">
+                                            <td className="px-4 py-2.5 text-slate-900 font-semibold max-w-[250px] truncate" title={p.party_name}>{p.party_name}</td>
+                                            <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
                                                 {isEditing ? <input type="text" value={editPan} onChange={e => setEditPan(e.target.value)} maxLength={10} onKeyDown={e => e.key === 'Enter' && handleSavePartyEdit(p.id)} className="w-28 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white font-mono focus:border-purple-500 outline-none" /> : (p.pan_number || <span className="text-red-400 italic font-sans">Missing PAN</span>)}
                                             </td>
                                             <td className="px-4 py-2.5">
                                                 {isEditing ? (
                                                     <select value={editEntityType} onChange={e => setEditEntityType(e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white focus:border-purple-500 outline-none"><option value="Individual">P - Individual</option><option value="HUF">H - HUF</option><option value="Company">C - Company</option><option value="Firm">F - Firm / LLP</option><option value="AOP">A - AOP</option><option value="Trust">T - Trust</option><option value="Unknown">Unknown</option></select>
                                                 ) : (
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.entity_type === 'Company' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : p.entity_type === 'Individual' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : p.entity_type === 'Firm' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : p.entity_type === 'HUF' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>{p.entity_type}</span>
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.entity_type === 'Company' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : p.entity_type === 'Individual' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : p.entity_type === 'Firm' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : p.entity_type === 'HUF' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-600 border border-slate-700'}`}>{p.entity_type}</span>
                                                 )}
                                             </td>
                                             <td className={`px-4 py-2.5 text-right font-mono text-xs ${bal < 0 ? 'text-rose-400' : bal > 0 ? 'text-teal-400' : 'text-slate-500'}`}>{fmtBal(bal)}</td>
@@ -1819,10 +1889,10 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                 {isEditing ? (
                                                     <div className="flex gap-2 justify-center">
                                                         <button onClick={() => handleSavePartyEdit(p.id)} className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Save</button>
-                                                        <button onClick={() => setEditingPartyId(null)} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold">Cancel</button>
+                                                        <button onClick={() => setEditingPartyId(null)} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded text-xs font-bold">Cancel</button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => startEditingParty(p)} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded text-xs font-semibold flex items-center gap-1 mx-auto"><Edit2 className="w-3 h-3" /> Edit</button>
+                                                    <button onClick={() => startEditingParty(p)} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-700 hover:text-white rounded text-xs font-semibold flex items-center gap-1 mx-auto"><Edit2 className="w-3 h-3" /> Edit</button>
                                                 )}
                                             </td>
                                         </tr>
@@ -1844,7 +1914,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 {isProcessing ? 'Analyzing Thresholds & Verifying...' : 'Run Reconciliation Engine'}
                             </button>
                             {(tallyDirectData || form26qFile || itrJsonFile) && (
-                                <button onClick={handleReset} className="h-12 px-5 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl font-bold transition-all border border-slate-800 flex items-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Clear Data</button>
+                                <button onClick={handleReset} className="h-12 px-5 bg-slate-850 hover:bg-slate-50 text-slate-600 hover:text-white rounded-xl font-bold transition-all border border-slate-200 flex items-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Clear Data</button>
                             )}
                         </div>
                     </div>
@@ -1861,8 +1931,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
                                     <AlertTriangle className="w-4 h-4" /> Multiple Ledger Audit Warning
                                 </div>
-                                <h2 className="text-xl font-extrabold text-white">PANs with Multiple Tally Party Names Detected</h2>
-                                <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                                <h2 className="text-xl font-extrabold text-slate-900">PANs with Multiple Tally Party Names Detected</h2>
+                                <p className="text-xs text-slate-700 mt-1 max-w-3xl leading-relaxed">
                                     The following PANs have 2 or more distinct vendor ledger names in Tally (e.g. driver accounts, vehicle prefixes, or branch ledgers). They are presented separately below to preserve book integrity while auditing aggregate TDS liabilities against 26Q.
                                 </p>
                             </div>
@@ -1877,18 +1947,18 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Flagged PANs</span>
+                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Flagged PANs</span>
                             <span className="text-3xl font-black text-amber-400">{multiLedgerPans.length}</span>
                         </div>
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Total Split Party Ledgers</span>
+                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Total Split Party Ledgers</span>
                             <span className="text-3xl font-black text-purple-400">
                                 {multiLedgerPans.reduce((sum, p) => sum + p.ledgers.length, 0)}
                             </span>
                         </div>
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Total Spend Across Split PANs</span>
+                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
+                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Total Spend Across Split PANs</span>
                             <span className="text-3xl font-black text-emerald-400">
                                 {fmtAmt(multiLedgerPans.reduce((sum, p) => sum + p.totalSpend, 0))}
                             </span>
@@ -1896,18 +1966,18 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     </div>
 
                     {/* Split PAN Table */}
-                    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/40 shadow-xl">
-                        <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex justify-between items-center">
-                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-xl">
+                        <div className="p-4 bg-slate-900/80 border-b border-slate-200 flex justify-between items-center">
+                            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                 <Users className="w-4 h-4 text-amber-400" /> Multi-Ledger Party Breakdown
                             </h3>
-                            <span className="text-xs text-slate-400 font-medium">
+                            <span className="text-xs text-slate-600 font-medium">
                                 Showing {multiLedgerPans.length} PAN groups
                             </span>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-xs whitespace-nowrap">
-                                <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
                                     <tr>
                                         <th className="px-4 py-3 font-medium">PAN Number</th>
                                         <th className="px-4 py-3 font-medium">Tally Party Name (Books)</th>
@@ -1930,16 +2000,16 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                         multiLedgerPans.map((panGroup, groupIdx) => (
                                             <React.Fragment key={groupIdx}>
                                                 {panGroup.ledgers.map((l, ledgerIdx) => (
-                                                    <tr key={ledgerIdx} className="hover:bg-slate-800/30 transition-colors">
+                                                    <tr key={ledgerIdx} className="hover:bg-slate-50 transition-colors">
                                                         {ledgerIdx === 0 && (
-                                                            <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 font-mono font-bold text-amber-400 align-top border-r border-slate-800 bg-slate-950/20">
+                                                            <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 font-mono font-bold text-amber-400 align-top border-r border-slate-200 bg-slate-50">
                                                                 {panGroup.pan}
                                                                 <div className="text-[10px] font-normal text-slate-500 mt-0.5">
                                                                     {panGroup.ledgers.length} ledgers
                                                                 </div>
                                                             </td>
                                                         )}
-                                                        <td className="px-4 py-3 text-white font-medium">
+                                                        <td className="px-4 py-3 text-slate-900 font-semibold">
                                                             {l.partyName}
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
@@ -1947,7 +2017,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                                 {l.section}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-300">
+                                                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-700">
                                                             {fmtAmt(l.spend)}
                                                         </td>
                                                         <td className="px-4 py-3 text-right font-mono font-bold text-purple-400">
@@ -1955,13 +2025,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                         </td>
                                                         {ledgerIdx === 0 && (
                                                             <>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-emerald-400 align-top border-l border-slate-800 bg-slate-950/20">
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-emerald-400 align-top border-l border-slate-200 bg-slate-50">
                                                                     {fmtAmt(panGroup.totalSpend)}
                                                                 </td>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-slate-300 align-top bg-slate-950/20">
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-slate-700 align-top bg-slate-50">
                                                                     {fmtAmt(panGroup.tracesTaxable)}
                                                                 </td>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-teal-400 align-top bg-slate-950/20">
+                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-teal-400 align-top bg-slate-50">
                                                                     {fmtAmt(panGroup.tracesTds)}
                                                                 </td>
                                                             </>
@@ -1995,7 +2065,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     {reconSummary && (
                         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                             {[
-                                { label: 'Total', val: reconSummary.total_parties_analyzed, color: 'text-white', bg: 'bg-slate-900/40 border-slate-800' },
+                                { label: 'Total', val: reconSummary.total_parties_analyzed, color: 'text-white', bg: 'bg-slate-900/40 border-slate-200' },
                                 { label: 'Matched', val: reconSummary.matched_count, color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/20' },
                                 { label: 'Short', val: reconSummary.short_deducted_count, color: 'text-amber-400', bg: 'bg-amber-500/5 border-amber-500/20' },
                                 { label: 'Excess', val: reconSummary.excess_deducted_count, color: 'text-purple-400', bg: 'bg-purple-500/5 border-purple-500/20' },
@@ -2003,7 +2073,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 { label: 'Missing Books', val: reconSummary.missing_in_books_count, color: 'text-blue-400', bg: 'bg-blue-500/5 border-blue-500/20' },
                             ].map((c, i) => (
                                 <div key={i} className={`${c.bg} border rounded-xl p-3 text-center`}>
-                                    <span className="text-[10px] text-slate-400 block mb-0.5 uppercase tracking-wider font-medium">{c.label}</span>
+                                    <span className="text-[10px] text-slate-600 block mb-0.5 uppercase tracking-wider font-medium">{c.label}</span>
                                     <span className={`text-2xl font-black ${c.color}`}>{c.val}</span>
                                 </div>
                             ))}
@@ -2011,19 +2081,19 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     )}
 
                     {/* Controls Bar & Sub-Tabs */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
                         <div className="flex flex-col gap-4 mb-5">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                                     <button
                                         onClick={() => setActiveResultsSubTab('RECONCILIATION')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeResultsSubTab === 'RECONCILIATION' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeResultsSubTab === 'RECONCILIATION' ? 'bg-purple-600 text-white shadow' : 'text-slate-600 hover:text-white'}`}
                                     >
                                         26Q Reconciliation Report
                                     </button>
                                     <button
                                         onClick={() => setActiveResultsSubTab('ADVANCE_AUDIT')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeResultsSubTab === 'ADVANCE_AUDIT' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeResultsSubTab === 'ADVANCE_AUDIT' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:text-white'}`}
                                     >
                                         <span>Advance TDS Audit (Pay &gt; Exp)</span>
                                         {advanceTdsResults.length > 0 && (
@@ -2036,7 +2106,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 <div className="flex items-center gap-2 w-full sm:w-auto">
                                     <div className="relative flex-1 sm:w-56">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search party, PAN..." className="w-full h-9 bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 text-sm text-white focus:border-purple-500 outline-none" />
+                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search party, PAN..." className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 text-sm text-white focus:border-purple-500 outline-none" />
                                     </div>
                                     {multiLedgerPans.length > 0 && (
                                         <button onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')} className="h-9 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-amber-900/20"><Download className="w-3.5 h-3.5" /> Multi-Ledger PAN Error Workbook</button>
@@ -2052,9 +2122,9 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                         {/* SUB TAB 1: 26Q Reconciliation Table */}
                         {activeResultsSubTab === 'RECONCILIATION' && (
-                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30 overflow-x-auto">
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 overflow-x-auto">
                             <table className="w-full text-left text-xs whitespace-nowrap">
-                                <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
                                     <tr>
                                         <th className="px-2 py-2.5 font-medium w-6"></th>
                                         <th className="px-3 py-2.5 font-medium">Party Name (Books)</th>
@@ -2085,9 +2155,9 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                                                 return (
                                                     <React.Fragment key={i}>
-                                                        <tr onClick={() => toggleRowExpand(i)} className={`hover:bg-slate-800/30 cursor-pointer transition-colors group ${r.isMultiLedgerPan ? 'bg-amber-500/10 hover:bg-amber-500/20 border-l-2 border-amber-500' : ''}`}>
+                                                        <tr onClick={() => toggleRowExpand(i)} className={`hover:bg-slate-50 cursor-pointer transition-colors group ${r.isMultiLedgerPan ? 'bg-amber-500/10 hover:bg-amber-500/20 border-l-2 border-amber-500' : ''}`}>
                                                             <td className="px-2 py-2.5 text-center"><ChevronRight className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} /></td>
-                                                            <td className="px-3 py-2.5 text-white font-medium max-w-[200px] truncate" title={r.nameInBooks || r.partyName}>
+                                                            <td className="px-3 py-2.5 text-slate-900 font-semibold max-w-[200px] truncate" title={r.nameInBooks || r.partyName}>
                                                                 <div className="flex items-center gap-1.5 overflow-hidden">
                                                                     <span className="truncate">{r.nameInBooks && r.nameInBooks !== '—' ? r.nameInBooks : (r.partyName || '—')}</span>
                                                                     {r.isMultiLedgerPan && (
@@ -2097,59 +2167,59 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                                     )}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-3 py-2.5 text-slate-300 max-w-[180px] truncate" title={r.nameIn26Q}>{r.nameIn26Q || '—'}</td>
-                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-400">{r.panInBooks === 'PAN-MISSING' ? <span className="text-red-400 italic">Missing</span> : r.panInBooks}</td>
-                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-400">{r.panIn26Q || '—'}</td>
+                                                            <td className="px-3 py-2.5 text-slate-700 max-w-[180px] truncate" title={r.nameIn26Q}>{r.nameIn26Q || '—'}</td>
+                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">{r.panInBooks === 'PAN-MISSING' ? <span className="text-red-400 italic">Missing</span> : r.panInBooks}</td>
+                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">{r.panIn26Q || '—'}</td>
                                                             <td className="px-3 py-2.5 text-center"><span className="text-[11px] font-bold text-purple-400">{r.section}</span></td>
                                                             <td className="px-3 py-2.5 text-right font-mono text-[11px] text-rose-400 font-bold">{fmtAmt(requiredTds)}</td>
                                                             <td className="px-3 py-2.5 text-right font-mono text-[11px] text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</td>
                                                             <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-slate-400'}`}>{booksTdsVariance !== 0 ? fmtAmt(booksTdsVariance) : '—'}</td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-slate-400'}`}>{returnTdsVariance !== 0 ? fmtAmt(returnTdsVariance) : '—'}</td>
+                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-slate-600'}`}>{booksTdsVariance !== 0 ? fmtAmt(booksTdsVariance) : '—'}</td>
+                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-slate-600'}`}>{returnTdsVariance !== 0 ? fmtAmt(returnTdsVariance) : '—'}</td>
                                                             <td className="px-3 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusStyle(r.status)}`}>{r.status}</span></td>
                                                         </tr>
                                                         {isExpanded && (
                                                             <tr>
-                                                                <td colSpan={12} className="bg-slate-950/60 px-6 py-4 border-t border-slate-800/50">
+                                                                <td colSpan={12} className="bg-slate-50 px-6 py-4 border-t border-slate-200">
                                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                                                                         {/* Books */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-800">
+                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
                                                                             <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">📚 Books Data</div>
                                                                             <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Name in Books</span><span className="text-white font-medium truncate max-w-[160px]" title={r.nameInBooks}>{r.nameInBooks}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">PAN in Books</span><span className="text-white font-mono">{r.panInBooks}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Expense Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.ledgers}>{r.ledgers || '—'}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">TDS Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.tdsLedgers}>{r.tdsLedgers || '—'}</span></div>
-                                                                                <div className="border-t border-slate-800 pt-1.5 mt-1.5"></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Total Spend</span><span className="text-white font-bold">{fmtAmt(r.booksSpend)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Taxable Amount</span><span className="text-white font-bold">{fmtAmt(r.booksTaxable)}</span></div>
-                                                                                <div className="flex justify-between gap-2"><span className="text-slate-400">Taxable Basis</span><span className="text-indigo-300 font-medium text-right text-[11px] truncate max-w-[220px]" title={r.taxableBasis}>{r.taxableBasis || '—'}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Rate Applied</span><span className="text-white">{applicableRate * 100}%</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Required TDS</span><span className="text-rose-400 font-bold">{fmtAmt(requiredTds)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Actual TDS</span><span className="text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Name in Books</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameInBooks}>{r.nameInBooks}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">PAN in Books</span><span className="text-white font-mono">{r.panInBooks}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Expense Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.ledgers}>{r.ledgers || '—'}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">TDS Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.tdsLedgers}>{r.tdsLedgers || '—'}</span></div>
+                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Total Spend</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksSpend)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable Amount</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksTaxable)}</span></div>
+                                                                                <div className="flex justify-between gap-2"><span className="text-slate-600">Taxable Basis</span><span className="text-indigo-300 font-medium text-right text-[11px] truncate max-w-[220px]" title={r.taxableBasis}>{r.taxableBasis || '—'}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Rate Applied</span><span className="text-white">{applicableRate * 100}%</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Required TDS</span><span className="text-rose-400 font-bold">{fmtAmt(requiredTds)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Actual TDS</span><span className="text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</span></div>
                                                                             </div>
                                                                         </div>
                                                                         {/* 26Q */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-800">
+                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
                                                                             <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">📋 Form 26Q / TRACES</div>
                                                                             <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Name in 26Q</span><span className="text-white font-medium truncate max-w-[160px]" title={r.nameIn26Q}>{r.nameIn26Q}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">PAN in 26Q</span><span className="text-white font-mono">{r.panIn26Q}</span></div>
-                                                                                <div className="border-t border-slate-800 pt-1.5 mt-1.5"></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Taxable (26Q)</span><span className="text-white font-bold">{fmtAmt(r.tracesTaxable)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">TDS (26Q)</span><span className="text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Name in 26Q</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameIn26Q}>{r.nameIn26Q}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">PAN in 26Q</span><span className="text-white font-mono">{r.panIn26Q}</span></div>
+                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable (26Q)</span><span className="text-slate-900 font-bold">{fmtAmt(r.tracesTaxable)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">TDS (26Q)</span><span className="text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</span></div>
                                                                             </div>
                                                                         </div>
                                                                         {/* Variance & Reason */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-800">
+                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
                                                                             <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">⚖️ Variance & Analysis</div>
                                                                             <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Taxable Variance</span><span className={`font-bold ${r.taxableVariance > 0 ? 'text-amber-400' : r.taxableVariance < 0 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(r.taxableVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Books TDS Variance</span><span className={`font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(booksTdsVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">26Q TDS Variance</span><span className={`font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(returnTdsVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-400">Closing Balance</span><span className={`font-bold font-mono ${(r.closingBalance || 0) < 0 ? 'text-rose-400' : 'text-teal-400'}`}>{fmtBal(r.closingBalance || 0)}</span></div>
-                                                                                <div className="border-t border-slate-800 pt-1.5 mt-1.5"></div>
-                                                                                <div><span className="text-slate-400 block mb-1">Reason</span><span className="text-slate-300 text-[11px] leading-relaxed block">{r.reason || '—'}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable Variance</span><span className={`font-bold ${r.taxableVariance > 0 ? 'text-amber-400' : r.taxableVariance < 0 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(r.taxableVariance)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Books TDS Variance</span><span className={`font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(booksTdsVariance)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">26Q TDS Variance</span><span className={`font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(returnTdsVariance)}</span></div>
+                                                                                <div className="flex justify-between"><span className="text-slate-600">Closing Balance</span><span className={`font-bold font-mono ${(r.closingBalance || 0) < 0 ? 'text-rose-400' : 'text-teal-400'}`}>{fmtBal(r.closingBalance || 0)}</span></div>
+                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
+                                                                                <div><span className="text-slate-600 block mb-1">Reason</span><span className="text-slate-700 text-[11px] leading-relaxed block">{r.reason || '—'}</span></div>
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -2168,9 +2238,9 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
                         {/* SUB TAB 2: Advance Payment TDS Audit Table */}
                         {activeResultsSubTab === 'ADVANCE_AUDIT' && (
-                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/30">
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                                 <table className="w-full text-left text-sm">
-                                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
                                         <tr>
                                             <th className="px-3.5 py-2.5 font-medium">Party Name</th>
                                             <th className="px-3.5 py-2.5 font-medium">PAN</th>
@@ -2191,7 +2261,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                 <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <CheckCircle2 className="w-8 h-8 text-emerald-500/50" />
-                                                        <span className="text-sm font-medium text-slate-300">No Advance Payment TDS Shortfalls Found!</span>
+                                                        <span className="text-sm font-medium text-slate-700">No Advance Payment TDS Shortfalls Found!</span>
                                                         <span className="text-xs text-slate-500">Current year payments made to all Sundry Creditors are fully covered by expense bills or TDS.</span>
                                                     </div>
                                                 </td>
@@ -2205,15 +2275,15 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                     return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
                                                 };
                                                 return (
-                                                    <tr key={i} className="hover:bg-slate-800/30 transition-colors">
-                                                        <td className="px-3.5 py-3 text-white font-medium max-w-[220px] truncate" title={r.partyName}>{r.partyName}</td>
-                                                        <td className="px-3.5 py-3 font-mono text-xs text-slate-400">{r.partyPan}</td>
+                                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-3.5 py-3 text-slate-900 font-semibold max-w-[220px] truncate" title={r.partyName}>{r.partyName}</td>
+                                                        <td className="px-3.5 py-3 font-mono text-xs text-slate-600">{r.partyPan}</td>
                                                         <td className="px-3.5 py-3 text-center">
                                                             <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.section === 'UNMAPPED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
                                                                 {r.section}
                                                             </span>
                                                         </td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-300">{fmtAmt(r.currentYearExpenses)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-700">{fmtAmt(r.currentYearExpenses)}</td>
                                                         <td className="px-3.5 py-3 text-right font-mono text-xs text-teal-300 font-medium">{fmtAmt(r.openingBalanceCr || 0)}</td>
                                                         <td className="px-3.5 py-3 text-right font-mono text-xs text-indigo-300 font-bold">{fmtAmt(r.currentYearPayments)}</td>
                                                         <td className="px-3.5 py-3 text-right font-mono text-xs text-amber-400 font-bold">{fmtAmt(r.advanceAmount)}</td>
@@ -2241,25 +2311,25 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
             {/* Fuzzy PAN Matches dialog */}
             {showPanMatchesDialog && (
-                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
-                        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
+                <div className="fixed inset-0 bg-slate-50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg"><ShieldAlert className="w-5 h-5" /></div>
-                                <div><h3 className="text-lg font-bold text-white">PAN Mismatch Mappings</h3><p className="text-xs text-slate-400">Confirm matching names from 26Q to map their PANs.</p></div>
+                                <div><h3 className="text-lg font-bold text-slate-900">PAN Mismatch Mappings</h3><p className="text-xs text-slate-600">Confirm matching names from 26Q to map their PANs.</p></div>
                             </div>
-                            <button onClick={() => setShowPanMatchesDialog(false)} className="text-slate-400 hover:text-white p-1.5 hover:bg-slate-800 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+                            <button onClick={() => setShowPanMatchesDialog(false)} className="text-slate-600 hover:text-white p-1.5 hover:bg-slate-50 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-3 flex-1">
                             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /><div>These parties have a missing PAN in Tally but exact same names were found in 26Q with valid PANs.</div></div>
-                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40 max-h-[280px] overflow-y-auto">
-                                <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium w-12 text-center">✓</th><th className="px-4 py-2.5 font-medium">Party Name</th><th className="px-4 py-2.5 font-medium text-center">PAN (from 26Q)</th><th className="px-4 py-2.5 font-medium text-center">Section</th></tr></thead>
-                                    <tbody className="divide-y divide-slate-800/50">{pendingPanMatches.map((m, i) => (<tr key={i} className="hover:bg-slate-800/30"><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={!!selectedPanMatches[m.partyName]} onChange={(e) => setSelectedPanMatches({ ...selectedPanMatches, [m.partyName]: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5 text-white font-medium">{m.partyName}</td><td className="px-4 py-2.5 text-center font-mono text-purple-400 font-bold">{m.suggestedPan}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-bold text-[10px] text-slate-400">{m.section}</span></td></tr>))}</tbody>
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[280px] overflow-y-auto">
+                                <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium w-12 text-center">✓</th><th className="px-4 py-2.5 font-medium">Party Name</th><th className="px-4 py-2.5 font-medium text-center">PAN (from 26Q)</th><th className="px-4 py-2.5 font-medium text-center">Section</th></tr></thead>
+                                    <tbody className="divide-y divide-slate-800/50">{pendingPanMatches.map((m, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={!!selectedPanMatches[m.partyName]} onChange={(e) => setSelectedPanMatches({ ...selectedPanMatches, [m.partyName]: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5 text-slate-900 font-semibold">{m.partyName}</td><td className="px-4 py-2.5 text-center font-mono text-purple-400 font-bold">{m.suggestedPan}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-bold text-[10px] text-slate-600">{m.section}</span></td></tr>))}</tbody>
                                 </table>
                             </div>
                         </div>
-                        <div className="p-5 border-t border-slate-800 bg-slate-950/20 flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <button onClick={handleSkipPanMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold">Skip & Reconcile (Keep Separate)</button>
+                        <div className="p-5 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <button onClick={handleSkipPanMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded-lg text-xs font-bold">Skip & Reconcile (Keep Separate)</button>
                             <button onClick={handleConfirmPanMatches} className="w-full sm:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Confirm & Reconcile</button>
                         </div>
                     </div>
@@ -2268,17 +2338,17 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
             {/* Suggested Name Matches confirmation dialog */}
             {showNameMatchesDialog && (
-                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
-                        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
+                <div className="fixed inset-0 bg-slate-50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-200 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg"><GitCompare className="w-5 h-5" /></div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">Verify Party Linkages (Name-Based)</h3>
-                                    <p className="text-xs text-slate-400 font-medium mt-0.5">Confirm if the following parties matched by name are the same business entity.</p>
+                                    <h3 className="text-lg font-bold text-slate-900">Verify Party Linkages (Name-Based)</h3>
+                                    <p className="text-xs text-slate-600 font-medium mt-0.5">Confirm if the following parties matched by name are the same business entity.</p>
                                 </div>
                             </div>
-                            <button onClick={() => setShowNameMatchesDialog(false)} className="text-slate-400 hover:text-white p-1.5 hover:bg-slate-800 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+                            <button onClick={() => setShowNameMatchesDialog(false)} className="text-slate-600 hover:text-white p-1.5 hover:bg-slate-50 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-3 flex-1">
                             <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300 flex items-start gap-2">
@@ -2287,9 +2357,9 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     Unchecked linkages will be treated as separate, distinct entities in the final reconciliation results, preventing incorrect merging (e.g. Rudra Land Developers vs Mauli Land Developers).
                                 </div>
                             </div>
-                            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40 max-h-[350px] overflow-y-auto">
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[350px] overflow-y-auto">
                                 <table className="w-full text-left text-xs whitespace-nowrap">
-                                    <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 sticky top-0 z-10">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-4 py-2.5 font-medium w-12 text-center">Link?</th>
                                             <th className="px-4 py-2.5 font-medium">Party in Books (Tally)</th>
@@ -2303,7 +2373,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                             const key = `${m.booksName}_${m.tracesName}`;
                                             const isChecked = !!selectedNameMatches[key];
                                             return (
-                                                <tr key={i} className="hover:bg-slate-800/30">
+                                                <tr key={i} className="hover:bg-slate-50">
                                                     <td className="px-4 py-2.5 text-center">
                                                         <input
                                                             type="checkbox"
@@ -2312,14 +2382,14 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                             className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer"
                                                         />
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-white font-medium max-w-[200px] truncate" title={m.booksName}>{m.booksName}</td>
-                                                    <td className="px-4 py-2.5 text-slate-300 max-w-[200px] truncate" title={m.tracesName}>{m.tracesName}</td>
+                                                    <td className="px-4 py-2.5 text-slate-900 font-semibold max-w-[200px] truncate" title={m.booksName}>{m.booksName}</td>
+                                                    <td className="px-4 py-2.5 text-slate-700 max-w-[200px] truncate" title={m.tracesName}>{m.tracesName}</td>
                                                     <td className="px-4 py-2.5 text-center">
                                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.type === 'Exact Name' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
                                                             {m.type}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-400">
+                                                    <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-600">
                                                         {Math.round(m.similarity * 100)}%
                                                     </td>
                                                 </tr>
@@ -2329,8 +2399,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 </table>
                             </div>
                         </div>
-                        <div className="p-5 border-t border-slate-800 bg-slate-950/20 flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <button onClick={handleSkipNameMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold">
+                        <div className="p-5 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <button onClick={handleSkipNameMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded-lg text-xs font-bold">
                                 Keep All Separate & Reconcile
                             </button>
                             <button onClick={handleConfirmNameMatches} className="w-full sm:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2">
@@ -2340,6 +2410,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     </div>
                 </div>
             )}
+
+            {/* SAVED TDS RECONCILIATIONS MODAL */}
+            <RecoHistoryModal
+                isOpen={isHistoryOpen}
+                onClose={() => setIsHistoryOpen(false)}
+                onRestoreSession={handleRestoreTdsSession}
+            />
         </div>
     );
 }

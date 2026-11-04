@@ -138,7 +138,7 @@ function buildCoverAndScopeSheet(
     const rows: any[][] = [];
 
     // Title Block (Single unmerged cells)
-    rows.push(['VASWANI RETURN ENTERPRISE — SUITE 08: MONTHLY AUDIT WORKING PAPER']);
+    rows.push(['SUITE 08: MONTHLY AUDIT WORKING PAPER & STATUTORY COMPLIANCE']);
     const periodLabel = header.periodMode === 'multiple'
         ? `MULTIPLE MONTHS (${header.selectedMonths?.join(', ') || header.month})`
         : `SINGLE MONTH (${header.month})`;
@@ -154,7 +154,7 @@ function buildCoverAndScopeSheet(
     rows.push(['Months Covered', header.selectedMonths?.join(', ') || header.month, '', 'Audit Start Date', header.auditStartDate || 'N/A']);
     rows.push(['Type of Audit', header.auditType, '', 'Audit End Date', header.auditEndDate || 'N/A']);
     rows.push(['Auditor / Engagement Partner', header.auditorName || 'Not Assigned', '', 'Engagement Ref / UDIN', header.engagementRef || 'N/A']);
-    rows.push(['Audit Firm Name', header.firmName || 'Vaswani & Associates, Chartered Accountants', '', 'Firm Reg. No. (FRN)', header.firmRegistrationNo || 'N/A']);
+    rows.push(['Audit Firm Name', header.firmName || 'Audit & Assurance Practice', '', 'Firm Reg. No. (FRN)', header.firmRegistrationNo || 'N/A']);
     rows.push(['Partner Membership No.', header.membershipNo || 'N/A', '', 'General Summary', header.generalSummary || 'Routine Verification']);
     rows.push([]);
 
@@ -716,11 +716,12 @@ function buildFixedAssetsRocSheet(
  * Sheet: Profitability_Statement (Schedule III Statement of Profit and Loss)
  * Strictly zero merged cells for full sort/filter capability
  */
-function buildProfitabilitySheet(stmt?: ProfitabilityStatement): XLSX.WorkSheet {
+function buildProfitabilitySheet(stmt?: ProfitabilityStatement, fallbackClientName?: string): XLSX.WorkSheet {
     const s = stmt || DEFAULT_PROFITABILITY_STATEMENT;
     const rows: any[][] = [];
 
-    rows.push([s.companyName.toUpperCase()]);
+    const companyTitle = s.companyName || fallbackClientName || '';
+    rows.push([companyTitle.toUpperCase()]);
     rows.push([`(CIN: ${s.cin})`]);
     rows.push([`(Address: ${s.registeredAddress})`]);
     rows.push([`Statement of Profit and loss for the year ended ${s.periodEndedDate}`]);
@@ -759,7 +760,7 @@ function buildProfitabilitySheet(stmt?: ProfitabilityStatement): XLSX.WorkSheet 
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
 
-    ws['A1'] = { t: 's', v: s.companyName.toUpperCase(), s: STYLES.SECTION_HEADER };
+    ws['A1'] = { t: 's', v: companyTitle.toUpperCase(), s: STYLES.SECTION_HEADER };
     ws['A2'] = { t: 's', v: `(CIN: ${s.cin})`, s: STYLES.META_LABEL };
     ws['A3'] = { t: 's', v: `(Address: ${s.registeredAddress})`, s: STYLES.META_VALUE };
     ws['A4'] = { t: 's', v: `Statement of Profit and loss for the year ended ${s.periodEndedDate}`, s: STYLES.SECTION_HEADER };
@@ -814,7 +815,7 @@ export function generateMonthlyAuditWorkbook(bundle: MonthlyAuditExportBundle): 
     XLSX.utils.book_append_sheet(wb, buildCoverAndScopeSheet(bundle.header, reg), 'Audit_Cover_&_Scope');
 
     // 2. Profitability_Statement (Matching Ribbon Tab 2)
-    XLSX.utils.book_append_sheet(wb, buildProfitabilitySheet(bundle.profitability), 'Profitability_Statement');
+    XLSX.utils.book_append_sheet(wb, buildProfitabilitySheet(bundle.profitability, bundle.header.clientName), 'Profitability_Statement');
 
     // 3. Verification_Checklist
     XLSX.utils.book_append_sheet(wb, buildVerificationChecklistSheet(bundle.checklists), 'Verification_Checklist');

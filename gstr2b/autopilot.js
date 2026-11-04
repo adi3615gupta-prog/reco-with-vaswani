@@ -143,15 +143,17 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         };
 
         // ─── Set up Download Event listener for BOTH GSTR-1 and GSTR-2B ───────
-        page.on('download', async (download) => {
-            try {
-                const originalName = download.suggestedFilename();
-                console.log(`[Autopilot] Download detected: ${originalName}`);
-                const savePath = path.join(downloadDir, `${Date.now()}_${originalName}`);
-                await download.saveAs(savePath);
-                console.log(`[Autopilot] Saved file to: ${savePath}`);
+        const activeGstr2bDownloadPromises = new Set();
+        page.on('download', (download) => {
+            const dlTask = (async () => {
+                try {
+                    const originalName = download.suggestedFilename();
+                    console.log(`[Autopilot] Download detected: ${originalName}`);
+                    const savePath = path.join(downloadDir, `${Date.now()}_${originalName}`);
+                    await download.saveAs(savePath);
+                    console.log(`[Autopilot] Saved file (${fs.existsSync(savePath) ? fs.statSync(savePath).size : 0} bytes) to: ${savePath}`);
 
-                const lower = originalName.toLowerCase();
+                    const lower = originalName.toLowerCase();
                 const isGstr1File = lower.includes('gstr1') || lower.includes('gstr-1') || lower.includes('_r1_') || lower.includes('_r1.') || (lower.includes('returns_') && !lower.includes('2b') && !lower.includes('r2b'));
 
                 if (isGstr1File) {
@@ -208,7 +210,10 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             } catch (err) {
                 console.error('[Autopilot] Error saving download:', err);
             }
-        });
+        })();
+        activeGstr2bDownloadPromises.add(dlTask);
+        dlTask.finally(() => activeGstr2bDownloadPromises.delete(dlTask));
+    });
 
         // Navigate to GST Portal Login
         console.log(`[GSTR-2B Autopilot] Navigating to GST login...`);
@@ -218,13 +223,54 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
         // Auto-fill Username & Password
         try {
-            await page.waitForSelector('#username', { timeout: 15000 });
+            await page.waitForSelector('#username, input[name="user_name"]', { timeout: 15000 });
             if (portalUser) {
+                console.log(`[GSTR-2B Autopilot] Auto-filling username: ${portalUser}`);
                 await page.fill('#username', portalUser);
+                await page.evaluate((u) => {
+                    const el = document.querySelector('#username') || document.querySelector('input[name="user_name"]');
+                    if (el) {
+                        el.value = u;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, portalUser);
             }
+
+            // Deliberate delay so Angular portal finishes validating username
+            await page.waitForTimeout(800);
+
             if (portalPass) {
-                await page.waitForSelector('#user_pass', { timeout: 5000 });
-                await page.fill('#user_pass', portalPass);
+                console.log('[GSTR-2B Autopilot] Auto-filling password...');
+                const pInput = page.locator('input#user_pass');
+                await pInput.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+                if (await pInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await pInput.click();
+                    await page.waitForTimeout(100);
+                    await pInput.fill('');
+                    await pInput.fill(portalPass);
+                    await pInput.evaluate((el, p) => {
+                        el.value = p;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        el.dispatchEvent(new Event('blur', { bubbles: true }));
+                    }, portalPass);
+                    console.log('[GSTR-2B Autopilot] Password auto-filled successfully');
+                } else {
+                    await page.evaluate((p) => {
+                        const passInputs = Array.from(document.querySelectorAll('input[type="password"], input[name="user_pass"]'));
+                        const el = passInputs.find(i => {
+                            const r = i.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0 && window.getComputedStyle(i).display !== 'none';
+                        }) || document.getElementById('user_pass');
+                        if (el) {
+                            el.value = p;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                        }
+                    }, portalPass);
+                }
             }
             await page.focus('#captcha').catch(() => {});
             focusDesktopWindow();
@@ -268,11 +314,12 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         try {
             await page.waitForFunction(() => {
                 const url = window.location.href;
-                const isAuth = url.includes('/auth/') || url.includes('/dashboard');
+                const isAuth = url.includes('/auth/') || url.includes('/dashboard') || url.includes('/quicklinks/') || url.includes('/returns/');
                 const isNotLogin = !url.includes('/login');
                 const hasNoInputs = !document.querySelector('#username') && !document.querySelector('#user_pass');
-                return (isAuth && isNotLogin) || (isNotLogin && hasNoInputs);
-            }, null, { timeout: 180000 });
+                const hasLogout = Boolean(document.querySelector('a[href*="logout"], [ng-click*="logout"], .user-name, #navbar-usr-menu, li.dropdown.user'));
+                return (isAuth && isNotLogin) || (isNotLogin && hasNoInputs) || hasLogout;
+            }, null, { timeout: 180000, polling: 100 });
         } catch (waitErr) {
             if (waitErr.message?.includes('Target page') || waitErr.message?.includes('browser has been closed') || waitErr.message?.includes('closed')) {
                 console.log('[GSTR-2B Autopilot] Browser window was closed by user.');
@@ -1227,6 +1274,14 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
             await updateBanner(`Downloading GSTR-2B for ${returnPeriod}...`, '#10b981');
             const dlRes = await downloadAndProcess2b(returnPeriod);
 
+            if (activeGstr2bDownloadPromises.size > 0) {
+                console.log(`[GSTR-2B Autopilot] Waiting for ${activeGstr2bDownloadPromises.size} active download stream(s) to finish saving...`);
+                await Promise.race([
+                    Promise.all(Array.from(activeGstr2bDownloadPromises)),
+                    new Promise(resolve => setTimeout(resolve, 15000))
+                ]);
+            }
+
             if (dlRes.status === 'SYNCED' && dlRes.count > 0) {
                 await updateBanner(`✓ SUCCESS: ${dlRes.count} GSTR-2B Invoices synced! Closing in 2s...`, '#10b981');
                 await page.waitForTimeout(2000);
@@ -1299,27 +1354,31 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
  * openPortalLoginHelper — Launches visible Chrome/Edge, navigates to GST Portal login,
  * auto-fills Username & Password from database vault, focuses CAPTCHA, and brings window to front.
  */
-export async function openPortalLoginHelper({ db, gstin, browserState }) {
+export async function openPortalLoginHelper({ db, gstin, portal_username, portal_password, browserState }) {
     const gstinUpper = (gstin || '').trim().toUpperCase();
 
-    // 1. Fetch credentials from clients table
-    let portalUser = '';
-    let portalPass = '';
+    // 1. Fetch credentials from clients table (with trimmed uppercase lookup)
+    let portalUser = (portal_username || '').trim();
+    let portalPass = (portal_password || '').trim();
     let clientName = '';
 
     const clientRow = await new Promise((resolve) => {
-        db.get(`SELECT trade_name, legal_name, portal_username, portal_password FROM clients WHERE UPPER(gstin) = ?`, [gstinUpper], (err, row) => {
+        db.get(`SELECT trade_name, legal_name, portal_username, portal_password FROM clients WHERE UPPER(TRIM(gstin)) = ? OR UPPER(TRIM(id)) = ?`, [gstinUpper, gstinUpper], (err, row) => {
             resolve(row || null);
         });
     });
 
     if (clientRow) {
-        portalUser = clientRow.portal_username || '';
-        portalPass = clientRow.portal_password || '';
+        if (!portalUser && clientRow.portal_username) {
+            portalUser = String(clientRow.portal_username).trim();
+        }
+        if (!portalPass && clientRow.portal_password) {
+            portalPass = String(clientRow.portal_password).trim();
+        }
         clientName = clientRow.trade_name || clientRow.legal_name || gstinUpper;
     }
 
-    console.log(`[Quick Login] Launching browser for ${clientName} (${gstinUpper}) with Username: ${portalUser ? portalUser : '(NOT CONFIGURED)'}`);
+    console.log(`[Quick Login] Launching browser for ${clientName} (${gstinUpper}) - Username: ${portalUser || '(NOT CONFIGURED)'}, Password: ${portalPass ? '******' : '(NOT CONFIGURED)'}`);
 
     const chromiumModule = await import('playwright');
 
@@ -1354,38 +1413,119 @@ export async function openPortalLoginHelper({ db, gstin, browserState }) {
     const page = await context.newPage();
 
     // Navigate to GST Portal login
-    await page.goto('https://services.gst.gov.in/services/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto('https://services.gst.gov.in/services/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
     await page.waitForTimeout(1500);
 
     // Auto-fill Username
     if (portalUser) {
         try {
-            const uInput = page.locator('#username, input[name="user_name"], input[placeholder*="Username" i]').first();
+            const uSelector = '#username';
+            await page.waitForSelector(uSelector, { state: 'visible', timeout: 15000 });
+            const uInput = page.locator(uSelector).first();
             if (await uInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await uInput.fill(portalUser);
-                await uInput.evaluate(el => el.dispatchEvent(new Event('input', { bubbles: true })));
+                await uInput.click();
+                await page.waitForTimeout(100);
+                await uInput.fill('');
+                await uInput.pressSequentially(portalUser, { delay: 25 });
+                await uInput.evaluate((el, val) => {
+                    el.value = val;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.angular) {
+                        const ngEl = window.angular.element(el);
+                        const ngModel = ngEl.controller('ngModel');
+                        if (ngModel) {
+                            ngModel.$setViewValue(val);
+                            ngModel.$render();
+                        }
+                        const scope = ngEl.scope();
+                        if (scope && scope.lform) {
+                            scope.lform.username = val;
+                            scope.$apply();
+                        }
+                    }
+                }, portalUser);
+                console.log(`[Quick Login] Username auto-filled: ${portalUser}`);
             }
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Quick Login] Warning on username auto-fill:', e.message);
+        }
     }
+
+    // Await deliberate delay so Angular processes username and enables the password field
+    await page.waitForTimeout(1000);
 
     // Auto-fill Password
     if (portalPass) {
         try {
-            const pInput = page.locator('#user_pass, input[name="user_pass"], input[type="password"]').first();
+            console.log(`[Quick Login] Auto-filling password for ${clientName}...`);
+            const pInput = page.locator('#user_pass').first();
+            await pInput.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
             if (await pInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await pInput.fill(portalPass);
-                await pInput.evaluate(el => el.dispatchEvent(new Event('input', { bubbles: true })));
+                await pInput.click();
+                await page.waitForTimeout(100);
+                await pInput.fill('');
+                await pInput.pressSequentially(portalPass, { delay: 35 });
+                await pInput.evaluate((el, val) => {
+                    el.value = val;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.angular) {
+                        const ngEl = window.angular.element(el);
+                        const ngModel = ngEl.controller('ngModel');
+                        if (ngModel) {
+                            ngModel.$setViewValue(val);
+                            ngModel.$render();
+                        }
+                        const scope = ngEl.scope();
+                        if (scope && scope.lform) {
+                            scope.lform.password = val;
+                            scope.$apply();
+                        }
+                    }
+                }, portalPass);
+
+                const pVal = await pInput.inputValue().catch(() => '');
+                if (pVal !== portalPass) {
+                    await pInput.fill(portalPass);
+                }
+                console.log(`[Quick Login] Password auto-filled successfully (${portalPass.length} chars) for ${clientName}`);
+            } else {
+                // Secondary fallback via visible DOM query
+                await page.evaluate((passVal) => {
+                    const passInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+                    const visibleInput = passInputs.find(el => {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+                    }) || document.getElementById('user_pass');
+                    if (visibleInput) {
+                        visibleInput.value = passVal;
+                        visibleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        visibleInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        visibleInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                    }
+                }, portalPass);
+                console.log(`[Quick Login] Password auto-filled via visible DOM query fallback`);
             }
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Quick Login] Warning on password auto-fill:', e.message);
+        }
+    } else {
+        console.warn(`[Quick Login] No password available in vault for client ${gstinUpper}`);
     }
+
+    await page.waitForTimeout(1000);
 
     // Focus CAPTCHA field
     try {
-        const captchaInput = page.locator('#captcha, input[name="captcha"], input[placeholder*="characters" i]').first();
+        const captchaSelector = '#captcha, input[name="captcha"], input[placeholder*="characters" i]';
+        await page.waitForSelector(captchaSelector, { state: 'visible', timeout: 6000 }).catch(() => {});
+        const captchaInput = page.locator(captchaSelector).first();
         if (await captchaInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await captchaInput.click();
             await captchaInput.focus();
         }
-    } catch(e) {}
+    } catch (e) {}
 
     // Bring browser window to front via PowerShell
     try {

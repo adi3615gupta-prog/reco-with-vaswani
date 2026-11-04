@@ -12,6 +12,9 @@
 ```
 stitch_specs/
 │
+├── 00-interactive-compliance-hub/
+│   └── 01-unified-workspace-suite.md     # Command Console, Active Clients, 6-Suite Navigation Hub
+│
 ├── 01-practice-management/
 │   ├── 01-practice-dashboard.md          # 300+ Clients Roster, Due Dates, SQLite Backup
 │   ├── 02-gstin-smart-scanner.md         # Modulo-36 Checksum, State Code, Duplicate PANs

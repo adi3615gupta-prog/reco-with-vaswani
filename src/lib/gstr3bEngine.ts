@@ -96,6 +96,8 @@ export interface TaxPayableAndSetoff {
 export interface CashAndFinalSettlement {
   tdsTcsOpeningCash: TaxBreakdown; // (-) GST TDS/TCS Opening Cash Balance
   rcmPayable: TaxBreakdown;       // Mandated cash payment for RCM (Sec 49(4)) = rcmInward
+  surplusTdsCashCfNextMonth?: TaxBreakdown; // Surplus unutilized Electronic Cash Ledger TDS/TCS balance
+  isManualTdsCash?: boolean;
   lateFees: { cgst: number; sgst: number; total: number };
   interest: { cgst: number; sgst: number; igst: number; total: number };
   gstPaidThroughCash: TaxBreakdown; // PMT-06 challan cash paid
@@ -558,6 +560,18 @@ export function recalculateMonthData(
     total: round2(finalPayableCgst + finalPayableSgst + finalPayableIgst),
   };
 
+  // Surplus unutilized TDS/TCS Cash Balance (Electronic Cash Ledger)
+  const surplusCashCgst = Math.max(0, round2(tdsCgst - (rawCgstAfterAdj > 0 ? rawCgstAfterAdj : 0)));
+  const surplusCashSgst = Math.max(0, round2(tdsSgst - (rawSgstAfterAdj > 0 ? rawSgstAfterAdj : 0)));
+  const surplusCashIgst = Math.max(0, round2(tdsIgst - (rawIgstAfterAdj > 0 ? rawIgstAfterAdj : 0)));
+  stl.surplusTdsCashCfNextMonth = {
+    taxable: 0,
+    cgst: surplusCashCgst,
+    sgst: surplusCashSgst,
+    igst: surplusCashIgst,
+    total: round2(surplusCashCgst + surplusCashSgst + surplusCashIgst)
+  };
+
   // Balance C/F to Next Month (Surplus unutilized ITC in Electronic Credit Ledger)
   setoff.balanceCfNextMonth = {
     taxable: 0,
@@ -662,6 +676,14 @@ export function recalculateAnnualWorking(annual: GSTR3BAnnualWorking | any, prof
 
     if (prevMonthKey && clonedMonths[prevMonthKey]?.setoff?.balanceCfNextMonth) {
       currentOpeningCredit = clonedMonths[prevMonthKey].setoff.balanceCfNextMonth;
+    }
+
+    // Cascade surplus unutilized TDS/TCS cash credit from previous month
+    if (prevMonthKey) {
+      const prevSurplusCash = clonedMonths[prevMonthKey]?.settlement?.surplusTdsCashCfNextMonth;
+      if (prevSurplusCash && prevSurplusCash.total > 0 && !clonedMonths[monthKey]?.settlement?.isManualTdsCash) {
+        clonedMonths[monthKey].settlement.tdsTcsOpeningCash = JSON.parse(JSON.stringify(prevSurplusCash));
+      }
     }
 
     clonedMonths[monthKey] = recalculateMonthData(clonedMonths[monthKey], currentOpeningCredit);

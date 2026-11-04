@@ -59,7 +59,13 @@ export function findMatchingClients(db, message) {
 
 export const FAST_PATH_TARGET_LABELS = {
   reversal: 'GSTR-3B Table 4(B) ITC Reversals & Allocations',
+  view_allocations: 'GSTR-3B Table 4(B) ITC Reversals & Allocations',
   '3b': 'GSTR-3B 28-Line Working Sheet',
+  matrix: '12-Month Comparative FY Matrix',
+  export_excel: 'Download GSTR-3B Working Excel',
+  export_pdf: 'Download GSTR-3B Statement PDF',
+  toggle_edit: 'Toggle Working Sheet Edit Mode',
+  lock_sheet: 'Lock Active Month Working Sheet',
   ims: 'GST Invoice Management System (IMS Hub)',
   gstr1: 'GSTR-1 Sales Console & Downloader',
   reco: '2B vs Books Reconciliation & Vendor Dispute Hub',
@@ -90,13 +96,31 @@ export function tryFastPathNavigation(message, matchedClients = []) {
   const isQuestion = /\b(kya hai|what is|how to|why|rules?|explain|difference|calculate|penalty|interest|kaise|meaning|provision)\b/i.test(lowerMsg);
   if (isQuestion) return null;
 
-  // Check if intent is navigation / open / view / switch
-  const isNavVerb = /\b(open|show|goto|navigate|view|kholo|chalo|dekho|load|switch|launch|run|jump)\b/i.test(lowerMsg);
+  // Check if intent is navigation / open / view / switch / control
+  const isNavVerb = /\b(open|show|goto|navigate|view|kholo|chalo|dekho|load|switch|launch|run|jump|export|download|generate|toggle|enable|disable|lock|unlock)\b/i.test(lowerMsg);
   const hasClient = matchedClients && matchedClients.length > 0;
 
   let target = null;
-  if (lowerMsg.includes('reversal')) target = 'reversal';
-  else if (lowerMsg.includes('3b') || lowerMsg.includes('working sheet')) target = '3b';
+  let isControl = false;
+
+  // Direct software control commands
+  if (/\b(export|download|generate)\b.*\bexcel\b|\bexcel\b.*\b(export|download|generate|nikalo)\b/i.test(lowerMsg)) {
+    target = 'export_excel';
+    isControl = true;
+  } else if (/\b(export|download|generate)\b.*\bpdf\b|\bpdf\b.*\b(export|download|generate|statement)\b/i.test(lowerMsg)) {
+    target = 'export_pdf';
+    isControl = true;
+  } else if (/\b(toggle|enable|disable|turn on|turn off)\b.*\bedit\b|\bedit mode\b|\bunlock\b/i.test(lowerMsg)) {
+    target = 'toggle_edit';
+    isControl = true;
+  } else if (/\block\b.*\b(sheet|month|3b|working)\b/i.test(lowerMsg)) {
+    target = 'lock_sheet';
+    isControl = true;
+  } else if (/\b(matrix|12 month|comparative|full year matrix)\b/i.test(lowerMsg)) {
+    target = 'matrix';
+  } else if (lowerMsg.includes('reversal') || lowerMsg.includes('table 4b') || lowerMsg.includes('allocation')) {
+    target = 'reversal';
+  } else if (lowerMsg.includes('3b') || lowerMsg.includes('working sheet')) target = '3b';
   else if (lowerMsg.includes('ims')) target = 'ims';
   else if (lowerMsg.includes('gstr1') || lowerMsg.includes('gstr-1') || lowerMsg.includes('sales')) target = 'gstr1';
   else if (lowerMsg.includes('reco') || lowerMsg.includes('reconcil')) target = 'reco';
@@ -115,8 +139,12 @@ export function tryFastPathNavigation(message, matchedClients = []) {
     else return null;
   }
 
-  // Must have a navigation verb OR a matched client OR an explicit target like "reversal", "ims", "3b"
-  if (!isNavVerb && !hasClient && !['reversal', '3b', 'ims', 'gstr1', 'reco', 'notices', 'tds', 'tally', 'incometax', 'cma', 'audit', 'clause44', 'settings'].includes(target)) {
+  // Must have a navigation/control verb OR a matched client OR an explicit target
+  const knownTargets = [
+    'reversal', 'view_allocations', '3b', 'matrix', 'export_excel', 'export_pdf', 'toggle_edit', 'lock_sheet',
+    'ims', 'gstr1', 'reco', 'notices', 'tds', 'tally', 'incometax', 'cma', 'audit', 'clause44', 'settings'
+  ];
+  if (!isNavVerb && !hasClient && !knownTargets.includes(target)) {
     return null;
   }
 
@@ -153,11 +181,14 @@ export function tryFastPathNavigation(message, matchedClients = []) {
   if (fy) tokenParts.push(fy);
   if (month) tokenParts.push(month);
 
-  const actionToken = `[ACTION:navigate:${tokenParts.join(':')}]`;
+  const actionPrefix = isControl ? 'control' : 'navigate';
+  const actionToken = `[ACTION:${actionPrefix}:${tokenParts.join(':')}]`;
   const periodText = [month, fy ? `FY ${fy}` : null].filter(Boolean).join(' • ');
 
   let reply = '';
-  if (client) {
+  if (isControl) {
+    reply = `⚡ Executing **${targetLabel}**${client ? ` for **${client.name}**` : ''}${periodText ? ` (${periodText})` : ''} directly in the software.\n\n${actionToken}`;
+  } else if (client) {
     reply = `Opening **${targetLabel}** for **${client.name}**${periodText ? ` (${periodText})` : ''}.\n\n${actionToken}`;
   } else {
     reply = `Opening **${targetLabel}**${periodText ? ` (${periodText})` : ''}.\n\n${actionToken}`;
@@ -339,7 +370,8 @@ export async function syncCloudGeminiKey(firestore, db, officeId) {
  * @param {import('sqlite3').Database} db 
  * @param {import('firebase/firestore').Firestore} [firestore]
  */
-export default function setupGeminiRoutes(app, db, firestore = null) {
+export default function setupGeminiRoutes(app, db, firestore = null, authenticateToken = null) {
+  const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
   // Helper to read office_id from SQLite app_config
   const getOfficeId = () => new Promise((resolve) => {
     db.get("SELECT value FROM app_config WHERE key = 'office_id'", [], (err, row) => {
@@ -404,7 +436,7 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
   });
 
   // POST /api/gemini/config — Save Gemini API key locally (marked as local_manual)
-  app.post('/api/gemini/config', async (req, res) => {
+  app.post('/api/gemini/config', authMiddleware, async (req, res) => {
     try {
       const { apiKey } = req.body;
       if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
@@ -455,7 +487,7 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
   });
 
   // POST /api/gemini/push-cloud — Admin push of Gemini key to Firebase Firestore
-  app.post('/api/gemini/push-cloud', async (req, res) => {
+  app.post('/api/gemini/push-cloud', authMiddleware, async (req, res) => {
     try {
       if (!firestore) {
         return res.status(503).json({ ok: false, error: 'Firebase Firestore is not initialized on this server' });
@@ -564,7 +596,19 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
       }
 
       const genAI = new GoogleGenerativeAI(apiKey);
-      const systemInstruction = buildSystemPrompt(context, matchedClients);
+      // Query live practice stats for context awareness
+      const practiceStats = await new Promise((resolve) => {
+        db.get(
+          `SELECT 
+            (SELECT COUNT(*) FROM clients WHERE is_deleted = 0 OR is_deleted IS NULL) as total_clients,
+            (SELECT COUNT(*) FROM gst_notices) as total_notices,
+            (SELECT COUNT(*) FROM gst_notices WHERE reply_status != 'SUBMITTED') as pending_notices`,
+          [],
+          (err, row) => resolve(row || { total_clients: 0, total_notices: 0, pending_notices: 0 })
+        );
+      });
+
+      const systemInstruction = buildSystemPrompt(context, matchedClients, practiceStats);
 
       // Sanitize multi-turn history to guarantee strict user-model alternation and leading user turn
       const formattedHistory = sanitizeGeminiHistory(history);
@@ -649,8 +693,15 @@ export default function setupGeminiRoutes(app, db, firestore = null) {
  * @param {Array<{ gstin: string, name: string }>} matchedClients
  * @returns {string}
  */
-export function buildSystemPrompt(context = {}, matchedClients = []) {
-  const { clientName = '', gstin = '', fy = '', module: activeModule = '' } = context;
+export function buildSystemPrompt(context = {}, matchedClients = [], practiceStats = {}) {
+  const { clientName = '', gstin = '', fy = '', module: activeModule = '', userName = '' } = context;
+
+  const practiceBlock = practiceStats && practiceStats.total_clients > 0
+    ? `\n### Live Software Database Snapshot:
+- **Total Registered Clients:** ${practiceStats.total_clients}
+- **Total GST Notices in Suite:** ${practiceStats.total_notices || 0} (${practiceStats.pending_notices || 0} Pending/Open)
+`
+    : '';
 
   const matchedClientsBlock = matchedClients && matchedClients.length > 0
     ? `\n### Matched Registered Clients in Office Database for this query:\n${matchedClients
@@ -658,7 +709,9 @@ export function buildSystemPrompt(context = {}, matchedClients = []) {
         .join('\n')}\n`
     : '';
   
-  return `You are Sourav, an elite AI Chartered Accountant, Chief Compliance Officer, and autonomous software co-pilot for AUDIT WITH VASWANI — the flagship enterprise desktop suite developed by Sourav Vaswani (CA firm, India).
+  const personaName = userName && userName.trim() ? userName.trim() : 'Vaswani AI';
+
+  return `You are ${personaName}, an elite AI Chartered Accountant, Chief Compliance Officer, and autonomous software co-pilot for AUDIT WITH VASWANI — the flagship enterprise desktop suite developed by Sourav Vaswani (CA firm, India).
 
 You possess authoritative, top-notch mastery of Indian taxation laws (CGST/SGST/IGST Acts, Income Tax Act 1961, Companies Act 2013, ICAI Guidance Notes, RBI CMA Guidelines, and landmark Supreme Court / High Court tax rulings).
 
@@ -673,11 +726,20 @@ You possess authoritative, top-notch mastery of Indian taxation laws (CGST/SGST/
 
 ---
 
-### Software Navigation & Interactive Action Tokens
-Include 1-click interactive action tokens whenever advising the user to go to a feature, or when the user asks you to open a screen, client, financial year, or month:
+### Software Direct Controls & Interactive Action Tokens
+Include 1-click interactive action tokens whenever advising the user to go to a feature, or when the user asks you to operate the software or open a screen, client, financial year, or month:
+
+#### Direct Software Control Tokens:
+- [ACTION:control:export_excel] — Generate and download GSTR-3B Working Excel directly in the software
+- [ACTION:control:export_pdf] — Generate and download GSTR-3B Statement PDF directly in the software
+- [ACTION:control:toggle_edit] — Toggle Working Sheet Edit Mode directly in the software
+- [ACTION:control:lock_sheet] — Lock Active Month Working Sheet directly in the software
+
+#### Module Navigation Tokens:
 - [ACTION:navigate:reco] — 2B vs Books Reconciliation & Vendor Dispute Hub
 - [ACTION:navigate:ims] — GST Invoice Management System (IMS Hub)
-- [ACTION:navigate:3b] — GSTR-3B 28-Line Working Sheet & 12M FY Matrix
+- [ACTION:navigate:3b] — GSTR-3B 28-Line Working Sheet
+- [ACTION:navigate:matrix] — 12-Month Comparative FY Matrix
 - [ACTION:navigate:reversal] — GSTR-3B Table 4(B) ITC Reversals & 2B Inward Allocation Workbench
 - [ACTION:navigate:gstr1] — GSTR-1 Sales Downloader & Outward Matrix
 - [ACTION:navigate:notices] — GST Notices, Orders & Autonomous Legal Reply Suite
@@ -689,6 +751,7 @@ Include 1-click interactive action tokens whenever advising the user to go to a 
 - [ACTION:navigate:audit] — Statutory Audit Suite & Daybook Scrutiny
 - [ACTION:navigate:clause44] — Tax Audit Form 3CD Clause 44 Engine
 - [ACTION:navigate:settings] — System Configuration & Cloud License Settings
+${practiceBlock}
 
 #### Client, Financial Year & Month Deep-Linking Syntax:
 When a query names a specific client, financial year, and/or month (e.g. "open reversal of dyp fy 26-27 month sept", "open 3b working of siddha", "gstr1 of dyp 2024-25 october"):
@@ -696,7 +759,7 @@ When a query names a specific client, financial year, and/or month (e.g. "open r
 2. Normalize the Financial Year if specified (e.g. "26-27" -> "2026-27", "24-25" -> "2024-25").
 3. Normalize the Month if specified (e.g. "sept" -> "September", "oct" -> "October", full capitalized month name: April, May, June, July, August, September, October, November, December, January, February, March).
 4. Format the action token as:
-   [ACTION:navigate:<target>:<gstin>:<fy>:<month>]
+   [ACTION:navigate:<target>:<gstin>] or [ACTION:navigate:<target>:<gstin>:<fy>:<month>]
    - Example 1 (Client + FY + Month + Reversals):
      [ACTION:navigate:reversal:27AAGCD4105L1ZO:2026-27:September]
    - Example 2 (Client only):

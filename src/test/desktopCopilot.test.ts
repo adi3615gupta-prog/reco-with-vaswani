@@ -73,4 +73,17 @@ describe('Desktop Copilot ("Loco Pilot") Actions & Navigation Target Mapping', (
     expect(actions[1].target).toBe('ims');
     expect(actions[1].gstin).toBe('27AZNPB4348J1Z4');
   });
+
+  it('should extract direct software control actions (export_excel, toggle_edit, lock_sheet)', () => {
+    const rawText = 'Executing Excel Export for DYP:\n\n[ACTION:control:export_excel:27AAGCD4105L1ZO:2026-27:September]';
+    const { cleanText, actions } = extractActionTags(rawText);
+
+    expect(cleanText).not.toContain('[ACTION:control:');
+    expect(actions).toHaveLength(1);
+    expect(actions[0].target).toBe('export_excel');
+    expect(actions[0].isControlAction).toBe(true);
+    expect(actions[0].gstin).toBe('27AAGCD4105L1ZO');
+    expect(actions[0].fy).toBe('2026-27');
+    expect(actions[0].month).toBe('September');
+  });
 });

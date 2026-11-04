@@ -386,3 +386,29 @@ export function getNoticesSummary(db, gstin) {
         });
     });
 }
+
+// ─── 9. DELETE NOTICE RECORD ────────────────────────────────────────────────
+export function deleteNotice(db, id) {
+    return new Promise((resolve, reject) => {
+        db.serialize(() => {
+            db.run(`DELETE FROM gst_notice_attachments WHERE notice_id = ?`, [id]);
+            db.run(`DELETE FROM gst_notice_replies WHERE notice_id = ?`, [id]);
+            db.run(`DELETE FROM gst_notices WHERE id = ?`, [id], function (err) {
+                if (err) return reject(err);
+                resolve({ deleted: this.changes > 0 });
+            });
+        });
+    });
+}
+
+// ─── 10. CLEAR ALL DEMO NOTICES ─────────────────────────────────────────────
+export function clearDemoNotices(db) {
+    return new Promise((resolve, reject) => {
+        db.serialize(() => {
+            db.run(`DELETE FROM gst_notices WHERE portal_source = 'DEMO_SIMULATOR' OR id LIKE 'DEMO-%'`, function (err) {
+                if (err) return reject(err);
+                resolve({ deleted: this.changes });
+            });
+        });
+    });
+}

@@ -26,11 +26,17 @@ dist-electron
 t e s t - t a l l y * . c j s  
 credentials.json
 *.db
+*.db-shm
+*.db-wal
+*.bak
 *.log
 .env
 audit_logs.json
 banned_users.json
 network_users.json
 server_config.json
+central_clients_vault.json
+gst_returns_data/
+*.tmp_*
 dist-electron
 dist  

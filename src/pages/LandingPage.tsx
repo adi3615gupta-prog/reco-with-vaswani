@@ -582,16 +582,16 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
       id: 'suite-autopilot',
       category: 'autopilot',
       num: 'Autonomous Suite',
-      title: 'Autonomous Autopilot Bots & PC Loco Pilot',
-      badge: '1-Login 12M Sync · Desktop Copilot',
+      title: 'Autonomous Autopilot Bots & In-App AI Copilot',
+      badge: '1-Login 12M Sync · In-App AI Copilot',
       color: 'violet',
       icon: <Sparkles className="w-5 h-5 text-violet-600" />,
-      description: 'Intelligent automation suite: 1-Login 12-Month GSTR-2B & GSTR-1 downloader with non-blocking resilience, GST IMS client action portal, Notice Shield AI PII sanitizer, and Universal PC Loco Pilot summoned via Ctrl+Alt+S.',
+      description: 'Intelligent automation suite: 1-Login 12-Month GSTR-2B & GSTR-1 downloader with non-blocking resilience, GST IMS client action portal, Notice Shield AI PII sanitizer, and In-App Sourav AI Copilot.',
       capabilities: [
         '1-Login 12-Month loop downloading all periods (Apr–Mar) with official back-button navigation',
         'GST IMS Inward package requester with client action review links (Accept, Reject, Pending)',
         'Notice Shield AI: Zero-trust PII sanitization and courtroom-grade statutory legal reply drafter',
-        'Universal floating desktop copilot (Ctrl+Alt+S) controlling the entire app over Excel/Tally'
+        'Built-in in-app Sourav AI copilot providing statutory compliance insights and direct module control'
       ],
       problems: [
         'Logging into GST portal 12 times per client with CAPTCHA delays wastes hours',
@@ -1321,7 +1321,7 @@ export default function LandingPage({ onNext, feedbackList, setFeedbackList }: L
                 <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-bold">
                   System Status: Online
                 </span>
-                <span>Vaswani Return Enterprise v2.2.0</span>
+                <span>Vaswani Return Enterprise v2.3.0</span>
               </div>
             </div>
           </footer>

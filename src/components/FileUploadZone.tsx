@@ -54,10 +54,10 @@ export function FileUploadZone({
       className={cn(
         'rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer flex flex-col relative overflow-hidden group select-none backdrop-blur-xl',
         isDragging
-          ? 'border-sky-400 bg-sky-500/15 shadow-2xl shadow-sky-500/25 scale-[1.01]'
+          ? 'border-indigo-500 bg-indigo-50/80 shadow-md scale-[1.01]'
           : fileName
-            ? 'border-emerald-500/40 bg-emerald-950/20 shadow-lg shadow-emerald-950/30'
-            : cn('border-slate-800/80 bg-slate-900/40 hover:bg-slate-800/40', themeBorder, themeGlow),
+            ? 'border-emerald-500/50 bg-emerald-50/80 shadow-xs'
+            : cn('border-slate-300 hover:border-indigo-400 bg-slate-50/70 hover:bg-white shadow-2xs', themeGlow),
         className
       )}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -70,19 +70,19 @@ export function FileUploadZone({
           
           {fileName ? (
             <div className="space-y-3.5 w-full px-4">
-              <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.2)] group-hover:scale-105 transition-transform">
-                <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                <FileSpreadsheet className="w-6 h-6 text-emerald-700" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">{label}</p>
-                <div className="inline-flex items-center gap-1.5 max-w-full px-3 py-1 rounded-full bg-slate-950/60 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-bold truncate">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <p className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">{label}</p>
+                <div className="inline-flex items-center gap-1.5 max-w-full px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 font-mono text-xs font-bold truncate shadow-2xs">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   <span className="truncate">{fileName}</span>
                 </div>
               </div>
               <div className="pt-1">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-slate-800/60 border border-slate-700/60 text-slate-400 group-hover:text-white group-hover:border-slate-500 transition-colors">
-                  <RefreshCw className="w-2.5 h-2.5 group-hover:rotate-180 transition-transform duration-500" />
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white border border-slate-200 text-slate-600 group-hover:text-slate-900 group-hover:border-slate-300 transition-colors shadow-2xs">
+                  <RefreshCw className="w-2.5 h-2.5 group-hover:rotate-180 transition-transform duration-500 text-indigo-600" />
                   Click or Drop to Replace
                 </span>
               </div>
@@ -90,18 +90,18 @@ export function FileUploadZone({
           ) : (
             <div className={cn("space-y-4", compact ? "space-y-2.5" : "space-y-4")}>
               <div className={cn(
-                "mx-auto w-12 h-12 rounded-2xl bg-slate-800/60 flex items-center justify-center border border-slate-700/60 transition-all duration-300 group-hover:scale-110",
+                "mx-auto w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-200 transition-all duration-300 group-hover:scale-110 shadow-2xs",
                 themeIconBg
               )}>
-                <Upload className="w-6 h-6 text-slate-400 transition-colors group-hover:text-current" />
+                <Upload className="w-6 h-6 text-indigo-600 transition-colors group-hover:text-current" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold text-white group-hover:text-slate-100 transition-colors">{label}</p>
+                <p className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{label}</p>
                 {!compact && (
-                  <p className="text-xs text-slate-400 max-w-[220px] mx-auto leading-relaxed">{description}</p>
+                  <p className="text-xs text-slate-500 max-w-[220px] mx-auto leading-relaxed">{description}</p>
                 )}
               </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider uppercase bg-slate-950/60 border border-slate-800 text-slate-400 group-hover:border-slate-700">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider uppercase bg-white border border-slate-200 text-slate-600 group-hover:border-slate-300 shadow-2xs">
                 Drag & Drop or Click
               </span>
             </div>

@@ -1,28 +1,41 @@
 import React from 'react';
 import { ReconciliationMode } from '../lib/mode';
+import { cn } from '../lib/utils';
 
 interface ModeSwitcherProps {
-  currentMode: ReconciliationMode;
+  currentMode: ReconciliationMode | null;
   onSwitch: (mode: ReconciliationMode) => void;
 }
 
 export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ currentMode, onSwitch }) => {
   return (
-    <div className="flex items-center space-x-1 bg-slate-900/60 p-1 rounded-full border border-slate-800">
+    <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200/90 shadow-2xs">
       <button
-        className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
-          currentMode === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-transparent text-slate-400 hover:text-slate-200'
-        }`}
+        type="button"
+        className={cn(
+          "px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+          currentMode === 'input'
+            ? 'bg-indigo-600 text-white shadow-2xs'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+        )}
         onClick={() => onSwitch('input')}
+        title="Switch to Purchase Engine (Input Reco: 2B vs Books)"
       >
+        <span className={cn("w-1.5 h-1.5 rounded-full", currentMode === 'input' ? 'bg-white' : 'bg-slate-400')} />
         Input Reco
       </button>
       <button
-        className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
-          currentMode === 'output' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-transparent text-slate-400 hover:text-slate-200'
-        }`}
+        type="button"
+        className={cn(
+          "px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+          currentMode === 'output'
+            ? 'bg-emerald-600 text-white shadow-2xs'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+        )}
         onClick={() => onSwitch('output')}
+        title="Switch to Sales Engine (Output Reco: Sales vs GSTR-1)"
       >
+        <span className={cn("w-1.5 h-1.5 rounded-full", currentMode === 'output' ? 'bg-white' : 'bg-slate-400')} />
         Output Reco
       </button>
     </div>

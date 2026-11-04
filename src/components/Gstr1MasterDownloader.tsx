@@ -275,13 +275,11 @@ export default function Gstr1MasterDownloader({
     }
   }, [clients, activeAutopilotClient, isBatchRunning, activePeriod, viewMode, financialYear]);
 
-  // Currency Formatter
+  // Currency Formatter (returns pure formatted number without currency symbol to prevent duplicate ₹ ₹)
   const formatCur = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
+    return (val || 0).toLocaleString('en-IN', {
       maximumFractionDigits: 0
-    }).format(val || 0);
+    });
   };
 
   // Filtered Client List
@@ -373,6 +371,31 @@ export default function Gstr1MasterDownloader({
       toast.error('Scan error', { description: e.message });
     } finally {
       setIsScanningDownloads(false);
+    }
+  };
+
+  // ─── BRING BROWSER WINDOW TO FRONT ──────────────────────────────────────────
+  const handleCancelTask = async () => {
+    try {
+      autopilotAbortRef.current?.abort();
+      await safeApiFetch('/api/gstr1/cancel', { method: 'POST' });
+      setActiveAutopilotClient(null);
+      setIsBatchRunning(false);
+      toast.info('GSTR-1 Autopilot task cancelled cleanly');
+    } catch {
+      toast.info('Cancellation signal dispatched');
+    }
+  };
+
+  const handleBringToFront = async () => {
+    try {
+      await safeApiFetch('/api/gstr1/bring-to-front', { method: 'POST' });
+      toast.success('Focused browser window!');
+    } catch {
+      try {
+        await safeApiFetch('/api/gstr2b/bring-to-front', { method: 'POST' });
+        toast.success('Focused browser window!');
+      } catch {}
     }
   };
 
@@ -516,7 +539,7 @@ export default function Gstr1MasterDownloader({
         if (onApplyTo3B) {
           onApplyTo3B(data.outward31);
         }
-        toast.success(`Applied ${formatCur(data.outward31.taxable)} Sales to Table 3.1!`);
+        toast.success(`Applied ₹ ${formatCur(data.outward31.taxable)} Sales to Table 3.1!`);
         fetchSummary();
       } else {
         toast.error('Failed pushing to 3B', { description: data.error });

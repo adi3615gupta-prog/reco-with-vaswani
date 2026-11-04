@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { toast, Toaster } from 'react-hot-toast';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Activity, ArrowRight, RotateCcw, X, Upload, FileSpreadsheet, Link2, Download, Layers } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -188,7 +188,6 @@ export default function Index() {
 
   return (
     <WizardLayout>
-        <Toaster />
       <WizardStepper active={wizardStep} />
       <SlideTransition direction={direction.current} stepKey={step}>
         {step === 'upload' && renderUpload()}

@@ -77,7 +77,7 @@ function parseJsonFile(
     }
   };
 
-  if (dt === 'b2b' || dt === 'primary' || !dt) extractInvoices(root.b2b);
+  if (dt === 'b2b' || dt === 'primary' || dt === '2b' || !dt) extractInvoices(root.b2b);
   if (dt === 'b2cl') extractInvoices(root.b2cl);
   if (dt === 'cn') extractInvoices(root.cdnr || root.cdn);
   if (dt === 'exp') extractInvoices(root.exp);
@@ -258,7 +258,7 @@ self.onmessage = (event: MessageEvent<FileParserWorkerMessage>) => {
         const dt = options.docType.toLowerCase();
         const matched = wb.SheetNames.find(sn => {
           const lower = sn.toLowerCase().trim();
-          if (dt === 'b2b' && (lower.includes('b2b') || lower === 'b2b supplies')) return true;
+          if ((dt === 'b2b' || dt === '2b') && (lower.includes('b2b') || lower.includes('2b') || lower === 'b2b supplies')) return true;
           if (dt === 'b2c' && (lower.includes('b2c') || lower.includes('b2cs'))) return true;
           if (dt === 'b2cl' && lower.includes('b2cl')) return true;
           if ((dt === 'cn' || dt === 'cdnr' || dt === 'debit_note' || dt === 'portal_dn') && (lower.includes('cdnr') || lower.includes('cn') || lower.includes('credit') || lower.includes('debit'))) return true;

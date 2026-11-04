@@ -582,11 +582,11 @@ export function calculateProfitability(data: Partial<ProfitabilityStatement>): P
     const financeCostPct = den > 0 ? Number(((financeCosts / den) * 100).toFixed(2)) : 0;
 
     return {
-        companyName: data.companyName || 'DYP INFRAPROJECTS PRIVATE LIMITED',
-        cin: data.cin || 'U45309PN2017PTC173221',
-        registeredAddress: data.registeredAddress || 'Kohinoor Majestic, 1st Floor, Office No. 126 & 127,Plot No. 85/186, Chinchwad, Pune - 411019. Maharashtra (India).',
-        periodEndedDate: data.periodEndedDate || '31-March-2026',
-        sourceFilePath: data.sourceFilePath || 'E:/Book1.xlsx',
+        companyName: data.companyName || '',
+        cin: data.cin || '',
+        registeredAddress: data.registeredAddress || '',
+        periodEndedDate: data.periodEndedDate || '',
+        sourceFilePath: data.sourceFilePath || '',
         revenueFromOperations,
         otherIncome,
         totalIncome,
@@ -651,21 +651,7 @@ export function createEmptyProfitabilityStatement(
     });
 }
 
-export const DEFAULT_PROFITABILITY_STATEMENT: ProfitabilityStatement = calculateProfitability({
-    companyName: 'DYP INFRAPROJECTS PRIVATE LIMITED',
-    cin: 'U45309PN2017PTC173221',
-    registeredAddress: 'Kohinoor Majestic, 1st Floor, Office No. 126 & 127,Plot No. 85/186, Chinchwad, Pune - 411019. Maharashtra (India).',
-    periodEndedDate: '31-March-2026',
-    sourceFilePath: 'E:/Book1.xlsx',
-    revenueFromOperations: 234202771,
-    otherIncome: 2034582,
-    costOfMaterialsConsumed: 179319171,
-    changeInInventories: -6873231,
-    employeeBenefitExpenses: 36176399,
-    financeCosts: 4614888,
-    depreciationAmortization: 2488741,
-    otherExpenses: 8727832
-});
+export const DEFAULT_PROFITABILITY_STATEMENT: ProfitabilityStatement = createEmptyProfitabilityStatement();
 
 export interface FullAuditVerificationSnapshot {
     sales: SalesRecoVerification;
@@ -1261,7 +1247,7 @@ export async function autoPopulateMonthlyAudit({
             month,
             periodMode: 'single',
             selectedMonths: [month],
-            firmName: 'Vaswani & Associates, Chartered Accountants',
+            firmName: '',
             firmRegistrationNo: '',
             membershipNo: '',
             engagementRef: '',
@@ -1273,7 +1259,7 @@ export async function autoPopulateMonthlyAudit({
             status: 'Draft',
             auditStatus: 'DRAFT',
             teamMembers: [
-                { id: '1', name: 'CA Senior Partner', role: 'Engagement Partner', assignedAreas: 'Overall Sign-Off' },
+                { id: '1', name: 'Engagement Article (Lead)', role: 'Engagement Article', assignedAreas: 'Overall Sign-Off' },
                 { id: '2', name: 'Article Assistant', role: 'Lead Article Assistant', assignedAreas: 'Vouching & Reconciliation' }
             ]
         },
@@ -1299,7 +1285,7 @@ export function initializeMonthlyAudit(
         periodMode: 'single',
         selectedMonths: [month],
         auditorName: '',
-        firmName: 'Vaswani & Associates, Chartered Accountants',
+        firmName: '',
         firmRegistrationNo: '',
         membershipNo: '',
         engagementRef: '',
@@ -1311,8 +1297,8 @@ export function initializeMonthlyAudit(
         status: 'Draft',
         auditStatus: 'DRAFT',
         teamMembers: [
-            { id: '1', name: 'CA Senior Partner', role: 'Engagement Partner', assignedAreas: 'Overall Sign-Off' },
-            { id: '2', name: 'Article Assistant', role: 'Lead Article Assistant', assignedAreas: 'Vouching & Reconciliation' }
+            { id: '1', name: '', role: 'Engagement Article', assignedAreas: 'Overall Sign-Off' },
+            { id: '2', name: '', role: 'Lead Article Assistant', assignedAreas: 'Vouching & Reconciliation' }
         ]
     };
 }

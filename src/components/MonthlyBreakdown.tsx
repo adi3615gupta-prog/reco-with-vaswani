@@ -47,7 +47,7 @@ function fmt(n: number) {
 
 function diffColor(diff: number) {
   if (Math.abs(diff) < 0.05) return 'text-muted-foreground';
-  return diff > 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold';
+  return diff > 0 ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold';
 }
 
 function getMonthKey(dateStr: string | undefined, normalizedDate: Date | string | undefined): { label: string; sortKey: string } | null {
@@ -273,27 +273,27 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
   };
 
   return (
-    <div className="dash-card overflow-hidden rounded-2xl shadow-2xl border border-slate-800 silk-reveal w-full">
+    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden w-full">
       
       {/* Premium Topbar with dynamic sub-tabs */}
-      <div className="dash-topbar px-6 py-4 bg-slate-950/20 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="bg-slate-50/80 px-6 py-3.5 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
            <div className="dash-dots"><span style={{background:'#A87EE8'}}></span><span style={{background:'#38BDF8'}}></span></div>
-           <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
-             <Layers className="w-4 h-4 text-blue-400" />
+           <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 font-mono">
+             <Layers className="w-4 h-4 text-indigo-600" />
              Monthly Reconciliation Suite
            </span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExport} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold">
+          <button onClick={handleExport} className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all">
             <Download className="w-3.5 h-3.5" /> Full Report
           </button>
-          <button onClick={handleExportDiffSheets} className="btn-np-outline gap-2 !py-1.5 text-[9px] uppercase tracking-widest font-bold hover:text-amber-400 hover:border-amber-500/50">
+          <button onClick={handleExportDiffSheets} className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all">
             <Download className="w-3.5 h-3.5" /> Diff Sheets
           </button>
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="btn-np-outline gap-1.5 !py-1.5 text-[9px] uppercase tracking-widest font-bold hover:text-white"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
             title={isCollapsed ? "Expand Monthly Suite" : "Collapse Monthly Suite"}
           >
             <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", isCollapsed && "rotate-180")} />
@@ -305,7 +305,7 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
       {!isCollapsed && (
         <>
           {/* Tax Head Segment Selectors */}
-          <div className="flex bg-slate-950/40 p-1.5 border-b border-slate-800/80 gap-1.5">
+          <div className="flex bg-slate-100/70 p-1.5 border-b border-slate-200 gap-1.5">
             {[
               { id: 'all', label: 'All Taxes Combined' },
               { id: 'igst', label: 'IGST Only' },
@@ -315,10 +315,10 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all ${
+                className={`flex-1 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
                   activeTab === tab.id 
-                    ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' 
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/20'
+                    ? 'bg-white text-indigo-700 border border-slate-200 shadow-2xs' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
               >
                 {tab.label}
@@ -328,14 +328,14 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
 
           {/* Advice warning notice */}
           {gstr3bData ? (
-            <div className="p-3.5 bg-blue-500/[0.02] border-b border-slate-800/60 flex items-start gap-2">
+            <div className="p-3.5 bg-indigo-50/40 border-b border-indigo-100 flex items-start gap-2">
               <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
-              <div className="text-[9.5px] text-slate-400 leading-relaxed font-mono">
-                Comparing <span className="text-white">Books (PR)</span> vs <span className="text-white">Government (2B)</span> vs <span className="text-white">Claimed (3B)</span> month-wise. Variances indicate mismatch gaps.
+              <div className="text-xs text-slate-600 leading-relaxed">
+                Comparing <strong className="text-slate-900 font-bold">Books (PR)</strong> vs <strong className="text-slate-900 font-bold">Government (2B)</strong> vs <strong className="text-slate-900 font-bold">Claimed (3B)</strong> month-wise. Variances indicate mismatch gaps.
               </div>
             </div>
           ) : (
-            <div className="p-3.5 bg-slate-900/10 border-b border-slate-800/60 flex items-start gap-2">
+            <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-start gap-2">
               <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
               <div className="text-[9.5px] text-slate-500 leading-relaxed">
                 Upload a GSTR-3B Excel summary file in the upload zone to automatically populate the 3B-related comparison matrices!
@@ -348,17 +348,17 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 {/* Super header */}
-                <tr className="bg-slate-900/60 text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                  <th className="px-4 py-3 font-black border-r border-slate-800/60">Period</th>
-                  <th className="px-4 py-3 text-right font-black">Books (PR)</th>
-                  <th className="px-4 py-3 text-right font-black border-r border-slate-800/60">Govt (2B)</th>
-                  {gstr3bData && <th className="px-4 py-3 text-right font-black border-r border-slate-800/60 text-blue-400">Claimed (3B)</th>}
-                  <th className={cn("px-4 py-3 text-right font-black", !gstr3bData && "text-rose-400")}>PR vs 2B</th>
-                  {gstr3bData && <th className="px-4 py-3 text-right font-black text-amber-400">2B vs 3B</th>}
-                  {gstr3bData && <th className="px-4 py-3 text-right font-black text-purple-400">PR vs 3B</th>}
+                <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-700 font-bold border-b border-slate-200">
+                  <th className="px-4 py-3 font-bold border-r border-slate-200">Period</th>
+                  <th className="px-4 py-3 text-right font-bold">Books (PR)</th>
+                  <th className="px-4 py-3 text-right font-bold border-r border-slate-200">Govt (2B)</th>
+                  {gstr3bData && <th className="px-4 py-3 text-right font-bold border-r border-slate-200 text-indigo-700">Claimed (3B)</th>}
+                  <th className={cn("px-4 py-3 text-right font-bold", !gstr3bData && "text-rose-600")}>PR vs 2B</th>
+                  {gstr3bData && <th className="px-4 py-3 text-right font-bold text-amber-600">2B vs 3B</th>}
+                  {gstr3bData && <th className="px-4 py-3 text-right font-bold text-purple-600">PR vs 3B</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/40 font-mono text-slate-300">
+              <tbody className="divide-y divide-slate-100 font-mono text-slate-800">
                 {monthlyData.map(m => {
                   const vals = getTaxValuesForTab(m);
                   
@@ -372,14 +372,14 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
                   const isNegMonth = vals.pr < 0 || vals.twoB < 0 || vals.gstr3b < 0;
 
                   return (
-                    <tr key={m.sortKey} className={cn("hover:bg-slate-900/20 transition-colors", isNegMonth && "bg-amber-500/[0.01]")}>
-                      <td className="px-4 py-2.5 font-sans font-bold text-slate-200 border-r border-slate-800/40">
+                    <tr key={m.sortKey} className={cn("hover:bg-slate-50/80 transition-colors", isNegMonth && "bg-amber-50/30")}>
+                      <td className="px-4 py-2.5 font-sans font-bold text-slate-900 border-r border-slate-200">
                         {m.month}
                       </td>
                       <td className="px-4 py-2.5 text-right">{fmt(vals.pr)}</td>
-                      <td className="px-4 py-2.5 text-right border-r border-slate-800/40">{fmt(vals.twoB)}</td>
+                      <td className="px-4 py-2.5 text-right border-r border-slate-200">{fmt(vals.twoB)}</td>
                       {gstr3bData && (
-                        <td className="px-4 py-2.5 text-right font-bold text-blue-300 border-r border-slate-800/40">
+                        <td className="px-4 py-2.5 text-right font-bold text-indigo-700 border-r border-slate-200">
                           {fmt(vals.gstr3b)}
                         </td>
                       )}
@@ -391,12 +391,12 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
                 })}
 
                 {/* Totals Row */}
-                <tr className="bg-slate-900/60 font-bold border-t border-slate-800">
-                  <td className="px-4 py-3 font-sans font-extrabold text-slate-100 border-r border-slate-800/40">Grand Total</td>
+                <tr className="bg-slate-50 font-bold border-t-2 border-slate-300">
+                  <td className="px-4 py-3 font-sans font-extrabold text-slate-900 border-r border-slate-200">Grand Total</td>
                   <td className="px-4 py-3 text-right">{fmt(totalRowCalculated.pr)}</td>
-                  <td className="px-4 py-3 text-right border-r border-slate-800/40">{fmt(totalRowCalculated.twoB)}</td>
+                  <td className="px-4 py-3 text-right border-r border-slate-200">{fmt(totalRowCalculated.twoB)}</td>
                   {gstr3bData && (
-                    <td className="px-4 py-3 text-right text-blue-400 font-extrabold border-r border-slate-800/40">
+                    <td className="px-4 py-3 text-right text-indigo-700 font-extrabold border-r border-slate-200">
                       {fmt(totalRowCalculated.gstr3b)}
                     </td>
                   )}

@@ -520,7 +520,7 @@ export default function ImsMasterManager({
       a.href = url;
       a.download = `GST_Client_Credentials_Template_${financialYear}.xlsx`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast.success('Credentials Template Downloaded! Fill in usernames & passwords and import back.', { id: toastId });
     } catch {
       toast.error('Failed generating credentials template');
@@ -1100,7 +1100,7 @@ export default function ImsMasterManager({
       a.href = url;
       a.download = `IMS_Review_${client.gstin}_${activePeriod.replace(/\s+/g, '_')}.xlsx`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast.success('Excel Review Sheet Exported!', { id: toastId });
     } catch {
       toast.error('Failed to export Excel.');
@@ -1350,7 +1350,7 @@ export default function ImsMasterManager({
         a.href = url;
         a.download = data.filename || `IMS_Output_JSON.json`;
         a.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
         toast.success(`Official IMS JSON exported with ${detailInvoices.length} decisions!`, { id: toastId });
       } else {
         toast.error(data.error || 'Failed generating action payload', { id: toastId });

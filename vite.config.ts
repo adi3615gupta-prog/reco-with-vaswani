@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: true,
     watch: {
       ignored: [
         "**/dist-electron/**", 
@@ -71,5 +72,20 @@ export default defineConfig(({ mode }) => ({
       "stream": path.resolve(__dirname, "./src/lib/dummy-stream.ts"),
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
+  },
+  build: {
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('xlsx')) return 'vendor-xlsx';
+            if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdf';
+            if (id.includes('lucide-react')) return 'vendor-lucide';
+            if (id.includes('@radix-ui') || id.includes('@tanstack')) return 'vendor-ui-query';
+          }
+        }
+      }
+    }
   },
 }));

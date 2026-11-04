@@ -97,25 +97,38 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
 
         // ─── Set up Download Event Listener ─────────────────────────────────
         const pendingDownloads = [];
-        page.on('download', async (download) => {
-            try {
-                const originalName = download.suggestedFilename();
-                console.log(`[Notices Autopilot] Download detected: ${originalName}`);
-                const savePath = path.join(downloadDir, `${Date.now()}_${originalName}`);
-                await download.saveAs(savePath);
-                
-                // Compute hash
-                const fileBuf = fs.readFileSync(savePath);
-                const hash = crypto.createHash('sha256').update(fileBuf).digest('hex');
-                pendingDownloads.push({
-                    fileName: originalName,
-                    filePath: savePath,
-                    fileHash: hash,
-                    fileType: originalName.endsWith('.pdf') ? 'PDF' : originalName.endsWith('.zip') ? 'ZIP' : 'OTHER'
-                });
-            } catch (dlErr) {
-                console.error('[Notices Autopilot] Download save error:', dlErr);
-            }
+        const activeDownloadPromises = new Set();
+
+        page.on('download', (download) => {
+            const dlTask = (async () => {
+                try {
+                    const originalName = download.suggestedFilename();
+                    console.log(`[Notices Autopilot] Download detected: ${originalName}`);
+                    const savePath = path.join(downloadDir, `${Date.now()}_${originalName}`);
+                    await download.saveAs(savePath);
+                    
+                    // Verify file is saved and not empty
+                    if (fs.existsSync(savePath)) {
+                        const fileBuf = fs.readFileSync(savePath);
+                        if (fileBuf.length > 0) {
+                            const hash = crypto.createHash('sha256').update(fileBuf).digest('hex');
+                            pendingDownloads.push({
+                                fileName: originalName,
+                                filePath: savePath,
+                                fileHash: hash,
+                                fileType: originalName.endsWith('.pdf') ? 'PDF' : originalName.endsWith('.zip') ? 'ZIP' : 'OTHER'
+                            });
+                            console.log(`[Notices Autopilot] Saved non-empty attachment (${fileBuf.length} bytes): ${originalName}`);
+                        } else {
+                            console.warn(`[Notices Autopilot] Download resulted in 0-byte file: ${originalName}`);
+                        }
+                    }
+                } catch (dlErr) {
+                    console.error('[Notices Autopilot] Download save error:', dlErr);
+                }
+            })();
+            activeDownloadPromises.add(dlTask);
+            dlTask.finally(() => activeDownloadPromises.delete(dlTask));
         });
 
         // ─── Step 1: Login & CAPTCHA Wait ───────────────────────────────────
@@ -124,10 +137,54 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
 
         if (portalUser) {
             try {
-                await page.waitForSelector('#username', { timeout: 10000 });
+                await page.waitForSelector('#username, input[name="user_name"]', { state: 'visible', timeout: 15000 });
                 await page.fill('#username', portalUser);
-                if (portalPass) await page.fill('#user_pass', portalPass);
+                await page.evaluate((u) => {
+                    const el = document.querySelector('#username') || document.querySelector('input[name="user_name"]');
+                    if (el) {
+                        el.value = u;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        el.dispatchEvent(new Event('blur', { bubbles: true }));
+                    }
+                }, portalUser);
             } catch (e) {}
+
+            await page.waitForTimeout(800);
+
+            if (portalPass) {
+                try {
+                    const pInput = page.locator('input#user_pass');
+                    await pInput.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+                    if (await pInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+                        await pInput.click();
+                        await page.waitForTimeout(100);
+                        await pInput.fill('');
+                        await pInput.fill(portalPass);
+                        await pInput.evaluate((el, p) => {
+                            el.value = p;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                        }, portalPass);
+                        console.log('[Notices Autopilot] Auto-filled password successfully');
+                    } else {
+                        await page.evaluate((p) => {
+                            const passInputs = Array.from(document.querySelectorAll('input[type="password"], input[name="user_pass"]'));
+                            const el = passInputs.find(i => {
+                                const r = i.getBoundingClientRect();
+                                return r.width > 0 && r.height > 0 && window.getComputedStyle(i).display !== 'none';
+                            }) || document.getElementById('user_pass');
+                            if (el) {
+                                el.value = p;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        }, portalPass);
+                    }
+                } catch (e) {}
+            }
         }
 
         sendSse('WAITING_FOR_CAPTCHA', { message: 'Please enter CAPTCHA and click Login on GST Portal...' });
@@ -144,15 +201,77 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
         let noticesFound = 0;
         let attachmentsFound = 0;
 
+        // Helper for reliable portal navigation within services.gst.gov.in
+        const navigateToPortalSection = async (sectionKeywords, directPath) => {
+            console.log(`[Notices Autopilot] Navigating to: ${sectionKeywords[0]}`);
+            
+            // Priority 1: In-page DOM click
+            try {
+                const clicked = await page.evaluate((keywords) => {
+                    const els = Array.from(document.querySelectorAll('a, button, div.card, div.tile, span'));
+                    for (const kw of keywords) {
+                        const target = els.find(el => (el.textContent || el.innerText || '').trim().toLowerCase() === kw.toLowerCase());
+                        if (target) {
+                            target.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }, sectionKeywords);
+
+                if (clicked) {
+                    await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+                    await page.waitForTimeout(1000);
+                    return true;
+                }
+            } catch (e) {}
+
+            // Priority 2: Standard Navbar Dropdown cascade
+            try {
+                const servicesLink = page.locator('a.dropdown-toggle:has-text("Services"), a:has-text("Services")').first();
+                if (await servicesLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await servicesLink.click().catch(() => {});
+                    await page.waitForTimeout(400);
+
+                    const userServices = page.locator('a:has-text("User Services"), li:has-text("User Services")').first();
+                    if (await userServices.isVisible({ timeout: 2000 }).catch(() => false)) {
+                        await userServices.click().catch(() => {});
+                        await page.waitForTimeout(400);
+                    }
+
+                    for (const kw of sectionKeywords) {
+                        const subLink = page.locator(`a:has-text("${kw}")`).first();
+                        if (await subLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+                            await subLink.click().catch(() => {});
+                            await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+                            await page.waitForTimeout(1000);
+                            return true;
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            // Priority 3: Same-Origin direct URL navigation
+            if (directPath) {
+                try {
+                    const fullUrl = `https://services.gst.gov.in/services/auth/${directPath.replace(/^\//, '')}`;
+                    console.log(`[Notices Autopilot] Using direct same-origin URL: ${fullUrl}`);
+                    await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                    await page.waitForTimeout(2000);
+                    return true;
+                } catch (e) {
+                    console.warn(`[Notices Autopilot] Direct path navigation error: ${e.message}`);
+                }
+            }
+
+            return false;
+        };
+
         // ─── Step 2: Section A — View Notices & Orders ───────────────────────
         sendSse('SCANNING', { step: 'SECTION_A', message: 'Scanning "View Notices and Orders"...' });
         try {
-            await page.click('a:has-text("Services")', { timeout: 8000 });
-            await page.waitForTimeout(500);
-            await page.click('a:has-text("User Services")', { timeout: 8000 });
-            await page.waitForTimeout(500);
-            await page.click('a:has-text("View Notices and Orders")', { timeout: 8000 });
-            await page.waitForLoadState('networkidle', { timeout: 15000 });
+            await navigateToPortalSection(['View Notices and Orders', 'Notices and Orders'], 'viewnotices');
+            await page.waitForTimeout(1500);
 
             // Extract table rows
             const rows = await page.$$eval('table tbody tr', (trs) => {
@@ -162,8 +281,9 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
                 }).filter(tds => tds.length >= 4);
             }).catch(() => []);
 
+            console.log(`[Notices Autopilot] View Notices rows found: ${rows.length}`);
+
             for (const row of rows) {
-                // Typical table: [S.No, Order/Notice Type, Description, Ref Number, Issue Date, Demanded Amount, ...]
                 const noticeType = row[1] || 'ORDER';
                 const description = row[2] || '';
                 const refNo = row[3] || `REF-${Date.now()}`;
@@ -184,7 +304,6 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
                 });
                 noticesFound++;
 
-                // Check pending downloaded attachments
                 while (pendingDownloads.length > 0) {
                     const att = pendingDownloads.shift();
                     await saveAttachment(db, {
@@ -202,22 +321,20 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
             console.warn('[Notices Autopilot] Section A scrape skipped or timed out:', secAErr.message);
         }
 
-        // Return to Dashboard safely via official on-screen BACK button
-        try {
-            const backBtn = await page.$('button:has-text("BACK"), input[value="BACK"]');
-            if (backBtn) await backBtn.click();
-            await page.waitForTimeout(1500);
-        } catch (e) {}
-
         // ─── Step 3: Section B — View Additional Notices & Orders ───────────
-        sendSse('SCANNING', { step: 'SECTION_B', message: 'Scanning "View Additional Notices/Orders" (ASMT-10, DRC-01)...' });
+        sendSse('SCANNING', { step: 'SECTION_B', message: 'Scanning "View Additional Notices/Orders" (ASMT-10, DRC-01, SCN)...' });
         try {
-            await page.click('a:has-text("Services")', { timeout: 8000 });
-            await page.waitForTimeout(500);
-            await page.click('a:has-text("User Services")', { timeout: 8000 });
-            await page.waitForTimeout(500);
-            await page.click('a:has-text("View Additional Notices/Orders"), a:has-text("Additional Notices and Orders")', { timeout: 8000 });
-            await page.waitForLoadState('networkidle', { timeout: 15000 });
+            await navigateToPortalSection(['View Additional Notices/Orders', 'Additional Notices and Orders'], 'case/additionalnotices');
+            await page.waitForTimeout(1500);
+
+            // Click Search button if present on additional notices screen
+            try {
+                const searchBtn = page.locator('button:has-text("Search"), input[value="Search"], button[type="submit"]').first();
+                if (await searchBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await searchBtn.click().catch(() => {});
+                    await page.waitForTimeout(2000);
+                }
+            } catch (e) {}
 
             // Scrape Additional Notices Table
             const addRows = await page.$$eval('table tbody tr', (trs) => {
@@ -226,6 +343,8 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
                     return tds;
                 }).filter(tds => tds.length >= 4);
             }).catch(() => []);
+
+            console.log(`[Notices Autopilot] Additional Notices rows found: ${addRows.length}`);
 
             for (const row of addRows) {
                 const noticeType = row[1] || 'ASMT-10';
@@ -293,6 +412,29 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
             }
         } catch (secCErr) {
             console.warn('[Notices Autopilot] Section C scrape skipped or timed out:', secCErr.message);
+        }
+
+        // Wait for all in-flight file downloads to finish completely before closing browser
+        if (activeDownloadPromises.size > 0) {
+            console.log(`[Notices Autopilot] Waiting for ${activeDownloadPromises.size} active download stream(s) to finish saving...`);
+            await Promise.race([
+                Promise.all(Array.from(activeDownloadPromises)),
+                new Promise(resolve => setTimeout(resolve, 15000))
+            ]);
+        }
+
+        // Save any pending downloads that completed during the wait
+        while (pendingDownloads.length > 0) {
+            const att = pendingDownloads.shift();
+            await saveAttachment(db, {
+                notice_id: null,
+                client_gstin: gstinUpper,
+                file_name: att.fileName,
+                file_type: att.fileType,
+                file_path: att.filePath,
+                file_hash: att.fileHash
+            });
+            attachmentsFound++;
         }
 
         sendSse('COMPLETED', {
