@@ -1,5 +1,146 @@
 import { randomUUID, createHash } from 'crypto';
 
+// ─── CANONICAL RETURN PERIOD HELPERS (D-11 / G2B-BP-08, D-10 / G2B-BP-07) ──
+export const CANONICAL_MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+/**
+ * normalizeReturnPeriod: Converts all GST period variants ("042025", "04-2025", "04/2025",
+ * "2025-04", "April, 2025", "Apr 2025", "Apr-25", or invoice idt fallback) into canonical
+ * "Month YYYY" (e.g. "April 2025").
+ */
+export function normalizeReturnPeriod(periodStr, idtFallback = '') {
+    const raw = String(periodStr || '').trim();
+
+    // 1. "042025" -> MMYYYY (6 digits)
+    const m6 = raw.match(/^(\d{2})(\d{4})$/);
+    if (m6) {
+        const mm = parseInt(m6[1], 10);
+        const yyyy = m6[2];
+        if (mm >= 1 && mm <= 12) {
+            return `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+        }
+    }
+
+    // 2. "04-2025" or "04/2025" or "4-2025"
+    const mSep = raw.match(/^(\d{1,2})[-/](\d{4})$/);
+    if (mSep) {
+        const mm = parseInt(mSep[1], 10);
+        const yyyy = mSep[2];
+        if (mm >= 1 && mm <= 12) {
+            return `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+        }
+    }
+
+    // 3. "2025-04" or "2025/04" or "2025-4"
+    const mIso = raw.match(/^(\d{4})[-/](\d{1,2})$/);
+    if (mIso) {
+        const yyyy = mIso[1];
+        const mm = parseInt(mIso[2], 10);
+        if (mm >= 1 && mm <= 12) {
+            return `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+        }
+    }
+
+    // 4. "April, 2025", "Apr 2025", "APR-2025", "april   2025"
+    const mWord = raw.match(/^([a-zA-Z]+)[\s,.-]+(\d{4})$/);
+    if (mWord) {
+        const prefix = mWord[1].substring(0, 3).toLowerCase();
+        const yyyy = mWord[2];
+        const idx = CANONICAL_MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(prefix));
+        if (idx !== -1) {
+            return `${CANONICAL_MONTH_NAMES[idx]} ${yyyy}`;
+        }
+    }
+
+    // 5. "Apr-25", "April-25", "Apr 25" (2-digit year)
+    const mShortYear = raw.match(/^([a-zA-Z]{3,9})[-/\s]+(\d{2})$/);
+    if (mShortYear) {
+        const prefix = mShortYear[1].substring(0, 3).toLowerCase();
+        const yy = parseInt(mShortYear[2], 10);
+        const yyyy = 2000 + yy;
+        const idx = CANONICAL_MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(prefix));
+        if (idx !== -1) {
+            return `${CANONICAL_MONTH_NAMES[idx]} ${yyyy}`;
+        }
+    }
+
+    // 6. When periodStr fails to match, inspect idtFallback
+    if (idtFallback) {
+        const rawIdt = String(idtFallback).trim();
+        const dmy = rawIdt.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+        if (dmy) {
+            const mm = parseInt(dmy[2], 10);
+            const yyyy = dmy[3];
+            if (mm >= 1 && mm <= 12) {
+                return `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+            }
+        }
+        const ymd = rawIdt.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+        if (ymd) {
+            const yyyy = ymd[1];
+            const mm = parseInt(ymd[2], 10);
+            if (mm >= 1 && mm <= 12) {
+                return `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+            }
+        }
+    }
+
+    // 7. Fallback: clean multiple spaces and commas
+    if (!raw) return '';
+    return raw.replace(/,/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * buildStrictPeriodFilter: Generates exact deduplicated period candidates with ZERO %Month% LIKE wildcards.
+ * Returns { canonical, clause: 'return_period IN (?, ?, ...)', params: [...] }
+ */
+export function buildStrictPeriodFilter(period) {
+    const canonical = normalizeReturnPeriod(period);
+    const m = canonical.match(/^([A-Za-z]+)\s+(\d{4})$/);
+
+    if (m) {
+        const mName = m[1];
+        const yMatch = m[2];
+        const mIdx = CANONICAL_MONTH_NAMES.findIndex(name => name.toLowerCase() === mName.toLowerCase());
+        if (mIdx !== -1) {
+            const fullMonth = CANONICAL_MONTH_NAMES[mIdx];
+            const shortMonth = fullMonth.substring(0, 3);
+            const mNum = String(mIdx + 1).padStart(2, '0');
+
+            const candidates = [
+                canonical,
+                `${fullMonth}, ${yMatch}`,
+                `${mNum}${yMatch}`,
+                `${mNum}-${yMatch}`,
+                `${mNum}/${yMatch}`,
+                `${yMatch}-${mNum}`,
+                `${shortMonth} ${yMatch}`,
+                `${shortMonth}-${yMatch}`,
+                String(period || '').trim()
+            ];
+
+            const unique = Array.from(new Set(candidates.filter(Boolean)));
+            return {
+                canonical,
+                clause: `return_period IN (${unique.map(() => '?').join(', ')})`,
+                params: unique
+            };
+        }
+    }
+
+    const raw = String(period || '').trim();
+    const clean = raw.replace(/,/g, '').replace(/\s+/g, ' ').trim();
+    const unique = Array.from(new Set([raw, clean].filter(Boolean)));
+    return {
+        canonical: clean || raw,
+        clause: `return_period IN (${unique.map(() => '?').join(', ')})`,
+        params: unique
+    };
+}
+
 // ─── 1. DATABASE SCHEMA INITIALIZATION ──────────────────────────────────────
 export function initGstr2bDatabase(db) {
     db.serialize(() => {
@@ -25,6 +166,7 @@ export function initGstr2bDatabase(db) {
             excel_path TEXT,
             json_path TEXT,
             downloaded_at INTEGER,
+            requested_at INTEGER,
             created_at INTEGER,
             updated_at INTEGER,
             UNIQUE(client_gstin, return_period)
@@ -90,6 +232,52 @@ export function initGstr2bDatabase(db) {
         )`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gstr3b_itc_alloc_client ON gstr3b_itc_allocations(client_gstin, return_period)`);
 
+        // Table 5: Tally 2B Posted Invoices & Audit Ledger
+        db.run(`CREATE TABLE IF NOT EXISTS tally_2b_posted_entries (
+            id TEXT PRIMARY KEY,
+            client_gstin TEXT NOT NULL,
+            financial_year TEXT NOT NULL,
+            return_period TEXT NOT NULL,
+            section TEXT DEFAULT 'B2B',
+            supplier_gstin TEXT NOT NULL,
+            supplier_name TEXT,
+            invoice_number TEXT NOT NULL,
+            invoice_date TEXT NOT NULL,
+            taxable_value REAL DEFAULT 0,
+            igst REAL DEFAULT 0,
+            cgst REAL DEFAULT 0,
+            sgst REAL DEFAULT 0,
+            cess REAL DEFAULT 0,
+            total_value REAL DEFAULT 0,
+            voucher_type TEXT DEFAULT 'Purchase',
+            tally_voucher_no TEXT,
+            status TEXT DEFAULT 'POSTED',
+            tally_company TEXT,
+            posted_at INTEGER NOT NULL,
+            UNIQUE(client_gstin, supplier_gstin, invoice_number, invoice_date)
+        )`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_tally_2b_posted_client ON tally_2b_posted_entries(client_gstin, return_period)`);
+
+        // Table 6: Tally 2B Rejections & Failure Audit Log
+        db.run(`CREATE TABLE IF NOT EXISTS tally_2b_rejections (
+            id TEXT PRIMARY KEY,
+            client_gstin TEXT NOT NULL,
+            financial_year TEXT NOT NULL,
+            return_period TEXT NOT NULL,
+            section TEXT DEFAULT 'B2B',
+            supplier_gstin TEXT NOT NULL,
+            supplier_name TEXT,
+            invoice_number TEXT NOT NULL,
+            invoice_date TEXT NOT NULL,
+            taxable_value REAL DEFAULT 0,
+            total_value REAL DEFAULT 0,
+            voucher_type TEXT DEFAULT 'Purchase',
+            rejection_reason TEXT NOT NULL,
+            tally_company TEXT,
+            rejected_at INTEGER NOT NULL
+        )`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_tally_2b_rejections_client ON tally_2b_rejections(client_gstin, financial_year)`);
+
         // Migration: add separated RCM, CDNR, IMPG, ISD columns if not present
         const addCol = (colDef) => {
             db.run(`ALTER TABLE gstr2b_batches ADD COLUMN ${colDef}`, () => {});
@@ -112,12 +300,26 @@ export function initGstr2bDatabase(db) {
         addCol('ineligible_itc_cgst REAL DEFAULT 0');
         addCol('ineligible_itc_sgst REAL DEFAULT 0');
         addCol('ineligible_itc_cess REAL DEFAULT 0');
+
+        // Phase 36 Bulletproof Telemetry & Checksum Verification Migrations
+        addCol("verify_status TEXT DEFAULT 'UNVERIFIED'");
+        addCol("verify_warning TEXT");
+        addCol("portal_summary_json TEXT");
+        addCol("verify_diff_json TEXT");
+        addCol("last_error TEXT");
+        addCol("job_id TEXT");
+        addCol("impgsez_count INTEGER DEFAULT 0");
+        addCol("eco_count INTEGER DEFAULT 0");
     });
 }
 
 // ─── 2. RECALCULATE BATCH METRICS & UPSERT BATCH ────────────────────────────
 export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
     return new Promise((resolve, reject) => {
+        const normGstin = String(clientGstin || '').trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod || '').trim();
+        const pf = buildStrictPeriodFilter(normPeriod);
+
         const query = `
             SELECT 
                 COUNT(*) as total_invoices,
@@ -126,7 +328,9 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                 SUM(CASE WHEN UPPER(section) LIKE '%CDNR%' AND UPPER(section) NOT LIKE '%REJECTED%' THEN 1 ELSE 0 END) as cdnr_count,
                 SUM(CASE WHEN UPPER(section) LIKE '%CDNRA%' THEN 1 ELSE 0 END) as cdnra_count,
                 SUM(CASE WHEN UPPER(section) LIKE '%ISD%' THEN 1 ELSE 0 END) as isd_count,
-                SUM(CASE WHEN UPPER(section) LIKE '%IMPG%' THEN 1 ELSE 0 END) as impg_count,
+                SUM(CASE WHEN (UPPER(section) LIKE '%IMPGSEZ%' OR UPPER(section) LIKE '%IMPG-SEZ%') THEN 1 ELSE 0 END) as impgsez_count,
+                SUM(CASE WHEN UPPER(section) LIKE '%ECO%' THEN 1 ELSE 0 END) as eco_count,
+                SUM(CASE WHEN UPPER(section) LIKE '%IMPG%' AND UPPER(section) NOT LIKE '%SEZ%' THEN 1 ELSE 0 END) as impg_count,
                 -- 1. Table 4(A)(5) All Other ITC (strictly non-RCM, non-CDNR, non-IMPG, non-ISD)
                 SUM(CASE 
                     WHEN itc_available = 'Y' AND rchrg != 'Y' AND UPPER(section) NOT LIKE '%CDNR%' AND UPPER(section) NOT LIKE '%IMPG%' AND UPPER(section) NOT LIKE '%ISD%' THEN txval
@@ -173,10 +377,10 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                     ELSE 0 END
                 ) as ineligible_total
             FROM gstr2b_invoices
-            WHERE client_gstin = ? AND return_period = ?
+            WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})
         `;
 
-        db.get(query, [clientGstin, returnPeriod], (err, row) => {
+        db.get(query, [normGstin, ...pf.params], (err, row) => {
             if (err) return reject(err);
 
             const totalInvs = row?.total_invoices || 0;
@@ -211,7 +415,7 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
             const batchId = randomUUID();
             const now = Date.now();
 
-            db.get(`SELECT status FROM gstr2b_batches WHERE client_gstin = ? AND return_period = ?`, [clientGstin, returnPeriod], (bErr, existingBatch) => {
+            db.get(`SELECT status FROM gstr2b_batches WHERE UPPER(TRIM(client_gstin)) = ? AND return_period = ?`, [normGstin, normPeriod], (bErr, existingBatch) => {
                 if (bErr) return reject(bErr);
 
                 let targetStatus = 'SYNCED';
@@ -222,14 +426,14 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                 const upsertQuery = `
                     INSERT INTO gstr2b_batches (
                         id, client_gstin, return_period, status,
-                        total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count,
+                        total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count, impgsez_count, eco_count,
                         eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess,
                         eligible_itc_total, rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
                         cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total, impg_igst, isd_total,
                         ineligible_itc_total, eligible_itc_txval, rcm_txval, cdnr_txval,
                         ineligible_itc_txval, ineligible_itc_igst, ineligible_itc_cgst, ineligible_itc_sgst, ineligible_itc_cess,
                         downloaded_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(client_gstin, return_period) DO UPDATE SET
                         status = excluded.status,
                         total_invoices = excluded.total_invoices,
@@ -239,6 +443,8 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         cdnra_count = excluded.cdnra_count,
                         isd_count = excluded.isd_count,
                         impg_count = excluded.impg_count,
+                        impgsez_count = excluded.impgsez_count,
+                        eco_count = excluded.eco_count,
                         eligible_itc_igst = excluded.eligible_itc_igst,
                         eligible_itc_cgst = excluded.eligible_itc_cgst,
                         eligible_itc_sgst = excluded.eligible_itc_sgst,
@@ -264,13 +470,14 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         ineligible_itc_sgst = excluded.ineligible_itc_sgst,
                         ineligible_itc_cess = excluded.ineligible_itc_cess,
                         downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
+                        last_error = CASE WHEN excluded.status IN ('SYNCED', 'NIL_SYNCED') THEN NULL ELSE gstr2b_batches.last_error END,
                         updated_at = excluded.updated_at
                 `;
 
                 db.run(upsertQuery, [
-                    batchId, clientGstin, returnPeriod, targetStatus,
+                    batchId, normGstin, normPeriod, targetStatus,
                     totalInvs, row?.b2b_count || 0, row?.b2ba_count || 0, row?.cdnr_count || 0, row?.cdnra_count || 0,
-                    row?.isd_count || 0, row?.impg_count || 0,
+                    row?.isd_count || 0, row?.impg_count || 0, row?.impgsez_count || 0, row?.eco_count || 0,
                     eligIgst, eligCgst, eligSgst, eligCess, eligTotal,
                     rcmIgst, rcmCgst, rcmSgst, rcmTotal,
                     cdnrIgst, cdnrCgst, cdnrSgst, cdnrTotal,
@@ -292,6 +499,10 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
                         cdnra_count: row?.cdnra_count || 0,
                         isd_count: row?.isd_count || 0,
                         impg_count: row?.impg_count || 0,
+                        impgsez_count: row?.impgsez_count || 0,
+                        impgsezCount: row?.impgsez_count || 0,
+                        eco_count: row?.eco_count || 0,
+                        ecoCount: row?.eco_count || 0,
                         eligible_txval: eligTxval,
                         eligible_igst: eligIgst,
                         eligible_cgst: eligCgst,
@@ -367,28 +578,33 @@ export function recalculate2bBatchMetrics(db, clientGstin, returnPeriod) {
 }
 
 // ─── 3. BULK INGEST PARSED INVOICES ─────────────────────────────────────────
-export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, excelPath = null, jsonPath = null) {
+export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, excelPath = null, jsonPath = null, options = {}) {
     return new Promise((resolve, reject) => {
         if (!invoices || invoices.length === 0) return resolve({ count: 0 });
+
+        const normGstin = String(clientGstin || '').trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod || '').trim();
 
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
 
             const now = Date.now();
             const affectedPeriods = new Set();
-            if (returnPeriod) affectedPeriods.add(returnPeriod);
+            if (normPeriod) affectedPeriods.add(normPeriod);
             for (const inv of invoices) {
-                const rowPeriod = (inv.return_period && String(inv.return_period).trim().length >= 4)
-                    ? String(inv.return_period).trim()
-                    : returnPeriod;
+                const rowPeriod = (inv.return_period ? normalizeReturnPeriod(inv.return_period) : '') || normPeriod || normalizeReturnPeriod('', inv.idt);
                 if (rowPeriod) affectedPeriods.add(rowPeriod);
             }
 
             let txError = null;
-            // Clean out stale invoices for affected periods so duplicate/corrupted records are cleanly replaced
+            // Clean out stale invoices and stale non-canonical alias batch rows for affected periods
             for (const p of affectedPeriods) {
-                db.run('DELETE FROM gstr2b_invoices WHERE client_gstin = ? AND return_period = ?', [clientGstin, p], (delErr) => {
+                const pf = buildStrictPeriodFilter(p);
+                db.run(`DELETE FROM gstr2b_invoices WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})`, [normGstin, ...pf.params], (delErr) => {
                     if (delErr && !txError) txError = delErr;
+                });
+                db.run(`DELETE FROM gstr2b_batches WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause}) AND return_period != ?`, [normGstin, ...pf.params, p], (delBatchErr) => {
+                    if (delBatchErr && !txError) txError = delBatchErr;
                 });
             }
 
@@ -413,17 +629,21 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                     sgst = excluded.sgst,
                     cess = excluded.cess,
                     total_val = excluded.total_val,
-                    source_period = excluded.source_period,
-                    filing_date = excluded.filing_date
+                    source_period = COALESCE(excluded.source_period, gstr2b_invoices.source_period),
+                    filing_date = COALESCE(excluded.filing_date, gstr2b_invoices.filing_date)
             `);
 
             for (const inv of invoices) {
                 if (txError) break;
                 const rawSec = (inv.section || 'B2B').toUpperCase();
-                const normSec = rawSec.includes('CDNRA') ? 'CDNRA'
-                    : rawSec.includes('CDNR') ? 'CDNR'
-                    : rawSec.includes('B2BA') ? 'B2BA'
-                    : rawSec.includes('B2B') ? 'B2B'
+                const normSec = (rawSec.includes('CDNRA') || rawSec === 'CDNRA') ? 'CDNRA'
+                    : (rawSec.includes('CDNR') || rawSec === 'CDNR') ? 'CDNR'
+                    : (rawSec.includes('B2BA') || rawSec === 'B2BA') ? 'B2BA'
+                    : (rawSec.includes('B2B') || rawSec === 'B2B') ? 'B2B'
+                    : (rawSec.includes('IMPGSEZ') || rawSec.includes('IMPG-SEZ')) ? 'IMPGSEZ'
+                    : (rawSec.includes('IMPG') || rawSec === 'IMPG') ? 'IMPG'
+                    : (rawSec.includes('ISD') || rawSec === 'ISD') ? 'ISD'
+                    : (rawSec.includes('ECO') || rawSec === 'ECO') ? 'ECO'
                     : rawSec;
                 let normDate = String(inv.idt || '').trim().replace(/\//g, '-');
                 const isoMatch = normDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -432,16 +652,12 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                 }
                 const normInum = String(inv.inum || '').trim().toUpperCase();
                 const normCtin = String(inv.ctin || '').trim().toUpperCase();
-                const rowPeriod = (inv.return_period && String(inv.return_period).trim().length >= 4)
-                    ? String(inv.return_period).trim()
-                    : returnPeriod;
-                const invKey = `${(clientGstin || '').trim()}|${rowPeriod}|${normSec}|${normCtin}|${normInum}|${normDate}`.toUpperCase();
+                const rowPeriod = (inv.return_period ? normalizeReturnPeriod(inv.return_period) : '') || normPeriod || normalizeReturnPeriod('', inv.idt);
+                const invKey = `${normGstin}|${rowPeriod}|${normSec}|${normCtin}|${normInum}|${normDate}`.toUpperCase();
                 const id = inv.id || createHash('md5').update(invKey).digest('hex');
 
-                if (rowPeriod) affectedPeriods.add(rowPeriod);
-
                 stmt.run([
-                    id, 'BATCH', clientGstin, rowPeriod, normSec,
+                    id, 'BATCH', normGstin, rowPeriod, normSec,
                     normCtin, inv.supplier_name || null, normInum, normDate, inv.inv_typ || 'Regular',
                     inv.pos || null, inv.rchrg || 'N', inv.itc_available || 'Y', inv.itc_reason || null,
                     inv.txval || 0, inv.igst || 0, inv.cgst || 0, inv.sgst || 0, inv.cess || 0,
@@ -451,38 +667,73 @@ export function bulkSaveGstr2bInvoices(db, clientGstin, returnPeriod, invoices, 
                 });
             }
 
-            stmt.finalize();
-
-            db.run('COMMIT', async (commitErr) => {
-                if (txError || commitErr) {
-                    const errToReport = txError || commitErr;
-                    console.error('[GSTR-2B DB] Error during bulk insert, rolling back:', errToReport.message);
-                    db.run('ROLLBACK', () => reject(errToReport));
+            stmt.finalize(() => {
+                if (txError) {
+                    console.error('[GSTR-2B DB] Error during bulk insert, rolling back:', txError.message);
+                    db.run('ROLLBACK', () => reject(txError));
                     return;
                 }
 
+                db.run('COMMIT', async (commitErr) => {
+                    if (commitErr) {
+                        console.error('[GSTR-2B DB] Error committing transaction, rolling back:', commitErr.message);
+                        db.run('ROLLBACK', () => reject(commitErr));
+                        return;
+                    }
+
                 try {
                     let lastMetrics = null;
+                    let lastVerifyStatus = 'UNVERIFIED';
+                    let lastVerifyWarning = null;
+
                     for (const p of affectedPeriods) {
                         try {
-                            const m = await recalculate2bBatchMetrics(db, clientGstin, p);
-                            if (p === returnPeriod || !lastMetrics) lastMetrics = m;
+                            const m = await recalculate2bBatchMetrics(db, normGstin, p);
+                            if (p === normPeriod || !lastMetrics) lastMetrics = m;
+
                             if (excelPath || jsonPath) {
-                                db.run(
-                                    `UPDATE gstr2b_batches SET excel_path = COALESCE(?, excel_path), json_path = COALESCE(?, json_path) WHERE client_gstin = ? AND return_period = ?`,
-                                    [excelPath, jsonPath, clientGstin, p]
-                                );
+                                await new Promise((r) => {
+                                    db.run(
+                                        `UPDATE gstr2b_batches SET excel_path = COALESCE(?, excel_path), json_path = COALESCE(?, json_path) WHERE UPPER(TRIM(client_gstin)) = ? AND return_period = ?`,
+                                        [excelPath, jsonPath, normGstin, p],
+                                        () => r()
+                                    );
+                                });
+                            }
+
+                            if (options.portalSummary) {
+                                const v = verifyGstr2bBatchChecksum(m, options.portalSummary);
+                                lastVerifyStatus = v.verifyStatus;
+                                lastVerifyWarning = v.verifyWarning;
+                                await updateGstr2bBatchVerification(db, normGstin, p, {
+                                    verifyStatus: v.verifyStatus,
+                                    verifyWarning: v.verifyWarning,
+                                    portalSummary: options.portalSummary,
+                                    verifyDiff: v.verifyDiff,
+                                    jobId: options.jobId
+                                });
+                            } else if (options.jobId) {
+                                await updateGstr2bBatchVerification(db, normGstin, p, {
+                                    jobId: options.jobId
+                                });
                             }
                         } catch (e) {}
                     }
 
-                    resolve({ count: invoices.length, metrics: lastMetrics, ...lastMetrics });
+                    resolve({
+                        count: invoices.length,
+                        metrics: lastMetrics,
+                        ...lastMetrics,
+                        verifyStatus: lastVerifyStatus,
+                        verifyWarning: lastVerifyWarning
+                    });
                 } catch (mErr) {
                     resolve({ count: invoices.length });
                 }
             });
         });
     });
+});
 }
 
 // ─── 4. PERSIST GSTR-1 SUMMARY IN SQLITE ────────────────────────────────────
@@ -490,6 +741,8 @@ export function saveGstr1Summary(db, clientGstin, returnPeriod, summary) {
     return new Promise((resolve) => {
         if (!summary || !clientGstin || !returnPeriod) return resolve();
         try {
+            const normGstin = String(clientGstin).trim().toUpperCase();
+            const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
             const jsonStr = JSON.stringify(summary);
             const taxable = summary.totalOutwardTaxable || 0;
             const tax = summary.totalOutwardTax || 0;
@@ -502,7 +755,7 @@ export function saveGstr1Summary(db, clientGstin, returnPeriod, summary) {
                     total_taxable = excluded.total_taxable,
                     total_tax = excluded.total_tax,
                     updated_at = excluded.updated_at`,
-                [clientGstin, returnPeriod, jsonStr, taxable, tax, now],
+                [normGstin, normPeriod, jsonStr, taxable, tax, now],
                 () => resolve()
             );
         } catch (e) {
@@ -519,19 +772,30 @@ export function saveGstr1Summary(db, clientGstin, returnPeriod, summary) {
 export function markGstr2bMonthNilSynced(db, clientGstin, returnPeriod, excelPath = null, jsonPath = null) {
     return new Promise((resolve, reject) => {
         if (!clientGstin || !returnPeriod) return resolve({ success: false });
+        const normGstin = String(clientGstin).trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
+        const pf = buildStrictPeriodFilter(normPeriod);
         const now = Date.now();
         const batchId = randomUUID();
+
+        // Remove stale non-canonical alias rows so legacy duplicate rows do not persist
+        db.run(
+            `DELETE FROM gstr2b_batches WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause}) AND return_period != ?`,
+            [normGstin, ...pf.params, normPeriod],
+            () => {}
+        );
 
         const query = `
             INSERT INTO gstr2b_batches (
                 id, client_gstin, return_period, status,
-                total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count,
+                total_invoices, b2b_count, b2ba_count, cdnr_count, cdnra_count, isd_count, impg_count, impgsez_count, eco_count,
                 eligible_itc_igst, eligible_itc_cgst, eligible_itc_sgst, eligible_itc_cess, eligible_itc_total,
                 rcm_igst, rcm_cgst, rcm_sgst, rcm_total,
                 cdnr_igst, cdnr_cgst, cdnr_sgst, cdnr_total,
                 impg_igst, isd_total, ineligible_itc_total,
-                excel_path, json_path, downloaded_at, created_at, updated_at
-            ) VALUES (?, ?, ?, 'NIL_SYNCED', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?)
+                excel_path, json_path, downloaded_at, created_at, updated_at,
+                verify_status, last_error
+            ) VALUES (?, ?, ?, 'NIL_SYNCED', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?, 'VERIFIED', NULL)
             ON CONFLICT(client_gstin, return_period) DO UPDATE SET
                 status = 'NIL_SYNCED',
                 total_invoices = 0,
@@ -541,6 +805,8 @@ export function markGstr2bMonthNilSynced(db, clientGstin, returnPeriod, excelPat
                 cdnra_count = 0,
                 isd_count = 0,
                 impg_count = 0,
+                impgsez_count = 0,
+                eco_count = 0,
                 eligible_itc_igst = 0,
                 eligible_itc_cgst = 0,
                 eligible_itc_sgst = 0,
@@ -560,10 +826,12 @@ export function markGstr2bMonthNilSynced(db, clientGstin, returnPeriod, excelPat
                 excel_path = COALESCE(excluded.excel_path, gstr2b_batches.excel_path),
                 json_path = COALESCE(excluded.json_path, gstr2b_batches.json_path),
                 downloaded_at = COALESCE(gstr2b_batches.downloaded_at, excluded.downloaded_at),
+                verify_status = 'VERIFIED',
+                last_error = NULL,
                 updated_at = excluded.updated_at
         `;
 
-        db.run(query, [batchId, clientGstin.toUpperCase(), returnPeriod, excelPath, jsonPath, now, now, now], (err) => {
+        db.run(query, [batchId, normGstin, normPeriod, excelPath, jsonPath, now, now, now], (err) => {
             if (err) return reject(err);
             resolve({ success: true, status: 'NIL_SYNCED', totalInvoices: 0 });
         });
@@ -601,6 +869,9 @@ export function getInvoicesWithAllocations(db, clientGstin, returnPeriod) {
             return reject(new Error('clientGstin and returnPeriod are required'));
         }
 
+        const normGstin = String(clientGstin).trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
+
         // Self-healing: Ensure allocations table exists
         db.run(`CREATE TABLE IF NOT EXISTS gstr3b_itc_allocations (
             id TEXT PRIMARY KEY,
@@ -614,33 +885,9 @@ export function getInvoicesWithAllocations(db, clientGstin, returnPeriod) {
             updated_at INTEGER,
             UNIQUE(client_gstin, return_period, invoice_id)
         )`, () => {
-            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-            let mName = returnPeriod.match(/[a-zA-Z]+/)?.[0] || '';
-            let yMatch = returnPeriod.match(/\d{4}/)?.[0] || '';
-            if (!mName && /^\d{6}$/.test(returnPeriod)) {
-                const mIdx = parseInt(returnPeriod.substring(0, 2), 10) - 1;
-                mName = monthNames[mIdx] || '';
-                yMatch = returnPeriod.substring(2);
-            }
-
-            let wherePeriod = `(i.return_period = ? OR i.return_period LIKE ? OR i.return_period LIKE ?)`;
-            let params = [
-                clientGstin.toUpperCase(),
-                returnPeriod,
-                `%${mName || returnPeriod}%`,
-                `%${returnPeriod.replace(',', '')}%`
-            ];
-
-            if (mName && yMatch) {
-                wherePeriod = `(i.return_period = ? OR (i.return_period LIKE ? AND i.return_period LIKE ?) OR i.return_period LIKE ?)`;
-                params = [
-                    clientGstin.toUpperCase(),
-                    returnPeriod,
-                    `%${mName}%`,
-                    `%${yMatch}%`,
-                    `%${returnPeriod.replace(',', '')}%`
-                ];
-            }
+            const pf = buildStrictPeriodFilter(normPeriod);
+            const wherePeriod = pf.clause.replace(/return_period/g, 'i.return_period');
+            const params = [normGstin, ...pf.params];
 
             const query = `
             SELECT 
@@ -680,7 +927,7 @@ export function getInvoicesWithAllocations(db, clientGstin, returnPeriod) {
             LEFT JOIN gstr3b_itc_allocations a 
                 ON UPPER(a.client_gstin) = UPPER(i.client_gstin) 
                 AND a.invoice_id = i.id
-            WHERE UPPER(i.client_gstin) = ? AND ${wherePeriod}
+            WHERE UPPER(TRIM(i.client_gstin)) = ? AND ${wherePeriod}
             ORDER BY 
                 CASE 
                     WHEN UPPER(i.section) LIKE '%B2B%' THEN 1 
@@ -785,8 +1032,8 @@ export function getInvoicesWithAllocations(db, clientGstin, returnPeriod) {
             roundCategory(summary.deferred);
 
             resolve({
-                clientGstin: clientGstin.toUpperCase(),
-                returnPeriod,
+                clientGstin: normGstin,
+                returnPeriod: normPeriod,
                 summary,
                 invoices
             });
@@ -805,6 +1052,8 @@ export function bulkSaveItcAllocations(db, clientGstin, returnPeriod, allocation
             return resolve({ success: true, updatedCount: 0 });
         }
 
+        const normGstin = String(clientGstin).trim().toUpperCase();
+        const defaultPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
         const now = Date.now();
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
@@ -821,17 +1070,19 @@ export function bulkSaveItcAllocations(db, clientGstin, returnPeriod, allocation
                     updated_at = excluded.updated_at
             `);
 
+            let allocErr = null;
             for (const item of allocations) {
                 const id = item.id || randomUUID();
                 const invId = item.invoiceId || item.invoice_id || item.id;
                 const target = item.targetTable || item.target_table || '4A5';
                 const notes = item.notes || '';
                 const user = item.allocatedBy || item.allocated_by || 'User';
-                const retPeriod = item.returnPeriod || item.return_period || returnPeriod;
+                const itemPeriod = item.returnPeriod || item.return_period || defaultPeriod;
+                const retPeriod = normalizeReturnPeriod(itemPeriod) || itemPeriod;
 
                 stmt.run([
                     id,
-                    clientGstin.toUpperCase(),
+                    normGstin,
                     retPeriod,
                     invId,
                     target,
@@ -839,18 +1090,154 @@ export function bulkSaveItcAllocations(db, clientGstin, returnPeriod, allocation
                     user,
                     now,
                     now
-                ]);
+                ], (err) => {
+                    if (err && !allocErr) allocErr = err;
+                });
             }
 
-            stmt.finalize();
-
-            db.run('COMMIT', (err) => {
-                if (err) {
-                    db.run('ROLLBACK');
-                    return reject(err);
+            stmt.finalize(() => {
+                if (allocErr) {
+                    console.error('[GSTR-3B Allocation] Error during allocation insert, rolling back:', allocErr.message);
+                    db.run('ROLLBACK', () => reject(allocErr));
+                    return;
                 }
-                resolve({ success: true, updatedCount: allocations.length });
+
+                db.run('COMMIT', (err) => {
+                    if (err) {
+                        db.run('ROLLBACK', () => reject(err));
+                        return;
+                    }
+                    resolve({ success: true, updatedCount: allocations.length });
+                });
             });
         });
+    });
+}
+
+// ─── 7. PHASE 36 CHECKSUM VERIFICATION & ERROR RECORDING (D-12 / G2B-BP-09) ──
+
+/**
+ * verifyGstr2bBatchChecksum: Compares parsed metrics against live/portal summary.
+ * Returns { verifyStatus: 'VERIFIED' | 'PARTIAL_VERIFY' | 'UNVERIFIED', verifyWarning, verifyDiff }
+ */
+export function verifyGstr2bBatchChecksum(parsedMetrics, portalSummary) {
+    if (!portalSummary || (portalSummary.totalInvoices == null && portalSummary.eligibleItcTotal == null)) {
+        return { verifyStatus: 'UNVERIFIED', verifyWarning: null, verifyDiff: null };
+    }
+
+    const portalInvoices = Number.isFinite(portalSummary.totalInvoices) ? portalSummary.totalInvoices : null;
+    const portalItc = Number.isFinite(portalSummary.eligibleItcTotal) ? portalSummary.eligibleItcTotal : null;
+    const parsedInvoices = Number(parsedMetrics?.total_invoices ?? parsedMetrics?.totalInvoices ?? 0);
+    const parsedItc = Number(parsedMetrics?.eligible_itc_total ?? parsedMetrics?.eligibleItcTotal ?? parsedMetrics?.eligibleItc?.total ?? 0);
+
+    const countMismatch = portalInvoices != null && portalInvoices !== parsedInvoices;
+    const itcDiff = portalItc != null ? Math.round(Math.abs(portalItc - parsedItc) * 100) / 100 : 0;
+    const itcMismatch = portalItc != null && itcDiff > 2.0;
+
+    const diff = {
+        portalInvoices,
+        parsedInvoices,
+        portalItc,
+        parsedItc,
+        itcDiff
+    };
+
+    if (countMismatch || itcMismatch) {
+        const warnings = [];
+        if (countMismatch) warnings.push(`Portal invoices: ${portalInvoices} vs Parsed: ${parsedInvoices}`);
+        if (itcMismatch) warnings.push(`Portal ITC: ₹${portalItc} vs Parsed: ₹${parsedItc} (Diff: ₹${itcDiff})`);
+        return {
+            verifyStatus: 'PARTIAL_VERIFY',
+            verifyWarning: warnings.join('; '),
+            verifyDiff: diff
+        };
+    }
+
+    return {
+        verifyStatus: 'VERIFIED',
+        verifyWarning: null,
+        verifyDiff: diff
+    };
+}
+
+/**
+ * updateGstr2bBatchVerification: Idempotently updates verification status and warnings on gstr2b_batches.
+ */
+export function updateGstr2bBatchVerification(db, clientGstin, returnPeriod, { verifyStatus, verifyWarning, warning, portalSummary, verifyDiff, diff, jobId } = {}) {
+    return new Promise((resolve) => {
+        if (!clientGstin || !returnPeriod) return resolve({ success: false });
+        const gUpper = String(clientGstin).trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
+        const pf = buildStrictPeriodFilter(normPeriod);
+        const status = verifyStatus || 'UNVERIFIED';
+        const warn = verifyWarning || warning || null;
+        const portalJson = portalSummary ? JSON.stringify(portalSummary) : null;
+        const diffJson = (verifyDiff || diff) ? JSON.stringify(verifyDiff || diff) : null;
+        const jId = jobId || null;
+        const now = Date.now();
+
+        const sql = `
+            UPDATE gstr2b_batches
+            SET verify_status = ?,
+                verify_warning = ?,
+                portal_summary_json = COALESCE(?, portal_summary_json),
+                verify_diff_json = COALESCE(?, verify_diff_json),
+                job_id = COALESCE(?, job_id),
+                updated_at = ?
+            WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})
+        `;
+        db.run(sql, [status, warn, portalJson, diffJson, jId, now, gUpper, ...pf.params], (err) => {
+            resolve({ success: !err });
+        });
+    });
+}
+
+/**
+ * recordGstr2bMonthError: Records month-level autopilot failure while strictly protecting
+ * valid SYNCED/NIL_SYNCED data (Golden Rule zero-data-loss).
+ */
+export function recordGstr2bMonthError(db, clientGstin, returnPeriod, errorMessage, jobId = null) {
+    return new Promise((resolve, reject) => {
+        if (!clientGstin || !returnPeriod) return resolve({ success: false });
+        const gUpper = String(clientGstin).trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod).trim();
+        const now = Date.now();
+        const batchId = randomUUID();
+        const msg = String(errorMessage || 'Unknown error');
+
+        const sql = `
+            INSERT INTO gstr2b_batches (
+                id, client_gstin, return_period, status, last_error, job_id, created_at, updated_at
+            ) VALUES (?, ?, ?, 'FAILED', ?, ?, ?, ?)
+            ON CONFLICT(client_gstin, return_period) DO UPDATE SET
+                status = CASE 
+                    WHEN gstr2b_batches.status IN ('SYNCED', 'PUSHED_TO_3B', 'NIL_SYNCED') THEN gstr2b_batches.status 
+                    ELSE 'FAILED' 
+                END,
+                last_error = excluded.last_error,
+                job_id = COALESCE(excluded.job_id, gstr2b_batches.job_id),
+                updated_at = excluded.updated_at
+        `;
+        db.run(sql, [batchId, gUpper, normPeriod, msg, jobId, now, now], (err) => {
+            if (err) return reject(err);
+            resolve({ success: true, status: 'FAILED' });
+        });
+    });
+}
+
+export function markGstr2bMonthRequested(db, clientGstin, returnPeriod) {
+    return new Promise((resolve) => {
+        const normGstin = String(clientGstin || '').trim().toUpperCase();
+        const normPeriod = normalizeReturnPeriod(returnPeriod) || String(returnPeriod || '').trim();
+        const now = Date.now();
+        const batchId = randomUUID();
+        db.run(`
+            INSERT INTO gstr2b_batches (id, client_gstin, return_period, status, requested_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'REQUESTED', ?, ?, ?)
+            ON CONFLICT(client_gstin, return_period) DO UPDATE SET
+                status = 'REQUESTED',
+                requested_at = excluded.requested_at,
+                updated_at = excluded.updated_at
+        `, [batchId, normGstin, normPeriod, now, now, now], () => resolve(true));
     });
 }

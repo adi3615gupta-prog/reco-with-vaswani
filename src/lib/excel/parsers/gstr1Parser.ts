@@ -22,7 +22,7 @@ export async function parseGSTR1File(file: File): Promise<{ records: InvoiceReco
   const processStandardSheet = (sheetName: string, typeLabel: string) => {
     if (!wb.SheetNames.includes(sheetName)) return;
     const sheet = wb.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
 
     for (const row of json) {
       const gstin = safeStr(row['GSTIN'] || row['E-Commerce Operator GSTIN']);
@@ -67,7 +67,7 @@ export async function parseGSTR1File(file: File): Promise<{ records: InvoiceReco
   const processMetadataSheet = (sheetName: string) => {
     if (!wb.SheetNames.includes(sheetName)) return [];
     const sheet = wb.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: 6, defval: '' });
+    const json = XLSX.utils.sheet_to_json(sheet, { range: 6, defval: '' }) as Record<string, unknown>[];
     return json.filter(row => Object.keys(row).some(k => !k.startsWith('__EMPTY') && String(row[k]).trim() !== ''));
   };
 
@@ -102,7 +102,7 @@ export async function parseMultipleGSTR1Files(files: File[]): Promise<{ records:
       if (!sheetName) return;
 
       const sheet = wb.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
 
       for (const row of json) {
         const gstin = safeStr(row['GSTIN'] || row['E-Commerce Operator GSTIN']);
@@ -155,7 +155,7 @@ export async function parseMultipleGSTR1Files(files: File[]): Promise<{ records:
       if (!sheetName) return;
 
       const sheet = wb.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
 
       for (const row of json) {
         const desc = safeStr(row['Description']);
@@ -191,8 +191,8 @@ export async function parseMultipleGSTR1Files(files: File[]): Promise<{ records:
       }
       if (!sheetName) return [];
       const sheet = wb.Sheets[sheetName];
-      const jsonSkip6 = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: 6, defval: '' });
-      const jsonNoSkip = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      const jsonSkip6 = XLSX.utils.sheet_to_json(sheet, { range: 6, defval: '' }) as Record<string, unknown>[];
+      const jsonNoSkip = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
       const json = (jsonNoSkip.length > 0 && Object.keys(jsonNoSkip[0]).some(k => k.toLowerCase().includes('hsn') || k.toLowerCase().includes('document'))) ? jsonNoSkip : jsonSkip6;
       return json.filter(row => Object.keys(row).some(k => !k.startsWith('__EMPTY') && String(row[k]).trim() !== ''));
     };

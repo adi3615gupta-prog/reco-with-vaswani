@@ -16,6 +16,17 @@ import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
 import { toast } from 'sonner';
 import { AuditJustificationModal } from '@/components/AuditJustificationModal';
 import type { AuditActionType, AuditOverrideRecord } from '@/lib/auditTrailService';
+import {
+  type SmartMatchCandidate,
+  findSmartMatchesForParty,
+  findSmartMatchesForInvoice,
+  findAllSmartMatches,
+  applySmartMatch,
+  applyBatchSmartMatches,
+  isUnmatchedPrRow,
+  isUnmatchedTwoBRow,
+} from '@/lib/smartMismatchSolver';
+import { AiSmartMatchModal } from '@/components/AiSmartMatchModal';
 
 interface Props {
   results: ReconciliationResult[];
@@ -45,8 +56,8 @@ function statusStrip(status: PartySummary['overall']) {
 function rowStatusColor(status: string) {
   if (status.includes('Debit Note')) return 'text-amber-400 font-bold';
   if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)') return 'text-[var(--np-green)]';
-  if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-yellow-500';
-  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-[#A87EE8]';
+  if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-amber-500 font-semibold';
+  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-indigo-600 dark:text-indigo-400 font-semibold';
   return 'text-[var(--np-red)]';
 }
 
@@ -87,6 +98,10 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     actionType: 'FORCE_MATCH',
     targetStatus: 'Perfect Match',
   });
+
+  // AI Smart Match Solver state
+  const [smartMatchModalOpen, setSmartMatchModalOpen] = useState<boolean>(false);
+  const [smartMatchCandidates, setSmartMatchCandidates] = useState<SmartMatchCandidate[]>([]);
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -244,8 +259,8 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       prRecord: raw.prRecord || { invoiceNo: invRow.invoiceNoPR, taxableValue: invRow.taxablePR },
       twoBRecord: raw.twoBRecord || { invoiceNo: invRow.invoiceNo2B, taxableValue: invRow.taxable2B },
       clientGstin: raw.prRecord?.gstin || raw.twoBRecord?.gstin,
-      taxableDiff: invRow.taxableDiff,
-      gstDiff: invRow.totalDiff,
+      taxableDiff: raw.taxableDiff ?? (invRow.taxablePR - invRow.taxable2B),
+      gstDiff: raw.gstDiff ?? ((invRow.cgstPR + invRow.sgstPR + invRow.igstPR) - (invRow.cgst2B + invRow.sgst2B + invRow.igst2B)),
       onConfirmOverride: (justification) => {
         const newResults = [...results];
         const idx = newResults.findIndex((r) => r === raw);
@@ -465,6 +480,56 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     } else {
       toast.info('No remaining matching invoice pairs found across any party');
     }
+  };
+
+  // AI Smart Match Handlers
+  const handleRunSmartMatchParty = (party: PartySummary) => {
+    const candidates = findSmartMatchesForParty(party);
+    if (candidates.length === 0) {
+      toast.info(`No high-confidence AI smart matches found for ${party.partyName} (70%+ confidence required)`);
+      return;
+    }
+    setSmartMatchCandidates(candidates);
+    setSmartMatchModalOpen(true);
+  };
+
+  const handleRunSmartMatchInvoice = (targetRow: PartyInvoiceRow, party: PartySummary) => {
+    const candidates = findSmartMatchesForInvoice(targetRow, party);
+    const invNo = targetRow.invoiceNoPR || targetRow.invoiceNo2B || 'Invoice';
+    if (candidates.length === 0) {
+      toast.info(`No high-confidence AI match candidate found for #${invNo} within counterparty records.`);
+      return;
+    }
+    setSmartMatchCandidates(candidates);
+    setSmartMatchModalOpen(true);
+  };
+
+  const handleRunSmartMatchAll = () => {
+    const candidates = findAllSmartMatches(parties);
+    if (candidates.length === 0) {
+      toast.info('No unmatched invoice pairs qualify for AI Smart Matching across counterparties');
+      return;
+    }
+    setSmartMatchCandidates(candidates);
+    setSmartMatchModalOpen(true);
+  };
+
+  const handleApplySingleSmartMatch = (candidate: SmartMatchCandidate) => {
+    if (!onResultsChange || !results) return;
+    const newResults = applySmartMatch(results, candidate);
+    onResultsChange(newResults);
+    toast.success(`Matched #${candidate.metrics.prInvoiceNo} with #${candidate.metrics.twoBInvoiceNo} (${candidate.confidence}% AI Confidence)`);
+    setSmartMatchCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
+  };
+
+  const handleApplyBatchSmartMatches = (candidatesToApply: SmartMatchCandidate[]) => {
+    if (!onResultsChange || !results || candidatesToApply.length === 0) return;
+    const { newResults, appliedCount } = applyBatchSmartMatches(results, candidatesToApply);
+    onResultsChange(newResults);
+    toast.success(`AI Smart Match successfully linked ${appliedCount} invoice pair(s)`);
+    setSmartMatchCandidates((prev) =>
+      prev.filter((c) => !candidatesToApply.some((applied) => applied.id === c.id))
+    );
   };
 
   const handleBatchMatch = (stagedPairs: Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow }>) => {
@@ -696,7 +761,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden" style={{ animationDelay: '300ms' }}>
       <div className="bg-slate-50/80 border-b border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <div className="dash-dots"><span style={{ background: '#3DCC8E' }}></span><span style={{ background: '#F0A030' }}></span></div>
+          <div className="dash-dots"><span className="bg-emerald-500"></span><span className="bg-amber-500"></span></div>
           <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest font-mono">Party-wise Intelligence ({filtered.length.toLocaleString('en-IN')})</span>
 
           <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-xl text-xs font-semibold shadow-2xs">
@@ -763,6 +828,15 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
               >
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
                 Auto-Match All Parties
+              </button>
+
+              <button
+                onClick={handleRunSmartMatchAll}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all hover:scale-105 active:scale-95"
+                title="Scan all counterparties and solve mismatches with AI Smart Solver (100% Offline)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                ✨ AI Smart Match All
               </button>
             </>
           )}
@@ -848,6 +922,8 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
             onForceMatch={handleForceMatch}
             onUnlinkMatch={handleUnlinkMatch}
             onAutoMatchParty={handleAutoMatchParty}
+            onSmartMatchParty={handleRunSmartMatchParty}
+            onSmartMatchInvoice={handleRunSmartMatchInvoice}
             onMergeParties={handleMergeParties}
             allParties={parties}
             canEdit={!!onResultsChange}
@@ -991,6 +1067,15 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
           </div>,
           document.body
         )}
+
+      {/* AI Smart Match Solver Modal */}
+      <AiSmartMatchModal
+        isOpen={smartMatchModalOpen}
+        onClose={() => setSmartMatchModalOpen(false)}
+        candidates={smartMatchCandidates}
+        onApplyMatch={handleApplySingleSmartMatch}
+        onApplyAllHighConfidence={handleApplyBatchSmartMatches}
+      />
     </div>
   );
 }
@@ -1004,6 +1089,8 @@ function PartyCard({
   onForceMatch,
   onUnlinkMatch,
   onAutoMatchParty,
+  onSmartMatchParty,
+  onSmartMatchInvoice,
   onMergeParties,
   allParties,
   canEdit,
@@ -1023,6 +1110,8 @@ function PartyCard({
   onForceMatch: (inv: PartyInvoiceRow) => void;
   onUnlinkMatch: (inv: PartyInvoiceRow) => void;
   onAutoMatchParty: (p: PartySummary) => void;
+  onSmartMatchParty?: (p: PartySummary) => void;
+  onSmartMatchInvoice?: (inv: PartyInvoiceRow, p: PartySummary) => void;
   onMergeParties?: (source: PartySummary, targetKey: string) => void;
   allParties?: PartySummary[];
   canEdit: boolean;
@@ -1148,13 +1237,23 @@ function PartyCard({
                   </>
                 )}
                 {hasUnmatchedPR && hasUnmatched2B && (
-                  <button
-                    onClick={() => onAutoMatchParty(party)}
-                    className="px-3 py-1.5 bg-sky-600/80 hover:bg-sky-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    Auto-Match Suggested Pairs
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onSmartMatchParty?.(party)}
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg font-black text-[10.5px] uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all hover:scale-105 active:scale-95"
+                      title="Run AI Smart Mismatch Solver on this party (100% Offline)"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                      <span>✨ AI Smart Match</span>
+                    </button>
+                    <button
+                      onClick={() => onAutoMatchParty(party)}
+                      className="px-3 py-1.5 bg-sky-600/80 hover:bg-sky-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      Auto-Match Suggested Pairs
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1326,6 +1425,16 @@ function PartyCard({
                       {canEdit && (
                         <td className="!py-1.5 !px-1 text-center">
                           <div className="flex items-center justify-center gap-1">
+                            {(isUnmatchedPR || isUnmatched2B) && (
+                              <button
+                                onClick={() => onSmartMatchInvoice?.(inv, party)}
+                                className="p-1 px-1.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all flex items-center gap-1 shadow-2xs hover:scale-105 active:scale-95"
+                                title="Run AI Smart Match on this invoice (100% Offline)"
+                              >
+                                <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
+                                <span className="text-[8.5px] font-black uppercase tracking-tight">AI</span>
+                              </button>
+                            )}
                             {isMismatchPair && (
                               <button
                                 onClick={() => onForceMatch(inv)}

@@ -40,7 +40,7 @@ export async function parseFile(
 
   // 2. Automatic & Comprehensive Header Row Detection
   let range = 0;
-  const rawData = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
   const headerKeywords = [
     'date', 'particulars', 'party name', 'ledger name', 'pan', 'section',
     'voucher type', 'voucher no', 'voucher number', 'deductee pan', 'deductee name',
@@ -73,7 +73,7 @@ export async function parseFile(
   }
 
   const rawOption = options?.raw !== undefined ? options.raw : false;
-  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range, defval: '', raw: rawOption });
+  const json = XLSX.utils.sheet_to_json(sheet, { range, defval: '', raw: rawOption }) as Record<string, unknown>[];
 
   if (json.length === 0) return { headers: [], rows: [] };
   const headers = Object.keys(json[0]);

@@ -125,12 +125,63 @@ export function initMonthlyAuditDatabase(db) {
             );
         `);
 
+        // 6. Voucher Sampling Working Papers Table (SA 530 Integration)
+        db.run(`
+            CREATE TABLE IF NOT EXISTS audit_voucher_samples (
+                id TEXT PRIMARY KEY,
+                audit_id TEXT NOT NULL,
+                register_key TEXT NOT NULL,
+                voucher_id TEXT,
+                voucher_type TEXT,
+                voucher_number TEXT,
+                date TEXT,
+                party_name TEXT,
+                amount REAL DEFAULT 0,
+                sampling_rule TEXT,
+                stratum TEXT,
+                status TEXT DEFAULT 'Pending',
+                auditor_remarks TEXT,
+                supporting_doc_ref TEXT,
+                verified_by TEXT,
+                verified_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (audit_id) REFERENCES monthly_audits(id) ON DELETE CASCADE
+            );
+        `);
+
+        // 7. Dedicated Monthly Audit Clients Master Table (Separate from GST Clients)
+        db.run(`
+            CREATE TABLE IF NOT EXISTS monthly_audit_clients (
+                id TEXT PRIMARY KEY,
+                client_name TEXT NOT NULL,
+                company_name TEXT NOT NULL,
+                tally_company_name TEXT,
+                tally_guid TEXT,
+                gstin TEXT,
+                pan TEXT,
+                email TEXT,
+                phone TEXT,
+                address TEXT,
+                state TEXT,
+                financial_year TEXT,
+                notes TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+        `);
+
         // Migration safety for newly added columns if table already exists
         db.run(`ALTER TABLE monthly_audits ADD COLUMN vouching_registers TEXT;`, () => {});
+        db.run(`ALTER TABLE monthly_audits ADD COLUMN client_id TEXT;`, () => {});
         db.run(`ALTER TABLE audit_verification_data ADD COLUMN journal_reco_data TEXT;`, () => {});
         db.run(`ALTER TABLE audit_verification_data ADD COLUMN roc_loan_data TEXT;`, () => {});
 
         // Performance Indexes
+        db.run(`CREATE INDEX IF NOT EXISTS idx_monthly_audit_clients_name ON monthly_audit_clients (client_name);`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_monthly_audit_clients_gstin ON monthly_audit_clients (gstin);`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_monthly_audit_clients_tally ON monthly_audit_clients (tally_company_name);`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_monthly_audits_client ON monthly_audits (client_gstin, fy);`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_monthly_audits_status ON monthly_audits (status);`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_audit_checklists_audit_id ON audit_checklists (audit_id);`);
@@ -138,16 +189,31 @@ export function initMonthlyAuditDatabase(db) {
         db.run(`CREATE INDEX IF NOT EXISTS idx_audit_observations_client ON audit_observations (client_gstin);`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_pending_points_client ON audit_pending_points (client_gstin, status);`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_pending_points_origin ON audit_pending_points (origin_audit_id);`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_voucher_samples_audit ON audit_voucher_samples (audit_id, register_key);`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_voucher_samples_status ON audit_voucher_samples (audit_id, status);`);
     });
 }
 
 /**
  * Express Route Handlers for Monthly Audit Suite
  */
-export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '.', authenticateToken = (req, res, next) => next()) {
-    const auth = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '.', authenticateToken = null) {
+    const hasAuth = typeof authenticateToken === 'function';
+    const auth = hasAuth ? authenticateToken : ((req, res, next) => next());
+    const requireSeniorRole = (req, res, next) => {
+        if (!hasAuth) return next();
+        const role = String(req.user?.role || '').toLowerCase();
+        const designation = String(req.user?.designation || '').toLowerCase();
+        const isSenior = role === 'admin' || role.includes('senior') || role.includes('partner') || role.includes('manager') ||
+            designation.includes('senior') || designation.includes('partner') || designation.includes('manager');
+        if (!isSenior) {
+            return res.status(403).json({ success: false, error: 'Senior Auditor or Admin role required' });
+        }
+        next();
+    };
     app.use('/api/monthly-audits', auth);
     app.use('/api/audit-pending-points', auth);
+    app.use('/api/monthly-audit-clients', auth);
 
     // Ensure DB tables exist
     initMonthlyAuditDatabase(db);
@@ -196,17 +262,250 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         });
     }
 
+    // ─── 0. DEDICATED MONTHLY AUDIT CLIENTS MASTER (INDEPENDENT FROM GST) ──
+    app.get('/api/monthly-audit-clients', (req, res) => {
+        const query = `SELECT * FROM monthly_audit_clients WHERE is_active = 1 ORDER BY client_name COLLATE NOCASE ASC`;
+        db.all(query, [], (err, rows) => {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            res.json({ success: true, clients: rows || [] });
+        });
+    });
+
+    app.post('/api/monthly-audit-clients', (req, res) => {
+        const {
+            id,
+            client_name,
+            company_name,
+            tally_company_name,
+            tally_guid,
+            gstin,
+            pan,
+            email,
+            phone,
+            address,
+            state,
+            financial_year,
+            notes
+        } = req.body || {};
+
+        const effectiveName = String(company_name || client_name || tally_company_name || '').trim();
+        if (!effectiveName) {
+            return res.status(400).json({ success: false, error: 'Client or Company Name is required' });
+        }
+
+        const clientId = id || `audit_cli_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const now = Date.now();
+        const cleanGstin = gstin ? String(gstin).trim().toUpperCase() : '';
+        const cleanPan = pan ? String(pan).trim().toUpperCase() : (cleanGstin.length === 15 ? cleanGstin.substring(2, 12) : '');
+
+        const sql = `
+            INSERT INTO monthly_audit_clients (
+                id, client_name, company_name, tally_company_name, tally_guid,
+                gstin, pan, email, phone, address, state, financial_year, notes, is_active,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                client_name = excluded.client_name,
+                company_name = excluded.company_name,
+                tally_company_name = excluded.tally_company_name,
+                tally_guid = COALESCE(excluded.tally_guid, monthly_audit_clients.tally_guid),
+                gstin = excluded.gstin,
+                pan = excluded.pan,
+                email = excluded.email,
+                phone = excluded.phone,
+                address = excluded.address,
+                state = excluded.state,
+                financial_year = excluded.financial_year,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+        `;
+
+        db.run(sql, [
+            clientId,
+            effectiveName,
+            company_name ? String(company_name).trim() : effectiveName,
+            tally_company_name ? String(tally_company_name).trim() : effectiveName,
+            tally_guid || null,
+            cleanGstin,
+            cleanPan,
+            email ? String(email).trim() : null,
+            phone ? String(phone).trim() : null,
+            address ? String(address).trim() : null,
+            state ? String(state).trim() : null,
+            financial_year ? String(financial_year).trim() : null,
+            notes ? String(notes).trim() : null,
+            now,
+            now
+        ], function(err) {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [clientId], (getErr, row) => {
+                if (getErr) return res.status(500).json({ success: false, error: getErr.message });
+                res.json({ success: true, client: row });
+            });
+        });
+    });
+
+    app.put('/api/monthly-audit-clients/:id', (req, res) => {
+        const { id } = req.params;
+        const {
+            client_name,
+            company_name,
+            tally_company_name,
+            tally_guid,
+            gstin,
+            pan,
+            email,
+            phone,
+            address,
+            state,
+            financial_year,
+            notes
+        } = req.body || {};
+
+        const effectiveName = String(company_name || client_name || tally_company_name || '').trim();
+        if (!effectiveName) {
+            return res.status(400).json({ success: false, error: 'Client or Company Name is required' });
+        }
+        const now = Date.now();
+        const cleanGstin = gstin ? String(gstin).trim().toUpperCase() : '';
+        const cleanPan = pan ? String(pan).trim().toUpperCase() : (cleanGstin.length === 15 ? cleanGstin.substring(2, 12) : '');
+
+        const sql = `
+            UPDATE monthly_audit_clients SET
+                client_name = ?,
+                company_name = ?,
+                tally_company_name = ?,
+                tally_guid = COALESCE(?, tally_guid),
+                gstin = ?,
+                pan = ?,
+                email = ?,
+                phone = ?,
+                address = ?,
+                state = ?,
+                financial_year = ?,
+                notes = ?,
+                updated_at = ?
+            WHERE id = ?
+        `;
+
+        db.run(sql, [
+            effectiveName,
+            company_name ? String(company_name).trim() : effectiveName,
+            tally_company_name ? String(tally_company_name).trim() : effectiveName,
+            tally_guid || null,
+            cleanGstin,
+            cleanPan,
+            email ? String(email).trim() : null,
+            phone ? String(phone).trim() : null,
+            address ? String(address).trim() : null,
+            state ? String(state).trim() : null,
+            financial_year ? String(financial_year).trim() : null,
+            notes ? String(notes).trim() : null,
+            now,
+            id
+        ], function(err) {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [id], (getErr, row) => {
+                if (getErr) return res.status(500).json({ success: false, error: getErr.message });
+                res.json({ success: true, client: row });
+            });
+        });
+    });
+
+    app.delete('/api/monthly-audit-clients/:id', (req, res) => {
+        const { id } = req.params;
+        db.run(`DELETE FROM monthly_audit_clients WHERE id = ?`, [id], function(err) {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            res.json({ success: true, deleted: this.changes });
+        });
+    });
+
+    // One-click route to sync or import active Tally Company into monthly_audit_clients
+    app.post('/api/monthly-audit-clients/sync-tally', (req, res) => {
+        const { tally_company_name, gstin, address, state, financial_year, guid } = req.body || {};
+        const coName = String(tally_company_name || '').trim();
+        if (!coName) {
+            return res.status(400).json({ success: false, error: 'Tally Company Name is required' });
+        }
+        const now = Date.now();
+        const cleanGstin = gstin ? String(gstin).trim().toUpperCase() : '';
+
+        db.get(
+            `SELECT * FROM monthly_audit_clients WHERE tally_company_name = ? OR company_name = ? OR client_name = ? ${cleanGstin ? 'OR gstin = ?' : ''}`,
+            cleanGstin ? [coName, coName, coName, cleanGstin] : [coName, coName, coName],
+            (findErr, existing) => {
+                if (findErr) return res.status(500).json({ success: false, error: findErr.message });
+                if (existing) {
+                    db.run(
+                        `UPDATE monthly_audit_clients SET 
+                            tally_company_name = ?,
+                            company_name = COALESCE(company_name, ?),
+                            tally_guid = COALESCE(?, tally_guid),
+                            gstin = CASE WHEN ? != '' THEN ? ELSE gstin END,
+                            address = COALESCE(?, address),
+                            state = COALESCE(?, state),
+                            financial_year = COALESCE(?, financial_year),
+                            updated_at = ?
+                        WHERE id = ?`,
+                        [coName, coName, guid || null, cleanGstin, cleanGstin, address || null, state || null, financial_year || null, now, existing.id],
+                        function(upErr) {
+                            if (upErr) return res.status(500).json({ success: false, error: upErr.message });
+                            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [existing.id], (gErr, updatedRow) => {
+                                res.json({ success: true, client: updatedRow, isNew: false });
+                            });
+                        }
+                    );
+                } else {
+                    const newId = `audit_cli_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                    db.run(
+                        `INSERT INTO monthly_audit_clients (
+                            id, client_name, company_name, tally_company_name, tally_guid,
+                            gstin, pan, address, state, financial_year, is_active, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+                        [
+                            newId,
+                            coName,
+                            coName,
+                            coName,
+                            guid || null,
+                            cleanGstin,
+                            cleanGstin.length === 15 ? cleanGstin.substring(2, 12) : null,
+                            address || null,
+                            state || null,
+                            financial_year || null,
+                            now,
+                            now
+                        ],
+                        function(insErr) {
+                            if (insErr) return res.status(500).json({ success: false, error: insErr.message });
+                            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [newId], (gErr, newRow) => {
+                                res.json({ success: true, client: newRow, isNew: true });
+                            });
+                        }
+                    );
+                }
+            }
+        );
+    });
+
     // ─── 1. GET ALL MONTHLY AUDITS (FILTER BY GSTIN & FY & MONTH) ─────────
     app.get('/api/monthly-audits', (req, res) => {
         const gstin = req.query.gstin || req.query.client_gstin || req.query.clientGstin;
+        const clientId = req.query.client_id || req.query.clientId;
         const fy = req.query.fy;
         const month = req.query.month;
         let query = `SELECT * FROM monthly_audits WHERE 1=1`;
         const params = [];
 
-        if (gstin) {
-            query += ` AND client_gstin = ?`;
-            params.push(gstin);
+        if (clientId && gstin) {
+            query += ` AND (client_gstin = ? OR client_id = ?)`;
+            params.push(gstin, clientId);
+        } else if (gstin) {
+            query += ` AND (client_gstin = ? OR client_id = ?)`;
+            params.push(gstin, gstin);
+        } else if (clientId) {
+            query += ` AND (client_id = ? OR client_gstin = ?)`;
+            params.push(clientId, clientId);
         }
         if (fy) {
             query += ` AND fy = ?`;
@@ -223,6 +522,19 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
                 return res.status(500).json({ success: false, error: err.message });
             }
             res.json({ success: true, audits: rows || [] });
+        });
+    });
+
+    // ─── 1.1 GET CONFIGURED CA FIRM NAME / OFFICE DETAILS ──────────────────
+    app.get('/api/monthly-audits/firm-info', (req, res) => {
+        db.get("SELECT value FROM app_config WHERE key = 'office_id'", [], (err, row) => {
+            const rawOffice = row && row.value ? String(row.value).trim() : '';
+            const formattedOffice = rawOffice ? rawOffice.replace(/_/g, ' ').trim() : '';
+            res.json({
+                success: true,
+                officeId: rawOffice,
+                firmName: formattedOffice
+            });
         });
     });
 
@@ -246,12 +558,18 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
                     db.get(`SELECT * FROM audit_verification_data WHERE audit_id = ?`, [id], (errData, vData) => {
                         if (errData) return res.status(500).json({ success: false, error: errData.message });
 
-                        res.json({
-                            success: true,
-                            audit,
-                            checklists: checklists || [],
-                            observations: observations || [],
-                            verificationData: vData || null
+                        // Fetch voucher samples
+                        db.all(`SELECT * FROM audit_voucher_samples WHERE audit_id = ? ORDER BY date DESC, amount DESC`, [id], (errSamp, samples) => {
+                            if (errSamp) return res.status(500).json({ success: false, error: errSamp.message });
+
+                            res.json({
+                                success: true,
+                                audit,
+                                checklists: checklists || [],
+                                observations: observations || [],
+                                voucherSamples: samples || [],
+                                verificationData: vData || null
+                            });
                         });
                     });
                 });
@@ -401,7 +719,7 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
     });
 
     // ─── 5. SENIOR REVIEW & SIGN-OFF (SENIOR ACTION) ────────────────────────
-    app.post('/api/monthly-audits/:id/senior-review', (req, res) => {
+    app.post('/api/monthly-audits/:id/senior-review', requireSeniorRole, (req, res) => {
         const { id } = req.params;
         const action = req.body.action; // 'APPROVE' | 'REQUEST_REVISION' | 'REVISE'
         const reviewedBy = req.body.reviewedBy || req.body.reviewed_by;
@@ -445,7 +763,7 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
     });
 
     // ─── 6. RELEASE REPORT TO CLIENT ───────────────────────────────────────
-    app.post('/api/monthly-audits/:id/release-client', (req, res) => {
+    app.post('/api/monthly-audits/:id/release-client', requireSeniorRole, (req, res) => {
         const { id } = req.params;
         const { releasedBy, channel, workbookBase64, filename, clientName, gstin, fy, month } = req.body;
         const now = Date.now();
@@ -632,6 +950,138 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         db.run(`DELETE FROM audit_observations WHERE id = ? AND audit_id = ?`, [obsId, id], function (err) {
             if (err) return res.status(500).json({ success: false, error: err.message });
             res.json({ success: true, message: 'Observation deleted' });
+        });
+    });
+
+    // ─── 9.1 GET VOUCHER SAMPLES FOR AUDIT ─────────────────────────────────
+    app.get('/api/monthly-audits/:id/samples', (req, res) => {
+        const { id } = req.params;
+        const registerKey = req.query.register_key || req.query.registerKey;
+        let query = `SELECT * FROM audit_voucher_samples WHERE audit_id = ?`;
+        const params = [id];
+        if (registerKey) {
+            query += ` AND register_key = ?`;
+            params.push(registerKey);
+        }
+        query += ` ORDER BY date DESC, amount DESC`;
+        db.all(query, params, (err, rows) => {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            res.json({ success: true, samples: rows || [] });
+        });
+    });
+
+    // ─── 9.2 BATCH UPSERT VOUCHER SAMPLES ──────────────────────────────────
+    app.post('/api/monthly-audits/:id/samples/batch', (req, res) => {
+        const { id } = req.params;
+        const { samples, registerKey, replaceAll } = req.body;
+
+        if (!Array.isArray(samples)) {
+            return res.status(400).json({ success: false, error: 'samples must be an array' });
+        }
+
+        const now = Date.now();
+        db.serialize(() => {
+            db.run(`BEGIN TRANSACTION`);
+
+            if (replaceAll) {
+                db.run(`DELETE FROM audit_voucher_samples WHERE audit_id = ?`, [id]);
+            } else if (registerKey) {
+                db.run(`DELETE FROM audit_voucher_samples WHERE audit_id = ? AND register_key = ?`, [id, registerKey]);
+            }
+
+            const stmt = db.prepare(`
+                INSERT INTO audit_voucher_samples (
+                    id, audit_id, register_key, voucher_id, voucher_type, voucher_number,
+                    date, party_name, amount, sampling_rule, stratum, status,
+                    auditor_remarks, supporting_doc_ref, verified_by, verified_at,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    auditor_remarks = excluded.auditor_remarks,
+                    supporting_doc_ref = excluded.supporting_doc_ref,
+                    verified_by = excluded.verified_by,
+                    verified_at = excluded.verified_at,
+                    updated_at = excluded.updated_at
+            `);
+
+            samples.forEach((s) => {
+                const sampleId = s.id || `samp_${id}_${s.register_key || s.registerKey}_${s.voucher_number || s.voucherNumber || Math.random().toString(36).substring(2, 7)}`;
+                stmt.run([
+                    sampleId,
+                    id,
+                    s.register_key || s.registerKey || 'general',
+                    s.voucher_id || s.voucherId || null,
+                    s.voucher_type || s.voucherType || '',
+                    s.voucher_number || s.voucherNumber || '',
+                    s.date || '',
+                    s.party_name || s.partyName || '',
+                    Number(s.amount) || 0,
+                    s.sampling_rule || s.samplingRule || '',
+                    s.stratum || null,
+                    s.status || 'Pending',
+                    s.auditor_remarks || s.auditorRemarks || '',
+                    s.supporting_doc_ref || s.supportingDocRef || '',
+                    s.verified_by || s.verifiedBy || null,
+                    s.verified_at || s.verifiedAt || null,
+                    s.created_at || s.createdAt || now,
+                    now
+                ]);
+            });
+
+            stmt.finalize();
+            db.run(`COMMIT`, (err) => {
+                if (err) return res.status(500).json({ success: false, error: err.message });
+                res.json({ success: true, count: samples.length, message: 'Voucher samples saved successfully' });
+            });
+        });
+    });
+
+    // ─── 9.3 UPDATE SINGLE VOUCHER SAMPLE STATUS & REMARKS ─────────────────
+    app.patch('/api/monthly-audits/:id/samples/:sampleId', (req, res) => {
+        const { id, sampleId } = req.params;
+        const b = req.body || {};
+        const status = b.status;
+        const auditor_remarks = b.auditor_remarks ?? b.auditorRemarks;
+        const supporting_doc_ref = b.supporting_doc_ref ?? b.supportingDocRef;
+        const verified_by = b.verified_by ?? b.verifiedBy;
+        const now = Date.now();
+        const verified_at = status === 'Verified' ? now : null;
+
+        const sql = `
+            UPDATE audit_voucher_samples SET
+                status = COALESCE(?, status),
+                auditor_remarks = COALESCE(?, auditor_remarks),
+                supporting_doc_ref = COALESCE(?, supporting_doc_ref),
+                verified_by = COALESCE(?, verified_by),
+                verified_at = CASE WHEN ? = 'Verified' THEN ? ELSE verified_at END,
+                updated_at = ?
+            WHERE id = ? AND audit_id = ?
+        `;
+
+        db.run(sql, [
+            status || null,
+            auditor_remarks !== undefined ? auditor_remarks : null,
+            supporting_doc_ref !== undefined ? supporting_doc_ref : null,
+            verified_by || null,
+            status || null,
+            verified_at,
+            now,
+            sampleId,
+            id
+        ], function (err) {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            if (this.changes === 0) return res.status(404).json({ success: false, error: 'Sample voucher not found' });
+            res.json({ success: true, message: 'Sample voucher updated successfully' });
+        });
+    });
+
+    // ─── 9.4 DELETE SINGLE VOUCHER SAMPLE ──────────────────────────────────
+    app.delete('/api/monthly-audits/:id/samples/:sampleId', (req, res) => {
+        const { id, sampleId } = req.params;
+        db.run(`DELETE FROM audit_voucher_samples WHERE id = ? AND audit_id = ?`, [sampleId, id], function (err) {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            res.json({ success: true, message: 'Sample voucher deleted' });
         });
     });
 
@@ -842,11 +1292,17 @@ export default function setupMonthlyAuditRoutes(app, db, defaultUserDataPath = '
         }
         try {
             const resolvedPath = path.resolve(String(filePath).trim().replace(/^["']|["']$/g, ''));
-            const baseDir = path.resolve(userDataPath, 'gst_returns_data');
-            const allowedUserData = path.resolve(userDataPath);
-            const cwdPath = path.resolve(process.cwd());
+            const baseRoot = defaultUserDataPath || '.';
+            const allowedDirs = [
+                path.resolve(baseRoot, 'gst_returns_data'),
+                path.resolve(baseRoot)
+            ];
+            const isAllowedPath = allowedDirs.some((dir) => {
+                const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
+                return resolvedPath === dir || resolvedPath.startsWith(prefix);
+            });
 
-            if (!resolvedPath.startsWith(baseDir) && !resolvedPath.startsWith(allowedUserData) && !resolvedPath.startsWith(cwdPath)) {
+            if (!isAllowedPath) {
                 return res.status(403).json({ success: false, error: 'Access denied: path outside authorized directory' });
             }
 

@@ -7,6 +7,7 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getApiBase, safeApiFetch } from '@/lib/api';
 import {
   GSTR3BMonthKey,
@@ -20,6 +21,10 @@ import {
   Gstr2bIngestSummary,
   parseAnyReturnsFile
 } from '@/lib/gstrAutoIngest';
+import {
+  startAndSubscribeGstr2bJob,
+  cancelGstr2bJob
+} from '@/lib/gstr2bAutopilotClient';
 
 interface ReturnsAutoIngestDeckProps {
   selectedMonth: GSTR3BMonthKey;
@@ -87,7 +92,7 @@ const getTargetPeriod = (month: GSTR3BMonthKey, fy?: string, monthData?: GSTR3BM
   if (monthData?.year && /^\d{4}$/.test(String(monthData.year))) {
     return `${month} ${monthData.year}`;
   }
-  const cleanFy = (fy || '2025-26').trim();
+  const cleanFy = (fy || '2026-27').trim();
   const { startYear, endYear } = parseFyYears(cleanFy);
   const isNextYear = ['January', 'February', 'March'].includes(month);
   return `${month} ${isNextYear ? endYear : startYear}`;
@@ -112,6 +117,7 @@ export default function ReturnsAutoIngestDeck({
   isLocked = false,
   onUpdateField
 }: ReturnsAutoIngestDeckProps) {
+  const confirm = useConfirm();
   // Local edit states for side deck cards
   const [isG1LocalEdit, setIsG1LocalEdit] = useState(false);
   const [isG2bLocalEdit, setIsG2bLocalEdit] = useState(false);
@@ -133,7 +139,7 @@ export default function ReturnsAutoIngestDeck({
           type="number"
           value={val || ''}
           onChange={e => onUpdateField(section, field, subKey, parseFloat(e.target.value) || 0)}
-          className={`w-14 sm:w-16 bg-slate-900 border border-slate-700 focus:border-indigo-400 rounded px-1 py-0.5 text-right font-mono text-[10px] ${colorText} outline-none`}
+          className={`w-12 sm:w-14 bg-slate-900 border border-slate-700 focus:border-indigo-400 rounded px-1 py-0.5 text-right font-mono text-[10px] ${colorText} outline-none`}
           placeholder="0"
         />
       );
@@ -141,6 +147,7 @@ export default function ReturnsAutoIngestDeck({
     return fmtCell(val, isNeg);
   };
   // GSTR-1 State
+  const [gstr1SourceMode, setGstr1SourceMode] = useState<'json' | 'pdf' | 'local'>('json');
   const [activeGstr1, setActiveGstr1] = useState<Gstr1IngestSummary | null>(null);
   const [isGstr1Dragging, setIsGstr1Dragging] = useState(false);
   const [isProcessingGstr1, setIsProcessingGstr1] = useState(false);
@@ -159,6 +166,61 @@ export default function ReturnsAutoIngestDeck({
     return () => clearInterval(t);
   }, []);
 
+  // Listen for external month resets (e.g. Clear Month on 3B Working Sheet bar)
+  useEffect(() => {
+    const onExternalClear = (e: any) => {
+      const scope = e?.detail?.scope || 'all';
+      if (scope === 'all' || scope === 'gstr1') {
+        setActiveGstr1(null);
+        setGstr1BatchStatus('PENDING');
+        setGstr1RequestedAt(null);
+      }
+      if (scope === 'all' || scope === 'gstr2b') {
+        setActiveGstr2b(null);
+      }
+    };
+    window.addEventListener('returns-cockpit-cleared', onExternalClear);
+    return () => window.removeEventListener('returns-cockpit-cleared', onExternalClear);
+  }, []);
+
+  const handlePersistClearGstr1 = async () => {
+    setActiveGstr1(null);
+    setGstr1BatchStatus('PENDING');
+    setGstr1RequestedAt(null);
+    if (onClearGstr1) onClearGstr1();
+
+    if (currentGstin && currentGstin !== 'Not Specified' && currentGstin.length >= 15) {
+      const targetPeriod = getTargetPeriod(selectedMonth, financialYear, currentMonthData);
+      const fyClean = financialYear || '2026-27';
+      try {
+        await safeApiFetch(
+          `/api/gstr1/clear/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}&month=${encodeURIComponent(selectedMonth)}&fy=${encodeURIComponent(fyClean)}`,
+          { method: 'DELETE' }
+        );
+      } catch (e) {
+        console.warn('[ReturnsAutoIngestDeck] Persistent GSTR-1 clear failed:', e);
+      }
+    }
+  };
+
+  const handlePersistClearGstr2b = async () => {
+    setActiveGstr2b(null);
+    if (onClearGstr2b) onClearGstr2b();
+
+    if (currentGstin && currentGstin !== 'Not Specified' && currentGstin.length >= 15) {
+      const targetPeriod = getTargetPeriod(selectedMonth, financialYear, currentMonthData);
+      const fyClean = financialYear || '2026-27';
+      try {
+        await safeApiFetch(
+          `/api/gstr2b/clear/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}&month=${encodeURIComponent(selectedMonth)}&fy=${encodeURIComponent(fyClean)}`,
+          { method: 'DELETE' }
+        );
+      } catch (e) {
+        console.warn('[ReturnsAutoIngestDeck] Persistent GSTR-2B clear failed:', e);
+      }
+    }
+  };
+
   const gstr1SecondsLeft = gstr1RequestedAt ? Math.max(0, 1200 - Math.floor((Date.now() - gstr1RequestedAt) / 1000)) : 0;
   const isGstr1ReadyToDownload = (gstr1BatchStatus === 'REQUESTED' || gstr1BatchStatus === 'READY_TO_DOWNLOAD') && gstr1SecondsLeft === 0;
 
@@ -169,6 +231,8 @@ export default function ReturnsAutoIngestDeck({
   const [isGstr2bAutopilotRunning, setIsGstr2bAutopilotRunning] = useState(false);
   const [gstr2bAutopilotStep, setGstr2bAutopilotStep] = useState<string>('');
   const gstr2bFileInputRef = useRef<HTMLInputElement>(null);
+  const gstr2bJobIdRef = useRef<string | null>(null);
+  const gstr2bAbortRef = useRef<AbortController | null>(null);
 
   // Combined Autopilot State
   const [isCombinedAutopilotRunning, setIsCombinedAutopilotRunning] = useState(false);
@@ -667,7 +731,6 @@ export default function ReturnsAutoIngestDeck({
     try {
       const targetPeriod = getTargetPeriod(selectedMonth, financialYear, currentMonthData);
 
-      hasAutoTriggeredGstr1.current = false;
       setIsGstr1AutopilotRunning(false);
       setGstr1AutopilotStep('');
       setIsGstr1PdfAutopilotRunning(false);
@@ -698,21 +761,15 @@ export default function ReturnsAutoIngestDeck({
   // ─── CANCEL GSTR-2B AUTOPILOT ────────────────────────────────────────────────
   const handleCancelGstr2b = async () => {
     try {
-      const targetPeriod = getTargetPeriod(selectedMonth, financialYear, currentMonthData);
-
+      gstr2bAbortRef.current?.abort();
       setIsGstr2bAutopilotRunning(false);
       setGstr2bAutopilotStep('');
 
-      await safeApiFetch('/api/gstr2b/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gstin: currentGstin,
-          returnPeriod: targetPeriod,
-          month: selectedMonth,
-          financialYear
-        })
+      await cancelGstr2bJob({
+        jobId: gstr2bJobIdRef.current || undefined,
+        gstin: currentGstin
       });
+      gstr2bJobIdRef.current = null;
 
       toast.info('GSTR-2B Autopilot Cancelled', {
         description: `Cancelled GSTR-2B autopilot browser session.`
@@ -723,35 +780,7 @@ export default function ReturnsAutoIngestDeck({
     }
   };
 
-  // ─── AUTOMATIC DOWNLOAD TRIGGER ON 20-MIN TIMER COMPLETION ─────────────────
-  const hasAutoTriggeredGstr1 = useRef(false);
-
-  useEffect(() => {
-    // Reset auto-trigger ref if status changes away from REQUESTED/READY_TO_DOWNLOAD
-    if (gstr1BatchStatus !== 'REQUESTED' && gstr1BatchStatus !== 'READY_TO_DOWNLOAD') {
-      hasAutoTriggeredGstr1.current = false;
-      return;
-    }
-
-    // When timer expires (gstr1SecondsLeft === 0) and batch was requested, automatically trigger download!
-    if (
-      (gstr1BatchStatus === 'REQUESTED' || gstr1BatchStatus === 'READY_TO_DOWNLOAD') &&
-      gstr1RequestedAt != null &&
-      gstr1SecondsLeft === 0 &&
-      !isGstr1AutopilotRunning &&
-      !hasAutoTriggeredGstr1.current &&
-      currentGstin &&
-      currentGstin !== 'Not Specified' &&
-      currentGstin.length >= 15
-    ) {
-      hasAutoTriggeredGstr1.current = true;
-      console.log(`[ReturnsAutoIngestDeck] ⏱️ 20-minute timer completed for ${selectedMonth}! Automatically launching GSTR-1 download...`);
-      toast.info('⏱️ 20-Minute Timer Completed!', {
-        description: `Automatically launching GSTR-1 download for ${selectedMonth}...`
-      });
-      handleGstr1AutopilotSync();
-    }
-  }, [gstr1SecondsLeft, gstr1BatchStatus, gstr1RequestedAt, isGstr1AutopilotRunning, currentGstin, selectedMonth]);
+  // No automatic relaunch when the 20-min timer ends: the user starts the download (new login + CAPTCHA) themselves.
 
   // Periodic polling every 12 seconds while in REQUESTED status to keep DB in sync
   useEffect(() => {
@@ -763,11 +792,11 @@ export default function ReturnsAutoIngestDeck({
           `/api/gstr1/invoices/${encodeURIComponent(currentGstin)}?period=${encodeURIComponent(targetPeriod)}`
         );
         const dataG1 = await resG1.json();
-        if (dataG1.success && dataG1.batch) {
-          if (dataG1.batch.status) setGstr1BatchStatus(dataG1.batch.status);
-          if (dataG1.batch.requested_at) setGstr1RequestedAt(dataG1.batch.requested_at);
+        if (dataG1.success) {
+          setGstr1BatchStatus(dataG1.batch?.status || 'PENDING');
+          setGstr1RequestedAt(dataG1.batch?.requested_at || null);
         }
-      } catch (e) {}
+      } catch (e) { }
     }, 12000);
     return () => clearInterval(interval);
   }, [gstr1BatchStatus, currentGstin, selectedMonth, currentMonthData?.year, financialYear, isGstr1AutopilotRunning]);
@@ -783,25 +812,34 @@ export default function ReturnsAutoIngestDeck({
     setIsGstr2bAutopilotRunning(true);
     setGstr2bAutopilotStep('Connecting to GST Portal...');
     const toastId = toast.loading(`Starting GSTR-2B Autopilot for ${selectedMonth} (${currentGstin})...`);
+    const controller = new AbortController();
+    gstr2bAbortRef.current = controller;
 
     try {
       setGstr2bAutopilotStep('Launching Chrome & navigating to GSTR-2B...');
       const targetPeriod = getTargetPeriod(selectedMonth, financialYear, currentMonthData);
 
-      const res = await safeApiFetch('/api/gstr2b/portal-sync-browser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gstin: currentGstin,
-          returnPeriod: targetPeriod,
-          financialYear,
-          targetMonth: selectedMonth
-        })
+      const jobResult = await startAndSubscribeGstr2bJob({
+        gstin: currentGstin,
+        returnPeriod: targetPeriod,
+        financialYear,
+        isFullYear: false,
+        forceRestart: true,
+        signal: controller.signal,
+        onSnapshot: (snap) => {
+          gstr2bJobIdRef.current = snap.jobId;
+          if (snap.phase) setGstr2bAutopilotStep(snap.phase);
+        },
+        onEvent: (evt) => {
+          if (evt.message) setGstr2bAutopilotStep(evt.message);
+        }
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'GSTR-2B Autopilot sync failed.');
+      if (jobResult.status === 'FAILED') {
+        throw new Error(jobResult.error || 'GSTR-2B Autopilot sync failed.');
+      }
+      if (jobResult.status === 'CANCELLED') {
+        throw new Error('GSTR-2B Autopilot was cancelled.');
       }
 
       setGstr2bAutopilotStep('Parsing downloaded GSTR-2B data...');
@@ -936,7 +974,7 @@ export default function ReturnsAutoIngestDeck({
       } else {
         toast.info('GSTR-2B Sync Dispatched', {
           id: toastId,
-          description: data.message || 'GSTR-2B sync completed.'
+          description: jobResult?.result?.message || 'GSTR-2B sync completed.'
         });
       }
     } catch (err: any) {
@@ -947,6 +985,8 @@ export default function ReturnsAutoIngestDeck({
     } finally {
       setIsGstr2bAutopilotRunning(false);
       setGstr2bAutopilotStep('');
+      gstr2bJobIdRef.current = null;
+      gstr2bAbortRef.current = null;
     }
   };
 
@@ -1093,9 +1133,7 @@ export default function ReturnsAutoIngestDeck({
   // Inward RCM is Table 3.1(d) in GSTR-3B (matches Table 4(A)(3) of GSTR-2B)
   const g1Rcm = ((activeGstr1?.breakdowns?.rcmOutward?.total || 0) > 0 || (activeGstr1?.breakdowns?.rcmOutward?.taxable || 0) > 0)
     ? activeGstr1.breakdowns.rcmOutward
-    : (activeGstr2b?.rcmInward && ((activeGstr2b.rcmInward.total || 0) > 0 || (activeGstr2b.rcmInward.taxable || 0) > 0)
-        ? activeGstr2b.rcmInward
-        : (currentMonthData?.outward?.rcmInward || currentMonthData?.inward?.rcmPaid));
+    : (currentMonthData?.outward?.rcmInward || { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 });
 
   // Shared RCM Categories across both side cockpits and computation sheet
   const rcmTransport = currentMonthData?.outward?.rcmTransport ||
@@ -1157,154 +1195,241 @@ export default function ReturnsAutoIngestDeck({
         </div>
       )}
 
-      {/* ─── TOP MASTER BAR: Render only when NOT in compactMode (since full sheet already has FY & Save buttons) ─── */}
-      {!compactMode && (
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800/80">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 via-blue-500/20 to-emerald-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold shadow-md shadow-indigo-950/40">
-            <Layers className="w-5 h-5 text-indigo-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
-                Returns Auto-Pilot & Ingestion Deck
-              </h3>
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-mono font-bold uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Split Cockpits Active
-              </span>
+      {/* ─── TOP MASTER BAR: Responsive across full and compact modes ─── */}
+      {compactMode ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500/20 via-blue-500/20 to-emerald-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold">
+              <Layers className="w-4 h-4 text-indigo-400" />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Independent GSTR-1 Outward Sales & GSTR-2B Inward ITC Cockpits with Rule 88A Cash Cascade Recalculation.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold text-white tracking-wide">
+                  Autopilot Ingestion Deck
+                </h3>
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[9px] font-mono font-bold uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Active
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                GSTR-1 Outward & GSTR-2B Inward Portal Sync for {selectedMonth}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sequential Both Autopilot Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) {
+                  toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to run autopilot.' });
+                  return;
+                }
+                handleSyncBothAutopilot();
+              }}
+              disabled={isLocked || isCombinedAutopilotRunning || isGstr1AutopilotRunning || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md border border-purple-400/30 flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+              title={isLocked ? 'Cockpit is locked' : 'Download GSTR-1 and GSTR-2B sequentially in one go'}
+            >
+              {isCombinedAutopilotRunning ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span>{isCombinedAutopilotRunning ? 'Syncing Both...' : 'Sync Both Autopilot'}</span>
+            </button>
+
+            {/* Cancel Autopilot Button (if any autopilot is running) */}
+            {(isGstr1AutopilotRunning || isGstr2bAutopilotRunning || isCombinedAutopilotRunning) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isGstr1AutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr1();
+                  if (isGstr2bAutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr2b();
+                }}
+                className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer animate-pulse shadow-sm"
+                title="Cleanly abort and cancel active autopilot session"
+              >
+                <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                <span>Cancel Autopilot</span>
+              </button>
+            )}
+
+            {/* Inspect Returns Ledger */}
+            <button
+              type="button"
+              onClick={() => setShowBreakdownModal(true)}
+              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Inspect Returns Ledger"
+            >
+              <Eye className="w-3.5 h-3.5 text-purple-400" />
+              <span>Ledger</span>
+            </button>
+
+            {/* Clear Active Month */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) {
+                  toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to clear figures.' });
+                  return;
+                }
+                handlePersistClearGstr1();
+                handlePersistClearGstr2b();
+                onClearMonthIngestion();
+              }}
+              className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title={isLocked ? 'Cockpit is locked (Unlock sheet with password first)' : 'Reset figures for active month'}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear</span>
+            </button>
           </div>
         </div>
+      ) : (
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 via-blue-500/20 to-emerald-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold shadow-md shadow-indigo-950/40">
+              <Layers className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                  Returns Auto-Pilot & Ingestion Deck
+                </h3>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Split Cockpits Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Independent GSTR-1 Outward Sales & GSTR-2B Inward ITC Cockpits with Rule 88A Cash Cascade Recalculation.
+              </p>
+            </div>
+          </div>
 
-        {/* Global Toolbar: FY Selector & Quick Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Financial Year Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1.5">
-              FY:
-            </span>
-            {AVAILABLE_FYS.map(fy => (
-              <button
-                key={fy}
-                onClick={() => onFinancialYearChange(fy)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-                  financialYear === fy
+          {/* Global Toolbar: FY Selector & Quick Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Financial Year Selector */}
+            <div className="flex items-center gap-1.5 bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1.5">
+                FY:
+              </span>
+              {AVAILABLE_FYS.map(fy => (
+                <button
+                  key={fy}
+                  onClick={() => onFinancialYearChange(fy)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${financialYear === fy
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-950 ring-1 ring-blue-400/40'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                {fy}
-              </button>
-            ))}
-          </div>
+                    }`}
+                >
+                  {fy}
+                </button>
+              ))}
+            </div>
 
-          {/* Sequential Both Autopilot Button */}
-          <button
-            onClick={() => {
-              if (isLocked) {
-                toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to run autopilot.' });
-                return;
-              }
-              handleSyncBothAutopilot();
-            }}
-            disabled={isLocked || isCombinedAutopilotRunning || isGstr1AutopilotRunning || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
-            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md border border-purple-400/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
-            title={isLocked ? 'Cockpit is locked' : 'Download GSTR-1 and GSTR-2B sequentially in one go'}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Sync Both Autopilot</span>
-          </button>
-
-          {/* Cancel Autopilot Button (if any autopilot is running) */}
-          {(isGstr1AutopilotRunning || isGstr2bAutopilotRunning || isCombinedAutopilotRunning) && (
+            {/* Sequential Both Autopilot Button */}
             <button
               onClick={() => {
-                if (isGstr1AutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr1();
-                if (isGstr2bAutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr2b();
+                if (isLocked) {
+                  toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to run autopilot.' });
+                  return;
+                }
+                handleSyncBothAutopilot();
               }}
-              className="px-3.5 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer animate-pulse shadow-sm"
-              title="Cleanly abort and cancel active autopilot session"
+              disabled={isLocked || isCombinedAutopilotRunning || isGstr1AutopilotRunning || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md border border-purple-400/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
+              title={isLocked ? 'Cockpit is locked' : 'Download GSTR-1 and GSTR-2B sequentially in one go'}
             >
-              <XCircle className="w-3.5 h-3.5 text-rose-300" />
-              <span>Cancel Autopilot</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Sync Both Autopilot</span>
             </button>
-          )}
 
-          {/* Inspect Returns Ledger */}
-          <button
-            onClick={() => setShowBreakdownModal(true)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors"
-          >
-            <Eye className="w-3.5 h-3.5 text-purple-400" />
-            <span>Ledger</span>
-          </button>
-
-          {/* Clear Active Month */}
-          <button
-            onClick={() => {
-              if (isLocked) {
-                toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to clear figures.' });
-                return;
-              }
-              onClearMonthIngestion();
-            }}
-            disabled={isLocked}
-            className={`px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-colors ${
-              isLocked ? 'opacity-40 cursor-not-allowed' : ''
-            }`}
-            title={isLocked ? 'Cockpit is locked' : 'Reset figures for active month'}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Clear</span>
-          </button>
-
-          {/* Save 3B Working */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isLocked) {
-                toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password before saving.' });
-                return;
-              }
-              onSaveWorking?.();
-            }}
-            disabled={isLocked || isSavingWorking}
-            className={`px-4 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-extrabold rounded-xl shadow-md border border-emerald-400/50 flex items-center gap-2 transition-all ${
-              isLocked ? 'opacity-40 cursor-not-allowed' : 'disabled:opacity-50'
-            }`}
-            title={isLocked ? 'Cockpit is locked' : 'Save 3B Working Sheet to Central Server & Local Storage'}
-          >
-            {isSavingWorking ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-3.5 h-3.5 text-emerald-100" />
-                <span>Save 3B Working</span>
-              </>
+            {/* Cancel Autopilot Button (if any autopilot is running) */}
+            {(isGstr1AutopilotRunning || isGstr2bAutopilotRunning || isCombinedAutopilotRunning) && (
+              <button
+                onClick={() => {
+                  if (isGstr1AutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr1();
+                  if (isGstr2bAutopilotRunning || isCombinedAutopilotRunning) handleCancelGstr2b();
+                }}
+                className="px-3.5 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer animate-pulse shadow-sm"
+                title="Cleanly abort and cancel active autopilot session"
+              >
+                <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                <span>Cancel Autopilot</span>
+              </button>
             )}
-          </button>
+
+            {/* Inspect Returns Ledger */}
+            <button
+              onClick={() => setShowBreakdownModal(true)}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors"
+            >
+              <Eye className="w-3.5 h-3.5 text-purple-400" />
+              <span>Ledger</span>
+            </button>
+
+            {/* Clear Active Month */}
+            <button
+              onClick={() => {
+                if (isLocked) {
+                  toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password to clear figures.' });
+                  return;
+                }
+                handlePersistClearGstr1();
+                handlePersistClearGstr2b();
+                onClearMonthIngestion();
+              }}
+              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title={isLocked ? 'Cockpit is locked (Unlock sheet with password first)' : 'Reset figures for active month'}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear</span>
+            </button>
+
+            {/* Save 3B Working */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) {
+                  toast.error('Cockpit is Locked', { description: 'Unlock 3B Working Sheet with password before saving.' });
+                  return;
+                }
+                onSaveWorking?.();
+              }}
+              disabled={isLocked || isSavingWorking}
+              className={`px-4 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-extrabold rounded-xl shadow-md border border-emerald-400/50 flex items-center gap-2 transition-all ${isLocked ? 'opacity-40 cursor-not-allowed' : 'disabled:opacity-50'
+                }`}
+              title={isLocked ? 'Cockpit is locked' : 'Save 3B Working Sheet to Central Server & Local Storage'}
+            >
+              {isSavingWorking ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5 text-emerald-100" />
+                  <span>Save 3B Working</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
       )}
 
       {/* ─── TWO DISTINCT OPERATIONAL COCKPITS (SIDE-BY-SIDE 2-COLUMN GRID) ─── */}
-      <div className="flex flex-col lg:flex-row gap-4 transition-all duration-300">
+      <div className="flex flex-col lg:flex-row items-stretch gap-4 transition-all duration-300">
         {/* ========================================================================= */}
         {/* CARD 1: GSTR-1 OUTWARD SALES DECK (BLUE / INDIGO THEME)                    */}
         {/* ========================================================================= */}
-        <div className={`bg-gradient-to-b from-slate-950 via-slate-900 to-blue-950/20 border border-slate-800 hover:border-blue-500/40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between shadow-md transition-all duration-300 ease-in-out min-w-0 ${
-          gstr1Collapsed
-            ? 'lg:w-14 w-full overflow-hidden'
-            : gstr2bCollapsed
-              ? 'lg:flex-1 w-full'
-              : 'lg:flex-1 w-full'
-        } space-y-3.5`}>
+        <div className={`bg-gradient-to-b from-slate-950 via-slate-900 to-blue-950/20 border border-slate-800 hover:border-blue-500/40 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between shadow-md transition-all duration-300 ease-in-out min-w-0 ${gstr1Collapsed
+          ? 'lg:w-14 w-full overflow-hidden'
+          : gstr2bCollapsed
+            ? 'lg:flex-1 w-full'
+            : 'lg:w-1/2 lg:flex-1 w-full'
+          } space-y-2.5`}>
           <div>
             {/* Header: Title & Status Badge */}
             <div className={`flex items-center justify-between pb-2.5 border-b border-slate-800/80 ${gstr1Collapsed ? 'lg:flex-col lg:gap-3' : ''}`}>
@@ -1341,11 +1466,10 @@ export default function ReturnsAutoIngestDeck({
 
                 {/* Status Pill — hidden when collapsed */}
                 {!gstr1Collapsed && (
-                  <div className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold flex items-center gap-1.5 ${
-                    hasOutwardData || activeGstr1
-                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-500'
-                  }`}>
+                  <div className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold flex items-center gap-1.5 ${hasOutwardData || activeGstr1
+                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-500'
+                    }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${hasOutwardData || activeGstr1 ? 'bg-blue-400' : 'bg-slate-600'}`} />
                     <span>{hasOutwardData ? 'Table 3.1 Filled' : activeGstr1 ? 'Data Ready' : 'Pending'}</span>
                   </div>
@@ -1364,13 +1488,12 @@ export default function ReturnsAutoIngestDeck({
                     }}
                     disabled={isLocked}
                     title={isLocked ? 'Cockpit is locked' : isG1Editable ? 'Lock GSTR-1 figures' : 'Edit GSTR-1 figures'}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                      isLocked
-                        ? 'opacity-40 cursor-not-allowed bg-slate-800 text-slate-500 border border-slate-700'
-                        : isG1Editable
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-                          : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300'
-                    }`}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${isLocked
+                      ? 'opacity-40 cursor-not-allowed bg-slate-800 text-slate-500 border border-slate-700'
+                      : isG1Editable
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                        : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300'
+                      }`}
                   >
                     <Edit3 className="w-3 h-3 text-amber-300" />
                     <span>{isG1Editable ? 'Lock' : 'Edit'}</span>
@@ -1383,577 +1506,558 @@ export default function ReturnsAutoIngestDeck({
                   title={gstr1Collapsed ? 'Expand GSTR-1 panel' : 'Collapse GSTR-1 panel'}
                   className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 hover:text-white transition-all shrink-0 cursor-pointer"
                 >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                    gstr1Collapsed ? '-rotate-90' : 'rotate-0'
-                  }`} />
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${gstr1Collapsed ? '-rotate-90' : 'rotate-0'
+                    }`} />
                 </button>
               </div>
             </div>
 
             {/* Collapsible body: Live Metrics + Dropzone */}
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              gstr1Collapsed ? 'max-h-0 opacity-0 mt-0' : 'max-h-[9999px] opacity-100 mt-0'
-            }`}>
-            {/* Dedicated Timer Notification Banner if GSTR-1 is currently in generation request stage */}
-            {(gstr1BatchStatus === 'REQUESTED' || gstr1BatchStatus === 'READY_TO_DOWNLOAD') && (
-              <div className={`mt-2.5 p-2.5 rounded-xl border flex items-center justify-between gap-3 shadow-md ${
-                gstr1SecondsLeft > 0
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${gstr1Collapsed ? 'max-h-0 opacity-0 mt-0' : 'max-h-[9999px] opacity-100 mt-0'
+              }`}>
+              {/* Dedicated Timer Notification Banner if GSTR-1 is currently in generation request stage */}
+              {(gstr1BatchStatus === 'REQUESTED' || gstr1BatchStatus === 'READY_TO_DOWNLOAD') && (
+                <div className={`mt-2.5 p-2.5 rounded-xl border flex items-center justify-between gap-3 shadow-md ${gstr1SecondsLeft > 0
                   ? 'bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/20 border-amber-500/40 shadow-amber-950/20'
                   : 'bg-gradient-to-r from-emerald-950/40 via-slate-900 to-emerald-950/20 border-emerald-500/40 shadow-emerald-950/20'
-              }`}>
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
-                    gstr1SecondsLeft > 0 ? 'bg-amber-500/20 border-amber-500/40' : 'bg-emerald-500/20 border-emerald-500/40'
                   }`}>
-                    {gstr1SecondsLeft > 0 ? (
-                      <Clock className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '6s' }} />
-                    ) : (
-                      <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-white tracking-wide">
-                        {gstr1SecondsLeft > 0 ? 'GSTR-1 File Generation in Progress' : '⚡ GSTR-1 File Ready!'}
-                      </span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${gstr1SecondsLeft > 0 ? 'bg-amber-500/20 border-amber-500/40' : 'bg-emerald-500/20 border-emerald-500/40'
+                      }`}>
                       {gstr1SecondsLeft > 0 ? (
-                        <span className="font-mono text-amber-300 font-extrabold bg-amber-500/25 border border-amber-500/40 px-2 py-0.5 rounded-md text-[11px]">
-                          ⏱️ {Math.floor(gstr1SecondsLeft / 60)}m {String(gstr1SecondsLeft % 60).padStart(2, '0')}s remaining
-                        </span>
+                        <Clock className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '6s' }} />
                       ) : (
-                        <span className="font-mono text-emerald-300 font-extrabold bg-emerald-500/25 border border-emerald-500/40 px-2 py-0.5 rounded-md text-[11px] animate-pulse">
-                          Auto-Downloading...
-                        </span>
+                        <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
                       )}
                     </div>
-                    <p className="text-[10.5px] text-slate-300 mt-0.5">
-                      {gstr1SecondsLeft > 0 ? (
-                        <>GST Portal generation request active for <strong>{selectedMonth}</strong>. Autopilot will <strong>automatically trigger download</strong> when 20-min wait finishes.</>
-                      ) : (
-                        <>20-minute waiting window passed. Autopilot is retrieving the file to populate Table 3.1.</>
-                      )}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-white tracking-wide">
+                          {gstr1SecondsLeft > 0 ? 'GSTR-1 File Generation in Progress' : '⚡ GSTR-1 File Ready!'}
+                        </span>
+                        {gstr1SecondsLeft > 0 ? (
+                          <span className="font-mono text-amber-300 font-extrabold bg-amber-500/25 border border-amber-500/40 px-2 py-0.5 rounded-md text-[11px]">
+                            ⏱️ {Math.floor(gstr1SecondsLeft / 60)}m {String(gstr1SecondsLeft % 60).padStart(2, '0')}s remaining
+                          </span>
+                        ) : (
+                          <span className="font-mono text-emerald-300 font-extrabold bg-emerald-500/25 border border-emerald-500/40 px-2 py-0.5 rounded-md text-[11px] animate-pulse">
+                            Auto-Downloading...
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10.5px] text-slate-300 mt-0.5">
+                        {gstr1SecondsLeft > 0 ? (
+                          <>GST Portal generation request active for <strong>{selectedMonth}</strong>. Autopilot will <strong>automatically trigger download</strong> when 20-min wait finishes.</>
+                        ) : (
+                          <>20-minute waiting window passed. Autopilot is retrieving the file to populate Table 3.1.</>
+                        )}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => handleGstr1AutopilotSync()}
-                    disabled={isGstr1AutopilotRunning}
-                    className={`px-3 py-1.5 border rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
-                      gstr1SecondsLeft > 0
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleGstr1AutopilotSync()}
+                      disabled={isGstr1AutopilotRunning}
+                      className={`px-3 py-1.5 border rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${gstr1SecondsLeft > 0
                         ? 'bg-amber-600/25 hover:bg-amber-600/40 text-amber-200 border-amber-500/50'
                         : 'bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border-emerald-500/50 animate-pulse'
-                    }`}
-                    title="Trigger download immediately without waiting"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-amber-300" />
-                    <span>{gstr1SecondsLeft > 0 ? 'Download Now' : 'Fetch Now'}</span>
-                  </button>
+                        }`}
+                      title="Trigger download immediately without waiting"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{gstr1SecondsLeft > 0 ? 'Download Now' : 'Fetch Now'}</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleCancelGstr1}
-                    className="px-2.5 py-1.5 bg-rose-600/25 hover:bg-rose-600/45 text-rose-200 border border-rose-500/50 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                    title="Cancel GSTR-1 automatic download timer and reset request"
-                  >
-                    <XCircle className="w-3.5 h-3.5 text-rose-300" />
-                    <span>Cancel Auto-Download</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelGstr1}
+                      className="px-2.5 py-1.5 bg-rose-600/25 hover:bg-rose-600/45 text-rose-200 border border-rose-500/50 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                      title="Cancel GSTR-1 automatic download timer and reset request"
+                    >
+                      <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                      <span>Cancel Auto-Download</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              {/* Live Metrics Bifurcation Matrix (Table 3.1) */}
+              <div className="mt-2.5 bg-slate-950/80 rounded-xl border border-blue-500/20 overflow-hidden shadow-inner">
+                <div className="h-[245px] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
+                  <table className="w-full text-left text-[10px] table-auto min-w-0">
+                    <thead className="sticky top-0 z-10 bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 text-[9.5px] uppercase tracking-wider">
+                      <tr>
+                        <th className="py-1.5 px-1.5 text-left whitespace-nowrap">Particulars</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">Taxable</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">CGST</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">SGST</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">IGST</th>
+                        <th className="py-1.5 px-1.5 text-right whitespace-nowrap">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50 font-mono text-[10px]">
+                      {/* B2B Registered Sales */}
+                      <tr className="hover:bg-blue-950/20 transition-colors">
+                        <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
+                          B2B Registered (3.1a)
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2b?.taxable, 'outward', 'b2b', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2b?.cgst, 'outward', 'b2b', 'cgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2b?.sgst, 'outward', 'b2b', 'sgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2b?.igst, 'outward', 'b2b', 'igst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1B2b?.total)}</td>
+                      </tr>
+
+                      {/* B2C Consumer Sales */}
+                      <tr className="hover:bg-blue-950/20 transition-colors">
+                        <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
+                          B2C Consumer (3.1a)
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2c?.taxable, 'outward', 'b2c', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2c?.cgst, 'outward', 'b2c', 'cgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2c?.sgst, 'outward', 'b2c', 'sgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1B2c?.igst, 'outward', 'b2c', 'igst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1B2c?.total)}</td>
+                      </tr>
+
+                      {/* Zero-Rated / Exports */}
+                      <tr className="hover:bg-blue-950/20 transition-colors">
+                        <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
+                          Zero-Rated / Exp (3.1b)
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Zero?.taxable, 'outward', 'zeroRated', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Zero?.cgst, 'outward', 'zeroRated', 'cgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Zero?.sgst, 'outward', 'zeroRated', 'sgst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Zero?.igst, 'outward', 'zeroRated', 'igst', 'text-blue-300')}
+                        </td>
+                        <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1Zero?.total)}</td>
+                      </tr>
+
+                      {/* (-) Credit Notes / CDNR */}
+                      <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                        <td className="py-1 px-2 font-sans font-medium text-rose-400 whitespace-nowrap">
+                          <span>(-) Credit Notes (CDNR)</span>
+                        </td>
+                        <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Cdnr?.taxable, 'outward', 'creditNote', 'taxable', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Cdnr?.cgst, 'outward', 'creditNote', 'cgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Cdnr?.sgst, 'outward', 'creditNote', 'sgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1Cdnr?.igst, 'outward', 'creditNote', 'igst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-2 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g1Cdnr?.total, true)}</td>
+                      </tr>
+
+                      {/* Nil Rated / Exempt */}
+                      <tr className="hover:bg-blue-950/20 transition-colors">
+                        <td className="py-1 px-2 font-sans font-medium text-slate-400 whitespace-nowrap">
+                          Nil / Exempt (3.1c)
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g1NilTaxable, 'outward', 'nilRated', 'taxable', 'text-slate-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-600">—</td>
+                        <td className="py-1 px-1.5 text-right text-slate-600">—</td>
+                        <td className="py-1 px-1.5 text-right text-slate-600">—</td>
+                        <td className="py-1 px-2 text-right text-slate-600">—</td>
+                      </tr>
+
+                      {/* Inward RCM Liability Header */}
+                      <tr className="hover:bg-purple-950/20 bg-purple-950/10 transition-colors">
+                        <td className="py-1 px-1.5 font-sans font-medium text-purple-300 whitespace-nowrap flex items-center justify-between gap-1">
+                          <span>Inward RCM (3.1d)</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowG1RcmBreakdown(v => !v)}
+                            className="text-[9px] bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 px-1 py-0.2 rounded font-mono cursor-pointer transition-all"
+                            title="Toggle RCM categories breakdown"
+                          >
+                            {showG1RcmBreakdown ? 'Cat ▴' : 'Cat ▾'}
+                          </button>
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g1Rcm?.taxable, 'outward', 'rcmInward', 'taxable', 'text-purple-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g1Rcm?.cgst, 'outward', 'rcmInward', 'cgst', 'text-purple-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g1Rcm?.sgst, 'outward', 'rcmInward', 'sgst', 'text-purple-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g1Rcm?.igst, 'outward', 'rcmInward', 'igst', 'text-purple-300')}
+                        </td>
+                        <td className="py-1 px-2 text-right font-bold text-purple-200 tabular-nums whitespace-nowrap">{fmtCell(g1Rcm?.total)}</td>
+                      </tr>
+
+                      {/* RCM Subcategories in Table 3.1 */}
+                      {showG1RcmBreakdown && (
+                        <>
+                          <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors border-t border-purple-900/30">
+                            <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Transport</span>
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.taxable, 'outward', 'rcmTransport', 'taxable', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.cgst, 'outward', 'rcmTransport', 'cgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.sgst, 'outward', 'rcmTransport', 'sgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.igst, 'outward', 'rcmTransport', 'igst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmTransport?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
+                            <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Security</span>
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.taxable, 'outward', 'rcmSecurity', 'taxable', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.cgst, 'outward', 'rcmSecurity', 'cgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.sgst, 'outward', 'rcmSecurity', 'sgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.igst, 'outward', 'rcmSecurity', 'igst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmSecurity?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
+                            <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Guest House</span>
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.taxable, 'outward', 'rcmGuestHouse', 'taxable', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.cgst, 'outward', 'rcmGuestHouse', 'cgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.sgst, 'outward', 'rcmGuestHouse', 'sgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.igst, 'outward', 'rcmGuestHouse', 'igst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmGuestHouse?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
+                            <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Advocate</span>
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.taxable, 'outward', 'rcmAdvocate', 'taxable', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.cgst, 'outward', 'rcmAdvocate', 'cgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.sgst, 'outward', 'rcmAdvocate', 'sgst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.igst, 'outward', 'rcmAdvocate', 'igst', 'text-purple-300')}
+                            </td>
+                            <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmAdvocate?.total)}</td>
+                          </tr>
+                        </>
+                      )}
+                    </tbody>
+                    {/* Summary Footer Row */}
+                    <tfoot className="sticky bottom-0 z-10 bg-[#0b152a] border-t-2 border-blue-500/40 font-mono text-[10px] font-bold">
+                      <tr>
+                        <td className="py-1.5 px-1.5 font-sans text-blue-200 uppercase tracking-wide whitespace-nowrap">
+                          Total Outward (3.1)
+                        </td>
+                        <td className="py-1.5 px-1 text-right text-white font-extrabold tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalTaxable)}</td>
+                        <td className="py-1.5 px-1 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalCgst)}</td>
+                        <td className="py-1.5 px-1 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalSgst)}</td>
+                        <td className="py-1.5 px-1 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalIgst)}</td>
+                        <td className="py-1.5 px-1.5 text-right text-emerald-400 font-extrabold text-[10.5px] tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalTax)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               </div>
-            )}
-            {/* Live Metrics Bifurcation Matrix (Table 3.1) */}
-            <div className="mt-3 bg-slate-950/80 rounded-xl border border-blue-500/20 overflow-hidden shadow-inner">
-              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
-                <table className="w-full text-left text-xs min-w-0">
-                  <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 text-[10px] uppercase tracking-wider">
-                    <tr>
-                      <th className="py-1.5 px-2 text-left whitespace-nowrap">Head / Particulars</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">Taxable</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">CGST</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">SGST</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">IGST</th>
-                      <th className="py-1.5 px-2 text-right whitespace-nowrap">Total Tax</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/50 font-mono text-[10.5px]">
-                    {/* B2B Registered Sales */}
-                    <tr className="hover:bg-blue-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
-                        B2B Registered (3.1a)
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2b?.taxable, 'outward', 'b2b', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2b?.cgst, 'outward', 'b2b', 'cgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2b?.sgst, 'outward', 'b2b', 'sgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2b?.igst, 'outward', 'b2b', 'igst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1B2b?.total)}</td>
-                    </tr>
 
-                    {/* B2C Consumer Sales */}
-                    <tr className="hover:bg-blue-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
-                        B2C Consumer (3.1a)
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2c?.taxable, 'outward', 'b2c', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2c?.cgst, 'outward', 'b2c', 'cgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2c?.sgst, 'outward', 'b2c', 'sgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1B2c?.igst, 'outward', 'b2c', 'igst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1B2c?.total)}</td>
-                    </tr>
-
-                    {/* Zero-Rated / Exports */}
-                    <tr className="hover:bg-blue-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
-                        Zero-Rated / Exp (3.1b)
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Zero?.taxable, 'outward', 'zeroRated', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Zero?.cgst, 'outward', 'zeroRated', 'cgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Zero?.sgst, 'outward', 'zeroRated', 'sgst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-blue-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Zero?.igst, 'outward', 'zeroRated', 'igst', 'text-blue-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g1Zero?.total)}</td>
-                    </tr>
-
-                    {/* (-) Credit Notes / CDNR */}
-                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
-                      <td className="py-1 px-2 font-sans font-medium text-rose-400 whitespace-nowrap">
-                        <span>(-) Credit Notes (CDNR)</span>
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Cdnr?.taxable, 'outward', 'creditNote', 'taxable', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Cdnr?.cgst, 'outward', 'creditNote', 'cgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Cdnr?.sgst, 'outward', 'creditNote', 'sgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1Cdnr?.igst, 'outward', 'creditNote', 'igst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g1Cdnr?.total, true)}</td>
-                    </tr>
-
-                    {/* Nil Rated / Exempt */}
-                    <tr className="hover:bg-blue-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-400 whitespace-nowrap">
-                        Nil / Exempt (3.1c)
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g1NilTaxable, 'outward', 'nilRated', 'taxable', 'text-slate-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-600">—</td>
-                      <td className="py-1 px-1.5 text-right text-slate-600">—</td>
-                      <td className="py-1 px-1.5 text-right text-slate-600">—</td>
-                      <td className="py-1 px-2 text-right text-slate-600">—</td>
-                    </tr>
-
-                    {/* Inward RCM Liability Header */}
-                    <tr className="hover:bg-purple-950/20 bg-purple-950/10 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-purple-300 whitespace-nowrap flex items-center justify-between">
-                        <span>Inward RCM (3.1d)</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowG1RcmBreakdown(v => !v)}
-                          className="text-[9px] bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 px-1 py-0.2 rounded font-mono cursor-pointer transition-all ml-1"
-                          title="Toggle RCM categories breakdown"
-                        >
-                          {showG1RcmBreakdown ? 'Categories ▴' : 'Categories ▾'}
-                        </button>
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g1Rcm?.taxable, 'outward', 'rcmInward', 'taxable', 'text-purple-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g1Rcm?.cgst, 'outward', 'rcmInward', 'cgst', 'text-purple-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g1Rcm?.sgst, 'outward', 'rcmInward', 'sgst', 'text-purple-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-purple-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g1Rcm?.igst, 'outward', 'rcmInward', 'igst', 'text-purple-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-purple-200 tabular-nums whitespace-nowrap">{fmtCell(g1Rcm?.total)}</td>
-                    </tr>
-
-                    {/* RCM Subcategories in Table 3.1 */}
-                    {showG1RcmBreakdown && (
-                      <>
-                        <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors border-t border-purple-900/30">
-                          <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Transport</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.taxable, 'outward', 'rcmTransport', 'taxable', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.cgst, 'outward', 'rcmTransport', 'cgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.sgst, 'outward', 'rcmTransport', 'sgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.igst, 'outward', 'rcmTransport', 'igst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmTransport?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Security</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.taxable, 'outward', 'rcmSecurity', 'taxable', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.cgst, 'outward', 'rcmSecurity', 'cgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.sgst, 'outward', 'rcmSecurity', 'sgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.igst, 'outward', 'rcmSecurity', 'igst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmSecurity?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Guest House</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.taxable, 'outward', 'rcmGuestHouse', 'taxable', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.cgst, 'outward', 'rcmGuestHouse', 'cgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.sgst, 'outward', 'rcmGuestHouse', 'sgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.igst, 'outward', 'rcmGuestHouse', 'igst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmGuestHouse?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-purple-950/20 bg-purple-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-purple-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Advocate</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.taxable, 'outward', 'rcmAdvocate', 'taxable', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.cgst, 'outward', 'rcmAdvocate', 'cgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.sgst, 'outward', 'rcmAdvocate', 'sgst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-purple-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.igst, 'outward', 'rcmAdvocate', 'igst', 'text-purple-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-purple-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmAdvocate?.total)}</td>
-                        </tr>
-                      </>
-                    )}
-                  </tbody>
-                  {/* Summary Footer Row */}
-                  <tfoot className="bg-blue-950/40 border-t-2 border-blue-500/40 font-mono text-[10.5px] font-bold">
-                    <tr>
-                      <td className="py-1.5 px-2 font-sans text-blue-200 uppercase tracking-wide whitespace-nowrap">
-                        Total Outward (3.1)
-                      </td>
-                      <td className="py-1.5 px-1.5 text-right text-white font-extrabold tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalTaxable)}</td>
-                      <td className="py-1.5 px-1.5 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalCgst)}</td>
-                      <td className="py-1.5 px-1.5 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalSgst)}</td>
-                      <td className="py-1.5 px-1.5 text-right text-blue-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalIgst)}</td>
-                      <td className="py-1.5 px-2 text-right text-emerald-400 font-extrabold text-[11px] tabular-nums whitespace-nowrap">{fmtTotalCell(g1TotalTax)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+              {/* Quick GSTR-1 Doc Stats Badges (fixed height slot for cross-card alignment) */}
+              <div className="mt-1.5 h-5 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
+                {(activeGstr1?.counts?.totalDocs || 0) > 0 ? (
+                  <>
+                    <span>Docs: <strong className="text-blue-300">{activeGstr1?.counts?.totalDocs}</strong></span>
+                    <span>• B2B: <strong className="text-slate-300">{activeGstr1?.counts?.b2b}</strong></span>
+                    <span>• B2C: <strong className="text-slate-300">{(activeGstr1?.counts?.b2cs || 0) + (activeGstr1?.counts?.b2cl || 0)}</strong></span>
+                    <span>• CDNR: <strong className="text-rose-300">{activeGstr1?.counts?.cdnr}</strong></span>
+                  </>
+                ) : (
+                  <span className="text-slate-600 text-[10px]">No GSTR-1 source loaded for {selectedMonth}</span>
+                )}
               </div>
-            </div>
 
-            {/* Quick GSTR-1 Doc Stats Badges */}
-            {(activeGstr1?.counts?.totalDocs || 0) > 0 && (
-              <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
-                <span>Docs: <strong className="text-blue-300">{activeGstr1?.counts?.totalDocs}</strong></span>
-                <span>• B2B: <strong className="text-slate-300">{activeGstr1?.counts?.b2b}</strong></span>
-                <span>• B2C: <strong className="text-slate-300">{(activeGstr1?.counts?.b2cs || 0) + (activeGstr1?.counts?.b2cl || 0)}</strong></span>
-                <span>• CDNR: <strong className="text-rose-300">{activeGstr1?.counts?.cdnr}</strong></span>
-              </div>
-            )}
-
-            {/* Drag & Drop Dropzone for GSTR-1 */}
-            <div
-              onDragOver={e => {
-                if (isLocked) return;
-                e.preventDefault();
-                setIsGstr1Dragging(true);
-              }}
-              onDragLeave={e => { e.preventDefault(); setIsGstr1Dragging(false); }}
-              onDrop={e => {
-                e.preventDefault();
-                setIsGstr1Dragging(false);
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
-                  return;
-                }
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  handleGstr1FilesChosen(e.dataTransfer.files);
-                }
-              }}
-              onClick={() => {
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
-                  return;
-                }
-                gstr1FileInputRef.current?.click();
-              }}
-              className={`mt-3 border-2 border-dashed rounded-xl p-3 transition-all flex items-center justify-between ${
-                isLocked
+              {/* Drag & Drop Dropzone for GSTR-1 */}
+              <div
+                onDragOver={e => {
+                  if (isLocked) return;
+                  e.preventDefault();
+                  setIsGstr1Dragging(true);
+                }}
+                onDragLeave={e => { e.preventDefault(); setIsGstr1Dragging(false); }}
+                onDrop={e => {
+                  e.preventDefault();
+                  setIsGstr1Dragging(false);
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
+                    return;
+                  }
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleGstr1FilesChosen(e.dataTransfer.files);
+                  }
+                }}
+                onClick={() => {
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
+                    return;
+                  }
+                  gstr1FileInputRef.current?.click();
+                }}
+                className={`mt-2 border-2 border-dashed rounded-xl px-3 py-2.5 transition-all flex items-center justify-between ${isLocked
                   ? 'border-slate-800/50 bg-slate-950/20 opacity-50 cursor-not-allowed'
                   : isGstr1Dragging
                     ? 'border-blue-400 bg-blue-500/10 scale-[1.01] cursor-pointer'
                     : 'border-slate-800 bg-slate-950/40 hover:border-blue-500/50 hover:bg-slate-950/70 cursor-pointer'
-              }`}
-            >
-              <input
-                type="file"
-                ref={gstr1FileInputRef}
-                onChange={e => e.target.files && handleGstr1FilesChosen(e.target.files)}
-                accept=".json,.xlsx,.xls,.zip,.pdf"
-                disabled={isLocked}
-                className="hidden"
-              />
-              <div className="flex items-center gap-2.5">
-                <UploadCloud className={`w-4 h-4 text-blue-400 ${isProcessingGstr1 ? 'animate-bounce' : ''}`} />
-                <div>
-                  <p className="text-xs text-slate-200 font-semibold">Drop GSTR-1 File (.json, .xlsx, .zip, .pdf)</p>
-                  <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                  }`}
+              >
+                <input
+                  type="file"
+                  ref={gstr1FileInputRef}
+                  onChange={e => e.target.files && handleGstr1FilesChosen(e.target.files)}
+                  accept=".json,.xlsx,.xls,.zip,.pdf"
+                  disabled={isLocked}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-2.5">
+                  <UploadCloud className={`w-4 h-4 text-blue-400 ${isProcessingGstr1 ? 'animate-bounce' : ''}`} />
+                  <div>
+                    <p className="text-xs text-slate-200 font-semibold">Drop GSTR-1 File (.json, .xlsx, .zip, .pdf)</p>
+                    <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                  </div>
                 </div>
+                <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                  Browse
+                </span>
               </div>
-              <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                Browse
-              </span>
-            </div>
-          </div>{/* end collapsible body */}
+            </div>{/* end collapsible body */}
           </div>
 
-          {/* Action Deck: Autopilot & Table 3.1 Injection Trigger — hidden when collapsed */}
+          {/* Action Deck: Dropdown (JSON / PDF / Local) + Launch + Clear + Inject — hidden when collapsed */}
           {!gstr1Collapsed && (
-          <>
-          <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                onClick={() => {
-                  if (isLocked) {
-                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet to sync GSTR-1.' });
-                    return;
-                  }
-                  handleGstr1AutopilotSync();
-                }}
-                disabled={isLocked || isGstr1AutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
-                className={`px-3 py-1.5 font-semibold text-xs rounded-xl border transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-                  isGstr1ReadyToDownload
-                    ? 'bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 border-emerald-500/50 shadow-xs'
-                    : (gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0)
-                      ? 'bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border-amber-500/40'
-                      : 'bg-slate-800/90 hover:bg-slate-700/90 text-blue-300 border-slate-700 hover:border-blue-500/40'
-                }`}
-                title={
-                  isLocked
-                    ? 'Cockpit is locked'
-                    : isGstr1ReadyToDownload
-                      ? '20 minutes elapsed! Click to download generated GSTR-1 JSON'
-                      : (gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0)
-                        ? `Generation in progress. ${Math.floor(gstr1SecondsLeft / 60)}m ${gstr1SecondsLeft % 60}s remaining.`
-                        : 'Click to sync and download GSTR-1 JSON from GST Portal'
-                }
-              >
-                {isGstr1AutopilotRunning ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
-                    <span>{gstr1AutopilotStep || 'Syncing JSON...'}</span>
-                  </>
-                ) : isGstr1ReadyToDownload ? (
-                  <>
-                    <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                    <span className="font-bold">⚡ Ready: Download GSTR-1 JSON</span>
-                  </>
-                ) : (gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0) ? (
-                  <>
-                    <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                    <span>⏱️ Requested ({Math.floor(gstr1SecondsLeft / 60)}m {gstr1SecondsLeft % 60}s)</span>
-                  </>
-                ) : (
-                  <>
-                    <FileJson className="w-3.5 h-3.5 text-blue-400" />
-                    <span>🚀 Download GSTR-1 JSON</span>
-                  </>
-                )}
-              </button>
+            <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap min-w-0">
+                {/* Hidden Local PDF Input */}
+                <input
+                  type="file"
+                  ref={gstr1PdfInputRef}
+                  onChange={e => e.target.files && handleGstr1PdfFileChosen(e.target.files)}
+                  accept=".pdf"
+                  disabled={isLocked}
+                  className="hidden"
+                />
 
-              {/* Dedicated GSTR-1 PDF Autopilot Downloader & Injector */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (isLocked) {
-                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet to inject GSTR-1 PDF.' });
-                    return;
-                  }
-                  handleGstr1PdfAutopilotSync();
-                }}
-                disabled={isLocked || isGstr1PdfAutopilotRunning || isGstr1AutopilotRunning || isProcessingGstr1}
-                className="px-3 py-1.5 font-semibold text-xs rounded-xl border transition-all flex items-center gap-1.5 bg-gradient-to-r from-purple-950/60 to-indigo-950/60 hover:from-purple-900/80 hover:to-indigo-900/80 text-purple-200 border-purple-500/40 hover:border-purple-400/70 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Launch GST Portal Autopilot to download official GSTR-1 PDF and auto-inject into Table 3.1"
-              >
-                {isGstr1PdfAutopilotRunning ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-300" />
-                    <span>{gstr1PdfAutopilotStep || 'Downloading PDF...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-3.5 h-3.5 text-purple-300" />
-                    <span>📄 Download &amp; Inject GSTR-1 PDF</span>
-                  </>
-                )}
-              </button>
+                {/* Mode Dropdown: JSON | PDF | Local */}
+                <div className="relative inline-flex items-center shrink-0">
+                  <select
+                    value={gstr1SourceMode}
+                    onChange={e => setGstr1SourceMode(e.target.value as 'json' | 'pdf' | 'local')}
+                    disabled={isLocked || isGstr1AutopilotRunning || isGstr1PdfAutopilotRunning}
+                    className="h-9 bg-slate-900/95 hover:bg-slate-800/90 text-slate-200 border border-slate-700 focus:border-blue-500 rounded-xl px-2.5 pr-7 text-xs font-semibold outline-none cursor-pointer appearance-none disabled:opacity-50 transition-all shadow-inner"
+                    title="Select GSTR-1 import/download source"
+                  >
+                    <option value="json">⚡ GSTR-1 JSON</option>
+                    <option value="pdf">📄 GSTR-1 PDF</option>
+                    <option value="local">📁 Local PDF</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                </div>
 
-              {/* Secondary Local File Picker fallback for PDF */}
-              <input
-                type="file"
-                ref={gstr1PdfInputRef}
-                onChange={e => e.target.files && handleGstr1PdfFileChosen(e.target.files)}
-                accept=".pdf"
-                disabled={isLocked}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (isLocked) {
-                    toast.error('Cockpit is Locked');
-                    return;
-                  }
-                  gstr1PdfInputRef.current?.click();
-                }}
-                disabled={isLocked || isProcessingGstr1 || isGstr1PdfAutopilotRunning}
-                className="px-2 py-1.5 text-xs text-slate-400 hover:text-purple-300 border border-slate-800 hover:border-purple-500/30 rounded-xl transition-all cursor-pointer flex items-center gap-1"
-                title="Or choose an existing GSTR-1 PDF already saved on your computer"
-              >
-                <UploadCloud className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[11px]">Browse Local PDF</span>
-              </button>
-
-              {/* Cancel GSTR-1 Autopilot / Auto-Download Button */}
-              {(isGstr1AutopilotRunning || isGstr1PdfAutopilotRunning || (gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0) || isGstr1ReadyToDownload) && (
-                <button
-                  type="button"
-                  onClick={handleCancelGstr1}
-                  className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs animate-pulse"
-                  title="Cancel GSTR-1 automatic download or running autopilot session"
-                >
-                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Cancel {isGstr1AutopilotRunning || isGstr1PdfAutopilotRunning ? 'Sync' : 'Auto-Download'}</span>
-                </button>
-              )}
-
-              {/* Clear GSTR-1 Ingested Data */}
-              {(activeGstr1 || hasOutwardData) && (
+                {/* Launch Action Button right next to Dropdown */}
                 <button
                   type="button"
                   onClick={() => {
                     if (isLocked) {
-                      toast.error('Cockpit is Locked');
+                      toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before launching GSTR-1 sync.' });
                       return;
                     }
-                    if (window.confirm(`Clear GSTR-1 outward sales figures for ${selectedMonth}?`)) {
-                      setActiveGstr1(null);
-                      if (onClearGstr1) {
-                        onClearGstr1();
-                      }
-                      toast.success(`Cleared GSTR-1 data for ${selectedMonth}`);
+                    if (gstr1SourceMode === 'json') {
+                      handleGstr1AutopilotSync();
+                    } else if (gstr1SourceMode === 'pdf') {
+                      handleGstr1PdfAutopilotSync();
+                    } else {
+                      gstr1PdfInputRef.current?.click();
                     }
                   }}
-                  disabled={isLocked}
-                  className={`px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                    isLocked ? 'opacity-40 cursor-not-allowed' : ''
-                  }`}
-                  title={isLocked ? 'Cockpit is locked' : 'Clear GSTR-1 figures from Table 3.1'}
+                  disabled={
+                    isLocked ||
+                    isGstr1AutopilotRunning ||
+                    isGstr1PdfAutopilotRunning ||
+                    isProcessingGstr1 ||
+                    (gstr1SourceMode === 'json' && gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0) ||
+                    (gstr1SourceMode !== 'local' && (!currentGstin || currentGstin === 'Not Specified'))
+                  }
+                  className={`h-9 px-3.5 font-bold text-xs rounded-xl border transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md ${gstr1SourceMode === 'json' && isGstr1ReadyToDownload
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/40'
+                    : gstr1SourceMode === 'json' && gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0
+                      ? 'bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border-amber-500/40'
+                      : gstr1SourceMode === 'pdf'
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border-purple-400/40 shadow-purple-950/40'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-blue-400/40 shadow-blue-950/40'
+                    }`}
+                  title={
+                    gstr1SourceMode === 'json'
+                      ? 'Launch Portal GSTR-1 JSON Autopilot'
+                      : gstr1SourceMode === 'pdf'
+                        ? 'Launch Portal GSTR-1 PDF Autopilot & Auto-Inject'
+                        : 'Browse Local GSTR-1 PDF from computer'
+                  }
                 >
-                  <RotateCcw className="w-3 h-3 text-rose-400" />
-                  <span>Clear</span>
+                  {isGstr1AutopilotRunning || isGstr1PdfAutopilotRunning || isProcessingGstr1 ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>{gstr1AutopilotStep || gstr1PdfAutopilotStep || 'Running...'}</span>
+                    </>
+                  ) : gstr1SourceMode === 'json' && isGstr1ReadyToDownload ? (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                      <span>Fetch Now</span>
+                    </>
+                  ) : gstr1SourceMode === 'json' && gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0 ? (
+                    <>
+                      <Clock className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                      <span>{Math.floor(gstr1SecondsLeft / 60)}m {gstr1SecondsLeft % 60}s</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{gstr1SourceMode === 'local' ? 'Browse File' : 'Run GSTR-1 Autopilot'}</span>
+                    </>
+                  )}
                 </button>
-              )}
-            </div>
 
-            <button
-              onClick={() => {
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before injecting data.' });
-                  return;
-                }
-                if (!activeGstr1) {
-                  return toast.error('No GSTR-1 Data Loaded', {
-                    description: 'Please run GSTR-1 Autopilot or drop a GSTR-1 file first.'
+                {/* Cancel GSTR-1 Autopilot / Auto-Download Button */}
+                {(isGstr1AutopilotRunning || isGstr1PdfAutopilotRunning || (gstr1BatchStatus === 'REQUESTED' && gstr1SecondsLeft > 0) || isGstr1ReadyToDownload) && (
+                  <button
+                    type="button"
+                    onClick={handleCancelGstr1}
+                    className="h-9 px-2.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0 animate-pulse"
+                    title="Cancel GSTR-1 automatic download or running autopilot session"
+                  >
+                    <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Cancel</span>
+                  </button>
+                )}
+
+                {/* Persistent Clear GSTR-1 Ingested Data */}
+                {(activeGstr1 || hasOutwardData) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isLocked) {
+                        toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet with password to clear figures.' });
+                        return;
+                      }
+                      const ok = await confirm({
+                        title: 'Clear GSTR-1 Figures',
+                        description: `Are you sure you want to clear GSTR-1 outward sales figures for ${selectedMonth}?`,
+                        confirmText: 'Clear GSTR-1',
+                        variant: 'destructive',
+                      });
+                      if (ok) {
+                        await handlePersistClearGstr1();
+                        toast.success(`Permanently cleared GSTR-1 data for ${selectedMonth}`);
+                      }
+                    }}
+                    className="h-9 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                    title={isLocked ? 'Cockpit is locked (Unlock sheet with password first)' : 'Permanently clear GSTR-1 figures & DB cache for this month'}
+                  >
+                    <RotateCcw className="w-3 h-3 text-rose-400" />
+                    <span>Clear</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before injecting data.' });
+                    return;
+                  }
+                  if (!activeGstr1) {
+                    return toast.error('No GSTR-1 Data Loaded', {
+                      description: 'Please run GSTR-1 Autopilot or drop a GSTR-1 file first.'
+                    });
+                  }
+                  onApplyIngestedReturns(activeGstr1, null);
+                  toast.success(`Injected into Table 3.1!`, {
+                    description: `Applied ${fmt(activeGstr1.totalOutwardTaxable)} Sales to ${activeGstr1.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
                   });
-                }
-                onApplyIngestedReturns(activeGstr1, null);
-                toast.success(`Injected into Table 3.1!`, {
-                  description: `Applied ${fmt(activeGstr1.totalOutwardTaxable)} Sales to ${activeGstr1.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
-                });
-              }}
-              disabled={isLocked || !activeGstr1}
-              className={`px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                isLocked || !activeGstr1 ? 'opacity-40 cursor-not-allowed' : ''
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-200" />
-              <span>Inject into Table 3.1</span>
-            </button>
-          </div>
-          </>
-          )}{/* end action deck */}
+                }}
+                disabled={isLocked || !activeGstr1}
+                className={`h-9 px-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap ${isLocked || !activeGstr1 ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-indigo-200" />
+                <span>Inject into Table 3.1</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}
         {/* CARD 2: GSTR-2B INWARD ITC DECK (EMERALD / TEAL THEME)                     */}
         {/* ========================================================================= */}
-        <div className={`bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950/20 border border-slate-800 hover:border-emerald-500/40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between shadow-md transition-all duration-300 ease-in-out min-w-0 ${
-          gstr2bCollapsed
-            ? 'lg:w-14 w-full overflow-hidden'
-            : gstr1Collapsed
-              ? 'lg:flex-1 w-full'
-              : 'lg:flex-1 w-full'
-        } space-y-3.5`}>
+        <div className={`bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950/20 border border-slate-800 hover:border-emerald-500/40 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between shadow-md transition-all duration-300 ease-in-out min-w-0 ${gstr2bCollapsed
+          ? 'lg:w-14 w-full overflow-hidden'
+          : gstr1Collapsed
+            ? 'lg:flex-1 w-full'
+            : 'lg:w-1/2 lg:flex-1 w-full'
+          } space-y-2.5`}>
           <div>
             {/* Header: Title & Status Badge */}
             <div className={`flex items-center justify-between pb-2.5 border-b border-slate-800/80 ${gstr2bCollapsed ? 'lg:flex-col lg:gap-3' : ''}`}>
@@ -1974,11 +2078,10 @@ export default function ReturnsAutoIngestDeck({
               <div className="flex items-center gap-2">
                 {/* Status Pill — hidden when collapsed */}
                 {!gstr2bCollapsed && (
-                  <div className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold flex items-center gap-1.5 ${
-                    has2bData || activeGstr2b
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-500'
-                  }`}>
+                  <div className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold flex items-center gap-1.5 ${has2bData || activeGstr2b
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-500'
+                    }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${has2bData || activeGstr2b ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                     <span>{has2bData ? 'Table 4 Filled' : activeGstr2b ? 'Data Ready' : 'Pending'}</span>
                   </div>
@@ -1997,13 +2100,12 @@ export default function ReturnsAutoIngestDeck({
                     }}
                     disabled={isLocked}
                     title={isLocked ? 'Cockpit is locked' : isG2bEditable ? 'Lock GSTR-2B figures' : 'Edit GSTR-2B figures'}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                      isLocked
-                        ? 'opacity-40 cursor-not-allowed bg-slate-800 text-slate-500 border border-slate-700'
-                        : isG2bEditable
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-                          : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300'
-                    }`}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${isLocked
+                      ? 'opacity-40 cursor-not-allowed bg-slate-800 text-slate-500 border border-slate-700'
+                      : isG2bEditable
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                        : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300'
+                      }`}
                   >
                     <Edit3 className="w-3 h-3 text-amber-300" />
                     <span>{isG2bEditable ? 'Lock' : 'Edit'}</span>
@@ -2016,422 +2118,425 @@ export default function ReturnsAutoIngestDeck({
                   title={gstr2bCollapsed ? 'Expand GSTR-2B panel' : 'Collapse GSTR-2B panel'}
                   className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 hover:text-white transition-all shrink-0 cursor-pointer"
                 >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                    gstr2bCollapsed ? 'rotate-90' : 'rotate-0'
-                  }`} />
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${gstr2bCollapsed ? 'rotate-90' : 'rotate-0'
+                    }`} />
                 </button>
               </div>
             </div>
 
             {/* Collapsible body: Live Metrics + Dropzone */}
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              gstr2bCollapsed ? 'max-h-0 opacity-0 mt-0' : 'max-h-[9999px] opacity-100 mt-0'
-            }`}>
-            {/* Live Metrics Bifurcation Matrix (Table 4) */}
-            <div className="mt-3 bg-slate-950/80 rounded-xl border border-emerald-500/20 overflow-hidden shadow-inner">
-              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
-                <table className="w-full text-left text-xs min-w-0">
-                  <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 text-[10px] uppercase tracking-wider">
-                    <tr>
-                      <th className="py-1.5 px-2 text-left whitespace-nowrap">ITC Head / Particulars</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">Taxable</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">CGST</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">SGST</th>
-                      <th className="py-1.5 px-1.5 text-right whitespace-nowrap">IGST</th>
-                      <th className="py-1.5 px-2 text-right whitespace-nowrap">Total ITC</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/50 font-mono text-[10.5px]">
-                    {/* Table 4(A)(5) All Other ITC */}
-                    <tr className="hover:bg-emerald-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
-                        4(A)(5) All Other ITC
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bItc2b?.taxable, 'inward', 'itc2b', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bItc2b?.cgst, 'inward', 'itc2b', 'cgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bItc2b?.sgst, 'inward', 'itc2b', 'sgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bItc2b?.igst, 'inward', 'itc2b', 'igst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bItc2b?.total)}</td>
-                    </tr>
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${gstr2bCollapsed ? 'max-h-0 opacity-0 mt-0' : 'max-h-[9999px] opacity-100 mt-0'
+              }`}>
+              {/* Live Metrics Bifurcation Matrix (Table 4) */}
+              <div className="mt-2.5 bg-slate-950/80 rounded-xl border border-emerald-500/20 overflow-hidden shadow-inner">
+                <div className="h-[245px] overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
+                  <table className="w-full text-left text-xs min-w-0">
+                    <thead className="sticky top-0 z-10 bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 text-[9.5px] uppercase tracking-wider">
+                      <tr>
+                        <th className="py-1.5 px-1.5 text-left whitespace-nowrap">ITC Head / Particulars</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">Taxable</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">CGST</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">SGST</th>
+                        <th className="py-1.5 px-1 text-right whitespace-nowrap">IGST</th>
+                        <th className="py-1.5 px-1.5 text-right whitespace-nowrap">Total ITC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50 font-mono text-[10px]">
+                      {/* Table 4(A)(5) All Other ITC */}
+                      <tr className="hover:bg-emerald-950/20 transition-colors">
+                        <td className="py-1 px-1.5 font-sans font-medium text-slate-200 whitespace-nowrap">
+                          4(A)(5) All Other ITC
+                        </td>
+                        <td className="py-1 px-1 text-right text-slate-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bItc2b?.taxable, 'inward', 'itc2b', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bItc2b?.cgst, 'inward', 'itc2b', 'cgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bItc2b?.sgst, 'inward', 'itc2b', 'sgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bItc2b?.igst, 'inward', 'itc2b', 'igst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bItc2b?.total)}</td>
+                      </tr>
 
-                    {/* Table 4(A)(3) Inward Reverse Charge Supplies */}
-                    <tr className="hover:bg-emerald-950/20 bg-emerald-950/10 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap flex items-center justify-between">
-                        <span>4(A)(3) Inward RCM ITC</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowG2bRcmBreakdown(v => !v)}
-                          className="text-[9px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 px-1 py-0.2 rounded font-mono cursor-pointer transition-all ml-1"
-                          title="Toggle RCM categories breakdown"
-                        >
-                          {showG2bRcmBreakdown ? 'Categories ▴' : 'Categories ▾'}
-                        </button>
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g2bRcm?.taxable, 'inward', 'rcmPaid', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g2bRcm?.cgst, 'inward', 'rcmPaid', 'cgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g2bRcm?.sgst, 'inward', 'rcmPaid', 'sgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
-                        {renderDeckInput(g2bRcm?.igst, 'inward', 'rcmPaid', 'igst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bRcm?.total)}</td>
-                    </tr>
+                      {/* Table 4(A)(3) Inward Reverse Charge Supplies */}
+                      <tr className="hover:bg-emerald-950/20 bg-emerald-950/10 transition-colors">
+                        <td className="py-1 px-1.5 font-sans font-medium text-slate-200 whitespace-nowrap flex items-center justify-between gap-1">
+                          <span>4(A)(3) Inward RCM</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowG2bRcmBreakdown(v => !v)}
+                            className="text-[9px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 px-1 py-0.2 rounded font-mono cursor-pointer transition-all shrink-0"
+                            title="Toggle RCM categories breakdown"
+                          >
+                            {showG2bRcmBreakdown ? 'Cat ▴' : 'Cat ▾'}
+                          </button>
+                        </td>
+                        <td className="py-1 px-1 text-right text-slate-300 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g2bRcm?.taxable, 'inward', 'rcmPaid', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g2bRcm?.cgst, 'inward', 'rcmPaid', 'cgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g2bRcm?.sgst, 'inward', 'rcmPaid', 'sgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap font-semibold">
+                          {renderDeckInput(g2bRcm?.igst, 'inward', 'rcmPaid', 'igst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bRcm?.total)}</td>
+                      </tr>
 
-                    {/* RCM Subcategories in Table 4 */}
-                    {showG2bRcmBreakdown && (
-                      <>
-                        <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[10px] transition-colors border-t border-emerald-900/30">
-                          <td className="py-0.5 px-2 pl-4 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Transport</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.taxable, 'outward', 'rcmTransport', 'taxable', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.cgst, 'outward', 'rcmTransport', 'cgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.sgst, 'outward', 'rcmTransport', 'sgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmTransport?.igst, 'outward', 'rcmTransport', 'igst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmTransport?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Security</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.taxable, 'outward', 'rcmSecurity', 'taxable', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.cgst, 'outward', 'rcmSecurity', 'cgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.sgst, 'outward', 'rcmSecurity', 'sgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmSecurity?.igst, 'outward', 'rcmSecurity', 'igst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmSecurity?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Guest House</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.taxable, 'outward', 'rcmGuestHouse', 'taxable', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.cgst, 'outward', 'rcmGuestHouse', 'cgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.sgst, 'outward', 'rcmGuestHouse', 'sgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmGuestHouse?.igst, 'outward', 'rcmGuestHouse', 'igst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmGuestHouse?.total)}</td>
-                        </tr>
-                        <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[10px] transition-colors">
-                          <td className="py-0.5 px-2 pl-4 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
-                            <span>↳</span>
-                            <span>RCM on Advocate</span>
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-slate-400 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.taxable, 'outward', 'rcmAdvocate', 'taxable', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.cgst, 'outward', 'rcmAdvocate', 'cgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.sgst, 'outward', 'rcmAdvocate', 'sgst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
-                            {renderDeckInput(rcmAdvocate?.igst, 'outward', 'rcmAdvocate', 'igst', 'text-emerald-300')}
-                          </td>
-                          <td className="py-0.5 px-2 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmAdvocate?.total)}</td>
-                        </tr>
-                      </>
-                    )}
+                      {/* RCM Subcategories in Table 4 */}
+                      {showG2bRcmBreakdown && (
+                        <>
+                          <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[9.5px] transition-colors border-t border-emerald-900/30">
+                            <td className="py-0.5 px-1.5 pl-3 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Transport</span>
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.taxable, 'outward', 'rcmTransport', 'taxable', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.cgst, 'outward', 'rcmTransport', 'cgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.sgst, 'outward', 'rcmTransport', 'sgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmTransport?.igst, 'outward', 'rcmTransport', 'igst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmTransport?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[9.5px] transition-colors">
+                            <td className="py-0.5 px-1.5 pl-3 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Security</span>
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.taxable, 'outward', 'rcmSecurity', 'taxable', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.cgst, 'outward', 'rcmSecurity', 'cgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.sgst, 'outward', 'rcmSecurity', 'sgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmSecurity?.igst, 'outward', 'rcmSecurity', 'igst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmSecurity?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[9.5px] transition-colors">
+                            <td className="py-0.5 px-1.5 pl-3 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Guest House</span>
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.taxable, 'outward', 'rcmGuestHouse', 'taxable', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.cgst, 'outward', 'rcmGuestHouse', 'cgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.sgst, 'outward', 'rcmGuestHouse', 'sgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmGuestHouse?.igst, 'outward', 'rcmGuestHouse', 'igst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmGuestHouse?.total)}</td>
+                          </tr>
+                          <tr className="hover:bg-emerald-950/20 bg-emerald-950/5 text-[9.5px] transition-colors">
+                            <td className="py-0.5 px-1.5 pl-3 text-emerald-300/80 font-sans whitespace-nowrap flex items-center gap-1">
+                              <span>↳</span>
+                              <span>RCM on Advocate</span>
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-slate-400 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.taxable, 'outward', 'rcmAdvocate', 'taxable', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.cgst, 'outward', 'rcmAdvocate', 'cgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.sgst, 'outward', 'rcmAdvocate', 'sgst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1 text-right text-emerald-400/80 tabular-nums whitespace-nowrap">
+                              {renderDeckInput(rcmAdvocate?.igst, 'outward', 'rcmAdvocate', 'igst', 'text-emerald-300')}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-right text-emerald-300/90 tabular-nums whitespace-nowrap">{fmtCell(rcmAdvocate?.total)}</td>
+                          </tr>
+                        </>
+                      )}
 
-                    {/* Table 4(A)(1) Import of Goods */}
-                    <tr className="hover:bg-emerald-950/20 transition-colors">
-                      <td className="py-1 px-2 font-sans font-medium text-slate-200 whitespace-nowrap">
-                        4(A)(1) Import of Goods
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bImpg?.taxable, 'inward', 'importGoods', 'taxable', 'text-slate-200')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-slate-600">—</td>
-                      <td className="py-1 px-1.5 text-right text-slate-600">—</td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bImpg?.igst, 'inward', 'importGoods', 'igst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bImpg?.total)}</td>
-                    </tr>
+                      {/* Table 4(A)(1) Import of Goods */}
+                      <tr className="hover:bg-emerald-950/20 transition-colors">
+                        <td className="py-1 px-1.5 font-sans font-medium text-slate-200 whitespace-nowrap">
+                          4(A)(1) Import of Goods
+                        </td>
+                        <td className="py-1 px-1 text-right text-slate-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bImpg?.taxable, 'inward', 'importGoods', 'taxable', 'text-slate-200')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-slate-600">—</td>
+                        <td className="py-1 px-1 text-right text-slate-600">—</td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bImpg?.igst, 'inward', 'importGoods', 'igst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold text-white tabular-nums whitespace-nowrap">{fmtCell(g2bImpg?.total)}</td>
+                      </tr>
 
-                    {/* (+) 2B Supplier Debit Notes (Row 36) */}
-                    <tr className="hover:bg-emerald-950/30 bg-emerald-950/10 transition-colors text-emerald-300">
-                      <td className="py-1 px-2 font-sans font-medium text-emerald-400 whitespace-nowrap">
-                        (+) Debit Notes (Row 36)
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-300 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bDebitNotes?.taxable, 'inward', 'creditNotes', 'taxable', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bDebitNotes?.cgst, 'inward', 'creditNotes', 'cgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bDebitNotes?.sgst, 'inward', 'creditNotes', 'sgst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-1.5 text-right text-emerald-400 tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bDebitNotes?.igst, 'inward', 'creditNotes', 'igst', 'text-emerald-300')}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold text-emerald-300 tabular-nums whitespace-nowrap">{fmtCell(g2bDebitNotes?.total)}</td>
-                    </tr>
+                      {/* (+) 2B Supplier Debit Notes (Row 36) */}
+                      <tr className="hover:bg-emerald-950/30 bg-emerald-950/10 transition-colors text-emerald-300">
+                        <td className="py-1 px-1.5 font-sans font-medium text-emerald-400 whitespace-nowrap">
+                          (+) Debit Notes (R36)
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-300 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bDebitNotes?.taxable, 'inward', 'creditNotes', 'taxable', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bDebitNotes?.cgst, 'inward', 'creditNotes', 'cgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bDebitNotes?.sgst, 'inward', 'creditNotes', 'sgst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1 text-right text-emerald-400 tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bDebitNotes?.igst, 'inward', 'creditNotes', 'igst', 'text-emerald-300')}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold text-emerald-300 tabular-nums whitespace-nowrap">{fmtCell(g2bDebitNotes?.total)}</td>
+                      </tr>
 
-                    {/* (-) 2B Supplier Credit Notes (Row 38) */}
-                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
-                      <td className="py-1 px-2 font-sans font-medium text-rose-400 whitespace-nowrap">
-                        (-) Credit Notes (Row 38)
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bCreditNotes?.taxable, 'inward', 'debitNotes', 'taxable', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bCreditNotes?.cgst, 'inward', 'debitNotes', 'cgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bCreditNotes?.sgst, 'inward', 'debitNotes', 'sgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bCreditNotes?.igst, 'inward', 'debitNotes', 'igst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g2bCreditNotes?.total, true)}</td>
-                    </tr>
+                      {/* (-) 2B Supplier Credit Notes (Row 38) */}
+                      <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                        <td className="py-1 px-1.5 font-sans font-medium text-rose-400 whitespace-nowrap">
+                          (-) Credit Notes (R38)
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bCreditNotes?.taxable, 'inward', 'debitNotes', 'taxable', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bCreditNotes?.cgst, 'inward', 'debitNotes', 'cgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bCreditNotes?.sgst, 'inward', 'debitNotes', 'sgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bCreditNotes?.igst, 'inward', 'debitNotes', 'igst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g2bCreditNotes?.total, true)}</td>
+                      </tr>
 
-                    {/* (-) Table 4(B) ITC Reversals / Ineligible (Row 39) */}
-                    <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
-                      <td className="py-1 px-2 font-sans font-medium text-rose-400 whitespace-nowrap">
-                        (-) 4(B) Reversals (Row 39)
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bInelig?.taxable, 'inward', 'itcReversed', 'taxable', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bInelig?.cgst, 'inward', 'itcReversed', 'cgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bInelig?.sgst, 'inward', 'itcReversed', 'sgst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right tabular-nums whitespace-nowrap">
-                        {renderDeckInput(g2bInelig?.igst, 'inward', 'itcReversed', 'igst', 'text-rose-300', true)}
-                      </td>
-                      <td className="py-1 px-2 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g2bInelig?.total, true)}</td>
-                    </tr>
-                  </tbody>
-                  {/* Summary Footer Row */}
-                  <tfoot className="bg-emerald-950/40 border-t-2 border-emerald-500/40 font-mono text-[10.5px] font-bold">
-                    <tr>
-                      <td className="py-1.5 px-2 font-sans text-emerald-200 uppercase tracking-wide whitespace-nowrap">
-                        Net Available ITC (4C)
-                      </td>
-                      <td className="py-1.5 px-1.5 text-right text-slate-500 whitespace-nowrap">—</td>
-                      <td className="py-1.5 px-1.5 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetCgst)}</td>
-                      <td className="py-1.5 px-1.5 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetSgst)}</td>
-                      <td className="py-1.5 px-1.5 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetIgst)}</td>
-                      <td className="py-1.5 px-2 text-right text-teal-300 font-extrabold text-[11px] tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetTotal)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                      {/* (-) Table 4(B) ITC Reversals / Ineligible (Row 39) */}
+                      <tr className="hover:bg-rose-950/20 bg-rose-950/10 transition-colors text-rose-300">
+                        <td className="py-1 px-1.5 font-sans font-medium text-rose-400 whitespace-nowrap">
+                          (-) 4(B) Reversals (R39)
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bInelig?.taxable, 'inward', 'itcReversed', 'taxable', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bInelig?.cgst, 'inward', 'itcReversed', 'cgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bInelig?.sgst, 'inward', 'itcReversed', 'sgst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1 text-right tabular-nums whitespace-nowrap">
+                          {renderDeckInput(g2bInelig?.igst, 'inward', 'itcReversed', 'igst', 'text-rose-300', true)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-bold tabular-nums whitespace-nowrap">{fmtCell(g2bInelig?.total, true)}</td>
+                      </tr>
+                    </tbody>
+                    {/* Summary Footer Row */}
+                    <tfoot className="sticky bottom-0 z-10 bg-[#091c18] border-t-2 border-emerald-500/40 font-mono text-[10px] font-bold">
+                      <tr>
+                        <td className="py-1.5 px-1.5 font-sans text-emerald-200 uppercase tracking-wide whitespace-nowrap">
+                          Net Available ITC (4C)
+                        </td>
+                        <td className="py-1.5 px-1 text-right text-slate-500 whitespace-nowrap">—</td>
+                        <td className="py-1.5 px-1 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetCgst)}</td>
+                        <td className="py-1.5 px-1 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetSgst)}</td>
+                        <td className="py-1.5 px-1 text-right text-emerald-300 tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetIgst)}</td>
+                        <td className="py-1.5 px-1.5 text-right text-teal-300 font-extrabold text-[10.5px] tabular-nums whitespace-nowrap">{fmtTotalCell(g2bNetTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-            </div>
 
-            {/* Quick GSTR-2B Invoice Stats Badges */}
-            {(activeGstr2b?.counts?.totalInvoices || 0) > 0 && (
-              <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
-                <span>Invoices: <strong className="text-emerald-300">{activeGstr2b?.counts?.totalInvoices}</strong></span>
-                <span>• B2B: <strong className="text-slate-300">{activeGstr2b?.counts?.b2b}</strong></span>
-                <span>• CDNR: <strong className="text-rose-300">{activeGstr2b?.counts?.cdnr}</strong></span>
-                <span>• ISD/Imp: <strong className="text-slate-300">{(activeGstr2b?.counts?.isd || 0) + (activeGstr2b?.counts?.impg || 0)}</strong></span>
+              {/* Quick GSTR-2B Invoice Stats Badges */}
+              <div className="mt-1.5 h-5 flex items-center justify-between px-1 text-[10px] text-slate-400 font-mono">
+                {(activeGstr2b?.counts?.totalInvoices || 0) > 0 ? (
+                  <>
+                    <span>Invoices: <strong className="text-emerald-300">{activeGstr2b?.counts?.totalInvoices}</strong></span>
+                    <span>• B2B: <strong className="text-slate-300">{activeGstr2b?.counts?.b2b}</strong></span>
+                    <span>• CDNR: <strong className="text-rose-300">{activeGstr2b?.counts?.cdnr}</strong></span>
+                    <span>• ISD/Imp: <strong className="text-slate-300">{(activeGstr2b?.counts?.isd || 0) + (activeGstr2b?.counts?.impg || 0)}</strong></span>
+                  </>
+                ) : (
+                  <span className="text-slate-500">No GSTR-2B source loaded for {selectedMonth}</span>
+                )}
               </div>
-            )}
 
-            {/* Drag & Drop Dropzone for GSTR-2B */}
-            <div
-              onDragOver={e => {
-                if (isLocked) return;
-                e.preventDefault();
-                setIsGstr2bDragging(true);
-              }}
-              onDragLeave={e => { e.preventDefault(); setIsGstr2bDragging(false); }}
-              onDrop={e => {
-                e.preventDefault();
-                setIsGstr2bDragging(false);
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
-                  return;
-                }
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  handleGstr2bFilesChosen(e.dataTransfer.files);
-                }
-              }}
-              onClick={() => {
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
-                  return;
-                }
-                gstr2bFileInputRef.current?.click();
-              }}
-              className={`mt-3 border-2 border-dashed rounded-xl p-3 transition-all flex items-center justify-between ${
-                isLocked
+              {/* Drag & Drop Dropzone for GSTR-2B */}
+              <div
+                onDragOver={e => {
+                  if (isLocked) return;
+                  e.preventDefault();
+                  setIsGstr2bDragging(true);
+                }}
+                onDragLeave={e => { e.preventDefault(); setIsGstr2bDragging(false); }}
+                onDrop={e => {
+                  e.preventDefault();
+                  setIsGstr2bDragging(false);
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
+                    return;
+                  }
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleGstr2bFilesChosen(e.dataTransfer.files);
+                  }
+                }}
+                onClick={() => {
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before importing files.' });
+                    return;
+                  }
+                  gstr2bFileInputRef.current?.click();
+                }}
+                className={`mt-2 border-2 border-dashed rounded-xl px-3 py-2.5 transition-all flex items-center justify-between ${isLocked
                   ? 'border-slate-800/50 bg-slate-950/20 opacity-50 cursor-not-allowed'
                   : isGstr2bDragging
                     ? 'border-emerald-400 bg-emerald-500/10 scale-[1.01] cursor-pointer'
                     : 'border-slate-800 bg-slate-950/40 hover:border-emerald-500/50 hover:bg-slate-950/70 cursor-pointer'
-              }`}
-            >
-              <input
-                type="file"
-                ref={gstr2bFileInputRef}
-                onChange={e => e.target.files && handleGstr2bFilesChosen(e.target.files)}
-                accept=".json,.xlsx,.xls,.zip"
-                disabled={isLocked}
-                className="hidden"
-              />
-              <div className="flex items-center gap-2.5">
-                <UploadCloud className={`w-4 h-4 text-emerald-400 ${isProcessingGstr2b ? 'animate-bounce' : ''}`} />
-                <div>
-                  <p className="text-xs text-slate-200 font-semibold">Drop GSTR-2B File (.json, .xlsx, .zip)</p>
-                  <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                  }`}
+              >
+                <input
+                  type="file"
+                  ref={gstr2bFileInputRef}
+                  onChange={e => e.target.files && handleGstr2bFilesChosen(e.target.files)}
+                  accept=".json,.xlsx,.xls,.zip"
+                  disabled={isLocked}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-2.5">
+                  <UploadCloud className={`w-4 h-4 text-emerald-400 ${isProcessingGstr2b ? 'animate-bounce' : ''}`} />
+                  <div>
+                    <p className="text-xs text-slate-200 font-semibold">Drop GSTR-2B File (.json, .xlsx, .zip)</p>
+                    <p className="text-[10px] text-slate-400">Or click to browse from system</p>
+                  </div>
                 </div>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  Browse
+                </span>
               </div>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                Browse
-              </span>
-            </div>
-          </div>{/* end collapsible body */}
+            </div>{/* end collapsible body */}
           </div>
 
-          {/* Action Deck: Autopilot & Table 4 Injection Trigger — hidden when collapsed */}
+          {/* Action Deck: Sync GSTR-2B Autopilot + Clear + Inject — hidden when collapsed */}
           {!gstr2bCollapsed && (
-          <>
-          <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => {
-                  if (isLocked) {
-                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet to sync GSTR-2B.' });
-                    return;
-                  }
-                  handleGstr2bAutopilotSync();
-                }}
-                disabled={isLocked || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
-                className={`px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700/90 text-emerald-300 font-semibold text-xs rounded-xl border border-slate-700 hover:border-emerald-500/40 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-                  isLocked ? 'opacity-40 cursor-not-allowed' : ''
-                }`}
-                title={isLocked ? 'Cockpit is locked' : 'Click to run GSTR-2B Autopilot'}
-              >
-                {isGstr2bAutopilotRunning ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                    <span>{gstr2bAutopilotStep || 'Syncing...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>🚀 Sync GSTR-2B Autopilot</span>
-                  </>
-                )}
-              </button>
-
-              {/* Cancel GSTR-2B Autopilot Button */}
-              {isGstr2bAutopilotRunning && (
-                <button
-                  type="button"
-                  onClick={handleCancelGstr2b}
-                  className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs animate-pulse"
-                  title="Cancel GSTR-2B autopilot session"
-                >
-                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Cancel Sync</span>
-                </button>
-              )}
-
-              {/* Clear GSTR-2B Ingested Data */}
-              {(activeGstr2b || has2bData) && (
+            <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap min-w-0">
                 <button
                   type="button"
                   onClick={() => {
                     if (isLocked) {
-                      toast.error('Cockpit is Locked');
+                      toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet to sync GSTR-2B.' });
                       return;
                     }
-                    if (window.confirm(`Clear GSTR-2B inward ITC figures for ${selectedMonth}?`)) {
-                      setActiveGstr2b(null);
-                      if (onClearGstr2b) {
-                        onClearGstr2b();
-                      }
-                      toast.success(`Cleared GSTR-2B data for ${selectedMonth}`);
-                    }
+                    handleGstr2bAutopilotSync();
                   }}
-                  disabled={isLocked}
-                  className={`px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                    isLocked ? 'opacity-40 cursor-not-allowed' : ''
-                  }`}
-                  title={isLocked ? 'Cockpit is locked' : 'Clear GSTR-2B figures from Table 4'}
+                  disabled={isLocked || isGstr2bAutopilotRunning || !currentGstin || currentGstin === 'Not Specified'}
+                  className={`h-9 px-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md border border-emerald-400/30 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 ${isLocked ? 'opacity-40 cursor-not-allowed' : ''
+                    }`}
+                  title={isLocked ? 'Cockpit is locked' : 'Click to run GSTR-2B Autopilot'}
                 >
-                  <RotateCcw className="w-3 h-3 text-rose-400" />
-                  <span>Clear</span>
+                  {isGstr2bAutopilotRunning ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>{gstr2bAutopilotStep || 'Syncing...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-emerald-200" />
+                      <span>Sync GSTR-2B Autopilot</span>
+                    </>
+                  )}
                 </button>
-              )}
-            </div>
 
-            <button
-              onClick={() => {
-                if (isLocked) {
-                  toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before injecting data.' });
-                  return;
-                }
-                if (!activeGstr2b) {
-                  return toast.error('No GSTR-2B Data Loaded', {
-                    description: 'Please run GSTR-2B Autopilot or drop a GSTR-2B file first.'
+                {/* Cancel GSTR-2B Autopilot Button */}
+                {isGstr2bAutopilotRunning && (
+                  <button
+                    type="button"
+                    onClick={handleCancelGstr2b}
+                    className="h-9 px-2.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0 shadow-xs animate-pulse"
+                    title="Cancel GSTR-2B autopilot session"
+                  >
+                    <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Cancel Sync</span>
+                  </button>
+                )}
+
+                {/* Clear GSTR-2B Ingested Data */}
+                {(activeGstr2b || has2bData) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isLocked) {
+                        toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet with password to clear figures.' });
+                        return;
+                      }
+                      const ok = await confirm({
+                        title: 'Clear GSTR-2B Figures',
+                        description: `Are you sure you want to clear GSTR-2B inward ITC figures for ${selectedMonth}?`,
+                        confirmText: 'Clear GSTR-2B',
+                        variant: 'destructive',
+                      });
+                      if (ok) {
+                        setActiveGstr2b(null);
+                        await handlePersistClearGstr2b();
+                        if (onClearGstr2b) {
+                          onClearGstr2b();
+                        }
+                        toast.success(`Cleared GSTR-2B data for ${selectedMonth}`);
+                      }
+                    }}
+                    className="h-9 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                    title={isLocked ? 'Cockpit is locked (Unlock sheet with password first)' : 'Clear GSTR-2B figures from Table 4'}
+                  >
+                    <RotateCcw className="w-3 h-3 text-rose-400" />
+                    <span>Clear</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (isLocked) {
+                    toast.error('Cockpit is Locked', { description: 'Unlock 3B sheet before injecting data.' });
+                    return;
+                  }
+                  if (!activeGstr2b) {
+                    return toast.error('No GSTR-2B Data Loaded', {
+                      description: 'Please run GSTR-2B Autopilot or drop a GSTR-2B file first.'
+                    });
+                  }
+                  onApplyIngestedReturns(null, activeGstr2b);
+                  toast.success(`Injected into Table 4!`, {
+                    description: `Applied ${fmt(activeGstr2b.netEligibleTotal)} Net ITC to ${activeGstr2b.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
                   });
-                }
-                onApplyIngestedReturns(null, activeGstr2b);
-                toast.success(`Injected into Table 4!`, {
-                  description: `Applied ${fmt(activeGstr2b.netEligibleTotal)} Net ITC to ${activeGstr2b.monthKey || selectedMonth}. Table 6.1 Set-off updated.`
-                });
-              }}
-              disabled={isLocked || !activeGstr2b}
-              className={`px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                isLocked || !activeGstr2b ? 'opacity-40 cursor-not-allowed' : ''
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Inject into Table 4</span>
-            </button>
-          </div>
-          </>
-          )}{/* end action deck */}
+                }}
+                disabled={isLocked || !activeGstr2b}
+                className={`h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap ${isLocked || !activeGstr2b ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Inject into Table 4</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2441,9 +2546,8 @@ export default function ReturnsAutoIngestDeck({
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col">
             <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
               <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  confirmModal.mode === 'GSTR1' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                }`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${confirmModal.mode === 'GSTR1' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  }`}>
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>

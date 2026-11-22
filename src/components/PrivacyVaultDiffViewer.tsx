@@ -29,7 +29,7 @@ export const PrivacyVaultDiffViewer: React.FC<PrivacyVaultDiffViewerProps> = ({
 
     return (
         <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-            <DialogContent className="max-w-6xl w-[95vw] max-h-[92vh] bg-[#090D16] border-white/10 text-white flex flex-col p-6 overflow-hidden shadow-2xl">
+            <DialogContent className="max-w-6xl w-[95vw] max-h-[92vh] bg-slate-950 border-white/10 text-white flex flex-col p-6 overflow-hidden shadow-2xl">
                 <DialogHeader className="border-b border-white/10 pb-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -44,7 +44,7 @@ export const PrivacyVaultDiffViewer: React.FC<PrivacyVaultDiffViewerProps> = ({
                                     </Badge>
                                 </DialogTitle>
                                 <p className="text-xs text-slate-400 mt-0.5">
-                                    Visual verification: Raw sensitive text vs Anonymized payload sent to Gemini API
+                                    Visual verification: Raw sensitive text vs Anonymized payload sent to Legal AI Engine
                                 </p>
                             </div>
                         </div>
@@ -89,7 +89,7 @@ export const PrivacyVaultDiffViewer: React.FC<PrivacyVaultDiffViewerProps> = ({
                 {/* Split-Screen Diff View */}
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 py-4 min-h-[350px] overflow-hidden">
                     {/* Left Pane: Raw Notice Text */}
-                    <div className="flex flex-col rounded-xl border border-red-500/20 bg-[#0d131f] overflow-hidden">
+                    <div className="flex flex-col rounded-xl border border-rose-500/20 bg-slate-900/90 overflow-hidden">
                         <div className="p-3 bg-red-500/10 border-b border-red-500/20 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <AlertCircle className="w-4 h-4 text-red-400" />
@@ -113,12 +113,12 @@ export const PrivacyVaultDiffViewer: React.FC<PrivacyVaultDiffViewerProps> = ({
                         </div>
                     </div>
 
-                    {/* Right Pane: Sanitized Payload Sent to Gemini */}
-                    <div className="flex flex-col rounded-xl border border-emerald-500/20 bg-[#0c1815] overflow-hidden">
+                    {/* Right Pane: Sanitized Payload Sent to Legal AI Engine */}
+                    <div className="flex flex-col rounded-xl border border-emerald-500/20 bg-emerald-950/20 overflow-hidden">
                         <div className="p-3 bg-emerald-500/10 border-b border-emerald-500/20 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                                <span className="text-xs font-bold text-emerald-300">Sanitized Payload (Transmitted to Gemini)</span>
+                                <span className="text-xs font-bold text-emerald-300">Sanitized Payload (Transmitted to Legal AI)</span>
                             </div>
                             <Button 
                                 size="sm" 

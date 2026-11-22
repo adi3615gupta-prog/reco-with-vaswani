@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "stitch": {
+    "projectId": "1275233265360021568",
+    "referenceScreen": {
+      "id": "18156531128668418212",
+      "route": "/landing",
+      "title": "Landing Page (Live App)",
+      "deviceType": "DESKTOP",
+      "extractedAt": "2026-11-09T17:57:58.252Z"
+    },
+    "referenceScreens": [
+      {
+        "id": "18156531128668418212",
+        "route": "/landing",
+        "title": "Landing Page (Live App)",
+        "deviceType": "DESKTOP",
+        "extractedAt": "2026-11-09T17:57:58.252Z"
+      }
+    ]
+  }
+}

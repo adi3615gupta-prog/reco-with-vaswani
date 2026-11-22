@@ -155,8 +155,12 @@ describe('debitNoteEngine - Normalization & Parsing Utilities', () => {
       // Valid GSTIN returns as-is
       expect(resolveEffectiveGstin('27AABCM8797N1ZI', 'Some Name', supplierIndex)).toBe('27AABCM8797N1ZI');
 
-      // Biostadt cross-state alias maps 24 -> 27
-      expect(resolveEffectiveGstin('24AACCB1830G1Z9', 'Biostadt India', supplierIndex)).toBe('27AACCB1830G1Z3');
+      // Biostadt cross-state alias maps 24 -> 27 when customGstinAliases is passed
+      expect(resolveEffectiveGstin('24AACCB1830G1Z9', 'Biostadt India', supplierIndex, {
+        customGstinAliases: { '24AACCB1830G1Z9': '27AACCB1830G1Z3' }
+      })).toBe('27AACCB1830G1Z3');
+      // Without alias, valid 24 GSTIN returns as-is
+      expect(resolveEffectiveGstin('24AACCB1830G1Z9', 'Biostadt India', supplierIndex)).toBe('24AACCB1830G1Z9');
 
       // Corrupted GSTIN with date '01/07/2017' resolves via supplier name fallback
       const resolved = resolveEffectiveGstin('01/07/2017', 'ISHAWAR AGRI SCIENCE PVT LTD', supplierIndex);

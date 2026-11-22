@@ -4,6 +4,8 @@
  * Complies with requirement AUDIT-01 and statutory audit trail mandates.
  */
 
+import { safeApiFetch } from './api';
+
 export type AuditActionType =
   | 'FORCE_MATCH'
   | 'MANUAL_MATCH'
@@ -160,7 +162,7 @@ export async function recordOverrideLog(input: AuditOverrideInput): Promise<Audi
   // 2. Attempt async sync to backend if online
   if (typeof fetch !== 'undefined') {
     try {
-      const response = await fetch('/api/audit/reconciliation-override', {
+      const response = await safeApiFetch('/api/audit/reconciliation-override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(record),
@@ -195,7 +197,7 @@ export async function syncPendingAuditLogs(): Promise<number> {
   let syncedCount = 0;
   for (const item of unsynced) {
     try {
-      const res = await fetch('/api/audit/reconciliation-override', {
+      const res = await safeApiFetch('/api/audit/reconciliation-override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item),
@@ -237,7 +239,7 @@ export async function getOverrideLogs(
     if (companyName) params.append('company_name', companyName);
     if (clientGstin) params.append('client_gstin', clientGstin);
 
-    const res = await fetch(`/api/audit/reconciliation-override?${params.toString()}`);
+    const res = await safeApiFetch(`/api/audit/reconciliation-override?${params.toString()}`);
     if (res && res.ok) {
       const serverLogs: AuditOverrideRecord[] = await res.json();
       const map = new Map<string, AuditOverrideRecord>();

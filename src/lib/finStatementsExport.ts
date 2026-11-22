@@ -20,21 +20,8 @@ import { generateCashFlowStatement } from './cfsEngine';
 import { computeMcaFinancialRatios } from './mcaRatiosEngine';
 import { evaluateIfcChecks } from './ifcChecksEngine';
 import { aggregateNotes } from './finStatements.storage';
-
-/**
- * Strips all merged cells from all sheets in the workbook to preserve
- * standard Excel sorting, filtering, and XLOOKUP compatibility.
- */
-export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
-  if (!wb || !wb.Sheets) return wb;
-  for (const sheetName of Object.keys(wb.Sheets)) {
-    const ws = wb.Sheets[sheetName];
-    if (ws) {
-      ws['!merges'] = [];
-    }
-  }
-  return wb;
-}
+export { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
+import { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
 
 export interface FinStatementsExportOptions {
   clientSetup: ClientSetup;

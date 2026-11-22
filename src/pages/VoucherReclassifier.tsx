@@ -257,8 +257,8 @@ export default function VoucherReclassifier({ onBack }: Props) {
   const [targetLedgerSearch, setTargetLedgerSearch] = useState('');
 
   // Date range
-  const [fromDate, setFromDate] = useState('20250401');
-  const [toDate, setToDate] = useState('20260331');
+  const [fromDate, setFromDate] = useState('20260401');
+  const [toDate, setToDate] = useState('20270331');
 
   // Voucher entries
   const [vouchers, setVouchers] = useState<TallyVoucherEntry[]>([]);

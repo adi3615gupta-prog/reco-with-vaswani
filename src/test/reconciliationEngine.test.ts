@@ -219,4 +219,44 @@ describe('GST Purchase Reconciliation Engine - Advanced Matching', () => {
     expect(normalizeMode('output')).toBe('output');
     expect(normalizeMode(null)).toBe('input');
   });
+
+  it('should NOT match sequential invoice numbers (e.g. 100 vs 1001) via partial prefix match when amounts differ', () => {
+    const prRecords: any[] = [
+      {
+        id: 'pr-1',
+        supplierName: 'ACE ENTERPRISES',
+        gstin: '27AAAAA0000A1Z5',
+        invoiceNo: '100',
+        invoiceDate: '2024-05-10',
+        igst: 0,
+        cgst: 450,
+        sgst: 450,
+        taxableValue: 5000,
+        source: 'PR'
+      }
+    ];
+
+    const twoBRecords: any[] = [
+      {
+        id: '2b-1',
+        supplierName: 'ACE ENTERPRISES',
+        gstin: '27AAAAA0000A1Z5',
+        invoiceNo: '1001',
+        invoiceDate: '2024-05-10',
+        igst: 0,
+        cgst: 45000,
+        sgst: 45000,
+        taxableValue: 500000,
+        source: '2B'
+      }
+    ];
+
+    const results = reconcile(prRecords, twoBRecords, 'input');
+    // Invoice 100 and 1001 must NOT match because amounts differ drastically
+    expect(results).toHaveLength(2);
+    const prResult = results.find(r => r.prRecord?.invoiceNo === '100');
+    const twoBResult = results.find(r => r.twoBRecord?.invoiceNo === '1001');
+    expect(prResult?.status).toBe('Not in 2B');
+    expect(twoBResult?.status).toBe('Not in Books');
+  });
 });

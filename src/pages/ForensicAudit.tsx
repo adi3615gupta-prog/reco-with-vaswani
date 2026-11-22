@@ -183,6 +183,7 @@ export default function ForensicAudit({
     const benfordAnalysis = useMemo(() => {
         return applyBenfordsLaw(rawDetailedAmounts, state.maxAmountCap);
     }, [rawDetailedAmounts, state.maxAmountCap]);
+    const benfordResults = benfordAnalysis.results;
 
     const journalResults = useMemo(() => {
         if (state.voucherType !== 'Journal') return [];

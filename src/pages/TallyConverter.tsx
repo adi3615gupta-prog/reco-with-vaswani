@@ -3,7 +3,7 @@ import { ArrowLeft, FileCode2, UploadCloud, CheckCircle2, FileSpreadsheet, FileT
 import { toast } from 'sonner';
 import * as XLSX from "xlsx";
 import XLSXStyle from "xlsx-js-style";
-import { getApiBase } from '@/lib/api';
+import { getApiBase, safeApiFetch } from '@/lib/api';
 
 const extractHeadersFromHTML = (chunkText: string) => {
   try {
@@ -133,7 +133,7 @@ export default function TallyConverter({ onBack }: TallyConverterProps) {
 
   const processTallyData = async (xmlTarget: File, htmlTarget: File) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/usage/increment`, {
+      const res = await safeApiFetch('/api/usage/increment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ module_name: 'TallyConverter' })

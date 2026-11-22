@@ -22,7 +22,9 @@ const uploadMemory = multer({
  * Enterprise Server Shared Data Storage Routes for GSTR Returns
  * Allows all PCs in the office LAN to store and access client return working papers from a central server folder.
  */
-export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath = '.', authenticateToken = (req, res, next) => next()) {
+export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath = '.', authenticateToken = null) {
+  const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+  app.use('/api/returns', authMiddleware);
   const activeBrowsers = new Map();
   const getClientBrowserState = (gstinKey) => ({
     get current() {
@@ -57,6 +59,7 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
 
   // Initialize GSTR-3B Month Lock Storage Table (Multi-PC Network Sync)
   if (db && typeof db.run === 'function') {
+    const runInitSchema = () => {
     db.run(`CREATE TABLE IF NOT EXISTS gstr3b_month_locks (
       gstin TEXT NOT NULL,
       fy TEXT NOT NULL,
@@ -111,6 +114,9 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
       working_data_json TEXT NOT NULL
     )`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_gstr3b_revisions_lookup ON gstr3b_working_revisions(gstin, fy, created_at DESC)`);
+    };
+    if (typeof db.serialize === 'function') db.serialize(runInitSchema);
+    else runInitSchema();
   }
 
   let _cachedActiveDataPath = null;
@@ -219,6 +225,26 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
     });
   }
 
+  // Helper to retrieve active unified Master Data Path from app_config or fallback
+  function getActiveMasterDataPath() {
+    return new Promise((resolve) => {
+      db.get("SELECT value FROM app_config WHERE key = 'master_data_path'", [], async (err, row) => {
+        if (!err && row && row.value) {
+          const raw = String(row.value).trim().replace(/^["']|["']$/g, '');
+          const candidate = path.resolve(raw);
+          try {
+            if (fs.existsSync(candidate)) return resolve(candidate);
+          } catch (e) {}
+        }
+        const retPath = await getActiveDataPath();
+        if (path.basename(retPath).toLowerCase() === 'gst_returns_data') {
+          return resolve(path.dirname(retPath));
+        }
+        return resolve(retPath);
+      });
+    });
+  }
+
   // Helper to inspect SQLite master database health and WAL status
   function inspectDatabaseHealth() {
     const dbPath = path.resolve(defaultUserDataPath, 'network_data.db');
@@ -312,6 +338,10 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
     return '';
   }
 
+  // Track failed Windows folder renames (EPERM/EBUSY when Explorer/Excel holds a lock) to prevent log spam
+  const _failedRenameCooldown = new Map();
+  const RENAME_COOLDOWN_MS = 10 * 60 * 1000;
+
   // Helper to resolve (and auto-rename if needed) the client directory: "Client Name - GSTIN"
   function resolveClientDirectory(dataPath, gstin, clientName = '', autoRename = true) {
     const gstinUpper = (gstin || '').trim().toUpperCase();
@@ -319,33 +349,59 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
       try { fs.mkdirSync(dataPath, { recursive: true }); } catch {}
     }
 
-    const targetName = buildClientFolderName(clientName, gstinUpper);
-    const targetPath = path.join(dataPath, targetName);
-
-    if (fs.existsSync(targetPath)) {
-      return targetPath;
+    const subGst = path.join(dataPath, 'gst_returns_data');
+    const searchDirs = [dataPath];
+    if (fs.existsSync(subGst) && subGst !== dataPath) {
+      searchDirs.push(subGst);
     }
 
-    // Check if an existing directory matches this GSTIN (e.g. "27AAKFS2266E1Z4" or "Old - 27AAKFS2266E1Z4")
+    const targetName = buildClientFolderName(clientName, gstinUpper);
+    
+    // Check if target directory already exists in any of the search locations
+    for (const dir of searchDirs) {
+      const candidate = path.join(dir, targetName);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+
+    // Check if an existing directory matches this GSTIN in any search location
     try {
-      const entries = fs.readdirSync(dataPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const foundGstin = extractGstinFromDirName(entry.name);
-          if (foundGstin === gstinUpper) {
-            const existingPath = path.join(dataPath, entry.name);
-            // If targetName contains clientName and current folder doesn't, rename it!
-            if (autoRename && targetName !== entry.name && targetName.includes(' - ' + gstinUpper)) {
-              try {
-                fs.renameSync(existingPath, targetPath);
-                console.log(`[Returns Storage] Auto-renamed folder: "${entry.name}" -> "${targetName}"`);
-                return targetPath;
-              } catch (renameErr) {
-                console.warn('[Returns Storage] Rename error:', renameErr.message);
-                return existingPath;
+      for (const dir of searchDirs) {
+        if (!fs.existsSync(dir)) continue;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            if (entry.name === 'gst_returns_data' || entry.name === 'reco_history' || entry.name === 'monthly_audits') continue;
+            const foundGstin = extractGstinFromDirName(entry.name);
+            if (foundGstin === gstinUpper) {
+              const existingPath = path.join(dir, entry.name);
+              const targetPath = path.join(dir, targetName);
+              const existingHasName = entry.name.includes(' - ' + gstinUpper);
+              const existingPrefix = existingHasName ? entry.name.split(' - ')[0].trim().toUpperCase() : '';
+              const targetPrefix = targetName.includes(' - ' + gstinUpper) ? targetName.split(' - ')[0].trim().toUpperCase() : '';
+              const isShorteningExisting =
+                existingHasName &&
+                targetPrefix &&
+                existingPrefix.startsWith(targetPrefix) &&
+                existingPrefix.length > targetPrefix.length;
+
+              const cooldownKey = `${existingPath}->${targetPath}`;
+              const inCooldown = (_failedRenameCooldown.get(cooldownKey) || 0) > Date.now();
+
+              if (autoRename && !isShorteningExisting && !inCooldown && targetName !== entry.name && targetName.includes(' - ' + gstinUpper)) {
+                try {
+                  fs.renameSync(existingPath, targetPath);
+                  console.log(`[Returns Storage] Auto-renamed folder: "${entry.name}" -> "${targetName}"`);
+                  return targetPath;
+                } catch (renameErr) {
+                  _failedRenameCooldown.set(cooldownKey, Date.now() + RENAME_COOLDOWN_MS);
+                  console.warn(
+                    `[Returns Storage] Skipping folder rename "${entry.name}" -> "${targetName}" (${renameErr.code || renameErr.message}); continuing with existing folder.`
+                  );
+                  return existingPath;
+                }
               }
+              return existingPath;
             }
-            return existingPath;
           }
         }
       }
@@ -353,7 +409,10 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
       console.warn('[Returns Storage] Directory scan error:', e.message);
     }
 
-    return targetPath;
+    // If new folder needs to be created, prefer subfolder gst_returns_data if it exists
+    const preferredBase = fs.existsSync(subGst) ? subGst : dataPath;
+    const finalNewPath = path.join(preferredBase, targetName);
+    return finalNewPath;
   }
 
   // 12-Month Financial Year Mapping
@@ -375,12 +434,12 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
   // Helper to scan directory for client statistics and file metrics
   function inspectStorageDirectory(dirPath, isReturns = true) {
     if (!dirPath || typeof dirPath !== 'string') {
-      return { exists: false, isWritable: false, totalClientsWithData: 0, totalFiles: 0, sizeBytes: 0 };
+      return { exists: false, isWritable: false, totalClientsWithData: 0, totalVaultClients: 0, totalFiles: 0, sizeBytes: 0 };
     }
 
     const cleanPath = dirPath.replace(/^["']|["']$/g, '').trim();
     if (!fs.existsSync(cleanPath)) {
-      return { exists: false, isWritable: false, totalClientsWithData: 0, totalFiles: 0, sizeBytes: 0 };
+      return { exists: false, isWritable: false, totalClientsWithData: 0, totalVaultClients: 0, totalFiles: 0, sizeBytes: 0 };
     }
 
     let isWritable = true;
@@ -402,47 +461,89 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
     }
 
     let totalClientsWithData = 0;
+    let totalVaultClients = 0;
     let totalFiles = 0;
     let sizeBytes = 0;
 
     try {
-      const items = fs.readdirSync(cleanPath, { withFileTypes: true });
-      for (const item of items) {
-        if (item.isDirectory()) {
-          if (isReturns) {
-            const gstin = extractGstinFromDirName(item.name);
-            if (gstin) totalClientsWithData++;
-          }
-        } else if (item.isFile()) {
-          totalFiles++;
+      const vaultPaths = [
+        path.join(cleanPath, 'central_clients_vault.json'),
+        path.join(cleanPath, 'gst_returns_data', 'central_clients_vault.json')
+      ];
+      for (const vp of vaultPaths) {
+        if (fs.existsSync(vp)) {
           try {
-            const st = fs.statSync(path.join(cleanPath, item.name));
-            sizeBytes += st.size;
+            const vRaw = fs.readFileSync(vp, 'utf8');
+            const vParsed = JSON.parse(vRaw);
+            if (vParsed && vParsed.clients && typeof vParsed.clients === 'object') {
+              totalVaultClients = Math.max(totalVaultClients, Object.keys(vParsed.clients).length);
+            }
           } catch {}
         }
       }
+
+      const clientGstins = new Set();
+      const scanDir = (targetDir, depth = 0) => {
+        if (!fs.existsSync(targetDir) || depth > 2) return;
+        const items = fs.readdirSync(targetDir, { withFileTypes: true });
+        for (const item of items) {
+          if (item.isDirectory()) {
+            if (item.name === 'gst_returns_data') {
+              scanDir(path.join(targetDir, item.name), depth + 1);
+            } else if (item.name === 'reco_history' || item.name === 'monthly_audits') {
+              continue;
+            } else if (isReturns) {
+              const gstin = extractGstinFromDirName(item.name);
+              if (gstin) clientGstins.add(gstin);
+            }
+          } else if (item.isFile()) {
+            totalFiles++;
+            try {
+              const st = fs.statSync(path.join(targetDir, item.name));
+              sizeBytes += st.size;
+            } catch {}
+          }
+        }
+      };
+      scanDir(cleanPath);
+      totalClientsWithData = clientGstins.size;
+
       if (isReturns) {
-        _cachedStats = { exists: true, isWritable, totalClientsWithData, totalFiles, sizeBytes };
+        _cachedStats = { exists: true, isWritable, totalClientsWithData, totalVaultClients, totalFiles, sizeBytes };
         _lastStatsTime = Date.now();
       }
     } catch (e) {
       console.warn('[Returns Storage] Inspection note:', e.message);
     }
 
-    return { exists: true, isWritable, totalClientsWithData, totalFiles, sizeBytes };
+    return { exists: true, isWritable, totalClientsWithData, totalVaultClients, totalFiles, sizeBytes };
   }
 
-  // 1. GET Storage Configuration & Server LAN Status (All 4 Primary Data Paths)
+  // 1. GET Storage Configuration & Server LAN Status (All Primary Data Paths & Master Unified Root)
   app.get('/api/returns/storage-config', async (req, res) => {
     try {
       const dataPath = await getActiveDataPath();
+      const masterDataPath = await getActiveMasterDataPath();
       const stats = inspectStorageDirectory(dataPath, true);
+      const masterStats = inspectStorageDirectory(masterDataPath, true);
+
+      if (!masterStats.totalVaultClients && db && typeof db.get === 'function') {
+        try {
+          const row = await new Promise(r => db.get("SELECT COUNT(*) as count FROM clients WHERE is_deleted = 0 OR is_deleted IS NULL", [], (e, row) => r(row)));
+          if (row && row.count) {
+            masterStats.totalVaultClients = row.count;
+            stats.totalVaultClients = row.count;
+          }
+        } catch {}
+      }
+
       const serverIps = getServerNetworkIps();
       const serverHost = os.hostname();
 
       const defaultReturnsPath = path.resolve(defaultUserDataPath, 'gst_returns_data');
       const defaultRecoPath = path.resolve(defaultUserDataPath, 'reco_history');
       const defaultAuditPath = path.resolve(defaultUserDataPath, 'monthly_audits');
+      const defaultMasterPath = path.resolve(defaultUserDataPath);
 
       const recoHistoryPath = await getActiveRecoHistoryPath();
       const recoStats = inspectStorageDirectory(recoHistoryPath, false);
@@ -454,13 +555,22 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
 
       res.json({
         success: true,
+        masterDataPath,
         dataPath,
         serverHost,
         serverIps,
         isLanReady: serverIps.length > 0,
         port: 3001,
-        ...stats,
+        ...masterStats,
         paths: {
+          master: {
+            key: 'master_data_path',
+            name: 'Master Data Storage Directory (Unified Root)',
+            path: masterDataPath,
+            defaultPath: defaultMasterPath,
+            isCustom: masterDataPath !== defaultMasterPath,
+            ...masterStats
+          },
           returns: {
             key: 'returns_data_path',
             name: 'Returns Preparation Storage Directory',
@@ -494,12 +604,104 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
     }
   });
 
+  // 1b. POST Master Storage Directory (Unified Root for All Modules)
+  app.post('/api/returns/master-storage-config', async (req, res) => {
+    try {
+      const { masterPath } = req.body || {};
+      if (!masterPath || typeof masterPath !== 'string' || !masterPath.trim()) {
+        return res.status(400).json({ success: false, error: 'Valid master folder path is required' });
+      }
+
+      const cleanMaster = masterPath.trim().replace(/^["']|["']$/g, '').trim();
+      const normalizedMaster = path.resolve(cleanMaster);
+
+      if (!fs.existsSync(normalizedMaster)) {
+        fs.mkdirSync(normalizedMaster, { recursive: true });
+      }
+
+      // Verify master folder is writable
+      const testFile = path.join(normalizedMaster, `.write_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
+      fs.writeFileSync(testFile, 'OK');
+      if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
+
+      // Automatically create subfolders for each module under master root
+      const subReturnsPath = path.join(normalizedMaster, 'gst_returns_data');
+      const subRecoPath = path.join(normalizedMaster, 'reco_history');
+      const subAuditPath = path.join(normalizedMaster, 'monthly_audits');
+
+      if (!fs.existsSync(subReturnsPath)) fs.mkdirSync(subReturnsPath, { recursive: true });
+      if (!fs.existsSync(subRecoPath)) fs.mkdirSync(subRecoPath, { recursive: true });
+      if (!fs.existsSync(subAuditPath)) fs.mkdirSync(subAuditPath, { recursive: true });
+
+      // Save master_data_path and synchronize all module paths in app_config
+      await new Promise((resolve, reject) => {
+        db.serialize(() => {
+          const stmt = db.prepare(`
+            INSERT INTO app_config (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+          `);
+          stmt.run(['master_data_path', normalizedMaster]);
+          stmt.run(['returns_data_path', normalizedMaster]);
+          stmt.run(['reco_history_path', subRecoPath]);
+          stmt.run(['monthly_audit_path', subAuditPath]);
+          stmt.finalize((err) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+      });
+
+      invalidateDataPathCache();
+
+      // Trigger immediate sync with central_clients_vault.json from master directory
+      try {
+        await syncCredentialsWithCentral(db, normalizedMaster);
+      } catch (syncErr) {
+        console.warn('[Master Storage] Central vault sync error:', syncErr.message);
+      }
+
+      // Count clients in database
+      const dbClientCount = await new Promise((r) => {
+        db.get("SELECT COUNT(*) as count FROM clients WHERE is_deleted = 0 OR is_deleted IS NULL", [], (e, row) => r(row?.count || 0));
+      });
+
+      const stats = inspectStorageDirectory(normalizedMaster, true);
+
+      console.log(`[Master Storage Config] Master data path updated to: ${normalizedMaster} (${dbClientCount} clients in database)`);
+
+      res.json({
+        success: true,
+        masterDataPath: normalizedMaster,
+        dataPath: normalizedMaster,
+        subfolders: {
+          returns: subReturnsPath,
+          recoHistory: subRecoPath,
+          monthlyAudit: subAuditPath,
+          vaultFile: path.join(normalizedMaster, 'central_clients_vault.json')
+        },
+        totalVaultClients: dbClientCount,
+        totalClientsWithData: stats.totalClientsWithData,
+        isWritable: true,
+        message: `Master storage directory configured successfully with ${dbClientCount} clients and dedicated module folders.`
+      });
+    } catch (err) {
+      console.error('[Master Storage] Error:', err);
+      res.status(500).json({ success: false, error: `Failed to configure master path: ${err.message}` });
+    }
+  });
+
   // 2. POST Update Storage Path (Supports returns, recoHistory, monthlyAudit)
   app.post('/api/returns/storage-config', async (req, res) => {
     try {
       const { dataPath, pathType, key } = req.body || {};
       if (!dataPath || typeof dataPath !== 'string' || !dataPath.trim()) {
         return res.status(400).json({ success: false, error: 'Valid folder path is required' });
+      }
+
+      if (pathType === 'master' || key === 'master_data_path') {
+        // Delegate to unified master storage configuration
+        req.body.masterPath = dataPath;
+        return app._router.handle({ ...req, url: '/api/returns/master-storage-config', method: 'POST' }, res);
       }
 
       let targetKey = 'returns_data_path';
@@ -538,13 +740,23 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
         `INSERT INTO app_config (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = ?`,
         [targetKey, normalized, normalized],
-        (dbErr) => {
+        async (dbErr) => {
           if (dbErr) {
             console.error('[Returns Storage] DB save error:', dbErr);
             return res.status(500).json({ success: false, error: 'Failed saving data path to database: ' + dbErr.message });
           }
 
           invalidateDataPathCache();
+
+          // If returns path was updated, attempt central vault sync to keep clients current
+          if (targetKey === 'returns_data_path') {
+            try {
+              await syncCredentialsWithCentral(db, normalized);
+            } catch (syncErr) {
+              console.warn('[Storage Config] Sync note:', syncErr.message);
+            }
+          }
+
           console.log(`[Storage Config] ${friendlyName} (${targetKey}) updated to: ${normalized}`);
           res.json({
             success: true,
@@ -637,8 +849,8 @@ export default function setupReturnsStorageRoutes(app, db, defaultUserDataPath =
     }
   };
 
-  app.post('/api/returns/open-folder', authenticateToken, handleOpenFolder);
-  app.post('/api/returns/open-storage-folder', authenticateToken, handleOpenFolder);
+  app.post('/api/returns/open-folder', authMiddleware, handleOpenFolder);
+  app.post('/api/returns/open-storage-folder', authMiddleware, handleOpenFolder);
 
   // 2d. POST Browse Folder Dialog (Windows native FolderBrowserDialog via PowerShell - Local Only)
   app.post('/api/returns/browse-folder', (req, res) => {
@@ -688,10 +900,10 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       if (!gstin) return res.status(400).json({ success: false, error: 'gstin parameter is required' });
 
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || '2025-26').trim();
+      const fyClean = String(fy || '2026-27').trim();
       const dataPath = await getActiveDataPath();
 
-      const clientDir = resolveClientDirectory(dataPath, gstinClean, clientName || '', true);
+      const clientDir = resolveClientDirectory(dataPath, gstinClean, clientName || '', false);
       const fyDir = path.join(clientDir, fyClean);
 
       const annualFile = path.join(fyDir, 'annual_gstr3b_working.json');
@@ -788,7 +1000,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       }
 
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || workingData.profile?.financialYear || '2025-26').trim();
+      const fyClean = String(fy || workingData.profile?.financialYear || '2026-27').trim();
       const firmName = clientName || workingData.profile?.firmName || '';
       const dataPath = await getActiveDataPath();
 
@@ -1026,7 +1238,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const { gstin, fy } = req.query;
       if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || '2025-26').trim();
+      const fyClean = String(fy || '2026-27').trim();
 
       if (!db || typeof db.all !== 'function') {
         return res.json({ success: true, revisions: [] });
@@ -1094,7 +1306,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const { gstin, fy } = req.query;
       if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || '2025-26').trim();
+      const fyClean = String(fy || '2026-27').trim();
 
       if (!db || typeof db.all !== 'function') {
         return res.json({ success: true, records: [] });
@@ -1120,7 +1332,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
 
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || '2025-26').trim();
+      const fyClean = String(fy || '2026-27').trim();
       const lockedMonths = {};
 
       // 1. Read locks from SQLite
@@ -1176,7 +1388,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       }
 
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || '2025-26').trim();
+      const fyClean = String(fy || '2026-27').trim();
       const monthClean = String(month).trim();
       const isLocked = Boolean(locked);
       const now = Date.now();
@@ -1255,7 +1467,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       }
 
       const gstinClean = String(gstin).trim().toUpperCase();
-      const fyClean = String(fy || workingData?.profile?.financialYear || '2025-26').trim();
+      const fyClean = String(fy || workingData?.profile?.financialYear || '2026-27').trim();
       const firmName = clientName || workingData?.profile?.firmName || '';
       const safeFirm = sanitizeFolderName(firmName) || gstinClean;
       const monthClean = String(month || 'September').trim();
@@ -1514,13 +1726,13 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           const excelAnnualTimeFile = path.join(fDir, `${safeFirm} - GSTR-3B Annual Working ${fyClean}_${dateTimeStamp}.xlsx`);
           const excelAnnualLatestFile = path.join(fDir, `gstr3b_annual_working_${fyClean}.xlsx`);
 
-          fs.writeFileSync(excelTimeFile, excelBuffer);
-          fs.writeFileSync(excelLatestFile, excelBuffer);
-          fs.writeFileSync(excelAnnualTimeFile, excelBuffer);
-          fs.writeFileSync(excelAnnualLatestFile, excelBuffer);
-
-          // Legacy root month copy for backward compatibility
-          fs.writeFileSync(path.join(mDir, `gstr3b_working_${monthClean}.xlsx`), excelBuffer);
+          await Promise.all([
+            fs.promises.writeFile(excelTimeFile, excelBuffer),
+            fs.promises.writeFile(excelLatestFile, excelBuffer),
+            fs.promises.writeFile(excelAnnualTimeFile, excelBuffer),
+            fs.promises.writeFile(excelAnnualLatestFile, excelBuffer),
+            fs.promises.writeFile(path.join(mDir, `gstr3b_working_${monthClean}.xlsx`), excelBuffer)
+          ]);
 
           files.push(
             path.basename(excelTimeFile),
@@ -1534,11 +1746,11 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           const pdfTimeFile = path.join(dir3b, `${safeFirm} - GSTR-3B Working ${monthClean}_${dateTimeStamp}.pdf`);
           const pdfLatestFile = path.join(dir3b, `gstr3b_working_${monthClean}.pdf`);
 
-          fs.writeFileSync(pdfTimeFile, pdfBuffer);
-          fs.writeFileSync(pdfLatestFile, pdfBuffer);
-
-          // Legacy root month copy
-          fs.writeFileSync(path.join(mDir, `gstr3b_working_${monthClean}.pdf`), pdfBuffer);
+          await Promise.all([
+            fs.promises.writeFile(pdfTimeFile, pdfBuffer),
+            fs.promises.writeFile(pdfLatestFile, pdfBuffer),
+            fs.promises.writeFile(path.join(mDir, `gstr3b_working_${monthClean}.pdf`), pdfBuffer)
+          ]);
           files.push(path.basename(pdfTimeFile));
         }
 
@@ -1548,11 +1760,11 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           const portalTimeFile = path.join(dir3b, `${safeFirm} - GSTR-3B Portal Upload ${monthClean}_${dateTimeStamp}.json`);
           const portalLatestFile = path.join(dir3b, `gstr3b_portal_${monthClean}.json`);
 
-          fs.writeFileSync(portalTimeFile, portalJsonStr, 'utf8');
-          fs.writeFileSync(portalLatestFile, portalJsonStr, 'utf8');
-
-          // Legacy root month copy
-          fs.writeFileSync(path.join(mDir, `gstr3b_portal_${monthClean}.json`), portalJsonStr, 'utf8');
+          await Promise.all([
+            fs.promises.writeFile(portalTimeFile, portalJsonStr, 'utf8'),
+            fs.promises.writeFile(portalLatestFile, portalJsonStr, 'utf8'),
+            fs.promises.writeFile(path.join(mDir, `gstr3b_portal_${monthClean}.json`), portalJsonStr, 'utf8')
+          ]);
           files.push(path.basename(portalTimeFile));
         }
 
@@ -1564,10 +1776,12 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           const monthTimeFile = path.join(dir3b, `${safeFirm} - GSTR-3B Data ${monthClean}_${dateTimeStamp}.json`);
           const monthLatestFile = path.join(dir3b, `gstr3b_data_${monthClean}.json`);
 
-          fs.writeFileSync(annualMasterFile, workingDataStr, 'utf8');
-          fs.writeFileSync(annualTimeFile, workingDataStr, 'utf8');
-          fs.writeFileSync(monthTimeFile, workingDataStr, 'utf8');
-          fs.writeFileSync(monthLatestFile, workingDataStr, 'utf8');
+          const masterJsonWrites = [
+            fs.promises.writeFile(annualMasterFile, workingDataStr, 'utf8'),
+            fs.promises.writeFile(annualTimeFile, workingDataStr, 'utf8'),
+            fs.promises.writeFile(monthTimeFile, workingDataStr, 'utf8'),
+            fs.promises.writeFile(monthLatestFile, workingDataStr, 'utf8')
+          ];
 
           // Persist month locks into SQLite for multi-PC synchronization
           if (workingData.lockedMonths && typeof workingData.lockedMonths === 'object' && db && typeof db.run === 'function') {
@@ -1596,9 +1810,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
               savedAt: `${humanDate} ${humanTime}`,
               data: workingData.months[monthClean]
             };
-            fs.writeFileSync(path.join(mDir, `gstr3b_${monthClean}.json`), JSON.stringify(monthPayload, null, 2), 'utf8');
-            fs.writeFileSync(path.join(mDir, 'working.json'), JSON.stringify(monthPayload, null, 2), 'utf8');
+            const monthPayloadStr = JSON.stringify(monthPayload, null, 2);
+            masterJsonWrites.push(
+              fs.promises.writeFile(path.join(mDir, `gstr3b_${monthClean}.json`), monthPayloadStr, 'utf8'),
+              fs.promises.writeFile(path.join(mDir, 'working.json'), monthPayloadStr, 'utf8')
+            );
           }
+
+          await Promise.all(masterJsonWrites);
 
           files.push(
             path.basename(annualTimeFile),
@@ -1686,7 +1905,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           invoicesCount: gstr1Rows.length,
           invoices: gstr1Rows
         };
-        fs.writeFileSync(path.join(dirR1, `gstr1_base_${monthClean}.json`), JSON.stringify(r1Json, null, 2), 'utf8');
+        await fs.promises.writeFile(path.join(dirR1, `gstr1_base_${monthClean}.json`), JSON.stringify(r1Json, null, 2), 'utf8');
         files.push(path.basename(r1TimeFile));
 
         // ─── 3. SUBFOLDER: 2B Base ───
@@ -1752,7 +1971,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           invoicesCount: gstr2bRows.length,
           invoices: gstr2bRows
         };
-        fs.writeFileSync(path.join(dir2b, `gstr2b_base_${monthClean}.json`), JSON.stringify(r2bJson, null, 2), 'utf8');
+        await fs.promises.writeFile(path.join(dir2b, `gstr2b_base_${monthClean}.json`), JSON.stringify(r2bJson, null, 2), 'utf8');
         files.push(path.basename(r2bTimeFile));
 
         // ─── 4. SUBFOLDER: Credit Notes Base ───
@@ -1806,7 +2025,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           outwardDetailsCount: cdnrOutward.length,
           inwardDetailsCount: cdnrInward.length
         };
-        fs.writeFileSync(path.join(dirCN, `credit_notes_base_${monthClean}.json`), JSON.stringify(cnJson, null, 2), 'utf8');
+        await fs.promises.writeFile(path.join(dirCN, `credit_notes_base_${monthClean}.json`), JSON.stringify(cnJson, null, 2), 'utf8');
         files.push(path.basename(cnTimeFile));
 
         // ─── 5. SUBFOLDER: Reversal Base ───
@@ -1922,7 +2141,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           summary: { permanent4b1: s4b1, temporary4b2: s4b2, ineligible4d1: s4d1, ineligible4d2: s4d2, deferred: sDef },
           allocationsCount: allocRows.length
         };
-        fs.writeFileSync(path.join(dirRev, `reversal_base_${monthClean}.json`), JSON.stringify(revJson, null, 2), 'utf8');
+        await fs.promises.writeFile(path.join(dirRev, `reversal_base_${monthClean}.json`), JSON.stringify(revJson, null, 2), 'utf8');
         files.push(path.basename(revTimeFile));
 
         return {
@@ -2001,7 +2220,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
   // 5. GET All Clients Hub (Merged from SQLite Vault + Server Data Path)
   app.get('/api/returns/clients-hub', async (req, res) => {
     try {
-      const requestedFy = String(req.query.fy || '2025-26').trim();
+      const requestedFy = String(req.query.fy || '2026-27').trim();
       const dataPath = await getActiveDataPath();
 
       // Automatically sync with Central Network Vault across office PCs
@@ -2044,15 +2263,23 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             }
           });
 
-          // Step B: Scan dataPath to detect existing saved client files
-          if (fs.existsSync(dataPath)) {
+          // Step B: Scan dataPath (and subfolder gst_returns_data) to detect existing saved client files
+          const scanDirs = [dataPath];
+          const subReturns = path.join(dataPath, 'gst_returns_data');
+          if (fs.existsSync(subReturns) && subReturns !== dataPath) {
+            scanDirs.push(subReturns);
+          }
+
+          for (const sDir of scanDirs) {
+            if (!fs.existsSync(sDir)) continue;
             try {
-              const entries = fs.readdirSync(dataPath, { withFileTypes: true });
+              const entries = fs.readdirSync(sDir, { withFileTypes: true });
               for (const entry of entries) {
                 if (entry.isDirectory()) {
+                  if (entry.name === 'gst_returns_data' || entry.name === 'reco_history' || entry.name === 'monthly_audits') continue;
                   const gstinUpper = extractGstinFromDirName(entry.name);
                   if (gstinUpper) {
-                    const clientDir = path.join(dataPath, entry.name);
+                    const clientDir = path.join(sDir, entry.name);
                     const folderClientName = extractClientNameFromDirName(entry.name);
                     try {
                       const clientEntries = fs.readdirSync(clientDir, { withFileTypes: true });
@@ -2078,13 +2305,13 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                         if (clientsMap.has(gstinUpper)) {
                           const existing = clientsMap.get(gstinUpper);
                           existing.hasSavedWorking = true;
-                          existing.savedYears = savedYears;
-                          existing.lastModified = latestMod || null;
+                          existing.savedYears = Array.from(new Set([...(existing.savedYears || []), ...savedYears]));
+                          existing.lastModified = Math.max(existing.lastModified || 0, latestMod || 0) || null;
                           if (resolvedTradeName && (existing.trade_name === 'Client' || !existing.trade_name)) {
                             existing.trade_name = resolvedTradeName;
                           }
                           if (entry.name === gstinUpper && existing.trade_name && existing.trade_name !== 'Client') {
-                            const newTarget = path.join(dataPath, `${sanitizeFolderName(existing.trade_name)} - ${gstinUpper}`);
+                            const newTarget = path.join(sDir, `${sanitizeFolderName(existing.trade_name)} - ${gstinUpper}`);
                             try { fs.renameSync(clientDir, newTarget); } catch {}
                           }
                         } else {
@@ -2103,12 +2330,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                           });
                         }
                       }
-                    } catch {}
+                    } catch (scanInnerErr) {
+                      console.warn('[Returns Storage] Client dir scan note:', scanInnerErr.message);
+                    }
                   }
                 }
               }
-            } catch (e) {
-              console.warn('[Returns Storage] Disk scan error:', e.message);
+            } catch (scanErr) {
+              console.warn('[Returns Storage] Scan directory note:', scanErr.message);
             }
           }
 
@@ -2233,9 +2462,16 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
         attachments = []
       } = req.body;
 
-      if (!recipientEmail || !recipientEmail.trim()) {
-        return res.status(400).json({ success: false, error: 'Recipient email address is required.' });
+      const rawRecipient = String(recipientEmail || '');
+      if (!rawRecipient.trim() || /[\r\n]/.test(rawRecipient)) {
+        return res.status(400).json({ success: false, error: 'Valid recipient email address is required.' });
       }
+      const recipientList = rawRecipient.split(/[;,]/).map(e => e.trim()).filter(Boolean);
+      const emailRegex = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+      if (recipientList.length === 0 || recipientList.length > 5 || recipientList.some(e => e.length > 254 || !emailRegex.test(e))) {
+        return res.status(400).json({ success: false, error: 'Invalid recipient email address format (max 5 valid recipients allowed).' });
+      }
+      const cleanRecipient = recipientList.join(', ');
 
       // 1. Fetch saved email configuration
       const settings = await new Promise((resolve) => {
@@ -2408,17 +2644,18 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 
       const info = await transporter.sendMail({
         from: `"${senderName}" <${senderEmail}>`,
-        to: recipientEmail.trim(),
-        subject: mailSubject,
+        to: cleanRecipient,
+        subject: String(mailSubject || '').replace(/[\r\n]+/g, ' ').trim(),
         html: emailHtml,
         attachments: mailAttachments
       });
+      console.log(`[Client Mail Audit] User "${req.user?.username || 'system'}" sent GSTR-3B summary to ${cleanRecipient} (GSTIN: ${gstin || 'N/A'})`);
 
       res.json({
         success: true,
         messageId: info.messageId,
-        recipient: recipientEmail.trim(),
-        message: `GSTR-3B tax summary email sent successfully to ${recipientEmail.trim()}`
+        recipient: cleanRecipient,
+        message: `GSTR-3B tax summary email sent successfully to ${cleanRecipient}`
       });
     } catch (err) {
       console.error('[Send Client Mail Error]:', err);
@@ -2565,9 +2802,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     return { isFiled, daysOverdue, lateFee, interest, status };
   }
 
-  // Helper to normalize FY string to "YYYY-YY" (e.g. "2025-2026" or "FY 2025-26" -> "2025-26")
+  // Helper to normalize FY string to "YYYY-YY" (e.g. "2026-2027" or "FY 2026-27" -> "2026-27")
   const normalizeTrackingFy = (fyStr) => {
-    if (!fyStr) return '2025-26';
+    if (!fyStr) return '2026-27';
     const clean = String(fyStr).trim();
     const parts = clean.match(/(\d{4})[^\d]*(\d{2,4})/);
     if (parts) {
@@ -2953,7 +3190,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       // Check if file already exists in client folder
       let jsonFilePath = null;
       try {
-        const clientDir = resolveClientDirectory(storageConfig.dataPath, cleanGstin);
+        const activeDataPath = await getActiveDataPath();
+        const clientDir = resolveClientDirectory(activeDataPath, cleanGstin, '', false);
         const fDir = path.join(clientDir, cleanFy);
         const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
         const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, '0') : '06';
@@ -3004,7 +3242,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       // Check if file already exists in client folder
       let jsonFilePath = null;
       try {
-        const clientDir = resolveClientDirectory(storageConfig.dataPath, cleanGstin);
+        const activeDataPath = await getActiveDataPath();
+        const clientDir = resolveClientDirectory(activeDataPath, cleanGstin, '', false);
         const fDir = path.join(clientDir, cleanFy);
         const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
         const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, '0') : '06';

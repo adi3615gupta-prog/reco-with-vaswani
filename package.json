@@ -8,7 +8,6 @@
   "type": "module",
   "scripts": {
     "start": "concurrently \"node server.js\" \"vite --host\"",
-    "tunnel": "npx localtunnel --local-host 127.0.0.1 --port 8080 --subdomain reco-vaswani-server",
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
@@ -17,16 +16,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "obfuscate": "node obfuscate.cjs",
-    "build:exe": "npm run obfuscate && vite build && electron-builder -w -p never",
+    "sign:integrity": "node scripts/sign_integrity.cjs",
+    "build:exe": "npm run obfuscate && vite build && npm run sign:integrity && electron-builder -w -p never",
     "ship": "npm run build:exe && node scripts/publish_release.cjs",
     "publish:github": "node scripts/publish_release.cjs",
-    "release": "npm version patch --no-git-tag-version && npm run obfuscate && vite build && electron-builder --publish always",
+    "release": "npm version patch --no-git-tag-version && npm run obfuscate && vite build && npm run sign:integrity && electron-builder --publish always",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -56,14 +55,12 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.83.0",
     "@tanstack/react-virtual": "^3.14.25",
-    "@types/nodemailer": "^8.0.2",
     "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cors": "^2.8.6",
-    "date-fns": "^3.6.0",
     "docx": "^9.14.0",
     "electron-log": "^5.0.1",
     "electron-updater": "^6.8.3",
@@ -80,12 +77,12 @@
     "javascript-obfuscator": "^5.4.3",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "localtunnel": "^2.0.2",
-    "lottie-react": "^3.1.2",
     "lucide-react": "^0.462.0",
+    "motion": "^14.14.0",
     "multer": "^2.2.0",
     "next-themes": "^0.3.0",
-    "node-cron": "^4.2.1",
     "nodemailer": "^10.1.0",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.60.0",
@@ -115,12 +112,16 @@
       "dist/**/*",
       "main.cjs",
       "preload.js",
+      "integrityGuard.cjs",
+      "integrityPublicKey.cjs",
+      "integrity.manifest.json",
       "public/**/*",
       "server.obfuscated.cjs"
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "verifyUpdateCodeSignature": true
     },
     "nsis": {
       "oneClick": false,
@@ -136,9 +137,8 @@
         "releaseType": "release"
       }
     ],
-    "asarUnpack": [
-      "dist/**/*"
-    ],
+    "asar": true,
+    "asarUnpack": [],
     "extraResources": []
   },
   "devDependencies": {

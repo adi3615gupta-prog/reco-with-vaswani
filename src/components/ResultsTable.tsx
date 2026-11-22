@@ -107,7 +107,6 @@ export function ResultsTable({ results, companyName, mode = 'input', initialColl
     overscan: 12,
   });
 
-  const currentlyShowing = Math.min(visibleCount, filtered.length);
 
   return (
     <TooltipProvider delayDuration={150}>

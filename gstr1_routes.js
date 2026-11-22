@@ -5,7 +5,8 @@ import { exec } from 'child_process';
 import { initGstr1Database, bulkSaveGstr1Invoices } from './gstr1/db.js';
 import { parseGstr1Excel, parseGstr1Json, parseGstr1Zip } from './gstr1/parsers.js';
 import { runGstr1Autopilot } from './gstr1/autopilot.js';
-import { generateGstr1FullYearWorkbook } from './gstr1/fullYearExcel.js';
+import { buildGstr1FullYearWorkbookFromDb } from './gstr1/fullYearExcel.js';
+import { createAndRunAutopilotJob, subscribeToJobStream, getJob, cancelAutopilotJob, getJobBrowser, bringJobBrowserToFront } from './gstr1/jobs.js';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 
@@ -190,8 +191,8 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
 
     // ─── 2. 12-MONTH FULL YEAR SYNC MATRIX ──────────────────────────────────
     app.get('/api/gstr1/fy-summary', (req, res) => {
-        const fy = req.query.financialYear || '2025-26';
-        const startYr = parseInt(fy.match(/\d{4}/)?.[0] || '2025', 10);
+        const fy = req.query.financialYear || '2026-27';
+        const startYr = parseInt(fy.match(/\d{4}/)?.[0] || '2026', 10);
         const endYr = startYr + 1;
         const fyMonths = [
             `April ${startYr}`, `May ${startYr}`, `June ${startYr}`,
@@ -331,17 +332,51 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
     });
 
     // ─── 3. GET INVOICES FOR DRILLDOWN ──────────────────────────────────────
+    function buildStrictPeriodFilter(period) {
+        const clean = String(period || '').trim();
+        const mMatch = clean.match(/[a-zA-Z]+/)?.[0];
+        const yMatch = clean.match(/\d{4}/)?.[0];
+        const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        if (mMatch && yMatch) {
+            const mIdx = monthNames.findIndex(m => m.toLowerCase().startsWith(mMatch.toLowerCase().slice(0, 3)));
+            const mNum = mIdx !== -1 ? String(mIdx + 1).padStart(2, '0') : '';
+            const fullMonth = mIdx !== -1 ? monthNames[mIdx] : mMatch;
+            const candidates = [
+                `${fullMonth} ${yMatch}`,
+                `${fullMonth}, ${yMatch}`,
+                clean
+            ];
+            if (mNum) {
+                candidates.push(`${mNum}${yMatch}`, `${mNum}-${yMatch}`, `${mNum}/${yMatch}`);
+            }
+            const unique = [...new Set(candidates)];
+            return {
+                clause: `return_period IN (${unique.map(() => '?').join(',')})`,
+                params: unique
+            };
+        }
+        return {
+            clause: `(return_period = ? OR return_period LIKE ? OR return_period LIKE ?)`,
+            params: [clean, `%${mMatch || clean}%`, `%${clean.replace(',', '')}%`]
+        };
+    }
+
+    // ─── 3. GET RAW GSTR-1 INVOICES FOR A SPECIFIC CLIENT ────────────────────
     app.get('/api/gstr1/invoices/:gstin', (req, res) => {
         const { gstin } = req.params;
         const { period, section, financialYear } = req.query;
 
-        let query = `SELECT * FROM gstr1_invoices WHERE client_gstin = ?`;
+        let query = `SELECT * FROM gstr1_invoices WHERE UPPER(client_gstin) = ?`;
         const params = [gstin.toUpperCase()];
 
+        let periodFilter = null;
         if (period && period !== 'ALL') {
-            const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
-            query += ` AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?)`;
-            params.push(period, `%${mMatch}%`, `%${period.replace(',', '')}%`);
+            periodFilter = buildStrictPeriodFilter(period);
+            query += ` AND (${periodFilter.clause})`;
+            params.push(...periodFilter.params);
         } else if (financialYear) {
             const startYr = parseInt(financialYear.match(/\d{4}/)?.[0] || '2025', 10);
             const endYr = startYr + 1;
@@ -364,11 +399,10 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
 
         db.all(query, params, (err, rows) => {
             if (err) return res.status(500).json({ success: false, error: err.message });
-            if (period && period !== 'ALL') {
-                const mMatch = period.match(/[a-zA-Z]+/)?.[0] || period;
+            if (period && period !== 'ALL' && periodFilter) {
                 db.get(
-                    `SELECT * FROM gstr1_batches WHERE UPPER(client_gstin) = ? AND (return_period = ? OR return_period LIKE ? OR return_period LIKE ?) ORDER BY updated_at DESC LIMIT 1`,
-                    [gstin.toUpperCase(), period, `%${period}%`, `%${mMatch}%`],
+                    `SELECT * FROM gstr1_batches WHERE UPPER(client_gstin) = ? AND (${periodFilter.clause}) ORDER BY updated_at DESC LIMIT 1`,
+                    [gstin.toUpperCase(), ...periodFilter.params],
                     (bErr, batchRow) => {
                         res.json({
                             success: true,
@@ -390,26 +424,122 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
         });
     });
 
-    // ─── 4. PLAYWRIGHT AUTOPILOT GSTR-1 DOWNLOADER (OFFLINE JSON/EXCEL) ────
+    // ─── 3B. CLEAR STORED GSTR-1 DATA FOR A CLIENT & PERIOD ──────────────────
+    app.delete('/api/gstr1/clear/:gstin', (req, res) => {
+        const gstinUpper = String(req.params.gstin || '').trim().toUpperCase();
+        const period = String(req.query.period || req.body?.period || '').trim();
+        const month = String(req.query.month || req.body?.month || '').trim();
+        const fy = String(req.query.fy || req.body?.fy || '').trim();
+        if (!gstinUpper || (!period && !month && !fy)) {
+            return res.status(400).json({ success: false, error: 'gstin and period/month/fy required' });
+        }
+        let pf;
+        if (period === 'ALL') {
+            pf = { clause: '1=1', params: [] };
+        } else {
+            const candidates = [];
+            if (period) {
+                const basePf = buildStrictPeriodFilter(period);
+                candidates.push(...basePf.params);
+            }
+            if (month && fy) {
+                const startYr = parseInt(fy.match(/\d{4}/)?.[0] || '2026', 10);
+                const endYr = startYr + 1;
+                candidates.push(`${month} ${startYr}`, `${month} ${endYr}`);
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                const mIdx = monthNames.findIndex(m => m.toLowerCase().startsWith(month.toLowerCase().slice(0, 3)));
+                if (mIdx !== -1) {
+                    const mNum = String(mIdx + 1).padStart(2, '0');
+                    candidates.push(`${mNum}${startYr}`, `${mNum}${endYr}`, `${mNum}-${startYr}`, `${mNum}-${endYr}`);
+                }
+            }
+            const unique = Array.from(new Set(candidates));
+            if (unique.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid or missing return period specification.' });
+            }
+            pf = {
+                clause: `return_period IN (${unique.map(() => '?').join(',')})`,
+                params: unique
+            };
+        }
+        db.serialize(() => {
+            db.run(`DELETE FROM gstr1_invoices WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})`, [gstinUpper, ...pf.params]);
+            db.run(`DELETE FROM gstr1_summaries WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})`, [gstinUpper, ...pf.params]);
+            db.run(`DELETE FROM gstr1_batches WHERE UPPER(TRIM(client_gstin)) = ? AND (${pf.clause})`, [gstinUpper, ...pf.params], function (err) {
+                if (err) return res.status(500).json({ success: false, error: err.message });
+                res.json({ success: true, cleared: true, gstin: gstinUpper, period: period || month });
+            });
+        });
+    });
+
+        // ─── 4. PLAYWRIGHT AUTOPILOT GSTR-1 DOWNLOADER (OFFLINE JSON/EXCEL) ────
     app.post('/api/gstr1/portal-sync-browser', async (req, res) => {
         const { gstin, returnPeriod, financialYear, isFullYear, targetMonth, isDownloadOnly, downloadFormat } = req.body;
         if (!gstin) {
             return res.status(400).json({ success: false, error: 'gstin required' });
         }
+        const clientKey = gstin.trim().toUpperCase();
+        if (activeBrowsers.has(clientKey)) {
+            return res.status(409).json({
+                success: false,
+                error: `GSTR-1 Autopilot is already active for GSTIN ${clientKey}. Please wait or cancel the active session.`
+            });
+        }
+        const clientBrowserState = { current: null };
+        activeBrowsers.set(clientKey, clientBrowserState);
 
-        await runGstr1Autopilot({
-            db,
-            gstin,
-            returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
-            financialYear,
-            isFullYear: Boolean(isFullYear),
-            targetMonth: targetMonth || null,
-            isDownloadOnly: Boolean(isDownloadOnly),
-            downloadFormat: downloadFormat || 'JSON',
-            req,
-            res,
-            browserState
-        });
+        try {
+            await runGstr1Autopilot({
+                db,
+                gstin,
+                returnPeriod: returnPeriod || `April ${(financialYear || '2026-27').match(/\d{4}/)?.[0] || '2026'}`,
+                financialYear,
+                isFullYear: Boolean(isFullYear),
+                targetMonth: targetMonth || null,
+                isDownloadOnly: Boolean(isDownloadOnly),
+                downloadFormat: downloadFormat || 'JSON',
+                req,
+                res,
+                browserState: clientBrowserState
+            });
+        } finally {
+            activeBrowsers.delete(clientKey);
+        }
+    });
+
+    // ─── 4B. PLAYWRIGHT AUTOPILOT GSTR-1 PDF DOWNLOADER & INJECTOR ──────────
+    app.post('/api/gstr1/portal-sync-pdf', async (req, res) => {
+        const { gstin, returnPeriod, financialYear, targetMonth } = req.body;
+        if (!gstin) {
+            return res.status(400).json({ success: false, error: 'gstin required' });
+        }
+        const clientKey = gstin.trim().toUpperCase();
+        if (activeBrowsers.has(clientKey)) {
+            return res.status(409).json({
+                success: false,
+                error: `GSTR-1 Autopilot is already active for GSTIN ${clientKey}. Please wait or cancel the active session.`
+            });
+        }
+        const clientBrowserState = { current: null };
+        activeBrowsers.set(clientKey, clientBrowserState);
+
+        try {
+            await runGstr1Autopilot({
+                db,
+                gstin,
+                returnPeriod: returnPeriod || `April ${(financialYear || '2026-27').match(/\d{4}/)?.[0] || '2026'}`,
+                financialYear,
+                isFullYear: false,
+                targetMonth: targetMonth || null,
+                isDownloadOnly: true,
+                downloadFormat: 'PDF',
+                req,
+                res,
+                browserState: clientBrowserState
+            });
+        } finally {
+            activeBrowsers.delete(clientKey);
+        }
     });
 
     // ─── 4B. PLAYWRIGHT AUTOPILOT GSTR-1 PDF DOWNLOADER & INJECTOR ──────────
@@ -422,7 +552,7 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
         await runGstr1Autopilot({
             db,
             gstin,
-            returnPeriod: returnPeriod || `April ${(financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025'}`,
+            returnPeriod: returnPeriod || `April ${(financialYear || '2026-27').match(/\d{4}/)?.[0] || '2026'}`,
             financialYear,
             isFullYear: false,
             targetMonth: targetMonth || null,
@@ -434,59 +564,57 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
         });
     });
 
+    // ─── 4C. ASYNC AUTOPILOT JOBS (SSE STREAM + SNAPSHOT POLLING) ───────────
+    app.post('/api/gstr1/jobs/start', (req, res) => {
+        const { gstin, returnPeriod, financialYear, isFullYear, targetMonth, isDownloadOnly, downloadFormat } = req.body || {};
+        if (!gstin) return res.status(400).json({ success: false, error: 'gstin required' });
+        if (activeBrowsers.has(String(gstin).trim().toUpperCase())) {
+            return res.status(409).json({ success: false, code: 'JOB_ALREADY_RUNNING', error: 'A legacy GSTR-1 autopilot session is already active for this GSTIN.' });
+        }
+        try {
+            const { jobId, job } = createAndRunAutopilotJob({
+                db,
+                gstin,
+                returnPeriod,
+                financialYear: financialYear || '2026-27',
+                isFullYear: Boolean(isFullYear),
+                targetMonth: targetMonth || null,
+                isDownloadOnly: Boolean(isDownloadOnly),
+                downloadFormat: downloadFormat === 'PDF' ? 'PDF' : 'JSON'
+            });
+            res.status(202).json({
+                success: true,
+                jobId,
+                gstin: job.gstin,
+                mode: job.mode,
+                streamUrl: `/api/gstr1/job-stream/${jobId}`,
+                pollUrl: `/api/gstr1/job/${jobId}`
+            });
+        } catch (err) {
+            res.status(err.statusCode || 500).json({ success: false, code: err.code, activeJobId: err.activeJobId, error: err.message });
+        }
+    });
+
+    app.get('/api/gstr1/job-stream/:jobId', (req, res) => subscribeToJobStream(req.params.jobId, req, res));
+
+    app.get('/api/gstr1/job/:jobId', (req, res) => {
+        const job = getJob(req.params.jobId);
+        if (!job) return res.status(404).json({ success: false, error: `Job ${req.params.jobId} not found` });
+        res.json({ success: true, job });
+    });
+
     // ─── 5. EXPORT CONSOLIDATED 12M GSTR-1 EXCEL ────────────────────────────
     app.get('/api/gstr1/export-full-year/:gstin', async (req, res) => {
-        const { gstin } = req.params;
-        const fy = req.query.financialYear || '2025-26';
-        const gstinUpper = gstin.toUpperCase();
-
-        const startYr = parseInt(fy.match(/\d{4}/)?.[0] || '2025', 10);
-        const endYr = startYr + 1;
-        const fyMonths = [
-            `April ${startYr}`, `May ${startYr}`, `June ${startYr}`,
-            `July ${startYr}`, `August ${startYr}`, `September ${startYr}`,
-            `October ${startYr}`, `November ${startYr}`, `December ${startYr}`,
-            `January ${endYr}`, `February ${endYr}`, `March ${endYr}`
-        ];
-
-        db.get(`SELECT trade_name, legal_name FROM clients WHERE UPPER(gstin) = ?`, [gstinUpper], (cErr, clientRow) => {
-            const clientTradeName = clientRow?.trade_name || clientRow?.legal_name || gstinUpper;
-
-            const allPeriods = [...fyMonths, ...fyMonths.map(m => m.replace(' ', ', '))];
-            db.all(
-                `SELECT * FROM gstr1_invoices WHERE UPPER(client_gstin) = ? AND (return_period IN (${allPeriods.map(() => '?').join(',')}) OR return_period LIKE ?) ORDER BY idt DESC`,
-                [gstinUpper, ...allPeriods, `%${startYr}%`],
-                (err, invoices) => {
-                    if (err) return res.status(500).json({ success: false, error: err.message });
-
-                    db.all(
-                        `SELECT * FROM gstr1_summaries WHERE UPPER(client_gstin) = ?`,
-                        [gstinUpper],
-                        (sErr, summaryRows) => {
-                            try {
-                                const wb = generateGstr1FullYearWorkbook({
-                                    clientInfo: { trade_name: clientTradeName, gstin: gstinUpper },
-                                    financialYear: fy,
-                                    invoices: invoices || [],
-                                    summaries: summaryRows || []
-                                });
-
-                                const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-                                const cleanFy = fy.replace(/[^0-9]/g, '');
-                                const filename = `GSTR1_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`;
-
-                                res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-                                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                                res.setHeader('Content-Length', buf.length);
-                                res.end(buf);
-                            } catch (xErr) {
-                                res.status(500).json({ success: false, error: xErr.message });
-                            }
-                        }
-                    );
-                }
-            );
-        });
+        try {
+            const { wb, filename } = await buildGstr1FullYearWorkbookFromDb(db, req.params.gstin, req.query.financialYear || '2026-27');
+            const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
     });
 
     // ─── 6. SCAN DOWNLOADS FOLDER FOR GSTR-1 FILES ───────────────────────────
@@ -548,36 +676,16 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
         });
     });
 
-    // ─── 7. PUSH OUTWARD TO GSTR-3B TABLE 3.1 ────────────────────────────────
+    // ─── 7. PUSH OUTWARD TO GSTR-3B TABLE 3.1 (DECOUPLED SAFE NO-OP) ───────────
     app.post('/api/gstr1/push-to-3b', (req, res) => {
-        const { gstin, period } = req.body;
-        if (!gstin || !period) {
-            return res.status(400).json({ success: false, error: 'gstin and period are required' });
-        }
-
-        db.get(`SELECT * FROM gstr1_batches WHERE client_gstin = ? AND return_period = ?`, [gstin, period], (err, batch) => {
-            if (err || !batch) {
-                return res.status(404).json({ success: false, error: 'No GSTR-1 batch found for this client and period' });
-            }
-
-            db.run(`UPDATE gstr1_batches SET status = 'PUSHED_TO_3B', updated_at = ? WHERE client_gstin = ? AND return_period = ?`, [Date.now(), gstin, period], (uErr) => {
-                if (uErr) return res.status(500).json({ success: false, error: 'Failed updating batch status' });
-
-                res.json({
-                    success: true,
-                    message: 'GSTR-1 Outward Supplies successfully applied to GSTR-3B Table 3.1',
-                    gstin,
-                    period,
-                    outward31: {
-                        taxable: batch.total_taxable || 0,
-                        igst: batch.total_igst || 0,
-                        cgst: batch.total_cgst || 0,
-                        sgst: batch.total_sgst || 0,
-                        cess: batch.total_cess || 0,
-                        total: batch.total_tax || 0
-                    }
-                });
-            });
+        const { gstin, period } = req.body || {};
+        res.json({
+            success: true,
+            decoupled: true,
+            message: 'GSTR-1 and GSTR-3B are decoupled. Upload GSTR-1 files directly into Table 3.1.',
+            gstin,
+            period,
+            outward31: { taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 }
         });
     });
 
@@ -585,17 +693,41 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
     app.post('/api/gstr1/cancel', async (req, res) => {
         try {
             const g = String(req.body?.gstin || req.body?.client_gstin || '').trim().toUpperCase();
-            if (g && activeBrowsers.has(g)) {
+            const jobCancel = await cancelAutopilotJob({ jobId: req.body?.jobId, gstin: g, reason: 'User requested cancel' }).catch(() => ({}));
+            if (jobCancel.success) {
+                // job manager already killed the browser via PID
+            } else if (g && activeBrowsers.has(g)) {
                 const targetState = activeBrowsers.get(g);
                 if (targetState && targetState.current) {
+                    const pid = typeof targetState.current.process === 'function' ? targetState.current.process()?.pid : null;
                     console.log(`[GSTR-1 Autopilot] Force closing browser for ${g} on user cancel request`);
                     await targetState.current.close().catch(() => {});
+                    if (pid && process.platform === 'win32') {
+                        exec(`taskkill /F /T /PID ${pid}`, () => {});
+                    }
                     targetState.current = null;
                 }
                 activeBrowsers.delete(g);
+            } else if (!g && activeBrowsers.size > 0) {
+                console.log('[GSTR-1 Autopilot] Force closing all active browsers on global cancel request');
+                for (const [key, targetState] of activeBrowsers.entries()) {
+                    if (targetState && targetState.current) {
+                        const pid = typeof targetState.current.process === 'function' ? targetState.current.process()?.pid : null;
+                        await targetState.current.close().catch(() => {});
+                        if (pid && process.platform === 'win32') {
+                            exec(`taskkill /F /T /PID ${pid}`, () => {});
+                        }
+                        targetState.current = null;
+                    }
+                    activeBrowsers.delete(key);
+                }
             } else if (browserState && browserState.current) {
+                const pid = typeof browserState.current.process === 'function' ? browserState.current.process()?.pid : null;
                 console.log('[GSTR-1 Autopilot] Force closing fallback browser on user cancel request');
                 await browserState.current.close().catch(() => {});
+                if (pid && process.platform === 'win32') {
+                    exec(`taskkill /F /T /PID ${pid}`, () => {});
+                }
                 browserState.current = null;
             }
             const p = String(req.body?.returnPeriod || req.body?.period || '').trim();
@@ -625,25 +757,42 @@ export default function setupGstr1Routes(app, db, authenticateToken = (req, res,
     });
 
     // ─── 9. BRING BROWSER WINDOW TO FRONT (MANUAL OVERRIDE) ────────────────────
-    app.post('/api/gstr1/bring-to-front', (req, res) => {
+    app.post('/api/gstr1/bring-to-front', async (req, res) => {
         try {
-            const browserPid = browserState.current && typeof browserState.current.process === 'function' ? browserState.current.process()?.pid : null;
-            let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
-            if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-            psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-            psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-            psParts.push(`$wshell.AppActivate('Login');`);
-            psParts.push(`$wshell.AppActivate('Chrome');`);
-            psParts.push(`$wshell.AppActivate('Chromium');`);
-            const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
-            exec(psCmd, () => {});
-
-            if (browserPid) {
-                const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
-                if (fs.existsSync(bringPath)) {
-                    exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {});
+            const { jobId, gstin } = req.body || {};
+            if (jobId || gstin) {
+                const brought = await bringJobBrowserToFront({ jobId, gstin }).catch(() => false);
+                if (brought) {
+                    return res.json({ success: true, message: 'Window focus triggered via job manager' });
                 }
             }
+
+            const activeBrowser = getJobBrowser({ jobId, gstin }) || browserState.current;
+            let browserPid = null;
+            if (activeBrowser) {
+                try {
+                    const cdp = await activeBrowser.newBrowserCDPSession();
+                    const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+                    browserPid = processInfo.find(x => x.type === 'browser')?.id || null;
+                } catch (e) {}
+            }
+
+            const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
+            if (fs.existsSync(bringPath)) {
+                const arg = browserPid ? `-TargetPid ${browserPid}` : '';
+                exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {});
+            } else {
+                let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
+                if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+                psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+                psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+                psParts.push(`$wshell.AppActivate('GST | Login');`);
+                psParts.push(`$wshell.AppActivate('Login');`);
+                psParts.push(`$wshell.AppActivate('Chrome');`);
+                const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
+                exec(psCmd, () => {});
+            }
+
             res.json({ success: true, message: 'Window focus triggered' });
         } catch (e) {
             res.status(500).json({ success: false, error: e.message });

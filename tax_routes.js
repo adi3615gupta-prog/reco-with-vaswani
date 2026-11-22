@@ -17,7 +17,7 @@ if (!shouldBundle && fs.existsSync(srcTaxEngine)) {
   } catch (_) {}
 }
 
-if (shouldBundle && fs.existsSync(srcTaxEngine)) {
+if (shouldBundle && fs.existsSync(srcTaxEngine) && (!fs.existsSync(outTaxEngine) || process.env.NODE_ENV === 'development')) {
   try {
     execSync('npx esbuild src/lib/incomeTaxEngine.ts --bundle --platform=node --format=esm --outfile=src/server_lib/incomeTaxEngine.js --log-level=error', { stdio: 'ignore' });
   } catch (err) {
@@ -31,7 +31,9 @@ const loadTaxEngine = async () => {
     return await import('./src/server_lib/incomeTaxEngine.js');
 };
 
-export default function setupTaxRoutes(app, db) {
+export default function setupTaxRoutes(app, db, authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/tax', authMiddleware);
     // Enable foreign keys in SQLite for CASCADE deletes
     db.run('PRAGMA foreign_keys = ON;');
 
@@ -215,7 +217,7 @@ export default function setupTaxRoutes(app, db) {
             await runAsync(
                 `INSERT OR IGNORE INTO Taxpayer_Profiles 
                 (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
-                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2026-27', '2027-28', datetime('now'), datetime('now'))`,
                 [profile_id]
             );
 
@@ -260,7 +262,7 @@ export default function setupTaxRoutes(app, db) {
             await runAsync(
                 `INSERT OR IGNORE INTO Taxpayer_Profiles 
                 (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
-                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                VALUES (?, 'Default User', 'ABCDE1234F', 30, 1, '2026-27', '2027-28', datetime('now'), datetime('now'))`,
                 [profile_id]
             );
 
@@ -432,7 +434,7 @@ export default function setupTaxRoutes(app, db) {
             await runAsync(
                 `INSERT OR IGNORE INTO Taxpayer_Profiles 
                 (profile_id, name, pan, age, opted_for_new_regime, financial_year, assessment_year, created_at, updated_at) 
-                VALUES (?, 'Default User', '', 30, 1, '2024-25', '2025-26', datetime('now'), datetime('now'))`,
+                VALUES (?, 'Default User', '', 30, 1, '2026-27', '2027-28', datetime('now'), datetime('now'))`,
                 [profileId]
             );
 

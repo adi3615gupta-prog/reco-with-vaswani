@@ -173,7 +173,10 @@ var Decimal = class _Decimal {
     const fracStr = fracPart.toString().padStart(INTERNAL_PRECISION, "0");
     let outputFrac;
     if (decimals <= 0) {
-      outputFrac = "";
+      const roundDigit = parseInt(fracStr[0], 10);
+      const finalInt = roundDigit >= 5 ? intPart + 1n : intPart;
+      const prefix2 = negative ? "-" : "";
+      return `${prefix2}${finalInt}`;
     } else if (decimals >= INTERNAL_PRECISION) {
       outputFrac = fracStr.padEnd(decimals, "0");
     } else {
@@ -270,16 +273,40 @@ function makeRule(regime, age, lower, upper, rate, fy) {
 function getAllTaxBracketRules(fy) {
   ruleId = 0;
   const rules = [];
-  for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
-    rules.push(
-      makeRule(RegimeType.NEW, age, 0, 4e5, 0, fy),
-      makeRule(RegimeType.NEW, age, 400001, 8e5, 5, fy),
-      makeRule(RegimeType.NEW, age, 800001, 12e5, 10, fy),
-      makeRule(RegimeType.NEW, age, 1200001, 16e5, 15, fy),
-      makeRule(RegimeType.NEW, age, 1600001, 2e6, 20, fy),
-      makeRule(RegimeType.NEW, age, 2000001, 24e5, 25, fy),
-      makeRule(RegimeType.NEW, age, 2400001, Infinity, 30, fy)
-    );
+  if (fy === "FY2023-24") {
+    for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+      rules.push(
+        makeRule(RegimeType.NEW, age, 0, 3e5, 0, fy),
+        makeRule(RegimeType.NEW, age, 300001, 6e5, 5, fy),
+        makeRule(RegimeType.NEW, age, 600001, 9e5, 10, fy),
+        makeRule(RegimeType.NEW, age, 900001, 12e5, 15, fy),
+        makeRule(RegimeType.NEW, age, 1200001, 15e5, 20, fy),
+        makeRule(RegimeType.NEW, age, 1500001, Infinity, 30, fy)
+      );
+    }
+  } else if (fy === "FY2024-25") {
+    for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+      rules.push(
+        makeRule(RegimeType.NEW, age, 0, 3e5, 0, fy),
+        makeRule(RegimeType.NEW, age, 300001, 7e5, 5, fy),
+        makeRule(RegimeType.NEW, age, 700001, 1e6, 10, fy),
+        makeRule(RegimeType.NEW, age, 1000001, 12e5, 15, fy),
+        makeRule(RegimeType.NEW, age, 1200001, 15e5, 20, fy),
+        makeRule(RegimeType.NEW, age, 1500001, Infinity, 30, fy)
+      );
+    }
+  } else {
+    for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+      rules.push(
+        makeRule(RegimeType.NEW, age, 0, 4e5, 0, fy),
+        makeRule(RegimeType.NEW, age, 400001, 8e5, 5, fy),
+        makeRule(RegimeType.NEW, age, 800001, 12e5, 10, fy),
+        makeRule(RegimeType.NEW, age, 1200001, 16e5, 15, fy),
+        makeRule(RegimeType.NEW, age, 1600001, 2e6, 20, fy),
+        makeRule(RegimeType.NEW, age, 2000001, 24e5, 25, fy),
+        makeRule(RegimeType.NEW, age, 2400001, Infinity, 30, fy)
+      );
+    }
   }
   rules.push(
     makeRule(RegimeType.OLD, AgeCategory.NORMAL, 0, 25e4, 0, fy),
@@ -458,6 +485,18 @@ var REBATE_87A_OLD = {
   incomeThreshold: 5e5,
   maxRebate: 12500
 };
+function getRebate87AConfig(fy = "FY2025-26", regime = RegimeType.NEW) {
+  if (regime === RegimeType.OLD) {
+    return REBATE_87A_OLD;
+  }
+  if (fy === "FY2023-24" || fy === "FY2024-25") {
+    return {
+      incomeThreshold: 7e5,
+      maxRebate: 25e3
+    };
+  }
+  return REBATE_87A_NEW;
+}
 var SPECIAL_RATES = {
   /** STCG u/s 111A — 20% from FY 2024-25 onward (Budget 2024) */
   STCG_111A: 20,
@@ -541,6 +580,7 @@ function aggregateIncome(incomeRecords, profile, regime) {
       case IncomeType.OTHER_SOURCES:
         otherSources = otherSources.add(netAmt);
         break;
+      // ── Special Rate Incomes ─────────────────────────────
       case IncomeType.STCG_111A:
         stcg111A = stcg111A.add(netAmt);
         break;
@@ -706,10 +746,10 @@ function computeSlabTax(taxableIncome, slabs) {
   }
   return { tax, details };
 }
-function applyRebate87A(totalComputedTax, taxOnLTCG112A, netTaxableNormalIncome, totalSpecialIncome, regime) {
+function applyRebate87A(totalComputedTax, taxOnLTCG112A, netTaxableNormalIncome, totalSpecialIncome, regime, fy) {
   const warnings = [];
   const totalNetTaxableIncome = netTaxableNormalIncome.add(totalSpecialIncome);
-  const config = regime === RegimeType.NEW ? REBATE_87A_NEW : REBATE_87A_OLD;
+  const config = getRebate87AConfig(fy, regime);
   const threshold = D(config.incomeThreshold);
   const maxRebate = D(config.maxRebate);
   let rebate87AEligible = false;
@@ -1107,7 +1147,7 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
   const step2 = applyDeductions(filteredDeductions, step1.grossNormalIncome, regime);
   allWarnings.push(...step2.warnings);
   const incomes = incomeRecords;
-  const netTaxableIncome = step2.netTaxableNormalIncome.toNumber() + step1.incomeBreakdown.stcg111A.toNumber() + step1.incomeBreakdown.ltcg112A.toNumber() + step1.incomeBreakdown.ltcg112.toNumber() + step1.incomeBreakdown.casualIncome.toNumber() + (step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0);
+  const netTaxableIncome = step2.netTaxableNormalIncome.toNumber() + step1.incomeBreakdown.stcg111A.toNumber() + step1.incomeBreakdown.ltcg112A.toNumber() + step1.incomeBreakdown.ltcg112.toNumber() + step1.incomeBreakdown.casualIncome.toNumber() + (step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0) + (step1.incomeBreakdown.deemedIncome115BBE ? step1.incomeBreakdown.deemedIncome115BBE.toNumber() : 0);
   let specialIncomeTotal = 0;
   let taxOnSpecialIncome = 0;
   const ltcg112_amount = step1.incomeBreakdown.ltcg112.toNumber();
@@ -1116,14 +1156,7 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
   const crypto_vda_amount = step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0;
   const agricultural_income_amount = step1.incomeBreakdown.agriculturalIncome ? step1.incomeBreakdown.agriculturalIncome.toNumber() : 0;
   const deemed_income_115bbe_amount = step1.incomeBreakdown.deemedIncome115BBE ? step1.incomeBreakdown.deemedIncome115BBE.toNumber() : 0;
-  const ltcg112a_amount = incomes.filter((i) => i.income_type === "LTCG_112A").reduce((sum, i) => sum + (i.net_amount || 0), 0);
-  const taxableLtcg112a = Math.max(0, ltcg112a_amount - 125e3);
-  taxOnSpecialIncome += taxableLtcg112a * 0.125;
-  taxOnSpecialIncome += ltcg112_amount * 0.125;
-  taxOnSpecialIncome += stcg111a_amount * 0.2;
-  taxOnSpecialIncome += casual_income_amount * 0.3;
-  taxOnSpecialIncome += crypto_vda_amount * 0.3;
-  taxOnSpecialIncome += deemed_income_115bbe_amount * 0.6;
+  const ltcg112a_amount = step1.incomeBreakdown.ltcg112A.toNumber();
   specialIncomeTotal = ltcg112a_amount + ltcg112_amount + stcg111a_amount + casual_income_amount + crypto_vda_amount + deemed_income_115bbe_amount;
   const normalIncomeBase = Math.max(0, netTaxableIncome - specialIncomeTotal);
   const applicableSlabs = rules.filter(
@@ -1144,13 +1177,40 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
     slabDetails = res.details;
   }
   const taxOnNormalIncome = taxOnNormalIncomeDecimal.toNumber();
+  const resStatus = String(profile.residential_status || "ROR");
+  const isResident = resStatus !== "NR" && resStatus !== "NON_RESIDENT";
+  let exemptionShortfall = isResident ? Math.max(0, basicExemption - normalIncomeBase) : 0;
+  let taxableLtcg112 = ltcg112_amount;
+  if (exemptionShortfall > 0 && taxableLtcg112 > 0) {
+    const offset112 = Math.min(exemptionShortfall, taxableLtcg112);
+    taxableLtcg112 -= offset112;
+    exemptionShortfall -= offset112;
+  }
+  let taxableLtcg112a = Math.max(0, ltcg112a_amount - 125e3);
+  if (exemptionShortfall > 0 && taxableLtcg112a > 0) {
+    const offset112a = Math.min(exemptionShortfall, taxableLtcg112a);
+    taxableLtcg112a -= offset112a;
+    exemptionShortfall -= offset112a;
+  }
+  let taxableStcg111a = stcg111a_amount;
+  if (exemptionShortfall > 0 && taxableStcg111a > 0) {
+    const offset111a = Math.min(exemptionShortfall, taxableStcg111a);
+    taxableStcg111a -= offset111a;
+    exemptionShortfall -= offset111a;
+  }
+  taxOnSpecialIncome += taxableLtcg112a * 0.125;
+  taxOnSpecialIncome += taxableLtcg112 * 0.125;
+  taxOnSpecialIncome += taxableStcg111a * 0.2;
+  taxOnSpecialIncome += casual_income_amount * 0.3;
+  taxOnSpecialIncome += crypto_vda_amount * 0.3;
+  taxOnSpecialIncome += deemed_income_115bbe_amount * 0.6;
   const totalComputedTax = D(taxOnNormalIncome).add(D(taxOnSpecialIncome));
   const step3 = {
     slabDetails,
     taxOnNormalIncome: D(taxOnNormalIncome),
-    taxOnSTCG111A: D(stcg111a_amount * 0.2),
+    taxOnSTCG111A: D(taxableStcg111a * 0.2),
     taxOnLTCG112A: D(taxableLtcg112a * 0.125),
-    taxOnLTCG112: D(ltcg112_amount * 0.125),
+    taxOnLTCG112: D(taxableLtcg112 * 0.125),
     taxOnCasualIncome: D(casual_income_amount * 0.3),
     taxOnCryptoVda: D(crypto_vda_amount * 0.3),
     taxOnDeemedIncome115BBE: D(deemed_income_115bbe_amount * 0.6),
@@ -1162,7 +1222,8 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
     step3.taxOnLTCG112A,
     step2.netTaxableNormalIncome,
     step1.totalSpecialIncome,
-    regime
+    regime,
+    profile.financial_year
   );
   allWarnings.push(...step4.warnings);
   const step5 = applySurcharge(
@@ -1178,7 +1239,8 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
   );
   allWarnings.push(...step5.warnings);
   const step6 = applyCess(step5.taxAfterSurcharge);
-  const totalTaxLiability = step5.taxAfterSurcharge.add(step6.cessAmount).roundToInt();
+  const rawTaxLiability = step5.taxAfterSurcharge.add(step6.cessAmount).toNumber();
+  const totalTaxLiability = D(Math.round(rawTaxLiability / 10) * 10);
   const effectiveTaxRate = step1.grossTotalIncome.isZero() ? ZERO : totalTaxLiability.div(step1.grossTotalIncome).mul(100);
   const computationNotes = [];
   const hasSalary = incomeRecords.some((r) => r.income_type === IncomeType.SALARY && r.gross_amount > 0);
@@ -1424,6 +1486,7 @@ function calculateTaxLiability(profile, incomeRecords, deductionRecords, slabRul
     taxOnLTCG112: step3.taxOnLTCG112,
     taxOnCasualIncome: step3.taxOnCasualIncome,
     taxOnCryptoVda: step3.taxOnCryptoVda,
+    taxOnDeemedIncome115BBE: step3.taxOnDeemedIncome115BBE,
     totalTaxOnSpecialIncome: step3.totalTaxOnSpecialIncome,
     totalComputedTax: step3.totalComputedTax,
     // Step 4

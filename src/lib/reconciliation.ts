@@ -46,6 +46,7 @@ export interface InvoiceRecord {
   financialYear?: string;
   // Optional compliance fields (for audit columns only)
   taxableValue?: number;
+  invoiceValue?: number;
   filingStatus?: string;
   filingDate?: string;
 }
@@ -178,14 +179,30 @@ export function cleanInvoiceNumber(inv: string): string {
 
 export function normalizeGstin(gstin: string): string {
   // Strip whitespace, zero-width and hidden chars, uppercase.
-  return (gstin || '')
+  const s = (gstin || '')
     .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
     .toUpperCase();
+  // Pad 14-char state 01-09 GSTINs missing leading zero: 1 digit + 5 letters + 4 digits + 1 letter + 1 char + Z + 1 char
+  if (/^[1-9][A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(s)) {
+    return '0' + s;
+  }
+  return s;
 }
 
-export function parseDate(dateStr: string): Date | null {
-  if (!dateStr) return null;
+export function parseDate(dateStr: string | number | null | undefined): Date | null {
+  if (dateStr === null || dateStr === undefined || dateStr === '') return null;
+  // Handle Excel numeric serial dates (e.g. 45000 is ~2023)
+  if (typeof dateStr === 'number' || (!isNaN(Number(dateStr)) && Number(dateStr) > 25000 && Number(dateStr) < 75000)) {
+    const num = Number(dateStr);
+    return new Date(Math.round((num - 25569) * 86400 * 1000));
+  }
+
   const s = String(dateStr).trim();
+
+  // Evaluate 4-digit YYYY-MM-DD or YYYY/MM/DD before 2-digit patterns
+  const ymd = s.match(/^(\d{4})[\s\-\/\.]+(\d{1,2})[\s\-\/\.]+(\d{1,2})(?:[\sT].*)?$/);
+  if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
+
   const dmy = s.match(/^(\d{1,2})[\s\-\/\.]+(\d{1,2})[\s\-\/\.]+(\d{2,4})(?:[\sT].*)?$/);
   if (dmy) {
     let yy = +dmy[3];
@@ -198,8 +215,6 @@ export function parseDate(dateStr: string): Date | null {
     // Default strictly Indian GST DD/MM/YYYY: n1 = Day, n2 = Month
     return new Date(yy, n2 - 1, n1);
   }
-  const ymd = s.match(/^(\d{4})[\s\-\/\.]+(\d{1,2})[\s\-\/\.]+(\d{1,2})(?:[\sT].*)?$/);
-  if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
 
   const dmyText = s.match(/^(\d{1,2})[\s\-\/\.\s]+([A-Za-z]{3,9})[\s\-\/\.\s]+(\d{2,4})(?:[\sT].*)?$/);
   if (dmyText) {
@@ -251,24 +266,22 @@ function prepareRecord(rec: InvoiceRecord): InvoiceRecord {
   r.coreInvoice = extractCoreInvoiceNumber(r.invoiceNo);
   r.normalizedDate = parseDate(r.invoiceDate) || undefined;
   r.financialYear = getFinancialYear(r.normalizedDate || null);
-  // Round off all values to the nearest rupee per Section 170 of CGST Act
-  r.igst = Math.round(parseNum(r.igst));
-  r.cgst = Math.round(parseNum(r.cgst));
-  r.sgst = Math.round(parseNum(r.sgst));
-  if (r.taxableValue !== undefined) r.taxableValue = Math.round(parseNum(r.taxableValue));
+  // Preserve 2-decimal paise precision
+  r.igst = +(parseNum(r.igst)).toFixed(2);
+  r.cgst = +(parseNum(r.cgst)).toFixed(2);
+  r.sgst = +(parseNum(r.sgst)).toFixed(2);
+  if (r.taxableValue !== undefined) r.taxableValue = +(parseNum(r.taxableValue)).toFixed(2);
   return r;
 }
 
 export function normalizePartyName(name: string): string {
   if (!name) return '';
-  let n = name.toUpperCase()
+  return name.toUpperCase()
     .replace(/[-\s\(\)]+(CR|DR)\b$/g, '')
     .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/g, '')
-    .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
+    .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|MOTORS?|SERVICES?|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/g, '')
     .replace(/[^A-Z0-9]/g, '')
     .trim();
-  if (n.endsWith('S')) n = n.slice(0, -1);
-  return n;
 }
 
 // --- Trigram index helpers for O(T) substring lookup ---
@@ -411,6 +424,8 @@ export function reconcile(
   const twoBByNormName = new Map<string, number[]>();
   // Group 2B records by PAN (Middle 10 chars of GSTIN) for cross-state matching
   const twoBByPan = new Map<string, number[]>();
+  // Unique normalized vendor list for trigram and fuzzy indexing
+  const uniqueVendorsList: { normName: string; indices: number[] }[] = [];
   
   for (let j = 0; j < twoB.length; j++) {
     const g = twoB[j].gstin;
@@ -426,25 +441,14 @@ export function reconcile(
 
     const norm = normalizePartyName(twoB[j].supplierName);
     if (norm) {
-      if (!twoBByNormName.has(norm)) twoBByNormName.set(norm, []);
-      twoBByNormName.get(norm)!.push(j);
+      let idxs = twoBByNormName.get(norm);
+      if (!idxs) {
+        idxs = [];
+        twoBByNormName.set(norm, idxs);
+        uniqueVendorsList.push({ normName: norm, indices: idxs });
+      }
+      idxs.push(j);
     }
-  }
-
-  // Build a unique normalized vendor list (for Fuse fallback and trigram index)
-  const uniqueVendorsList: { normName: string; indices: number[] }[] = [];
-  const uniqueVendorsNormMap = new Map<string, number[]>();
-
-  for (let j = 0; j < twoB.length; j++) {
-    const norm = normalizePartyName(twoB[j].supplierName);
-    if (!norm) continue;
-    let idxs = uniqueVendorsNormMap.get(norm);
-    if (!idxs) {
-      idxs = [];
-      uniqueVendorsNormMap.set(norm, idxs);
-      uniqueVendorsList.push({ normName: norm, indices: idxs });
-    }
-    idxs.push(j);
   }
 
   // Build trigram inverted index for fast O(T) substring candidate lookup
@@ -597,9 +601,17 @@ export function reconcile(
         }
 
         // Bounded string prefix/suffix match for strings with length >= 3 (e.g., "INV-2024-0012" vs "0012")
+        // Guard with tax or taxable tolerance check so sequential invoice numbers (e.g. "100" vs "1001") do not cross-match
         if (pRaw.length >= 3 && tRaw.length >= 3) {
-          if (pRaw.startsWith(tRaw) || pRaw.endsWith(tRaw) || tRaw.startsWith(pRaw) || tRaw.endsWith(pRaw)) {
-            return true;
+          const isPrefixOrSuffix = pRaw.startsWith(tRaw) || pRaw.endsWith(tRaw) || tRaw.startsWith(pRaw) || tRaw.endsWith(pRaw);
+          if (isPrefixOrSuffix) {
+            const totalTaxP = (p.cgst || 0) + (p.sgst || 0) + (p.igst || 0);
+            const totalTaxT = (t.cgst || 0) + (t.sgst || 0) + (t.igst || 0);
+            const taxMatch = Math.abs(totalTaxP - totalTaxT) <= Math.max(tolerance, 2);
+            const taxableMatch = Math.abs((p.taxableValue || 0) - (t.taxableValue || 0)) <= Math.max(tolerance * 5, 10);
+            if (taxMatch || taxableMatch) {
+              return true;
+            }
           }
         }
         
@@ -689,8 +701,11 @@ export function reconcile(
     const tHasCgstSgst = (t.cgst > tolerance || t.sgst > tolerance);
 
     let extraRemark = vendorRemark;
-    if ((matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
-      extraRemark = `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
+    if ((matchMethod === 'PAN' || matchMethod === 'Name (Fuzzy)' || matchMethod === 'Name (Exact)') && p.gstin && t.gstin && p.gstin !== t.gstin) {
+      status = 'Wrong GSTIN';
+      extraRemark = extraRemark 
+        ? `${extraRemark} | Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`
+        : `Wrong GSTIN — ${bookName}: "${p.gstin}" vs ${govtName}: "${t.gstin}"`;
     }
 
     if ((pHasIgst && tHasCgstSgst) || (pHasCgstSgst && tHasIgst)) {
@@ -809,16 +824,10 @@ export function reconcile(
     const gstin = pr?.gstin || tb?.gstin || '';
     
     let key = '';
-    if (normName) {
-      key = normName;
-    } else if (gstin) {
-      if (gstinToName.has(gstin)) {
-        key = gstinToName.get(gstin)!;
-      } else if (gstin.length >= 12 && panToName.has(gstin.slice(2, 12))) {
-        key = panToName.get(gstin.slice(2, 12))!;
-      } else {
-        key = gstin;
-      }
+    if (gstin) {
+      key = gstin;
+    } else if (normName) {
+      key = `NAME::${normName}`;
     } else {
       key = `UNKNOWN::${++unknownIndex}`;
     }

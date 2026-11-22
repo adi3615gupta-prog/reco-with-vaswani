@@ -112,7 +112,7 @@ export function buildMonthlyComparisonWorkbook(
         grid[titleRow][startCol + off] = '';
       }
       const titleSpan = startCol === colStarts[2] ? 4 : TABLE_W - 1;
-      merges.push({ s: { r: titleRow, c: startCol }, e: { r: titleRow, c: startCol + titleSpan } });
+      // Zero-merge architecture: avoid merges.push so columns remain sortable/filterable
       grid[hdrRow][startCol] = 'Month';
       grid[hdrRow][startCol + 1] = 'CGST';
       grid[hdrRow][startCol + 2] = 'SGST';
@@ -162,7 +162,6 @@ export function buildMonthlyComparisonWorkbook(
     // TOP section
     grid[0 + SHIFT][0] = 'NET ITC COMPARISON';
     for (let c = 1; c < COLS; c++) grid[0 + SHIFT][c] = '';
-    merges.push({ s: { r: 0 + SHIFT, c: 0 }, e: { r: 0 + SHIFT, c: COLS - 1 } });
     fillTable(1, 2, 3, 15, colStarts[0], 'TOTAL PURCHASE AS PER TALLY', prNet, (r, off) => {
       const colL = XLSX.utils.encode_col(colStarts[2] + off);
       return `${colL}${r + 17}`;
@@ -180,7 +179,6 @@ export function buildMonthlyComparisonWorkbook(
     // BOTTOM section 1: Books
     grid[17 + SHIFT][0] = 'FINAL BOOKS DATA (PURCHASE REGISTER vs DEBIT NOTES)';
     for (let c = 1; c < COLS; c++) grid[17 + SHIFT][c] = '';
-    merges.push({ s: { r: 17 + SHIFT, c: 0 }, e: { r: 17 + SHIFT, c: COLS - 1 } });
     fillTable(18, 19, 20, 32, colStarts[0], 'PURCHASE', prGross);
     fillTable(18, 19, 20, 32, colStarts[1], 'DEBIT NOTE', prDN);
     fillTable(18, 19, 20, 32, colStarts[2], 'TOTAL PURCHASE AS PER TALLY', prNet, (r, off) => {
@@ -192,7 +190,6 @@ export function buildMonthlyComparisonWorkbook(
     // BOTTOM section 2: 2B
     grid[34 + SHIFT][0] = 'FINAL 2B DATA (B2B INVOICES vs SUPPLIER NOTES)';
     for (let c = 1; c < COLS; c++) grid[34 + SHIFT][c] = '';
-    merges.push({ s: { r: 34 + SHIFT, c: 0 }, e: { r: 34 + SHIFT, c: COLS - 1 } });
     fillTable(35, 36, 37, 49, colStarts[0], 'B2B INVOICES', tbGross);
     fillTable(35, 36, 37, 49, colStarts[1], 'DEBIT/CREDIT NOTES', tbDN);
     fillTable(35, 36, 37, 49, colStarts[2], 'TOTAL AS PER GSTR-2B', tbNet, (r, off) => {
@@ -203,8 +200,7 @@ export function buildMonthlyComparisonWorkbook(
 
     const mtcWs = XLSX.utils.aoa_to_sheet(grid as any[][]);
     addCorporateHeader(mtcWs, COLS, companyName, 'Monthly Tax Comparison');
-    if (!mtcWs['!merges']) mtcWs['!merges'] = [];
-    mtcWs['!merges'].push(...merges);
+    mtcWs['!merges'] = [];
     mtcWs['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
     mtcWs['!cols'] = [
       { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 2.5 },

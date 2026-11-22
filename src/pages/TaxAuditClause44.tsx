@@ -6,12 +6,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { safeApiFetch } from '@/lib/api';
 import * as XLSX from 'xlsx-js-style';
 import {
   pingTally,
   fetchClause44Data,
   type Clause44Result,
   type TallyConnectionConfig,
+  clearTallyMetadataCache,
 } from '@/lib/tallyApi';
 
 interface TaxAuditClause44Props {
@@ -23,6 +25,13 @@ const fmt = (n: number) =>
 
 export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
   const [tallyPort, setTallyPort] = useState(9000);
+  // Phase 40: Scoped Tally Session Unmount Teardown
+  useEffect(() => {
+    return () => {
+      clearTallyMetadataCache();
+    };
+  }, []);
+
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
 
   const currentYear = new Date().getFullYear();
@@ -41,7 +50,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
     const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
     const fy = `${fyStart}-${(fyStart + 1).toString().slice(-2)}`;
     if (clientGstin) {
-      fetch(`/api/audit-storage/clause44/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
+      safeApiFetch(`/api/audit-storage/clause44/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
         .then(r => r.json())
         .then(data => {
           if (data.success && data.data && data.data.spend_data) {
@@ -68,7 +77,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
     try {
       const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
       const fy = `${fyStart}-${(fyStart + 1).toString().slice(-2)}`;
-      const res = await fetch('/api/audit-storage/clause44/save', {
+      const res = await safeApiFetch('/api/audit-storage/clause44/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -563,7 +572,7 @@ export default function TaxAuditClause44({ onBack }: TaxAuditClause44Props) {
 
       const safeFileName = `Clause44_${(result.companyName || 'Company').replace(/[^a-zA-Z0-9_\-]/g, '_')}_${fromDate}_to_${toDate}.xlsx`;
       XLSX.writeFile(wb, safeFileName);
-      toast.success(`Excel exported with full calculation trail (${allLedgerRows.length} ledger sheets)!`);
+      toast.success(`Excel exported with full calculation trail (${uniqueLedgers.length} ledger sheets)!`);
     } catch (err: any) {
       console.error('Export Error:', err);
       toast.error('Export failed: ' + (err.message || 'Unknown error'));

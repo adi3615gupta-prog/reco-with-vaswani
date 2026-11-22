@@ -25,6 +25,7 @@ export interface MasterGroupCode {
   group_code: number;
   particulars: string;
   note_reference: number;
+  schedule_note_reference?: number;
   statement_category: string;
   statement_type: 'BS' | 'PL';
   sub_category?: string;
@@ -118,19 +119,22 @@ export interface TrialBalanceEntry {
 export interface FixedAssetEntry {
   id: string;
   client_id: string;
-  asset_name: string;
+  asset_name?: string;
   asset_class: string; // Building, Plant & Machinery, Computers, Vehicles, etc.
-  block_rate_tax: number; // e.g. 10, 15, 40 %
+  block_rate_tax?: number; // e.g. 10, 15, 40 %
   gross_block_opening: number;
-  additions_more_180_days: number;
-  additions_less_180_days: number;
+  additions?: number;
+  additions_more_180_days?: number;
+  additions_less_180_days?: number;
   deductions: number;
-  gross_block_closing: number;
+  gross_block_closing?: number;
   depreciation_opening: number;
-  depreciation_for_year_books: number;
-  depreciation_for_year_tax: number;
-  accumulated_depreciation_closing: number;
-  net_block_closing: number;
+  depreciation_for_year?: number;
+  depreciation_cy?: number;
+  depreciation_for_year_books?: number;
+  depreciation_for_year_tax?: number;
+  accumulated_depreciation_closing?: number;
+  net_block_closing?: number;
 }
 
 /**

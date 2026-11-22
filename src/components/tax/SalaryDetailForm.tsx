@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { IndianRupee, ShieldCheck, HelpCircle } from 'lucide-react';
-import { RawSalaryComponents, SalaryProfile, EmployeeType, CityType } from '@/lib/salaryTypes';
+import { RawSalaryComponents, SalaryProfile, EmployeeType, CityType, AccommodationType, CarPurpose } from '@/lib/salaryTypes';
 import { computeSalary } from '@/lib/salaryEngine';
 import { RegimeType } from '@/lib/incomeTaxTypes';
 
@@ -366,7 +366,7 @@ export default function SalaryDetailForm({
                             updateField('rentFreeAccommodation', undefined);
                           } else {
                             updateField('rentFreeAccommodation', {
-                              type: v,
+                              type: v as AccommodationType,
                               rentPaidByEmployer: 0,
                               amountRecoveredFromEmployee: 0
                             });
@@ -433,7 +433,7 @@ export default function SalaryDetailForm({
                             updateField('motorCar', undefined);
                           } else {
                             updateField('motorCar', {
-                              purpose: v,
+                              purpose: v as CarPurpose,
                               ownedBy: 'EMPLOYER',
                               expensesPaidBy: 'EMPLOYER',
                               cubicCapacityExceeds1_6L: false,

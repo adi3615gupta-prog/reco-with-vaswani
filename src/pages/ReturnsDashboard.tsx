@@ -6,9 +6,11 @@ import {
   Check, AlertTriangle, ChevronRight, Edit3, Save, Printer, RotateCcw, DownloadCloud,
   ChevronDown, Globe, HardDrive, Server, FolderOpen, Search, Database, Network, Users,
   ArrowUpRight, Clock, CreditCard, Wallet, Boxes, Landmark, CheckCheck, ListChecks,
-  Mail, Loader2, Layers, Lock, Unlock, KeyRound, EyeOff, Eye, History
+  Mail, Loader2, Layers, Lock, Unlock, KeyRound, EyeOff, Eye, History,
+  Zap, XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getApiBase, getAuthToken, safeApiFetch } from '@/lib/api';
 import {
   GSTR3B_MONTHS,
@@ -44,7 +46,7 @@ import { normalizeActionMonth } from '@/lib/geminiApi';
 
 interface ReturnsDashboardProps {
   onBack: () => void;
-  initialTab?: 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking';
+  initialTab?: 'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_working' | 'gstr1_downloader' | 'returns_tracking';
   targetClientGstin?: string;
   targetClientName?: string;
   targetFy?: string;
@@ -61,9 +63,9 @@ export default function ReturnsDashboard({
   targetMonth,
   initialAction,
 }: ReturnsDashboardProps) {
+  const confirm = useConfirm();
   // Navigation & View States
-  const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_downloader' | 'returns_tracking'>(initialTab || 'working3b');
-  const [gstr1SubMode, setGstr1SubMode] = useState<'workbench' | 'downloader'>('workbench');
+  const [activeTab, setActiveTab] = useState<'working3b' | 'matrix' | 'ims2b' | 'gstr2b_downloader' | 'gstr1_working' | 'gstr1_downloader' | 'returns_tracking'>(initialTab || 'working3b');
   const [selectedMonth, setSelectedMonth] = useState<GSTR3BMonthKey>('April');
   const [matrixDensity, setMatrixDensity] = useState<'compact' | 'relaxed'>('compact');
   const [matrixViewMode, setMatrixViewMode] = useState<'monthly' | 'cumulative'>('monthly');
@@ -76,6 +78,7 @@ export default function ReturnsDashboard({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGstr1Downloading, setIsGstr1Downloading] = useState(false);
   const [isGstr2bDownloading, setIsGstr2bDownloading] = useState(false);
+  const [isBothDownloading, setIsBothDownloading] = useState(false);
   const [isComputationTableCollapsed, setIsComputationTableCollapsed] = useState(false);
   const [isAutoIngestDeckCollapsed, setIsAutoIngestDeckCollapsed] = useState(false);
   const [isViewing2bAllocations, setIsViewing2bAllocations] = useState<boolean>(false);
@@ -102,7 +105,7 @@ export default function ReturnsDashboard({
         }
       }
       const gstin = 'DEFAULT';
-      const fy = '2025-26';
+      const fy = '2026-27';
       const saved = localStorage.getItem(`gstr3b_locked_months_${gstin}_${fy}`);
       return saved ? JSON.parse(saved) : {};
     } catch {
@@ -120,7 +123,7 @@ export default function ReturnsDashboard({
   // Query authoritative server locks for Multi-PC Office LAN sync
   const fetchServerMonthLocks = useCallback(async (gstinArg?: string, fyArg?: string) => {
     const targetGstin = (gstinArg || workingData?.profile?.gstin || 'DEFAULT').trim().toUpperCase();
-    const targetFy = normalizeFy(fyArg || workingData?.profile?.financialYear || '2025-26');
+    const targetFy = normalizeFy(fyArg || workingData?.profile?.financialYear || '2026-27');
     if (!targetGstin || targetGstin === 'DEFAULT' || targetGstin === 'NOT SPECIFIED') return;
 
     try {
@@ -153,7 +156,7 @@ export default function ReturnsDashboard({
         }
       }
       const gstin = (workingData?.profile?.gstin || 'DEFAULT').trim().toUpperCase();
-      const fy = normalizeFy(workingData?.profile?.financialYear || '2025-26');
+      const fy = normalizeFy(workingData?.profile?.financialYear || '2026-27');
       const saved = localStorage.getItem(`gstr3b_locked_months_${gstin}_${fy}`);
       if (saved) {
         setLockedMonths(JSON.parse(saved));
@@ -172,7 +175,7 @@ export default function ReturnsDashboard({
   useEffect(() => {
     const handleWindowFocus = () => {
       const gstin = (workingData?.profile?.gstin || 'DEFAULT').trim().toUpperCase();
-      const fy = normalizeFy(workingData?.profile?.financialYear || '2025-26');
+      const fy = normalizeFy(workingData?.profile?.financialYear || '2026-27');
       if (gstin && gstin !== 'DEFAULT' && gstin !== 'NOT SPECIFIED') {
         fetchServerMonthLocks(gstin, fy);
       }
@@ -191,7 +194,7 @@ export default function ReturnsDashboard({
   const handleLockSheet = async () => {
     const targetMonth = selectedMonth;
     const gstin = (workingData?.profile?.gstin || 'DEFAULT').trim().toUpperCase();
-    const fy = normalizeFy(workingData?.profile?.financialYear || '2025-26');
+    const fy = normalizeFy(workingData?.profile?.financialYear || '2026-27');
     const clientName = workingData?.profile?.firmName || '';
 
     setLockedMonths(prev => {
@@ -248,7 +251,7 @@ export default function ReturnsDashboard({
     if (unlockPassword === GSTR3B_UNLOCK_PASSWORD) {
       const targetMonth = selectedMonth;
       const gstin = (workingData?.profile?.gstin || 'DEFAULT').trim().toUpperCase();
-      const fy = normalizeFy(workingData?.profile?.financialYear || '2025-26');
+      const fy = normalizeFy(workingData?.profile?.financialYear || '2026-27');
       const clientName = workingData?.profile?.firmName || '';
 
       setLockedMonths(prev => {
@@ -429,7 +432,7 @@ export default function ReturnsDashboard({
 
   // Helper to normalize Financial Year to standard YYYY-YY (e.g. "2025 26" -> "2025-26")
   const normalizeFy = (val: string): string => {
-    if (!val) return '2025-26';
+    if (!val) return '2026-27';
     const clean = val.trim();
     const m = clean.match(/^(\d{4})[\s\-\/]?(\d{2,4})$/);
     if (m) {
@@ -447,7 +450,7 @@ export default function ReturnsDashboard({
   const saveClientWorkingData = (data: GSTR3BAnnualWorking) => {
     if (!data?.profile?.gstin || data.profile.gstin === 'Not Specified' || data.profile.gstin.length < 10) return;
     try {
-      const fy = normalizeFy(data.profile.financialYear || '2025-26');
+      const fy = normalizeFy(data.profile.financialYear || '2026-27');
       const key = getClientStorageKey(data.profile.gstin, fy);
       localStorage.setItem(key, JSON.stringify(data));
       localStorage.setItem(`${key}_dirty`, 'true');
@@ -527,7 +530,7 @@ export default function ReturnsDashboard({
 
   const fetchClientsHub = async () => {
     try {
-      const fy = workingData.profile.financialYear || '2025-26';
+      const fy = workingData.profile.financialYear || '2026-27';
       const res = await safeApiFetch(`/api/returns/clients-hub?fy=${encodeURIComponent(fy)}`);
       const text = await res.text();
       let data: any = {};
@@ -548,7 +551,8 @@ export default function ReturnsDashboard({
           if (target && target.gstin?.toUpperCase() !== workingData.profile.gstin?.toUpperCase()) {
             handleSelectClientFromHub(target, false, preferredFy);
           } else if (!workingData.profile.gstin || workingData.profile.gstin === 'Not Specified') {
-            handleSelectClientFromHub(data.clients[0], false, preferredFy);
+            const clientWithData = data.clients.find((c: any) => c.hasSavedWorking);
+            handleSelectClientFromHub(clientWithData || data.clients[0], false, preferredFy);
           }
         }
       }
@@ -565,7 +569,7 @@ export default function ReturnsDashboard({
     if (!data?.profile?.gstin || data.profile.gstin === 'Not Specified' || data.profile.gstin.length < 10) return false;
     try {
       setIsSyncingToServer(true);
-      const fy = normalizeFy(data.profile.financialYear || '2025-26');
+      const fy = normalizeFy(data.profile.financialYear || '2026-27');
       const key = getClientStorageKey(data.profile.gstin, fy);
       const payloadData: GSTR3BAnnualWorking = {
         ...data,
@@ -636,7 +640,7 @@ export default function ReturnsDashboard({
     const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
     const dateTimeStamp = `${dateStr}_${timeStr}`;
     const safeFirm = (workingData.profile.firmName || 'CLIENT').replace(/[^a-zA-Z0-9]/g, '_');
-    const fyClean = normalizeFy(workingData.profile.financialYear || '2025-26');
+    const fyClean = normalizeFy(workingData.profile.financialYear || '2026-27');
 
     setIsSyncingToServer(true);
     const id = toast.loading(`Generating Excel, PDF & JSON for ${firm} (${selectedMonth})...`);
@@ -768,7 +772,7 @@ export default function ReturnsDashboard({
   useEffect(() => {
     const handleOnline = () => {
       if (workingData?.profile?.gstin && workingData.profile.gstin !== 'Not Specified') {
-        const fy = normalizeFy(workingData.profile.financialYear || '2025-26');
+        const fy = normalizeFy(workingData.profile.financialYear || '2026-27');
         const key = getClientStorageKey(workingData.profile.gstin, fy);
         if (localStorage.getItem(`${key}_dirty`) === 'true') {
           toast.info('Network reconnected. Syncing offline changes to server...');
@@ -799,7 +803,7 @@ export default function ReturnsDashboard({
   ) => {
     const gstin = client.gstin.trim().toUpperCase();
     const firmName = client.trade_name || client.legal_name || gstin;
-    const currentFy = normalizeFy(explicitFy || workingData.profile.financialYear || '2025-26');
+    const currentFy = normalizeFy(explicitFy || workingData.profile.financialYear || '2026-27');
 
     // 1. Activate hydration lock immediately to suppress debounced auto-save during client switch
     isHydratingClientRef.current = true;
@@ -882,7 +886,7 @@ export default function ReturnsDashboard({
     if (!gstin || gstin === 'NOT SPECIFIED') return;
     try {
       setIsLoadingRevisions(true);
-      const fy = normalizeFy(workingData.profile.financialYear || '2025-26');
+      const fy = normalizeFy(workingData.profile.financialYear || '2026-27');
       const res = await safeApiFetch(`/api/returns/revisions?gstin=${encodeURIComponent(gstin)}&fy=${encodeURIComponent(fy)}`);
       if (res.ok) {
         const data = await res.json();
@@ -903,9 +907,13 @@ export default function ReturnsDashboard({
   };
 
   const handleRestoreRevision = async (revId: string, revNum: number) => {
-    if (!window.confirm(`Are you sure you want to rollback to Revision #${revNum}? Current unsaved edits will be replaced.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Rollback to Revision',
+      description: `Are you sure you want to rollback to Revision #${revNum}? Current unsaved edits will be replaced.`,
+      confirmText: 'Rollback Revision',
+      variant: 'warning',
+    });
+    if (!ok) return;
     try {
       setIsRestoringRevision(true);
       const res = await safeApiFetch(`/api/returns/revisions/${encodeURIComponent(revId)}`);
@@ -939,7 +947,7 @@ export default function ReturnsDashboard({
     clientGstin: string,
     clientName: string,
     month: GSTR3BMonthKey,
-    targetTab: 'working3b' | 'gstr2b_downloader' | 'gstr1_downloader'
+    targetTab: 'working3b' | 'gstr2b_downloader' | 'gstr1_working'
   ) => {
     const targetGstinClean = (clientGstin || '').trim().toUpperCase();
     const clientObj = vaultClients.find(c => c.gstin.toUpperCase() === targetGstinClean) || {
@@ -951,7 +959,7 @@ export default function ReturnsDashboard({
     setSelectedMonth(month);
     setActiveTab(targetTab);
     toast.success(`Active Client: ${clientName || targetGstinClean}`, {
-      description: `Period: ${month} • Module: ${targetTab === 'working3b' ? '01. GSTR-3B Working' : targetTab === 'gstr2b_downloader' ? '04. Inward 2B Autopilot' : '05. Outward GSTR-1'}`
+      description: `Period: ${month} • Module: ${targetTab === 'working3b' ? '01. GSTR-3B Working' : targetTab === 'gstr2b_downloader' ? '04. Inward 2B Autopilot' : '02. GSTR-1 Working'}`
     });
   };
 
@@ -1021,7 +1029,8 @@ export default function ReturnsDashboard({
       if (tab) {
         if (tab === 'ims') setActiveTab('ims2b');
         else if (tab === 'gstr3b') setActiveTab('working3b');
-        else if (tab === 'gstr1') setActiveTab('gstr1_downloader');
+        else if (tab === 'gstr1') setActiveTab('gstr1_working');
+        else if (tab === 'r1_download') setActiveTab('gstr1_downloader');
         else if (tab === '2b' || tab === 'gstr2b') setActiveTab('gstr2b_downloader');
         else setActiveTab(tab as any);
       }
@@ -1100,7 +1109,6 @@ export default function ReturnsDashboard({
     };
     const handleCredentialsUpdated = () => {
       fetchClientsHub();
-      fetchVaultClients();
     };
     window.addEventListener('storage-config-updated', handleStorageUpdated);
     window.addEventListener('credentials-updated', handleCredentialsUpdated);
@@ -1122,19 +1130,34 @@ export default function ReturnsDashboard({
   }, [clientsHub, vaultClients, clientSearchQuery]);
 
   // Reset all figures and data to clean empty state
-  const handleReset = () => {
-    if (window.confirm(`Are you sure you want to reset the GSTR-3B Working Sheet for ${workingData.profile.firmName || 'this client'}? All entered figures across all 12 months will be cleared to zero.`)) {
-      const empty = createEmptyAnnualWorking({
-        firmName: workingData.profile.firmName,
-        gstin: workingData.profile.gstin,
-        address: workingData.profile.address,
-        contact: workingData.profile.contact,
-        financialYear: workingData.profile.financialYear || '2025-26'
+  const handleReset = async () => {
+    const hasAnyLockedMonth = Object.values(lockedMonths).some(Boolean);
+    if (isSheetLocked || hasAnyLockedMonth) {
+      setShowUnlockModal(true);
+      toast.error('Working Sheet is Locked', {
+        description: 'Working Sheet has locked month(s). Please unlock with password before resetting 12 months.'
       });
-      setWorkingData(empty);
-      saveClientWorkingData(empty);
-      toast.success('Working Sheet Cleared', { description: `All figures for ${workingData.profile.firmName || 'client'} have been reset to zero.` });
+      return;
     }
+    const ok = await confirm({
+      title: 'Reset GSTR-3B Working Sheet',
+      description: `Are you sure you want to reset the GSTR-3B Working Sheet for ${workingData.profile.firmName || 'this client'}? All entered figures across all 12 months will be cleared to zero.`,
+      confirmText: 'Reset Working Sheet',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+
+    const empty = createEmptyAnnualWorking({
+      firmName: workingData.profile.firmName,
+      gstin: workingData.profile.gstin,
+      address: workingData.profile.address,
+      contact: workingData.profile.contact,
+      financialYear: workingData.profile.financialYear || '2026-27'
+    });
+    setWorkingData(empty);
+    saveClientWorkingData(empty);
+    saveToServerStorage(empty).catch(() => {});
+    toast.success('Working Sheet Cleared', { description: `All figures across all 12 months for ${workingData.profile.firmName || 'client'} have been reset to zero.` });
   };
 
   // Callback from IMS Manager & 2B Downloader: Apply Accepted 2B ITC and breakdowns to Table 4 of active month
@@ -1427,6 +1450,29 @@ export default function ReturnsDashboard({
     toast.success(`Financial Year switched to FY ${normalizedFy}`);
   };
 
+  // Permanently purge SQLite GSTR-1/2B cached cockpit batches for the target return period
+  const clearCockpitDbPeriod = async (monthLabel: string, yearVal?: number | string) => {
+    const gstin = workingData.profile.gstin?.trim();
+    const cleanYear = yearVal ? String(yearVal).trim() : '';
+    const fy = workingData.profile.financialYear || '2026-27';
+    const period = cleanYear ? `${monthLabel} ${cleanYear}` : monthLabel;
+    window.dispatchEvent(new CustomEvent('returns-cockpit-cleared', { detail: { scope: 'all', period, month: monthLabel } }));
+    if (gstin && gstin.length === 15) {
+      try {
+        await Promise.allSettled([
+          safeApiFetch(`/api/gstr1/clear/${encodeURIComponent(gstin)}?period=${encodeURIComponent(period)}&month=${encodeURIComponent(monthLabel)}&fy=${encodeURIComponent(fy)}`, {
+            method: 'DELETE',
+          }),
+          safeApiFetch(`/api/gstr2b/clear/${encodeURIComponent(gstin)}?period=${encodeURIComponent(period)}&month=${encodeURIComponent(monthLabel)}&fy=${encodeURIComponent(fy)}`, {
+            method: 'DELETE',
+          })
+        ]);
+      } catch (err) {
+        console.warn('[ReturnsDashboard] clearCockpitDbPeriod error:', err);
+      }
+    }
+  };
+
   // Full Auto-Mode: Apply Ingested Returns (GSTR-1 Outward & GSTR-2B ITC)
   const handleApplyIngestedReturns = (
     gstr1?: Gstr1IngestSummary | null,
@@ -1459,7 +1505,7 @@ export default function ReturnsDashboard({
       });
     }
 
-    const financialYear = workingData?.profile?.financialYear || '2025-26';
+    const financialYear = workingData?.profile?.financialYear || '2026-27';
     const { startYear, endYear } = parseFyYears(financialYear);
     const isNextYear = ['January', 'February', 'March'].includes(selectedMonth);
     const targetPeriod = `${selectedMonth} ${currentMonthData?.year || (isNextYear ? endYear : startYear)}`;
@@ -1579,12 +1625,7 @@ export default function ReturnsDashboard({
       if (newlyFoundG1) {
         handleApplyIngestedReturns(newlyFoundG1, null);
 
-        // Mark batch as pushed to 3B in database
-        safeApiFetch('/api/gstr1/push-to-3b', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ gstin: currentGstin, period: targetPeriod })
-        }).catch(() => {});
+        // GSTR-1 decoupled from 3B push
 
         toast.success(`GSTR-1 Portal Download Complete & Ingested!`, {
           id: toastId,
@@ -1615,7 +1656,7 @@ export default function ReturnsDashboard({
       });
     }
 
-    const financialYear = workingData?.profile?.financialYear || '2025-26';
+    const financialYear = workingData?.profile?.financialYear || '2026-27';
     const { startYear, endYear } = parseFyYears(financialYear);
     const isNextYear = ['January', 'February', 'March'].includes(selectedMonth);
     const targetPeriod = `${selectedMonth} ${currentMonthData?.year || (isNextYear ? endYear : startYear)}`;
@@ -1763,12 +1804,7 @@ export default function ReturnsDashboard({
       if (newlyFound2b) {
         handleApplyIngestedReturns(null, newlyFound2b);
 
-        // Mark batch as pushed to 3B in database
-        safeApiFetch('/api/gstr2b/push-to-3b', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ gstin: currentGstin, period: targetPeriod })
-        }).catch(() => {});
+        // GSTR-2B decoupled from 3B push
 
         toast.success(`GSTR-2B Portal Download Complete & Ingested!`, {
           id: toastId,
@@ -1790,28 +1826,99 @@ export default function ReturnsDashboard({
     }
   };
 
+  // Cancel active autopilot sessions across GSTR-1 and GSTR-2B
+  const handleCancelAllAutopilot = async () => {
+    const currentGstin = workingData?.profile?.gstin;
+    try {
+      await Promise.allSettled([
+        safeApiFetch('/api/gstr1/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gstin: currentGstin })
+        }),
+        safeApiFetch('/api/gstr2b/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gstin: currentGstin })
+        })
+      ]);
+      toast.info('Autopilot Cancelled', {
+        description: 'Active GST portal browser automation sessions have been terminated.'
+      });
+    } catch (e: any) {
+      console.warn('Cancel autopilot error:', e);
+    } finally {
+      setIsGstr1Downloading(false);
+      setIsGstr2bDownloading(false);
+      setIsBothDownloading(false);
+    }
+  };
+
+  // Autonomous Sequential GSTR-1 & GSTR-2B Download & Ingest (Table 3.1 & Table 4)
+  const handleDownloadBothData = async () => {
+    const currentGstin = workingData?.profile?.gstin;
+    if (!currentGstin || currentGstin === 'Not Specified' || currentGstin.length < 15) {
+      return toast.error('Valid GSTIN Required', {
+        description: 'Please select a client with a valid 15-digit GSTIN before running Autopilot.'
+      });
+    }
+    if (isSheetLocked) {
+      return toast.error('Working Sheet is Locked', {
+        description: `Please enter password to unlock ${selectedMonth} before running Autopilot.`
+      });
+    }
+
+    setIsBothDownloading(true);
+    const combinedToastId = toast.loading(`Starting Sequential Autopilot: GSTR-1 Outward followed by GSTR-2B Inward for ${selectedMonth}...`);
+
+    try {
+      // 1. Download GSTR-1 Outward Supplies
+      await handleDownloadGstr1Data();
+      // 2. Download GSTR-2B Inward Supplies
+      await handleDownloadGstr2bData();
+
+      toast.success(`Dual Autopilot Sync Complete!`, {
+        id: combinedToastId,
+        description: `Both GSTR-1 Outward (Table 3.1) and GSTR-2B Inward (Table 4) successfully synced and ingested for ${selectedMonth}.`
+      });
+    } catch (err: any) {
+      toast.error('Sequential Autopilot Interrupted', {
+        id: combinedToastId,
+        description: err?.message || 'Check GST portal credentials or session status.'
+      });
+    } finally {
+      setIsBothDownloading(false);
+    }
+  };
+
   // Clear active month return figures
-  const handleClearMonthIngestion = () => {
+  const handleClearMonthIngestion = async () => {
     if (isSheetLocked) {
       toast.error('Working Sheet is Locked', {
         description: 'Please unlock the sheet before resetting figures.'
       });
       return;
     }
-    if (window.confirm(`Clear return figures for ${selectedMonth} ${currentMonthData.year}?`)) {
-      setWorkingData(prev => {
-        const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
-        const empty = createEmptyMonthData(selectedMonth, cloned.profile.financialYear);
-        empty.inward.openingCreditBal = { ...cloned.months[selectedMonth].inward.openingCreditBal };
-        cloned.months[selectedMonth] = empty;
-        return recalculateAnnualWorking(cloned);
-      });
-      toast.success(`Cleared ${selectedMonth} figures`);
-    }
+    const ok = await confirm({
+      title: 'Clear Month Figures',
+      description: `Clear return figures for ${selectedMonth} ${currentMonthData.year}?`,
+      confirmText: 'Clear Figures',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+
+    setWorkingData(prev => {
+      const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
+      const empty = createEmptyMonthData(selectedMonth, cloned.profile.financialYear);
+      empty.inward.openingCreditBal = { ...cloned.months[selectedMonth].inward.openingCreditBal };
+      cloned.months[selectedMonth] = empty;
+      return recalculateAnnualWorking(cloned);
+    });
+    toast.success(`Cleared ${selectedMonth} figures`);
   };
 
   // Currently active month data
-  const currentMonthData = workingData?.months?.[selectedMonth] || createEmptyMonthData(selectedMonth, workingData?.profile?.financialYear || '2025-26');
+  const currentMonthData = workingData?.months?.[selectedMonth] || createEmptyMonthData(selectedMonth, workingData?.profile?.financialYear || '2026-27');
 
   // Helper to update a specific field in the selected month
   const updateCurrentMonthField = (
@@ -2155,7 +2262,7 @@ export default function ReturnsDashboard({
           reader.readAsDataURL(excelBlob);
         });
         const safeFirm = (workingData.profile.firmName || 'CLIENT').replace(/[^a-zA-Z0-9]/g, '_');
-        const excelFileName = `GSTR-3B_SCHEDULE_${safeFirm}_${workingData.profile.financialYear || '2025-26'}.xlsx`;
+        const excelFileName = `GSTR-3B_SCHEDULE_${safeFirm}_${workingData.profile.financialYear || '2026-27'}.xlsx`;
         attachmentsPayload.push({
           filename: excelFileName,
           content: base64Excel,
@@ -2236,7 +2343,7 @@ export default function ReturnsDashboard({
     try {
       const annualSeed = {
         gstin: workingData.profile.gstin,
-        fp: workingData.profile.financialYear || '2024-25',
+        fp: workingData.profile.financialYear || '2026-27',
         table4: {
           taxable: GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData.months[m]?.outward?.totalSaleWorking?.taxable || 0), 0),
           igst: GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData.months[m]?.outward?.totalSaleWorking?.igst || 0), 0),
@@ -2493,7 +2600,7 @@ export default function ReturnsDashboard({
             {/* FY Selector Dropdown */}
             <div className="relative">
               <select
-                value={normalizeFy(workingData.profile.financialYear || '2025-26')}
+                value={normalizeFy(workingData.profile.financialYear || '2026-27')}
                 onChange={(e) => handleFinancialYearChange(e.target.value)}
                 className="appearance-none bg-slate-100 hover:bg-slate-200/80 focus:bg-white text-slate-900 font-mono font-bold text-xs border border-slate-200 rounded-xl pl-3 pr-8 py-1.5 shadow-2xs transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 title="Select Financial Year"
@@ -2675,14 +2782,14 @@ export default function ReturnsDashboard({
         return (
           <div className="space-y-5 animate-fade-in-up">
             {/* Banner: Document Working Sheet Header from Reference Image */}
-            <div className="bg-white/90 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all duration-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="material-symbols-outlined text-indigo-600 text-[22px]">assignment</span>
-                <h2 className="font-headline-md text-base sm:text-lg md:text-xl text-slate-900 font-bold uppercase tracking-tight">
+            <div className="bg-white/90 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all duration-200 flex flex-col min-[1650px]:flex-row min-[1650px]:items-center justify-between gap-3.5">
+              <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                <span className="material-symbols-outlined text-indigo-600 text-[22px] shrink-0">assignment</span>
+                <h2 className="font-headline-md text-base sm:text-lg md:text-xl text-slate-900 font-bold uppercase tracking-tight leading-snug">
                   GSTR-3B WORKING FOR THE MONTH OF {selectedMonth.toUpperCase()} {currentMonthData.year}
                 </h2>
                 {isSheetLocked && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs shrink-0">
                     <Lock className="w-3.5 h-3.5 text-rose-600" />
                     <span>LOCKED (READ-ONLY) • {selectedMonth.toUpperCase()}</span>
                   </span>
@@ -2690,7 +2797,7 @@ export default function ReturnsDashboard({
               </div>
 
               {/* Financial Year & Month Selectors, Upload .xlsx, Save Working & Complete Lock Actions */}
-              <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+              <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap pt-3 border-t border-slate-100 min-[1650px]:pt-0 min-[1650px]:border-t-0 min-[1650px]:justify-end min-[1650px]:shrink-0">
                 {/* Financial Year Selector */}
                 <div className="flex items-center gap-1.5">
                   <label htmlFor="gstr3b-fy-banner-select" className="text-xs font-semibold text-slate-600 flex items-center gap-1">
@@ -2700,7 +2807,7 @@ export default function ReturnsDashboard({
                   <div className="relative">
                     <select
                       id="gstr3b-fy-banner-select"
-                      value={normalizeFy(workingData.profile.financialYear || '2025-26')}
+                      value={normalizeFy(workingData.profile.financialYear || '2026-27')}
                       onChange={(e) => handleFinancialYearChange(e.target.value)}
                       className="appearance-none bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-semibold font-mono text-xs border border-slate-300 hover:border-indigo-400 focus:border-indigo-600 rounded-xl pl-3 pr-8 py-1.5 shadow-xs transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                       title="Select Financial Year"
@@ -2751,6 +2858,70 @@ export default function ReturnsDashboard({
                       unfold_more
                     </span>
                   </div>
+                </div>
+
+                {/* ─── 1-CLICK AUTOPILOT ACTION GROUP (GSTR-1 + 2B) ─── */}
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900/90 p-1 rounded-xl border border-slate-300 dark:border-slate-800 shadow-2xs">
+                  {/* Sync Both Autopilot */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadBothData}
+                    disabled={isBothDownloading || isGstr1Downloading || isGstr2bDownloading || isSheetLocked || !workingData?.profile?.gstin || workingData?.profile?.gstin === 'Not Specified'}
+                    className="px-3 py-1.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs transition-all hover:scale-[1.02] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    title={isSheetLocked ? 'Unlock month to run Autopilot' : 'Sequential Autopilot: Download both GSTR-1 and GSTR-2B in 1 click'}
+                  >
+                    {isBothDownloading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                    )}
+                    <span>{isBothDownloading ? 'Syncing Both...' : 'Sync Both Autopilot'}</span>
+                  </button>
+
+                  {/* GSTR-1 Autopilot */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadGstr1Data}
+                    disabled={isBothDownloading || isGstr1Downloading || isSheetLocked || !workingData?.profile?.gstin || workingData?.profile?.gstin === 'Not Specified'}
+                    className="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-400/40 dark:border-amber-500/30 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isSheetLocked ? 'Unlock month to run GSTR-1 Autopilot' : 'Download GSTR-1 Outward Supplies into Table 3.1'}
+                  >
+                    {isGstr1Downloading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    )}
+                    <span>{isGstr1Downloading ? 'GSTR-1...' : 'GSTR-1 Autopilot'}</span>
+                  </button>
+
+                  {/* GSTR-2B Autopilot */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadGstr2bData}
+                    disabled={isBothDownloading || isGstr2bDownloading || isSheetLocked || !workingData?.profile?.gstin || workingData?.profile?.gstin === 'Not Specified'}
+                    className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-400/40 dark:border-emerald-500/30 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isSheetLocked ? 'Unlock month to run GSTR-2B Autopilot' : 'Download GSTR-2B Inward ITC into Table 4'}
+                  >
+                    {isGstr2bDownloading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
+                    )}
+                    <span>{isGstr2bDownloading ? 'GSTR-2B...' : 'GSTR-2B Autopilot'}</span>
+                  </button>
+
+                  {/* Cancel Autopilot (active if any is downloading) */}
+                  {(isBothDownloading || isGstr1Downloading || isGstr2bDownloading) && (
+                    <button
+                      type="button"
+                      onClick={handleCancelAllAutopilot}
+                      className="px-2 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-700 dark:text-rose-200 border border-rose-500/50 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer animate-pulse"
+                      title="Abort running GST portal browser automation sessions"
+                    >
+                      <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Cancel</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Upload external CA Excel */}
@@ -2914,7 +3085,7 @@ export default function ReturnsDashboard({
                   <ReturnsAutoIngestDeck
                     compactMode={true}
                     selectedMonth={selectedMonth}
-                    financialYear={workingData.profile.financialYear || '2025-26'}
+                    financialYear={workingData.profile.financialYear || '2026-27'}
                     onFinancialYearChange={handleFinancialYearChange}
                     currentGstin={workingData.profile.gstin}
                     currentFirmName={workingData.profile.firmName}
@@ -2922,12 +3093,19 @@ export default function ReturnsDashboard({
                     workingData={workingData}
                     onApplyIngestedReturns={handleApplyIngestedReturns}
                     isLocked={isSheetLocked}
-                    onClearMonthIngestion={() => {
+                    onClearMonthIngestion={async () => {
                       if (isSheetLocked) {
                         toast.error('Working Sheet is Locked', { description: 'Unlock sheet to clear return figures.' });
                         return;
                       }
-                      if (window.confirm(`Clear ingested returns figures for ${selectedMonth} ${currentMonthData.year}?`)) {
+                      const ok = await confirm({
+                        title: 'Clear Ingested Returns Figures',
+                        description: `Clear ingested returns figures for ${selectedMonth} ${currentMonthData.year}?`,
+                        confirmText: 'Clear Ingested',
+                        variant: 'destructive',
+                      });
+                      if (ok) {
+                        await clearCockpitDbPeriod(selectedMonth, currentMonthData.year);
                         setWorkingData(prev => {
                           const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
                           const cur = cloned.months[selectedMonth];
@@ -3021,14 +3199,23 @@ export default function ReturnsDashboard({
 
                   {/* Clear Month Data Button */}
                   <button
-                    onClick={() => {
+                    disabled={isSheetLocked}
+                    onClick={async () => {
                       if (isSheetLocked) {
+                        setShowUnlockModal(true);
                         toast.error('Working Sheet is Locked', {
-                          description: `Please unlock ${selectedMonth} before resetting figures.`
+                          description: `Please enter password to unlock ${selectedMonth} before resetting figures.`
                         });
                         return;
                       }
-                      if (window.confirm(`Clear all GSTR-3B values for ${selectedMonth} ${currentMonthData.year}?`)) {
+                      const ok = await confirm({
+                        title: 'Clear GSTR-3B Values',
+                        description: `Clear all GSTR-3B values for ${selectedMonth} ${currentMonthData.year}?`,
+                        confirmText: 'Clear Values',
+                        variant: 'destructive',
+                      });
+                      if (ok) {
+                        clearCockpitDbPeriod(selectedMonth, currentMonthData.year);
                         setWorkingData(prev => {
                           const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
                           cloned.months[selectedMonth] = createEmptyMonthData(selectedMonth, cloned.profile.financialYear);
@@ -3040,14 +3227,43 @@ export default function ReturnsDashboard({
                         toast.success(`Cleared all figures for ${selectedMonth}`);
                       }
                     }}
-                    disabled={isSheetLocked}
-                    title={isSheetLocked ? `${selectedMonth} sheet is locked` : `Reset and clear all figures for ${selectedMonth}`}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all cursor-pointer ${
-                      isSheetLocked ? 'opacity-40 cursor-not-allowed' : ''
+                    title={isSheetLocked ? `${selectedMonth} sheet is locked. Unlock to clear.` : `Reset and clear all figures for ${selectedMonth}`}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+                      isSheetLocked
+                        ? 'opacity-40 cursor-not-allowed bg-slate-800/50 text-slate-500 border-slate-700/50'
+                        : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[15px] text-rose-400">restart_alt</span>
+                    <span className={`material-symbols-outlined text-[15px] ${isSheetLocked ? 'text-slate-500' : 'text-rose-400'}`}>restart_alt</span>
                     <span>Clear Month</span>
+                  </button>
+
+                  {/* Reset All 12 Months Button */}
+                  <button
+                    disabled={isSheetLocked || Object.values(lockedMonths).some(Boolean)}
+                    onClick={() => {
+                      if (isSheetLocked || Object.values(lockedMonths).some(Boolean)) {
+                        setShowUnlockModal(true);
+                        toast.error('Working Sheet is Locked', {
+                          description: 'Working Sheet has locked month(s). Please unlock with password before resetting 12 months.'
+                        });
+                        return;
+                      }
+                      handleReset();
+                    }}
+                    title={
+                      isSheetLocked || Object.values(lockedMonths).some(Boolean)
+                        ? `${selectedMonth} sheet is locked. Unlock before resetting 12M.`
+                        : 'Reset all 12 months for this client back to zero'
+                    }
+                    className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-all ${
+                      isSheetLocked || Object.values(lockedMonths).some(Boolean)
+                        ? 'opacity-40 cursor-not-allowed bg-slate-800/50 text-slate-500 border-slate-700/50'
+                        : 'bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/30 cursor-pointer'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px] text-slate-400">delete_sweep</span>
+                    <span className="hidden sm:inline">Reset 12M</span>
                   </button>
 
                   {/* Collapse / Expand Toggle for Main Computation Sheet */}
@@ -3084,7 +3300,23 @@ export default function ReturnsDashboard({
                       <td className="py-2.5 px-4 font-sans text-xs text-slate-800 font-medium border-r border-slate-200">
                         <div className="flex items-center justify-between">
                           <span>Sales (B2B)</span>
-                          <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.2 rounded font-sans uppercase font-semibold">GSTR-1 Reco</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={handleDownloadGstr1Data}
+                              disabled={isGstr1Downloading || isBothDownloading || isSheetLocked || !workingData?.profile?.gstin || workingData?.profile?.gstin === 'Not Specified'}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700/60 transition-all cursor-pointer disabled:opacity-50"
+                              title="Run GSTR-1 Portal Autopilot to download and inject outward supplies into Table 3.1"
+                            >
+                              {isGstr1Downloading ? (
+                                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                              ) : (
+                                <Zap className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                              )}
+                              <span>{isGstr1Downloading ? 'Syncing...' : 'GSTR-1 Autopilot'}</span>
+                            </button>
+                            <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.2 rounded font-sans uppercase font-semibold">GSTR-1 Reco</span>
+                          </div>
                         </div>
                       </td>
                       <td className="py-2.5 px-4 text-right tabular-nums text-slate-900 border-r border-slate-200">
@@ -3917,6 +4149,20 @@ export default function ReturnsDashboard({
                           <span>ITC as per GSTR 2B</span>
                           <button
                             type="button"
+                            onClick={handleDownloadGstr2bData}
+                            disabled={isGstr2bDownloading || isBothDownloading || isSheetLocked || !workingData?.profile?.gstin || workingData?.profile?.gstin === 'Not Specified'}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 hover:border-emerald-400 px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                            title="Run GSTR-2B Portal Autopilot to download and inject inward supplies into Table 4"
+                          >
+                            {isGstr2bDownloading ? (
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                            ) : (
+                              <Zap className="w-2.5 h-2.5 text-emerald-600 fill-emerald-600" />
+                            )}
+                            <span>{isGstr2bDownloading ? 'Syncing...' : 'GSTR-2B Autopilot'}</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setIsViewing2bAllocations(true)}
                             className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-300 px-2 py-0.5 rounded shadow-2xs transition-all cursor-pointer"
                             title="Drill down into GSTR-2B inward bills to classify Eligible 4(A)(5), Ineligible 17(5), and Temporary Reversals 4(B)(2)"
@@ -4354,7 +4600,13 @@ export default function ReturnsDashboard({
                           {currentMonthData.inward?.isManualTotalItc && (
                             <button
                               type="button"
+                              disabled={isSheetLocked}
                               onClick={() => {
+                                if (isSheetLocked) {
+                                  setShowUnlockModal(true);
+                                  toast.error('Working Sheet is Locked');
+                                  return;
+                                }
                                 setWorkingData(prev => {
                                   const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
                                   cloned.months[selectedMonth].inward.isManualTotalItc = false;
@@ -4364,8 +4616,12 @@ export default function ReturnsDashboard({
                                 });
                                 toast.info('Reset Total ITC to automatic inward calculation');
                               }}
-                              className="text-[9px] bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-sans font-semibold cursor-pointer"
-                              title="Reset Total ITC Available to auto-calculated from Inward Supplies"
+                              className={`text-[9px] border px-1.5 py-0.2 rounded font-sans font-semibold ${
+                                isSheetLocked
+                                  ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-300'
+                                  : 'bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300 cursor-pointer'
+                              }`}
+                              title={isSheetLocked ? 'Sheet is locked' : 'Reset Total ITC Available to auto-calculated from Inward Supplies'}
                             >
                               Auto Calc
                             </button>
@@ -4451,7 +4707,13 @@ export default function ReturnsDashboard({
                           {currentMonthData.setoff?.isManualAdjustment && (
                             <button
                               type="button"
+                              disabled={isSheetLocked}
                               onClick={() => {
+                                if (isSheetLocked) {
+                                  setShowUnlockModal(true);
+                                  toast.error('Working Sheet is Locked');
+                                  return;
+                                }
                                 setWorkingData(prev => {
                                   const cloned = JSON.parse(JSON.stringify(prev)) as GSTR3BAnnualWorking;
                                   cloned.months[selectedMonth].setoff.isManualAdjustment = false;
@@ -4461,8 +4723,12 @@ export default function ReturnsDashboard({
                                 });
                                 toast.info('Reset to automatic Rule 88A set-off calculation');
                               }}
-                              className="text-[9px] bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-sans font-semibold cursor-pointer"
-                              title="Reset to Auto Rule 88A calculation"
+                              className={`text-[9px] border px-1.5 py-0.2 rounded font-sans font-semibold ${
+                                isSheetLocked
+                                  ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-300'
+                                  : 'bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300 cursor-pointer'
+                              }`}
+                              title={isSheetLocked ? 'Sheet is locked' : 'Reset to Auto Rule 88A calculation'}
                             >
                               Auto Rule 88A
                             </button>
@@ -5138,10 +5404,10 @@ export default function ReturnsDashboard({
 
             {/* TAB 2: 12-MONTH FINANCIAL YEAR MATRIX */}
       {activeTab === 'matrix' && (() => {
-        const fyString = workingData.profile.financialYear || '2024-25';
+        const fyString = workingData.profile.financialYear || '2026-27';
         const fyParts = fyString.split('-');
-        const startYearShort = fyParts[0] ? fyParts[0].slice(-2) : '24';
-        const endYearShort = fyParts[1] ? (fyParts[1].length === 4 ? fyParts[1].slice(-2) : fyParts[1]) : '25';
+        const startYearShort = fyParts[0] ? fyParts[0].slice(-2) : '26';
+        const endYearShort = fyParts[1] ? (fyParts[1].length === 4 ? fyParts[1].slice(-2) : fyParts[1]) : '27';
 
         const totalTurnover = GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData.months[m]?.outward?.totalSaleWorking?.taxable || 0), 0);
         const totalItc = GSTR3B_MONTHS.reduce((acc, m) => acc + (workingData.months[m]?.inward?.totalItcAvailable?.total || 0), 0);
@@ -5509,7 +5775,7 @@ export default function ReturnsDashboard({
                         );
                       })}
                       <th className={`${matrixDensity === 'compact' ? 'py-2 px-3' : 'py-2.5 px-3'} text-right bg-slate-200/90 text-slate-900 font-bold border-l border-slate-300 w-36`}>
-                        {matrixViewMode === 'cumulative' ? 'FY Cumulative' : `FY ${workingData.profile.financialYear || '2024-25'} Total`}
+                        {matrixViewMode === 'cumulative' ? 'FY Cumulative' : `FY ${workingData.profile.financialYear || '2026-27'} Total`}
                       </th>
                     </tr>
                   </thead>
@@ -5930,8 +6196,9 @@ export default function ReturnsDashboard({
       {activeTab === 'ims2b' && (
         <ImsMasterManager
           selectedMonth={selectedMonth}
-          financialYear={workingData.profile.financialYear || '2025-26'}
+          financialYear={workingData.profile.financialYear || '2026-27'}
           currentGstin={workingData.profile.gstin}
+          currentFirmName={workingData.profile.firmName}
           onApplyTo3B={handleApplyImsTo3B}
         />
       )}
@@ -5940,88 +6207,69 @@ export default function ReturnsDashboard({
       {activeTab === 'gstr2b_downloader' && (
         <Gstr2bMasterDownloader
           selectedMonth={selectedMonth}
-          financialYear={workingData.profile.financialYear || '2025-26'}
+          financialYear={workingData.profile.financialYear || '2026-27'}
           currentGstin={workingData.profile.gstin}
           onApplyTo3B={handleApplyImsTo3B}
         />
       )}
 
-      {/* TAB 5: GSTR-1 OUTWARD RETURN PREPARATION & 12M AUTOPILOT SUITE */}
-      {activeTab === 'gstr1_downloader' && (
+      {/* TAB 2: GSTR-1 WORKING SHEET (STANDALONE MODULE) */}
+      {activeTab === 'gstr1_working' && (
         <div className="space-y-4">
-          {/* Dual-Mode Subheader Switcher + Interactive Month Selector */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                onClick={() => setGstr1SubMode('workbench')}
-                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
-                  gstr1SubMode === 'workbench'
-                    ? 'bg-blue-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Table className="w-3.5 h-3.5" /> GSTR-1 Preparation & Filing Workbench
-              </button>
-              <button
-                onClick={() => setGstr1SubMode('downloader')}
-                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
-                  gstr1SubMode === 'downloader'
-                    ? 'bg-blue-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <DownloadCloud className="w-3.5 h-3.5" /> Outward 12M Autopilot Downloader & Annual Matrix
-              </button>
-            </div>
-
-            {/* Interactive Return Period Selector for GSTR-1 */}
-            <div className="flex items-center gap-2 pr-1">
-              <span className="text-xs text-slate-400 font-medium">Return Period:</span>
+          <div className="flex justify-end">
+            <label className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-xl px-2.5 py-1.5 shadow-2xs">
+              <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="text-xs text-slate-500 font-medium">Period:</span>
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value as GSTR3BMonthKey)}
-                className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:border-blue-500 cursor-pointer"
+                className="bg-transparent text-slate-900 text-xs font-bold border-none outline-none focus:ring-0 cursor-pointer pr-1"
+                title="Select Return Month"
               >
                 {GSTR3B_MONTHS.map(m => (
                   <option key={m} value={m}>
-                    {m} ({workingData?.profile?.financialYear || '2025-26'})
+                    {m} ({workingData?.profile?.financialYear || '2026-27'})
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
-
-          {gstr1SubMode === 'workbench' ? (
-            <Gstr1WorkingSheet
-              currentGstin={workingData?.profile?.gstin || ''}
-              clientName={workingData?.profile?.firmName || ''}
-              financialYear={workingData?.profile?.financialYear || '2025-26'}
-              selectedMonth={selectedMonth}
-              gstr3bOutwardTaxable={currentMonthData?.taxOnOutwardSupplies?.taxableValue || 0}
-              gstr3bOutwardTax={
-                (currentMonthData?.taxOnOutwardSupplies?.integratedTax || 0) +
-                (currentMonthData?.taxOnOutwardSupplies?.centralTax || 0) +
-                (currentMonthData?.taxOnOutwardSupplies?.stateUtTax || 0) +
-                (currentMonthData?.taxOnOutwardSupplies?.cess || 0)
-              }
-              onApplyTo3B={handleApplyGstr1To3B}
-            />
-          ) : (
-            <Gstr1MasterDownloader
-              selectedMonth={selectedMonth}
-              financialYear={workingData?.profile?.financialYear || '2025-26'}
-              currentGstin={workingData?.profile?.gstin || ''}
-              onApplyTo3B={handleApplyGstr1To3B}
-            />
-          )}
+          <Gstr1WorkingSheet
+            currentGstin={workingData?.profile?.gstin || ''}
+            clientName={workingData?.profile?.firmName || ''}
+            financialYear={workingData?.profile?.financialYear || '2026-27'}
+            selectedMonth={selectedMonth}
+            gstr3bOutwardTaxable={currentMonthData?.outward?.totalSaleWorking?.taxable || 0}
+            gstr3bOutwardTax={
+              (currentMonthData?.outward?.totalSaleWorking?.igst || 0) +
+              (currentMonthData?.outward?.totalSaleWorking?.cgst || 0) +
+              (currentMonthData?.outward?.totalSaleWorking?.sgst || 0)
+            }
+            gstr3bOutwardIgst={currentMonthData?.outward?.totalSaleWorking?.igst || 0}
+            gstr3bOutwardCgst={currentMonthData?.outward?.totalSaleWorking?.cgst || 0}
+            gstr3bOutwardSgst={currentMonthData?.outward?.totalSaleWorking?.sgst || 0}
+            gstr3bOutwardCess={currentMonthData?.outward?.totalSaleWorking?.cess || 0}
+            onApplyTo3B={handleApplyGstr1To3B}
+          />
         </div>
+      )}
+
+      {/* TAB 7: GSTR-1 12M AUTOPILOT DOWNLOADER (STANDALONE MODULE) */}
+      {activeTab === 'gstr1_downloader' && (
+        <Gstr1MasterDownloader
+          selectedMonth={selectedMonth}
+          financialYear={workingData?.profile?.financialYear || '2026-27'}
+          currentGstin={workingData?.profile?.gstin || ''}
+          clientName={workingData?.profile?.firmName || ''}
+          onApplyTo3B={handleApplyGstr1To3B}
+        />
       )}
 
       {/* TAB 6: RETURNS TRACKING & STATUTORY COMPLIANCE MASTER */}
       {activeTab === 'returns_tracking' && (
         <ReturnsTrackingMaster
           currentGstin={workingData.profile.gstin}
-          financialYear={workingData.profile.financialYear || '2025-26'}
+          financialYear={workingData.profile.financialYear || '2026-27'}
           onJumpToWorking={handleJumpToWorking}
         />
       )}

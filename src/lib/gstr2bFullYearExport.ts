@@ -43,26 +43,12 @@ export function formatGeneratedTimestamp(): string {
   return `${day}-${mon}-${yr} ${hrs}:${mins}:${secs}`;
 }
 
-/**
- * removeAllMergesFromWorkbook — Defense-in-depth zero-merge enforcement.
- * Strips all '!merges' arrays from every worksheet in the workbook
- * to guarantee 100% filterable and sortable spreadsheets for CAs.
- */
-export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
-  if (!wb || !wb.SheetNames) return wb;
-  for (const name of wb.SheetNames) {
-    const ws = wb.Sheets[name];
-    if (ws) {
-      ws['!merges'] = [];
-      delete ws['!merges'];
-    }
-  }
-  return wb;
-}
+export { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
+import { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
 
 export function generateGstr2bFullYearWorkbook({
   clientInfo = {},
-  financialYear = '2025-2026',
+  financialYear = '2026-2027',
   invoices = []
 }: {
   clientInfo: { trade_name?: string; legal_name?: string; gstin?: string };
@@ -121,16 +107,32 @@ export function generateGstr2bFullYearWorkbook({
   const partyStats: Record<string, { b2b: any; cdnr: any }> = {};
 
   const getMonthNameFromPeriod = (periodStr?: string, idt?: string): string => {
-    const p = (periodStr || '').toLowerCase();
+    const raw = (periodStr || '').trim();
+    const p = raw.toLowerCase();
     for (const m of MONTH_ORDER) {
       if (p.includes(m.toLowerCase())) return m.toUpperCase();
+    }
+    const calendarOrder = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const m6 = raw.match(/^(\d{2})(\d{4})$/);
+    if (m6) {
+      const mm = parseInt(m6[1], 10);
+      if (mm >= 1 && mm <= 12) return calendarOrder[mm - 1].toUpperCase();
+    }
+    const mSep = raw.match(/^(\d{1,2})[-/](\d{4})$/);
+    if (mSep) {
+      const mm = parseInt(mSep[1], 10);
+      if (mm >= 1 && mm <= 12) return calendarOrder[mm - 1].toUpperCase();
+    }
+    const mIso = raw.match(/^(\d{4})[-/](\d{1,2})$/);
+    if (mIso) {
+      const mm = parseInt(mIso[2], 10);
+      if (mm >= 1 && mm <= 12) return calendarOrder[mm - 1].toUpperCase();
     }
     if (idt) {
       const parts = idt.split(/[\/\-]/);
       if (parts.length >= 2) {
         const mNum = parseInt(parts[1], 10);
         if (mNum >= 1 && mNum <= 12) {
-          const calendarOrder = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
           return calendarOrder[mNum - 1].toUpperCase();
         }
       }

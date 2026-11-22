@@ -285,8 +285,17 @@ export function computeBooksTdsLiability(
             }
 
             if (isTaxable) {
-                group.taxableAmount += txn.amount;
                 const { rate } = getTdsRate(resolvedSection, rawPan, sectionsMaster);
+                if (group.annualSpend > limits.annual_aggregate_threshold && !(group as any).aggregateBreached) {
+                    (group as any).aggregateBreached = true;
+                    // Retroactively tax all prior untaxed transactions under Sec 194C(5) cumulative aggregate rule
+                    const untaxedPriorSpend = (group.annualSpend - txn.amount) - group.taxableAmount;
+                    if (untaxedPriorSpend > 0) {
+                        group.taxableAmount += untaxedPriorSpend;
+                        group.requiredTds += (untaxedPriorSpend * rate) / 100;
+                    }
+                }
+                group.taxableAmount += txn.amount;
                 group.requiredTds += (txn.amount * rate) / 100;
             }
         }
@@ -1182,7 +1191,7 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
 
     const aoa = [
         [`${title.toUpperCase()} - ${companyName.toUpperCase()}`],
-        [`Generated on: ${new Date().toLocaleString('en-IN')} | Powered by Vaswani Return`],
+        [`Generated on: ${new Date().toLocaleString('en-IN')} | Powered by Finpulse Consulting`],
         [],
         headers,
         ...data,

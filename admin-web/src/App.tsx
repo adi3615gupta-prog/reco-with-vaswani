@@ -1,23 +1,12 @@
-import { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, query, where, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
-import { Power, Key, ShieldCheck, Activity, Lock, Users, UserPlus, FileText, Download, Building, Plus, Laptop } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Power, Key, ShieldCheck, Activity, Lock, Users, UserPlus, FileText, Download, Building, Plus, Laptop, Ban, WifiOff, Trash2, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import './index.css';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyDfE2DBpfE5Oj5nwtErub8X0tvBfMsi9QA",
-  authDomain: "reco-vaswani-license.firebaseapp.com",
-  projectId: "reco-vaswani-license",
-  storageBucket: "reco-vaswani-license.appspot.com",
-  messagingSenderId: "594471668759",
-  appId: "1:594471668759:web:fb9f997aa87bd7e866e052"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const GATEWAY_SUPER_ADMIN_URL = 'https://vaswani-license-gateway.vercel.app/superAdmin';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminToken, setAdminToken] = useState<string>(() => sessionStorage.getItem('vaswani_sa_token') || '');
+  const isAuthenticated = Boolean(adminToken);
   const [password, setPassword] = useState('');
   
   const [offices, setOffices] = useState<any[]>([]);
@@ -26,6 +15,7 @@ function App() {
 
   const [modules, setModules] = useState<any[]>([]);
   const [keys, setKeys] = useState<any[]>([]);
+  const [collapsedKeys, setCollapsedKeys] = useState<Record<string, boolean>>({});
   const [networkUsers, setNetworkUsers] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [recoHistory, setRecoHistory] = useState<any[]>([]);
@@ -37,133 +27,143 @@ function App() {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('user');
 
-  // 1. Fetch Offices
-  useEffect(() => {
+  const callSuperAdmin = useCallback(async (subAction: string, payload: Record<string, any> = {}, overrideToken?: string) => {
+    const tok = overrideToken ?? adminToken;
+    const res = await fetch(GATEWAY_SUPER_ADMIN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(tok ? { 'x-super-admin-token': tok } : {})
+      },
+      body: JSON.stringify({ subAction, ...payload })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && subAction !== 'login') {
+      sessionStorage.removeItem('vaswani_sa_token');
+      setAdminToken('');
+      throw new Error(data.error || 'Session expired. Please log in again.');
+    }
+    if (!res.ok) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    return data;
+  }, [adminToken]);
+
+  const refreshOffices = useCallback(async () => {
     if (!isAuthenticated) return;
-    const unsub = onSnapshot(collection(db, 'offices'), (snap) => {
-      const officeData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    try {
+      const data = await callSuperAdmin('listOffices');
+      const officeData = Array.isArray(data.offices) ? data.offices : [];
       setOffices(officeData);
       if (officeData.length > 0 && !activeOffice) {
         setActiveOffice(officeData[0].id);
       }
-    });
-    return () => unsub();
-  }, [isAuthenticated]);
+    } catch (err) {
+      console.error('Failed to load offices:', err);
+    }
+  }, [isAuthenticated, activeOffice, callSuperAdmin]);
 
-  // 2. Fetch Data for Active Office
+  const refreshOfficeData = useCallback(async () => {
+    if (!isAuthenticated || !activeOffice) return;
+    try {
+      const data = await callSuperAdmin('getOfficeData', { officeId: activeOffice });
+      setModules(Array.isArray(data.modules) ? data.modules : []);
+      setKeys(Array.isArray(data.keys) ? data.keys : []);
+      setNetworkUsers(Array.isArray(data.networkUsers) ? data.networkUsers : []);
+      setActivityLogs(Array.isArray(data.activityLogs) ? data.activityLogs : []);
+      setRecoHistory(Array.isArray(data.recoHistory) ? data.recoHistory : []);
+    } catch (err) {
+      console.error('Failed to load office data:', err);
+    }
+  }, [isAuthenticated, activeOffice, callSuperAdmin]);
+
+  // 1. Fetch Offices & Poll
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshOffices();
+    const timer = setInterval(refreshOffices, 15000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, refreshOffices]);
+
+  // 2. Fetch Data for Active Office & Poll
   useEffect(() => {
     if (!isAuthenticated || !activeOffice) return;
-    
-    const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements', 'Forensic'];
-    const unsubModules = onSnapshot(query(collection(db, 'module_usage'), where('office_id', '==', activeOffice)), async (snap) => {
-      const fetchedModules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setModules(fetchedModules);
+    refreshOfficeData();
+    const timer = setInterval(refreshOfficeData, 10000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, activeOffice, refreshOfficeData]);
 
-      // Auto-initialize missing default modules for existing office
-      const fetchedNames = new Set(fetchedModules.map((m: any) => m.name || m.module_name || m.id.split('_')[1]));
-      for (const mod of defaultModules) {
-        if (!fetchedNames.has(mod)) {
-          try {
-            await setDoc(doc(db, 'module_usage', `${activeOffice}_${mod}`), {
-              name: mod,
-              is_enabled: 1,
-              usage_count: 0,
-              office_id: activeOffice,
-              module_name: mod
-            });
-            console.log(`Auto-initialized missing default module: ${mod} for office ${activeOffice}`);
-          } catch (e) {
-            console.error(`Failed to auto-initialize missing module ${mod}:`, e);
-          }
-        }
-      }
-    });
-    const unsubKeys = onSnapshot(query(collection(db, 'serial_keys'), where('office_id', '==', activeOffice)), (snap) => {
-      setKeys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsubUsers = onSnapshot(query(collection(db, 'network_users'), where('office_id', '==', activeOffice)), (snap) => {
-      setNetworkUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsubLogs = onSnapshot(query(collection(db, 'audit_logs'), where('office_id', '==', activeOffice)), (snap) => {
-      setActivityLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsubReco = onSnapshot(query(collection(db, 'reco_history'), where('office_id', '==', activeOffice)), (snap) => {
-      setRecoHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    return () => { unsubModules(); unsubKeys(); unsubUsers(); unsubLogs(); unsubReco(); };
-  }, [isAuthenticated, activeOffice]);
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'Sourav@3615') setIsAuthenticated(true);
-    else alert('Invalid Admin Password');
+    try {
+      const data = await callSuperAdmin('login', { password }, '');
+      if (data.token) {
+        sessionStorage.setItem('vaswani_sa_token', data.token);
+        setAdminToken(data.token);
+        setPassword('');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Invalid Admin Password');
+    }
   };
 
   const createOffice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newOfficeName) return;
-    const officeId = newOfficeName.toUpperCase().replace(/\s+/g, '_');
-    
-    await setDoc(doc(db, 'offices', officeId), {
-      name: newOfficeName.toUpperCase(),
-      created_at: serverTimestamp()
-    });
-
-    // Initialize Server Key
-    const serverKey = `${officeId}-${Math.random().toString(36).substring(2,8).toUpperCase()}-SRV`;
-    await setDoc(doc(db, 'serial_keys', serverKey), { 
-        key: serverKey, is_active: 1, key_type: 'server', device_id: null, office_id: officeId 
-    });
-
-    // Initialize Default Modules
-    const defaultModules = ['TallyConverter', 'Consolidator', 'RecoEngine', 'OCR', 'Returns', 'Dashboard', 'TallyDirect', 'Tracker', 'FinStatements', 'Forensic'];
-    for(const mod of defaultModules) {
-        await setDoc(doc(db, 'module_usage', `${officeId}_${mod}`), { 
-            name: mod, is_enabled: 1, usage_count: 0, office_id: officeId, module_name: mod
-        });
+    try {
+      const res = await callSuperAdmin('createOffice', { name: newOfficeName });
+      const createdName = newOfficeName;
+      setNewOfficeName('');
+      await refreshOffices();
+      setActiveOffice(res.officeId);
+      alert(`New Office "${createdName}" Created with default keys and modules!`);
+    } catch (err: any) {
+      alert('Failed to create office: ' + err.message);
     }
-
-    setNewOfficeName('');
-    setActiveOffice(officeId);
-    alert(`New Office "${newOfficeName}" Created with default keys and modules!`);
   };
 
   const createNetworkAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword || !activeOffice) return;
 
+    const cleanUsername = newUsername.toLowerCase().trim();
+    if (networkUsers.some((u: any) => String(u.username || '').toLowerCase().trim() === cleanUsername)) {
+      alert(`User ID "@${cleanUsername}" already exists in ${activeOffice}.`);
+      return;
+    }
+
     const finalName = newName.trim() || newUsername.trim();
     const finalDesignation = newDesignation.trim() || (newRole === 'Senior Auditor' ? 'Senior Auditor' : newRole === 'Admin' ? 'Administrator' : 'Article Assistant');
     const finalDepartment = newDepartment.trim() || 'Audit & Assurance';
 
-    await addDoc(collection(db, 'network_users'), {
-      name: finalName,
-      designation: finalDesignation,
-      department: finalDepartment,
-      username: newUsername.toLowerCase().trim(),
-      password: newPassword,
-      role: newRole,
-      created_at: serverTimestamp(),
-      is_active: 1,
-      office_id: activeOffice,
-      device_id: null,
-      current_device_id: null,
-      status: 'offline'
-    });
-    setNewName('');
-    setNewDesignation('');
-    setNewDepartment('');
-    setNewUsername('');
-    setNewPassword('');
-    setNewRole('user');
-    alert(`User account created: "${finalName}" (${finalDesignation} • ${finalDepartment}) for Office: ${activeOffice}`);
+    try {
+      await callSuperAdmin('createUser', {
+        officeId: activeOffice,
+        name: finalName,
+        designation: finalDesignation,
+        department: finalDepartment,
+        username: cleanUsername,
+        password: newPassword,
+        role: newRole
+      });
+      setNewName('');
+      setNewDesignation('');
+      setNewDepartment('');
+      setNewUsername('');
+      setNewPassword('');
+      setNewRole('user');
+      await refreshOfficeData();
+      alert(`User account created: "${finalName}" (${finalDesignation} • ${finalDepartment}) for Office: ${activeOffice}`);
+    } catch (err: any) {
+      alert('Failed to create user: ' + err.message);
+    }
   };
 
   const updateKeySeats = async (keyId: string, currentSeats: number, delta: number) => {
     const updated = Math.max(1, (Number(currentSeats) || 1) + delta);
     try {
-      await updateDoc(doc(db, 'serial_keys', keyId), { max_devices: updated });
+      await callSuperAdmin('updateKeySeats', { officeId: activeOffice, keyId, maxDevices: updated });
+      await refreshOfficeData();
     } catch (err: any) {
       alert("Failed to update seat limit: " + err.message);
     }
@@ -174,38 +174,32 @@ function App() {
     const seatsStr = prompt("Enter allowed number of PCs for this Serial Key:", "5");
     if (!seatsStr) return;
     const seats = Math.max(1, parseInt(seatsStr, 10) || 5);
-    const newKey = `${activeOffice}-${Math.random().toString(36).substring(2, 8).toUpperCase()}-MULTI`;
     try {
-      await setDoc(doc(db, 'serial_keys', newKey), {
-        key: newKey,
-        is_active: 1,
-        key_type: 'client',
-        device_id: null,
-        bound_devices: [],
-        max_devices: seats,
-        office_id: activeOffice,
-        created_at: serverTimestamp()
-      });
-      alert(`New Multi-PC Serial Key created: ${newKey} (${seats} PCs allowed)!`);
+      const res = await callSuperAdmin('createMultiPcKey', { officeId: activeOffice, seats });
+      await refreshOfficeData();
+      alert(`New Multi-PC Serial Key created: ${res.key} (${seats} PCs allowed)!`);
     } catch (err: any) {
       alert("Failed to create key: " + err.message);
     }
   };
 
   const toggleNetworkUser = async (userId: string, currentStatus: number) => {
-    await updateDoc(doc(db, 'network_users', userId), { is_active: currentStatus === 1 ? 0 : 1 });
+    await callSuperAdmin('toggleUser', { officeId: activeOffice, userId, currentStatus });
+    await refreshOfficeData();
   };
 
   const unbindNetworkUser = async (userId: string) => {
     if (confirm("Release active session for this user? This will mark them offline and allow them to log in on any computer immediately.")) {
-      await updateDoc(doc(db, 'network_users', userId), { device_id: null, current_device_id: null, status: 'offline' });
+      await callSuperAdmin('unbindUser', { officeId: activeOffice, userId });
+      await refreshOfficeData();
     }
   };
 
   const deleteNetworkUser = async (userId: string) => {
     if (confirm("WARNING: Are you sure you want to completely delete this user? This cannot be undone.")) {
       try {
-        await deleteDoc(doc(db, 'network_users', userId));
+        await callSuperAdmin('deleteUser', { officeId: activeOffice, userId });
+        await refreshOfficeData();
         alert("User permanently deleted!");
       } catch (err: any) {
         alert("Failed to delete: " + err.message);
@@ -216,21 +210,9 @@ function App() {
   const deleteOffice = async (officeId: string) => {
     if (confirm(`WARNING: Are you sure you want to permanently delete Office: ${officeId}?\nThis will completely WIPE all associated keys, users, and usage limits across all networks!`)) {
       try {
-        // Delete all keys for this office
-        const keysSnap = await getDocs(query(collection(db, 'serial_keys'), where('office_id', '==', officeId)));
-        keysSnap.forEach(async (d) => await deleteDoc(d.ref));
-        
-        // Delete all users for this office
-        const usersSnap = await getDocs(query(collection(db, 'network_users'), where('office_id', '==', officeId)));
-        usersSnap.forEach(async (d) => await deleteDoc(d.ref));
-
-        // Delete all module usage tracking
-        const modulesSnap = await getDocs(query(collection(db, 'module_usage'), where('office_id', '==', officeId)));
-        modulesSnap.forEach(async (d) => await deleteDoc(d.ref));
-
-        // Delete the office document
-        await deleteDoc(doc(db, 'offices', officeId));
+        await callSuperAdmin('deleteOffice', { officeId });
         if (activeOffice === officeId) setActiveOffice('');
+        await refreshOffices();
         alert("Office permanently deleted. All connected PCs will factory reset within 60 seconds.");
       } catch (err: any) {
         alert("Failed to delete: " + err.message);
@@ -242,13 +224,8 @@ function App() {
     if (confirm(`CRITICAL WARNING: Are you sure you want to trigger the KILL SWITCH for ${officeId}?\nThis will permanently wipe their software directory and all databases. This CANNOT be undone.`)) {
       if (prompt("Type 'WIPE' to confirm:") === 'WIPE') {
         try {
-          const keysSnap = await getDocs(query(collection(db, 'serial_keys'), where('office_id', '==', officeId), where('key_type', '==', 'server')));
-          if (!keysSnap.empty) {
-            await updateDoc(keysSnap.docs[0].ref, { kill_switch: true });
-            alert("KILL SWITCH TRIGGERED. The client's software will be wiped within 5 seconds.");
-          } else {
-            alert("No server key found for this office to trigger.");
-          }
+          await callSuperAdmin('triggerKillSwitch', { officeId });
+          alert("KILL SWITCH TRIGGERED. The client's software will be wiped within 5 seconds.");
         } catch (err: any) {
           alert("Failed to trigger Kill Switch: " + err.message);
         }
@@ -257,32 +234,82 @@ function App() {
   };
 
   const toggleModule = async (moduleId: string, currentStatus: number) => {
-    await updateDoc(doc(db, 'module_usage', moduleId), { is_enabled: currentStatus === 1 ? 0 : 1 });
+    await callSuperAdmin('toggleModule', { officeId: activeOffice, moduleId, currentStatus });
+    await refreshOfficeData();
   };
   
   const resetModule = async (moduleId: string) => {
     if (confirm(`Reset usage count for ${moduleId}?`)) {
-      await updateDoc(doc(db, 'module_usage', moduleId), { usage_count: 0 });
+      await callSuperAdmin('resetModule', { officeId: activeOffice, moduleId });
+      await refreshOfficeData();
     }
   };
 
-  const unbindKey = async (keyId: string) => {
+  const getBoundDeviceIds = (keyData: any): string[] => {
+    if (Array.isArray(keyData?.bound_devices)) return keyData.bound_devices;
+    return keyData?.device_id ? [keyData.device_id] : [];
+  };
+
+  const removeDeviceFromKey = async (keyData: any, deviceId: string) => {
+    const label = keyData.devices_info?.[deviceId]?.pc_name || deviceId;
+    if (!confirm(`Remove PC "${label}" from Serial Key ${keyData.key}?\n\nThis will unbind this computer and free 1 PC seat immediately.`)) return;
+
+    try {
+      await callSuperAdmin('removeDeviceFromKey', { officeId: activeOffice, keyId: keyData.id, deviceId });
+      await refreshOfficeData();
+    } catch (err: any) {
+      alert("Failed to remove PC: " + err.message);
+    }
+  };
+
+  const toggleRestrictDevice = async (keyData: any, deviceId: string, currentlyRestricted: boolean) => {
+    const label = keyData.devices_info?.[deviceId]?.pc_name || deviceId;
+    const actionWord = currentlyRestricted ? 'Unrestrict (Allow)' : 'Restrict (Block)';
+    if (!confirm(`${actionWord} PC "${label}" on Serial Key ${keyData.key}?`)) return;
+
+    try {
+      await callSuperAdmin('toggleRestrictDevice', {
+        officeId: activeOffice,
+        keyId: keyData.id,
+        deviceId,
+        nextRestricted: !currentlyRestricted
+      });
+      await refreshOfficeData();
+    } catch (err: any) {
+      alert("Failed to update PC restriction: " + err.message);
+    }
+  };
+
+  const makeDeviceOffline = async (keyData: any, deviceId: string) => {
+    const label = keyData.devices_info?.[deviceId]?.pc_name || deviceId;
+    if (!confirm(`Make PC "${label}" Offline?\n\nThis will end its active session and log out any active user on this PC without removing its license seat.`)) return;
+
+    try {
+      await callSuperAdmin('makeDeviceOffline', { officeId: activeOffice, keyId: keyData.id, deviceId });
+      await refreshOfficeData();
+    } catch (err: any) {
+      alert("Failed to make PC offline: " + err.message);
+    }
+  };
+
+  const unbindKey = async (keyData: any) => {
     if (confirm(`Are you sure you want to unbind all PCs from this key? This will clear all bound PCs and allow new computers to activate up to the seat limit.`)) {
-      await updateDoc(doc(db, 'serial_keys', keyId), { device_id: null, bound_mac: null, bound_devices: [] });
+      await callSuperAdmin('unbindKey', { officeId: activeOffice, keyId: keyData.id });
+      await refreshOfficeData();
     }
   };
 
   const toggleKey = async (keyId: string, currentStatus: number) => {
-    await updateDoc(doc(db, 'serial_keys', keyId), { is_active: currentStatus === 1 ? 0 : 1 });
+    await callSuperAdmin('toggleKey', { officeId: activeOffice, keyId, currentStatus });
+    await refreshOfficeData();
   };
 
   const clearActivityLogs = async () => {
     if (!activeOffice) return;
     if (confirm("Are you sure you want to clear all network activity logs for this office?")) {
       try {
-        const logsSnap = await getDocs(query(collection(db, 'audit_logs'), where('office_id', '==', activeOffice)));
-        const deletePromises = logsSnap.docs.map(d => deleteDoc(d.ref));
-        await Promise.all(deletePromises);
+        await callSuperAdmin('clearActivityLogs', { officeId: activeOffice });
+        await refreshOfficeData();
         alert("Network activity logs cleared successfully.");
       } catch (err: any) {
         alert("Failed to clear logs: " + err.message);
@@ -323,7 +350,7 @@ function App() {
   }
 
   return (
-    <div className="admin-container" style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '2rem', maxWidth: '1400px' }}>
+    <div className="admin-container" style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '2rem', maxWidth: '1560px' }}>
       
       {/* LEFT SIDEBAR (TENANT SELECTOR) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -411,7 +438,7 @@ function App() {
         </div>
 
         {activeOffice && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2.5fr', gap: '1.5rem', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(420px, 1.35fr) 2fr', gap: '1.5rem', alignItems: 'start' }}>
                 
                 {/* LEFT COLUMN */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -576,76 +603,234 @@ function App() {
                         POLICY: 1 SERIAL KEY &rarr; MULTIPLE PCS (FLEXIBLE SEATS)
                     </p>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                     {keys.map(keyData => {
                         const maxDevices = Number(keyData.max_devices) || 1;
-                        const boundDevices = Array.isArray(keyData.bound_devices) 
-                            ? keyData.bound_devices 
-                            : (keyData.device_id ? [keyData.device_id] : []);
+                        const boundDevices = getBoundDeviceIds(keyData);
+                        const devicesInfoMap: Record<string, any> =
+                            keyData.devices_info && typeof keyData.devices_info === 'object'
+                                ? keyData.devices_info
+                                : {};
+                        const devicesListArr: any[] = Array.isArray(keyData.devices_list) ? keyData.devices_list : [];
+
+                        const pcRows = boundDevices.map((devId: string) => {
+                            const info = devicesInfoMap[devId] || devicesListArr.find((d: any) => d?.device_id === devId) || {};
+                            const activeUserOnPc = networkUsers.find(
+                                (u: any) =>
+                                    u.status === 'online' &&
+                                    (u.current_device_id === devId || u.device_id === devId)
+                            );
+                            const isRestricted = Boolean(info.is_restricted || info.status === 'RESTRICTED');
+                            const lastSeenMs = Number(info.last_seen_ms) || 0;
+                            const isOnlineFresh = Boolean(activeUserOnPc) || (info.status === 'ONLINE' && (!lastSeenMs || (Date.now() - lastSeenMs < 300000)));
+                            const derivedStatus = isRestricted
+                                ? 'RESTRICTED'
+                                : (isOnlineFresh ? 'ONLINE' : (info.status === 'OFFLINE' ? 'OFFLINE' : 'ACTIVE'));
+
+                            return {
+                                device_id: devId,
+                                pc_name: info.pc_name || `PC (${devId.slice(0, 12)})`,
+                                os_user: info.os_user || 'Unknown User',
+                                ip: info.ip || 'N/A',
+                                activated_at: info.activated_at || '-',
+                                last_seen: info.last_seen || '-',
+                                is_restricted: isRestricted,
+                                status: derivedStatus,
+                                current_user: activeUserOnPc?.username || info.current_user || null
+                            };
+                        });
+
                         const activeCount = boundDevices.length;
                         const isLimitReached = activeCount >= maxDevices;
+                        const isCollapsed = Boolean(collapsedKeys[keyData.id]);
 
                         return (
-                            <div key={keyData.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-card)', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxWidth: '65%' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.75rem', wordBreak: 'break-all' }}>{keyData.key}</span>
-                                        <span style={{ fontSize: '0.55rem', fontWeight: 700, padding: '0.1rem 0.35rem', backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
-                                            {(keyData.key_type || 'CLIENT').toUpperCase()}
-                                        </span>
-                                        <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: keyData.is_active === 1 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: keyData.is_active === 1 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                                            {keyData.is_active === 1 ? 'ACTIVE' : 'REVOKED'}
-                                        </span>
-                                    </div>
-                                    
-                                    {/* PC Seat Controls */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
-                                        <span style={{ fontSize: '0.7rem', color: isLimitReached ? '#f87171' : '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            <Laptop size={12} />
-                                            {activeCount} / {maxDevices} PCs Used
-                                        </span>
-                                        
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
-                                            <button 
-                                                onClick={() => updateKeySeats(keyData.id, maxDevices, -1)} 
-                                                title="Decrease allowed PCs" 
-                                                style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
-                                            >
-                                                -
-                                            </button>
-                                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--accent-yellow)', minWidth: '16px', textAlign: 'center' }}>
-                                                {maxDevices}
+                            <div key={keyData.id} style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-card)', overflow: 'hidden' }}>
+                                {/* KEY HEADER */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxWidth: '68%' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.75rem', wordBreak: 'break-all' }}>{keyData.key}</span>
+                                            <span style={{ fontSize: '0.55rem', fontWeight: 700, padding: '0.1rem 0.35rem', backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
+                                                {(keyData.key_type || 'CLIENT').toUpperCase()}
                                             </span>
-                                            <button 
-                                                onClick={() => updateKeySeats(keyData.id, maxDevices, 1)} 
-                                                title="Increase allowed PCs" 
-                                                style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
-                                            >
-                                                +
-                                            </button>
+                                            <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', backgroundColor: keyData.is_active === 1 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: keyData.is_active === 1 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                {keyData.is_active === 1 ? 'ACTIVE' : 'REVOKED'}
+                                            </span>
+                                        </div>
+
+                                        {/* PC Seat Controls */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                                            <span style={{ fontSize: '0.7rem', color: isLimitReached ? '#f87171' : '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                <Laptop size={12} />
+                                                {activeCount} / {maxDevices} PCs Used
+                                            </span>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: '4px', border: '1px solid var(--border-panel)' }}>
+                                                <button
+                                                    onClick={() => updateKeySeats(keyData.id, maxDevices, -1)}
+                                                    title="Decrease allowed PCs"
+                                                    style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
+                                                >
+                                                    -
+                                                </button>
+                                                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--accent-yellow)', minWidth: '16px', textAlign: 'center' }}>
+                                                    {maxDevices}
+                                                </span>
+                                                <button
+                                                    onClick={() => updateKeySeats(keyData.id, maxDevices, 1)}
+                                                    title="Increase allowed PCs"
+                                                    style={{ border: 'none', background: 'transparent', color: 'white', cursor: 'pointer', padding: '0.1rem 0.3rem', fontSize: '0.7rem', fontWeight: 700 }}
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                
-                                <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                                    {activeCount > 0 && (
-                                        <button 
-                                            onClick={() => unbindKey(keyData.id)} 
-                                            title="Unbind all registered PCs from this key"
-                                            className="btn-reset" 
-                                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent-yellow)', borderColor: 'var(--accent-yellow)' }}
+
+                                    <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                                        {activeCount > 0 && (
+                                            <button
+                                                onClick={() => unbindKey(keyData)}
+                                                title="Unbind all registered PCs from this key"
+                                                className="btn-reset"
+                                                style={{ padding: '0.35rem 0.5rem', fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent-yellow)', borderColor: 'var(--accent-yellow)' }}
+                                            >
+                                                RESET PCS
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => toggleKey(keyData.id, keyData.is_active)}
+                                            className={`btn-power ${keyData.is_active === 1 ? 'enabled' : ''}`}
+                                            style={{ width: '28px', height: '28px' }}
+                                            title={keyData.is_active === 1 ? 'Revoke Key' : 'Activate Key'}
                                         >
-                                            RESET PCS
+                                            <Power size={14} />
                                         </button>
+                                    </div>
+                                </div>
+
+                                {/* BOUND / ACTIVE PCS LIST */}
+                                <div style={{ borderTop: '1px solid var(--border-panel)', backgroundColor: 'rgba(0, 0, 0, 0.22)', padding: '0.6rem 0.75rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: !isCollapsed && pcRows.length > 0 ? '0.5rem' : 0 }}>
+                                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                                            Registered Workstations ({pcRows.length})
+                                        </span>
+                                        {pcRows.length > 0 && (
+                                            <button
+                                                onClick={() => setCollapsedKeys(prev => ({ ...prev, [keyData.id]: !prev[keyData.id] }))}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.65rem', color: '#93c5fd', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                                            >
+                                                {isCollapsed ? (<>Show <ChevronDown size={12} /></>) : (<>Hide <ChevronUp size={12} /></>)}
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {pcRows.length === 0 ? (
+                                        <p style={{ fontSize: '0.7rem', color: 'var(--text-dark)', fontStyle: 'italic', marginTop: '0.25rem' }}>
+                                            No PCs bound to this serial key yet.
+                                        </p>
+                                    ) : !isCollapsed && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            {pcRows.map((dev) => {
+                                                const badgeColors =
+                                                    dev.status === 'RESTRICTED'
+                                                        ? { bg: 'rgba(239, 68, 68, 0.18)', text: '#f87171', border: 'rgba(239, 68, 68, 0.35)', label: 'RESTRICTED' }
+                                                        : dev.status === 'ONLINE'
+                                                            ? { bg: 'rgba(34, 197, 94, 0.16)', text: '#4ade80', border: 'rgba(34, 197, 94, 0.3)', label: '● ONLINE' }
+                                                            : dev.status === 'OFFLINE'
+                                                                ? { bg: 'rgba(148, 163, 184, 0.12)', text: '#94a3b8', border: 'rgba(148, 163, 184, 0.25)', label: '○ OFFLINE' }
+                                                                : { bg: 'rgba(56, 189, 248, 0.15)', text: '#38bdf8', border: 'rgba(56, 189, 248, 0.25)', label: '● ACTIVE' };
+
+                                                return (
+                                                    <div
+                                                        key={dev.device_id}
+                                                        style={{
+                                                            padding: '0.55rem 0.65rem',
+                                                            borderRadius: '6px',
+                                                            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                                                            border: `1px solid ${dev.is_restricted ? 'rgba(239, 68, 68, 0.45)' : 'var(--border-panel)'}`,
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: '0.35rem'
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                <Laptop size={13} color={badgeColors.text} />
+                                                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'white' }}>{dev.pc_name}</span>
+                                                            </div>
+                                                            <span style={{ fontSize: '0.58rem', fontWeight: 800, padding: '0.12rem 0.42rem', borderRadius: '4px', backgroundColor: badgeColors.bg, color: badgeColors.text, border: `1px solid ${badgeColors.border}` }}>
+                                                                {badgeColors.label}
+                                                            </span>
+                                                        </div>
+
+                                                        <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+                                                            <span>Win: <strong style={{ color: '#e2e8f0' }}>{dev.os_user}</strong></span>
+                                                            <span>• IP: <strong style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{dev.ip}</strong></span>
+                                                            {dev.current_user && (
+                                                                <span style={{ color: '#60a5fa', fontWeight: 700 }}>• @{dev.current_user}</span>
+                                                            )}
+                                                        </div>
+
+                                                        <div style={{ fontSize: '0.62rem', color: 'var(--text-dark)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                                                            Last seen: {dev.last_seen} • ID: {dev.device_id}
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.15rem' }}>
+                                                            <button
+                                                                onClick={() => toggleRestrictDevice(keyData, dev.device_id, dev.is_restricted)}
+                                                                title={dev.is_restricted ? 'Allow this PC again' : 'Block/Restrict this PC'}
+                                                                style={{
+                                                                    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                                    padding: '0.22rem 0.5rem', fontSize: '0.63rem', fontWeight: 700, borderRadius: '4px', cursor: 'pointer',
+                                                                    backgroundColor: dev.is_restricted ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.12)',
+                                                                    border: `1px solid ${dev.is_restricted ? 'var(--accent-green)' : 'var(--accent-red)'}`,
+                                                                    color: dev.is_restricted ? '#4ade80' : '#f87171'
+                                                                }}
+                                                            >
+                                                                {dev.is_restricted ? <CheckCircle2 size={11} /> : <Ban size={11} />}
+                                                                {dev.is_restricted ? 'Unrestrict' : 'Restrict'}
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => makeDeviceOffline(keyData, dev.device_id)}
+                                                                disabled={dev.is_restricted}
+                                                                title="Force this PC offline / end active session"
+                                                                style={{
+                                                                    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                                    padding: '0.22rem 0.5rem', fontSize: '0.63rem', fontWeight: 700, borderRadius: '4px',
+                                                                    cursor: dev.is_restricted ? 'not-allowed' : 'pointer',
+                                                                    opacity: dev.is_restricted ? 0.45 : 1,
+                                                                    backgroundColor: 'rgba(234, 179, 8, 0.12)',
+                                                                    border: '1px solid var(--accent-yellow)',
+                                                                    color: '#facc15'
+                                                                }}
+                                                            >
+                                                                <WifiOff size={11} />
+                                                                Make Offline
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => removeDeviceFromKey(keyData, dev.device_id)}
+                                                                title="Remove PC and free 1 license seat"
+                                                                style={{
+                                                                    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                                    padding: '0.22rem 0.5rem', fontSize: '0.63rem', fontWeight: 700, borderRadius: '4px', cursor: 'pointer',
+                                                                    backgroundColor: 'transparent',
+                                                                    border: '1px solid rgba(239, 68, 68, 0.65)',
+                                                                    color: '#f87171'
+                                                                }}
+                                                            >
+                                                                <Trash2 size={11} />
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     )}
-                                    <button 
-                                        onClick={() => toggleKey(keyData.id, keyData.is_active)} 
-                                        className={`btn-power ${keyData.is_active === 1 ? 'enabled' : ''}`}
-                                        style={{ width: '28px', height: '28px' }}
-                                        title={keyData.is_active === 1 ? 'Revoke Key' : 'Activate Key'}
-                                    >
-                                        <Power size={14} />
-                                    </button>
                                 </div>
                             </div>
                         );

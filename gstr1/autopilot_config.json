@@ -1,0 +1,38 @@
+{
+  "module": "GSTR-1 Autopilot",
+  "version": "2.5.0",
+  "routes": {
+    "dashboard": "https://return.gst.gov.in/returns/auth/dashboard",
+    "offline_base": "https://return.gst.gov.in/returns/auth/gstr/offline",
+    "offline_download": "https://return.gst.gov.in/returns/auth/gstr/offlinedownload"
+  },
+  "selectors": {
+    "search": {
+      "fy_dropdown": "select:has(option[value*='202'])",
+      "quarter_dropdown": "select:has(option[value*='Q'])",
+      "month_dropdown": "select:has(option[value*='January'], option[value*='September'])",
+      "search_button": "button:has-text('SEARCH'), input[value='SEARCH' i]"
+    },
+    "gstr1_card": {
+      "title_keywords": ["OUTWARD SUPPLIES", "DETAILS OF OUTWARD", "GSTR-1", "GSTR 1"],
+      "exclude_keywords": ["GSTR-2", "GSTR-3", "3B", "2B", "2A"],
+      "unfiled_button": "button:has-text('PREPARE OFFLINE'), input[value*='OFFLINE' i], a:has-text('PREPARE OFFLINE')",
+      "filed_button": "button:has-text('DOWNLOAD'), input[value*='DOWNLOAD' i], a:has-text('DOWNLOAD')"
+    },
+    "offline_download_screen": {
+      "download_tab": "ul.nav-tabs a:has-text('DOWNLOAD'), #download",
+      "download_link_candidates": "a, span, button, [role='link'], p",
+      "download_link_text_regex": "Click\\s*here\\s*to\\s*download|File\\s*1",
+      "generate_json_button": "button:has-text('GENERATE JSON FILE TO DOWNLOAD'), input[value*='GENERATE JSON' i], button:has-text('GENERATE JSON')",
+      "on_screen_back_button": "button:has-text('BACK'), input[value='BACK' i]"
+    }
+  },
+  "timeouts": {
+    "portal_settle_ms": 1000,
+    "search_overlay_ms": 12000,
+    "download_tab_monitor_ms": 3500,
+    "download_screen_settle_ms": 6000,
+    "post_generate_check_ms": 8000,
+    "countdown_timer_minutes": 20
+  }
+}

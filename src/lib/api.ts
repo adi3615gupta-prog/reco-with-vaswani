@@ -56,9 +56,23 @@ export const getApiBase = (): string => {
     return import.meta.env.VITE_PROD_API_URL;
   }
 
+  // Over HTTPS without explicit VITE_PROD_API_URL, use same-origin relative paths to prevent Mixed Content blocks
+  if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+    const host = getApiHost();
+    if (host.startsWith('https://')) return host;
+    return '';
+  }
+
   const host = getApiHost();
   if (host.startsWith('http://') || host.startsWith('https://')) return host;
   return `http://${host}:3001`;
+};
+
+const normalizeHeaders = (headers?: HeadersInit): Record<string, string> => {
+  if (!headers) return {};
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries());
+  if (Array.isArray(headers)) return Object.fromEntries(headers);
+  return { ...headers };
 };
 
 /**
@@ -66,7 +80,9 @@ export const getApiBase = (): string => {
  */
 export const safeApiFetch = async (urlOrPath: string, options?: RequestInit): Promise<Response> => {
   const isFullPath = urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://');
-  const primaryUrl = isFullPath ? urlOrPath : `${getApiBase()}${urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`}`;
+  const apiBase = getApiBase();
+  const normalizedPath = urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
+  const primaryUrl = isFullPath ? urlOrPath : `${apiBase}${normalizedPath}`;
 
   const token = getToken();
   const baseHeaders: Record<string, string> = {};
@@ -79,7 +95,7 @@ export const safeApiFetch = async (urlOrPath: string, options?: RequestInit): Pr
     ...options,
     headers: {
       ...baseHeaders,
-      ...(options?.headers as Record<string, string> || {}),
+      ...normalizeHeaders(options?.headers),
     },
   };
 
@@ -88,19 +104,22 @@ export const safeApiFetch = async (urlOrPath: string, options?: RequestInit): Pr
     return res;
   } catch (primaryErr) {
     if (!isFullPath && typeof window !== 'undefined') {
-      const relPath = urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
+      const relPath = normalizedPath;
       try {
-        // Fallback 1: Vite proxy relative path
+        // Fallback 1: Vite proxy / same-origin relative path
         const res = await fetch(relPath, mergedOptions);
         return res;
       } catch {
-        // Fallback 2: Direct localhost:3001
-        try {
-          const res = await fetch(`http://localhost:3001${relPath}`, mergedOptions);
-          return res;
-        } catch {
-          throw primaryErr;
+        // Fallback 2: Direct localhost:3001 (only on non-HTTPS origins to avoid mixed-content errors)
+        if (window.location?.protocol !== 'https:') {
+          try {
+            const res = await fetch(`http://localhost:3001${relPath}`, mergedOptions);
+            return res;
+          } catch {
+            throw primaryErr;
+          }
         }
+        throw primaryErr;
       }
     }
     throw primaryErr;
@@ -116,6 +135,33 @@ export const getToken = (): string | null => {
     if (!token || token === 'null' || token === 'undefined') return null;
     return token;
   } catch (e) {
+    return null;
+  }
+};
+
+export interface JwtUserClaims {
+  id?: string;
+  username?: string;
+  role?: string;
+  designation?: string;
+  exp?: number;
+}
+
+/**
+ * Decode user claims from the stored JWT token payload (UI display & gating only; server verifies signature).
+ */
+export const getSessionUserFromToken = (): JwtUserClaims | null => {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded)) as JwtUserClaims;
+    if (payload.exp && payload.exp * 1000 < Date.now()) return null;
+    return payload;
+  } catch {
     return null;
   }
 };
@@ -197,3 +243,24 @@ export const apiDelete = async (path: string, options?: RequestInit): Promise<Re
   });
 };
 export const getAuthToken = getToken;
+
+/**
+ * Safely parse a fetch Response as JSON, verifying res.ok first.
+ */
+export async function parseJsonSafe<T = any>(res: Response): Promise<{ ok: boolean; data: T | null; error?: string }> {
+  if (!res.ok) {
+    let errorMsg = `HTTP Error ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson && errJson.error) errorMsg = errJson.error;
+    } catch (_) {}
+    return { ok: false, data: null, error: errorMsg };
+  }
+  try {
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (err: any) {
+    return { ok: false, data: null, error: err?.message || 'Failed to parse JSON response' };
+  }
+}
+

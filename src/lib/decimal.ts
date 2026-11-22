@@ -235,7 +235,10 @@ export class Decimal {
     let outputFrac: string;
 
     if (decimals <= 0) {
-      outputFrac = '';
+      const roundDigit = parseInt(fracStr[0], 10);
+      const finalInt = roundDigit >= 5 ? intPart + 1n : intPart;
+      const prefix = negative ? '-' : '';
+      return `${prefix}${finalInt}`;
     } else if (decimals >= INTERNAL_PRECISION) {
       outputFrac = fracStr.padEnd(decimals, '0');
     } else {

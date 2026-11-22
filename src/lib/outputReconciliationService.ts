@@ -2817,7 +2817,7 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
     const partyTotalOutwardVar = partyTotalOutwardBooks - partyTotalOutwardPortal;
 
     const aoa: any[][] = [];
-    aoa.push(['VASWANI RETURN ENTERPRISE — GST OUTPUT RECONCILIATION AUDIT DECK']);
+    aoa.push(['FINPULSE CONSULTING — GST OUTPUT RECONCILIATION AUDIT DECK']);
     aoa.push(['FOUR-WAY TOTALITY AUDIT CROSS-CHECK & MATHEMATICAL TIE-OUT']);
     aoa.push([]);
 
@@ -3285,7 +3285,7 @@ export function executeOutputReconciliation(inputs: ReconciliationInputs): Outpu
     { name: '📁 Nil Rated Details', target: 'Nil_Rated_Details' }
   ];
 
-  appendExecutiveSummary(wb, "VASWANI RETURN ENTERPRISE", 'GST RECONCILIATION DASHBOARD', stats, breakdown, tabs);
+  appendExecutiveSummary(wb, "FINPULSE CONSULTING", 'GST RECONCILIATION DASHBOARD', stats, breakdown, tabs);
 
   XLSX.utils.book_append_sheet(wb, wsMaster, 'Master_Dashboard');
   XLSX.utils.book_append_sheet(wb, partySummaryData.ws, 'Party_Summary');

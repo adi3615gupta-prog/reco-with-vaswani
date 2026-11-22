@@ -1,11 +1,15 @@
 import { useCallback, useState } from 'react';
 import { Upload, FileSpreadsheet, Check, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
-interface FileUploadZoneProps {
-  label: string;
-  description: string;
-  onFileSelect: (file: File) => void;
+export interface FileUploadZoneProps {
+  label?: string;
+  title?: string;
+  description?: string;
+  subtitle?: string;
+  onFileSelect?: (file: File) => void;
+  onUpload?: (file: File) => void;
   accepted?: string;
   fileName?: string;
   className?: string;
@@ -14,8 +18,11 @@ interface FileUploadZoneProps {
 
 export function FileUploadZone({
   label,
+  title,
   description,
+  subtitle,
   onFileSelect,
+  onUpload,
   accepted = '.csv,.xlsx,.xls',
   fileName,
   className,
@@ -23,27 +30,63 @@ export function FileUploadZone({
 }: FileUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
 
+  const displayLabel = label || title || 'Upload File';
+  const displayDesc = description || subtitle || '';
+  const fileHandler = onFileSelect || onUpload;
+
+  const validateAndHandle = useCallback(
+    (file: File) => {
+      if (!fileHandler) return;
+
+      // 1. Max size check: 50MB
+      const MAX_BYTES = 50 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        toast.error('File size exceeds the 50MB limit. Please upload a smaller file.');
+        return;
+      }
+
+      // 2. Extension check
+      if (accepted && accepted.trim().length > 0) {
+        const allowedExts = accepted
+          .split(',')
+          .map((ext) => ext.trim().toLowerCase())
+          .filter(Boolean);
+
+        const fileNameLower = file.name.toLowerCase();
+        const hasValidExt = allowedExts.some((ext) => fileNameLower.endsWith(ext));
+
+        if (!hasValidExt && allowedExts.length > 0) {
+          toast.error(`Invalid file format. Allowed formats: ${accepted}`);
+          return;
+        }
+      }
+
+      fileHandler(file);
+    },
+    [fileHandler, accepted]
+  );
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file) onFileSelect(file);
+      if (file) validateAndHandle(file);
     },
-    [onFileSelect]
+    [validateAndHandle]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) onFileSelect(file);
+      if (file) validateAndHandle(file);
     },
-    [onFileSelect]
+    [validateAndHandle]
   );
 
   // Derive theme accents from label text
-  const isPortal = label.toLowerCase().includes('2b') || label.toLowerCase().includes('portal') || label.toLowerCase().includes('govt');
-  const isDebit = label.toLowerCase().includes('debit') || label.toLowerCase().includes('dn');
+  const isPortal = displayLabel.toLowerCase().includes('2b') || displayLabel.toLowerCase().includes('portal') || displayLabel.toLowerCase().includes('govt');
+  const isDebit = displayLabel.toLowerCase().includes('debit') || displayLabel.toLowerCase().includes('dn');
 
   const themeBorder = isDebit ? 'hover:border-amber-500/60' : isPortal ? 'hover:border-emerald-500/60' : 'hover:border-sky-500/60';
   const themeGlow = isDebit ? 'group-hover:shadow-[0_0_25px_rgba(245,158,11,0.15)]' : isPortal ? 'group-hover:shadow-[0_0_25px_rgba(16,185,129,0.15)]' : 'group-hover:shadow-[0_0_25px_rgba(74,158,232,0.15)]';
@@ -74,7 +117,7 @@ export function FileUploadZone({
                 <FileSpreadsheet className="w-6 h-6 text-emerald-700" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">{label}</p>
+                <p className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">{displayLabel}</p>
                 <div className="inline-flex items-center gap-1.5 max-w-full px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 font-mono text-xs font-bold truncate shadow-2xs">
                   <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   <span className="truncate">{fileName}</span>
@@ -96,9 +139,9 @@ export function FileUploadZone({
                 <Upload className="w-6 h-6 text-indigo-600 transition-colors group-hover:text-current" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{label}</p>
+                <p className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{displayLabel}</p>
                 {!compact && (
-                  <p className="text-xs text-slate-500 max-w-[220px] mx-auto leading-relaxed">{description}</p>
+                  <p className="text-xs text-slate-500 max-w-[220px] mx-auto leading-relaxed">{displayDesc}</p>
                 )}
               </div>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider uppercase bg-white border border-slate-200 text-slate-600 group-hover:border-slate-300 shadow-2xs">

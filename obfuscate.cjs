@@ -7,6 +7,28 @@ execSync('npx esbuild server.js --bundle --platform=node --target=node18 --forma
 
 let source = fs.readFileSync('server.cjs', 'utf8');
 
+// Inject build-time Licensing Gateway configuration from local .env / firebase-functions/.env (never committed to git)
+const loadEnvFile = (filePath) => {
+    const map = {};
+    if (!fs.existsSync(filePath)) return map;
+    for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq > 0) map[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+    }
+    return map;
+};
+const rootEnv = loadEnvFile('.env');
+const fnEnv = loadEnvFile('firebase-functions/.env');
+const buildLicenseApiUrl = process.env.LICENSE_API_URL || rootEnv.LICENSE_API_URL || 'https://vaswani-license-gateway.vercel.app';
+const buildLicenseToken = process.env.LICENSE_GATEWAY_TOKEN || rootEnv.LICENSE_GATEWAY_TOKEN || fnEnv.LICENSE_GATEWAY_TOKEN || '';
+
+const gatewayEnvInjection = `
+if (!process.env.LICENSE_API_URL) process.env.LICENSE_API_URL = ${JSON.stringify(buildLicenseApiUrl)};
+if (!process.env.LICENSE_GATEWAY_TOKEN && ${JSON.stringify(Boolean(buildLicenseToken))}) process.env.LICENSE_GATEWAY_TOKEN = ${JSON.stringify(buildLicenseToken)};
+`;
+
 // Prepend DOM Matrix and Canvas polyfills for headless Node runtime environments
 const polyfills = `
 if (typeof globalThis.DOMMatrix === 'undefined') {
@@ -37,7 +59,7 @@ if (typeof globalThis.Path2D === 'undefined') {
   };
 }
 `;
-source = polyfills + source;
+source = gatewayEnvInjection + polyfills + source;
 
 // Replace all esbuild fileURLToPath / hoisted __filename / __dirname with native CommonJS globals
 source = source.replace(/var __filename\d*\s*=\s*[^;\n]+;/g, (match) => {
@@ -64,7 +86,7 @@ const obfuscated = JavaScriptObfuscator.obfuscate(source, {
     log: false,
     numbersToExpressions: false,
     renameGlobals: false,
-    selfDefending: false,
+    selfDefending: true,
     simplify: true,
     splitStrings: true,
     splitStringsChunkLength: 5,

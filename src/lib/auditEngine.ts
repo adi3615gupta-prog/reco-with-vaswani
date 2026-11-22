@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx-js-style';
+import { removeAllMergesFromWorkbook } from '@/lib/excel/styles/zeroMergeGuard';
 import type { TallyFinalisationData, TallyFinalisationParty } from '@/lib/tallyApi';
 
 export interface FinalisationScrutinyObservation {
@@ -96,6 +97,8 @@ export interface TallyVoucherEntry {
   voucherNumber: string;
   amount: number;
   isDebit: boolean;
+  partyName?: string;
+  counterpartyLedger?: string;
 }
 
 // ─── Calculations ───────────────────────────────────────────────────
@@ -725,27 +728,33 @@ export function runCashComplianceAudit(
   const observations: CashAuditObservation[] = [];
   const loanPartyNames = new Set(loanParties.map(p => p.partyName));
 
-  // 1. Check for Sec 40A(3): Cash payments > ₹10,000
-  const dailyCashPayments: { [key: string]: { [party: string]: number } } = {};
+  // 1. Check for Sec 40A(3): Aggregate Cash payments > ₹10,000 per party per day
+  const dailyCashMap = new Map<string, { partyName: string; date: string; total: number; vouchers: TallyVoucherEntry[] }>();
   cashVouchers.forEach(v => {
-    if (!v.isDebit) { // Cash payment means cash is credited (not a debit to cash account)
-      const key = `${v.date}-${v.voucherType}`; // Assuming voucherType is party name for payments
-      if (!dailyCashPayments[key]) dailyCashPayments[key] = {};
-      dailyCashPayments[key][v.voucherType] = (dailyCashPayments[key][v.voucherType] || 0) + v.amount;
+    if (!v.isDebit) { // Cash payment (cash credited)
+      const party = v.partyName || v.counterpartyLedger || (v.voucherType && !['Payment', 'Journal', 'Contra'].includes(v.voucherType) ? v.voucherType : 'Unknown Party');
+      const key = `${v.date}::${party}`;
+      const entry = dailyCashMap.get(key) || { partyName: party, date: v.date, total: 0, vouchers: [] };
+      entry.total += v.amount;
+      entry.vouchers.push(v);
+      dailyCashMap.set(key, entry);
     }
   });
 
-  cashVouchers.forEach(v => {
-    if (!v.isDebit && v.amount > 10000) {
+  dailyCashMap.forEach(group => {
+    if (group.total > 10000) {
+      const vNos = group.vouchers.map(v => v.voucherNumber).filter(Boolean).join(', ');
       observations.push({
-        date: v.date,
-        partyName: v.voucherType, // Assuming party name is in voucherType for this context
-        voucherType: v.voucherType,
-        voucherNumber: v.voucherNumber,
-        amount: v.amount,
+        date: group.date,
+        partyName: group.partyName,
+        voucherType: group.vouchers[0].voucherType,
+        voucherNumber: vNos || group.vouchers[0].voucherNumber,
+        amount: group.total,
         type: 'Disallowed Payment (40A(3))',
         severity: 'High',
-        description: `Single cash payment of ₹${v.amount.toLocaleString('en-IN')} to ${v.voucherType} exceeds the ₹10,000 daily limit.`,
+        description: group.vouchers.length === 1
+          ? `Single cash payment of ₹${group.total.toLocaleString('en-IN')} to ${group.partyName} exceeds the ₹10,000 daily limit.`
+          : `Aggregate cash payments of ₹${group.total.toLocaleString('en-IN')} across ${group.vouchers.length} vouchers to ${group.partyName} on ${group.date} exceed the ₹10,000 daily limit.`,
         recommendation: 'Verify nature of expense. If disallowed, reverse expense claim for tax purposes. Prefer digital payment methods.'
       });
     }
@@ -753,18 +762,18 @@ export function runCashComplianceAudit(
 
   // 2. Check for Sec 269SS/T: Loan receipts/payments > ₹20,000
   cashVouchers.forEach(v => {
-    // Assuming voucherType for cash transactions holds the contra-account/party name
-    if (loanPartyNames.has(v.voucherType) && v.amount > 20000) {
+    const party = v.partyName || v.counterpartyLedger || v.voucherType;
+    if (loanPartyNames.has(party) && v.amount > 20000) {
       const isReceipt = v.isDebit; // Debit to cash is a receipt
       observations.push({
         date: v.date,
-        partyName: v.voucherType,
+        partyName: party,
         voucherType: v.voucherType,
         voucherNumber: v.voucherNumber,
         amount: v.amount,
         type: 'Loan Violation (269SS/T)',
         severity: 'High',
-        description: `Cash ${isReceipt ? 'receipt from' : 'payment to'} loan account ${v.voucherType} for ₹${v.amount.toLocaleString('en-IN')} exceeds the ₹20,000 limit.`,
+        description: `Cash ${isReceipt ? 'receipt from' : 'payment to'} loan account ${party} for ₹${v.amount.toLocaleString('en-IN')} exceeds the ₹20,000 limit.`,
         recommendation: 'Immediately reverse the transaction and use banking channels. This can attract a 100% penalty.'
       });
     }
@@ -1247,12 +1256,7 @@ export function exportAuditToExcel(
     const ws = XLSX.utils.aoa_to_sheet(data);
 
     // Apply merges
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-      { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
-      { s: { r: 11, c: 0 }, e: { r: 11, c: 3 } },
-    ];
+    ws['!merges'] = [];
 
     // Format width
     ws["!cols"] = [{ wch: 35 }, { wch: 22 }, { wch: 18 }, { wch: 32 }];
@@ -1359,10 +1363,7 @@ export function exportAuditToExcel(
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
 
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } }
-    ];
+    ws['!merges'] = [];
 
     ws["!cols"] = [
       { wch: 30 }, { wch: 18 }, { wch: 18 },
@@ -1499,10 +1500,7 @@ export function exportAuditToExcel(
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
 
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }
-    ];
+    ws['!merges'] = [];
 
     ws["!cols"] = [
       { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
@@ -1765,10 +1763,7 @@ export function exportAuditToExcel(
     ];
 
     // Merge titles
-    ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } }
-    ];
+    ws['!merges'] = [];
 
     // Stylings
     const totalRows = list.length;
@@ -1869,10 +1864,7 @@ export function exportAuditToExcel(
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
 
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } }
-    ];
+    ws['!merges'] = [];
 
     ws["!cols"] = [
       { wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 },
@@ -1951,6 +1943,7 @@ export function exportAuditToExcel(
 
   // Export to Excel File
   const filename = `${companyName.replace(/\s+/g, '_')}_Debtors_Creditors_Audit_Report.xlsx`;
+  removeAllMergesFromWorkbook(wb);
   XLSX.writeFile(wb, filename);
 }
 
@@ -2037,12 +2030,7 @@ export function exportDebtorsToExcel(
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
   wsSummary["!cols"] = [{ wch: 35 }, { wch: 22 }, { wch: 18 }, { wch: 35 }];
-  wsSummary["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
-    { s: { r: 10, c: 0 }, e: { r: 10, c: 3 } }
-  ];
+  wsSummary['!merges'] = [];
 
   const safeSetCell = (ws: any, addr: string, style: any, numFmt?: string) => {
     if (ws[addr]) {
@@ -2238,12 +2226,7 @@ export function exportCreditorsToExcel(
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
   wsSummary["!cols"] = [{ wch: 35 }, { wch: 22 }, { wch: 18 }, { wch: 35 }];
-  wsSummary["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
-    { s: { r: 10, c: 0 }, e: { r: 10, c: 3 } }
-  ];
+  wsSummary['!merges'] = [];
 
   const safeSetCell = (ws: any, addr: string, style: any, numFmt?: string) => {
     if (ws[addr]) {
@@ -3427,12 +3410,7 @@ export function exportSamplingToExcel(
     // Apply styles
     ws["A1"].s = titleStyle;
     // @ts-ignore
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-      { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
-      { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } },
-      { s: { r: 6, c: 0 }, e: { r: 6, c: 3 } }
-    ];
+    ws['!merges'] = [];
 
     ws["A3"].s = summaryHeaderStyle;
     ws["C3"].s = summaryHeaderStyle;
@@ -3586,6 +3564,7 @@ export function runCreditorFinalisationScrutiny(
 
     const invoiceDates: { date: string; amount: number; vNo: string }[] = [];
 
+    const dailyCashByDate = new Map<string, { total: number; vouchers: typeof party.vouchers }>();
     for (const v of party.vouchers) {
       const isCash = v.counterpartyLedger.toUpperCase().includes('CASH');
       if (v.isDebit) {
@@ -3594,22 +3573,31 @@ export function runCreditorFinalisationScrutiny(
         if (isCash) {
           cashPaymentsTotal += v.amount;
           if (v.amount > maxSingleCashPayment) maxSingleCashPayment = v.amount;
+          const existing = dailyCashByDate.get(v.date) || { total: 0, vouchers: [] };
+          existing.total += v.amount;
+          existing.vouchers.push(v);
+          dailyCashByDate.set(v.date, existing);
         }
       } else {
         totalExpenses += v.amount;
         hasPurchaseVouchers = true;
         invoiceDates.push({ date: v.date, amount: v.amount, vNo: v.voucherNumber });
       }
+    }
 
-      // Rule 1: Cash Payment > ₹10,000 (Sec 40A(3))
-      if (isCash && v.isDebit && v.amount > 10000) {
+    // Rule 1: Aggregate Cash Payment > ₹10,000 in a day (Sec 40A(3))
+    for (const [date, daily] of dailyCashByDate.entries()) {
+      if (daily.total > 10000) {
+        const vNos = daily.vouchers.map(v => `#${v.voucherNumber}`).join(', ');
         addObs(
           partyName,
           'Cash Payment / Sec 40A(3)',
           'High',
-          `Single Cash payment of ₹${v.amount.toLocaleString('en-IN')} on ${v.date} (Vch #${v.voucherNumber}). Risk u/s 40A(3).`,
+          daily.vouchers.length === 1
+            ? `Single Cash payment of ₹${daily.total.toLocaleString('en-IN')} on ${date} (Vch ${vNos}). Risk u/s 40A(3).`
+            : `Aggregate Cash payments of ₹${daily.total.toLocaleString('en-IN')} on ${date} across ${daily.vouchers.length} vouchers (${vNos}) exceed ₹10,000 daily limit. Risk u/s 40A(3).`,
           'Disallowed u/s 40A(3) unless covered under Rule 6DD exceptions. Verify cash voucher.',
-          v.amount
+          daily.total
         );
       }
     }
@@ -3646,7 +3634,7 @@ export function runCreditorFinalisationScrutiny(
     }
 
     // Rule 4: Goods Purchase 0.1% TDS u/s 194Q (> ₹50 Lakhs)
-    if (totalExpenses > 5000000 && (nameUpper.includes('STEEL') || nameUpper.includes('TRADER') || nameUpper.includes('HARDWARE') || nameUpper.includes('BUILDING') || nameUpper.includes('ROOF') || nameUpper.includes('DISTRIBUTOR') || nameUpper.includes('HUB'))) {
+    if (totalExpenses > 5000000) {
       addObs(
         partyName,
         'Purchase Sec 194Q (0.1% TDS)',
@@ -3831,10 +3819,7 @@ export function exportFinalisationScrutinyToExcel(
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
-  ];
+  ws['!merges'] = [];
 
   ws['!cols'] = [
     { wch: 8 },  // Sr.no

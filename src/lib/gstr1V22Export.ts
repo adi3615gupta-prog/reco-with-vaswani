@@ -13,20 +13,8 @@
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { Gstr1ReturnData } from './gstr1Engine';
-
-// ─── 0. Zero-Merge Defense Helper ───────────────────────────────────────────
-
-export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
-  if (!wb || !wb.SheetNames) return wb;
-  for (const name of wb.SheetNames) {
-    const ws = wb.Sheets[name];
-    if (ws) {
-      delete ws['!merges'];
-      ws['!merges'] = [];
-    }
-  }
-  return wb;
-}
+export { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
+import { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
 
 // ─── 1. Official V2.2 32-Sheet Manifest & Headers ────────────────────────────
 

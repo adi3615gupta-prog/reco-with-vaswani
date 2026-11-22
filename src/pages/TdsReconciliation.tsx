@@ -3,13 +3,14 @@ import {
     ArrowLeft, UploadCloud, Database, Settings2, FileSpreadsheet, CheckCircle2, Trash2, GitCompare, Activity, AlertTriangle, Download, Search, Server, Loader2, RefreshCw, X, ShieldAlert, Edit2, Check, Plus, FileText, ChevronDown, ChevronRight, ChevronUp, Zap, Users, ArrowRight, Wallet, Eye, EyeOff, CalendarClock, History, HardDrive
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import * as XLSX from 'xlsx-js-style';
 import ExcelJS from 'exceljs';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { parseFile } from '@/lib/fileParser';
 import { exportTdsReport, computeAdvanceTdsAudit, computeMultiLedgerPans, exportMultiLedgerPanWorkbook, type AdvanceTdsResult, type MultiLedgerPanInfo } from '@/lib/tdsEngine';
 import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo } from '@/lib/tallyApi';
-import { getApiBase, getAuthToken } from '@/lib/api';
+import { safeApiFetch } from '@/lib/api';
 import { saveLocalRecoSnapshot } from '@/lib/gdrive';
 import { RecoHistoryModal } from '@/components/RecoHistoryModal';
 
@@ -164,6 +165,7 @@ function StatusFilterChips({ active, onChange, counts }: { active: StatusFilter;
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════
 export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
+    const confirm = useConfirm();
     const [activeStep, setActiveStep] = useState(0);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
@@ -274,6 +276,15 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     // Tally Live API State
     const [tallyPort, setTallyPort] = useState(9000);
+  // Phase 40: Scoped Tally Session Unmount Teardown
+  useEffect(() => {
+    return () => {
+      setConnectionStatus('disconnected');
+      setCompanyInfo(null);
+      clearTallyMetadataCache();
+    };
+  }, []);
+
     const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
     const [companyInfo, setCompanyInfo] = useState<TallyCompanyInfo | null>(null);
     const [fromDate, setFromDate] = useState(fyFromDate);
@@ -471,21 +482,21 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     // Load static rules from DB
     const loadRules = async () => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/rules`);
+            const res = await safeApiFetch('/api/tds/rules');
             if (res.ok) { const data = await res.json(); if (data && data.length > 0) setRules(data); }
         } catch (err) { console.error("Rules fetch failed, falling back to local defaults.", err); }
     };
 
     const loadMappings = async () => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/ledgers`);
+            const res = await safeApiFetch('/api/tds/ledgers');
             if (res.ok) { const data = await res.json(); setLedgerMappings(data); }
         } catch (err) { console.error("Failed to fetch ledger mappings", err); }
     };
 
     const loadSuggestions = async () => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/auto-map`);
+            const res = await safeApiFetch('/api/tds/auto-map');
             if (res.ok) {
                 const data = await res.json();
                 setSuggestions(data);
@@ -500,14 +511,14 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     const loadGroupMappings = async () => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/group-mappings`);
+            const res = await safeApiFetch('/api/tds/group-mappings');
             if (res.ok) { const data = await res.json(); setGroupMappings(data); }
         } catch (err) { console.error("Failed to fetch group mappings", err); }
     };
 
     const loadParties = async () => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/parties`);
+            const res = await safeApiFetch('/api/tds/parties');
             if (res.ok) { const data = await res.json(); setParties(data); }
         } catch (err) { console.error("Failed to fetch party master", err); }
     };
@@ -518,7 +529,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const handleAddGroupMapping = async () => {
         if (!newExpenseGroup.trim()) return toast.error('Enter a valid Expense Group name');
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/group-mappings`, {
+            const res = await safeApiFetch('/api/tds/group-mappings', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ expenseGroup: newExpenseGroup.trim(), subGroup: newSubGroup.trim() || undefined, subGroup2: newSubGroup2.trim() || undefined, sectionCode: newGroupSectionCode })
             });
@@ -529,7 +540,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     const handleRemoveGroupMapping = async (id: string) => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/group-mappings/${id}`, { method: 'DELETE' });
+            const res = await safeApiFetch(`/api/tds/group-mappings/${id}`, { method: 'DELETE' });
             if (res.ok) { toast.success('Template mapping removed'); loadGroupMappings(); }
             else toast.error('Failed to remove mapping');
         } catch (err) { toast.error('Connection error removing mapping'); }
@@ -539,7 +550,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const handleAddMapping = async () => {
         if (!newLedgerName.trim()) return toast.error('Enter a valid Tally ledger name');
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/ledgers/update`, {
+            const res = await safeApiFetch('/api/tds/ledgers/update', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ledgerName: newLedgerName.trim(), sectionCode: isNewLedgerTds ? null : newSectionCode, isTdsLedger: isNewLedgerTds })
             });
@@ -554,7 +565,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const sectionCode = updates.sectionCode !== undefined ? updates.sectionCode : existing.sectionCode;
         const isTdsLedger = updates.isTdsLedger !== undefined ? updates.isTdsLedger : existing.isTdsLedger;
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/ledgers/update`, {
+            const res = await safeApiFetch('/api/tds/ledgers/update', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ledgerName, sectionCode: isTdsLedger ? null : sectionCode, isTdsLedger })
             });
@@ -565,7 +576,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     const handleRemoveMapping = async (ledgerName: string) => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/ledgers/${encodeURIComponent(ledgerName)}`, { method: 'DELETE' });
+            const res = await safeApiFetch(`/api/tds/ledgers/${encodeURIComponent(ledgerName)}`, { method: 'DELETE' });
             if (res.ok) { toast.success('Mapping removed'); loadMappings(); loadSuggestions(); }
             else toast.error('Failed to remove mapping');
         } catch (err) { toast.error('Connection error removing mapping'); }
@@ -579,7 +590,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const confirmedMatches = pendingPanMatches.filter(m => selectedPanMatches[m.partyName]).map(m => ({ partyName: m.partyName, panNumber: m.suggestedPan }));
         if (confirmedMatches.length > 0) {
             try {
-                const res = await fetch(`${getApiBase()}/api/tds/parties/confirm-name-matches`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matches: confirmedMatches }) });
+                const res = await safeApiFetch('/api/tds/parties/confirm-name-matches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matches: confirmedMatches }) });
                 if (!res.ok) toast.error("Failed to map PANs in vendor profile");
                 else { toast.success(`Successfully mapped PANs for ${confirmedMatches.length} vendors!`); loadParties(); }
             } catch (err) { console.error("Failed to post confirm name matches", err); }
@@ -639,7 +650,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const mappingsToConfirm = suggestions.filter(s => selectedSuggestions[s.ledgerName]).map(s => ({ ledgerName: s.ledgerName, sectionCode: suggestedSections[s.ledgerName] || s.suggestedSection }));
         if (mappingsToConfirm.length === 0) return toast.error("Please select at least one mapping to confirm.");
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/confirm-mapping`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mappings: mappingsToConfirm }) });
+            const res = await safeApiFetch('/api/tds/confirm-mapping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mappings: mappingsToConfirm }) });
             if (res.ok) { toast.success(`Successfully confirmed ${mappingsToConfirm.length} ledger mappings!`); loadMappings(); loadSuggestions(); }
             else toast.error("Failed to confirm auto-mappings");
         } catch (err) { toast.error("Error connecting to server for auto-mapping confirmation"); }
@@ -650,7 +661,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     const handleSavePartyEdit = async (id: string) => {
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/parties/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entityType: editEntityType, panNumber: editPan.trim().toUpperCase() }) });
+            const res = await safeApiFetch(`/api/tds/parties/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entityType: editEntityType, panNumber: editPan.trim().toUpperCase() }) });
             if (res.ok) { toast.success("Party details updated!"); setEditingPartyId(null); loadParties(); }
             else toast.error("Failed to update party details");
         } catch (err) { toast.error("Error communicating with party database"); }
@@ -659,7 +670,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const syncPartiesFromTallyData = async (tallyTxns: any[]) => {
         const distinctParties = Array.from(new Map(tallyTxns.filter(t => t.partyName).map(t => [t.partyName.toUpperCase().trim(), { partyName: t.partyName, pan: t.partyPan }])).values());
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/process-pan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parties: distinctParties }) });
+            const res = await safeApiFetch('/api/tds/process-pan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parties: distinctParties }) });
             if (res.ok) loadParties();
         } catch (err) { console.error("Failed to sync party metadata to DB", err); }
     };
@@ -668,7 +679,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const distinctLedgers = Array.from(new Map(tallyTxns.filter(t => t.ledgerName).map(t => [t.ledgerName.toUpperCase().trim(), { ledgerName: t.ledgerName, parentGroup: t.parentGroup || 'Expense', parentGroupPath: t.parentGroupPath || '' }])).values());
         if (distinctLedgers.length === 0) return;
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/extract-ledgers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ledgers: distinctLedgers }) });
+            const res = await safeApiFetch('/api/tds/extract-ledgers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ledgers: distinctLedgers }) });
             if (res.ok) { loadMappings(); loadSuggestions(); }
         } catch (err) { console.error("Failed to sync ledgers to DB", err); }
     };
@@ -788,7 +799,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             toast.info("No unmapped ledgers found in list.");
             return;
         }
-        if (!window.confirm(`Are you sure you want to remove ${unmapped.length} unmapped ledgers from the list?`)) return;
+        const ok = await confirm({
+            title: 'Remove Unmapped Ledgers',
+            description: `Are you sure you want to remove ${unmapped.length} unmapped ledgers from the list?`,
+            confirmText: 'Remove Ledgers',
+            variant: 'destructive',
+        });
+        if (!ok) return;
         
         // Optimistically remove unmapped ledgers & switch filter to mapped
         const removedCount = unmapped.length;
@@ -797,9 +814,9 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         toast.success(`Removed ${removedCount} unmapped ledgers.`);
 
         try {
-            let res = await fetch(`${getApiBase()}/api/tds/remove-unmapped`, { method: 'POST' });
+            let res = await safeApiFetch('/api/tds/remove-unmapped', { method: 'POST' });
             if (!res.ok) {
-                await fetch(`${getApiBase()}/api/tds/ledgers-unmapped`, { method: 'DELETE' });
+                await safeApiFetch('/api/tds/ledgers-unmapped', { method: 'DELETE' });
             }
         } catch (err) {
             console.error("Backend delete call:", err);
@@ -823,7 +840,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     };
                 }).filter(m => m.ledgerName && (m.isTdsLedger || validSections.has(m.sectionCode || '')));
                 if (newMappings.length > 0) {
-                    const res = await fetch(`${getApiBase()}/api/tds/confirm-mapping`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mappings: newMappings }) });
+                    const res = await safeApiFetch('/api/tds/confirm-mapping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mappings: newMappings }) });
                     if (res.ok) { 
                         toast.success(`Imported ${newMappings.length} mappings!`);
                         const importedSet = new Set(newMappings.map(m => m.ledgerName.toLowerCase().trim()));
@@ -935,7 +952,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                 const newMappings = json.map((row: any) => ({ expenseGroup: String(row['Expense Group'] || '').trim(), subGroup: String(row['Sub-Group'] || '').trim() || undefined, subGroup2: String(row['Sub-Group 2'] || '').trim() || undefined, sectionCode: String(row['TDS Section Code'] || '').trim() })).filter(m => m.expenseGroup && validSections.has(m.sectionCode));
                 if (newMappings.length > 0) {
                     let successCount = 0;
-                    for (const m of newMappings) { const res = await fetch(`${getApiBase()}/api/tds/group-mappings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }); if (res.ok) successCount++; }
+                    for (const m of newMappings) { const res = await safeApiFetch('/api/tds/group-mappings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }); if (res.ok) successCount++; }
                     toast.success(`Imported ${successCount} group mapping templates!`); loadGroupMappings();
                 } else toast.error('No valid group mappings found in Excel file');
             } catch (error) { toast.error('Invalid Excel file'); }
@@ -1238,7 +1255,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const runReconciliation = async (tallyTxns: any[], tracesRecords: any[], confirmedNameMatchesList?: { booksName: string; tracesName: string }[]) => {
         setIsProcessing(true);
         try {
-            const response = await fetch(`${getApiBase()}/api/tds/reconcile`, {
+            const response = await safeApiFetch('/api/tds/reconcile', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1313,9 +1330,15 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const handleReset = () => { setForm26qFile(null); setItrJsonFile(null); setItrParsedTdsRecords(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null); setMultiLedgerPans([]); setActiveStep(0); toast.info("Reconciliation state cleared."); };
 
     const handleFullReset = async () => {
-        if (!window.confirm("Are you sure you want to completely reset the TDS module? This will delete all ledger mappings, transactions, and vendor edits from the database to start fresh.")) return;
+        const ok = await confirm({
+            title: 'Reset TDS Module',
+            description: "Are you sure you want to completely reset the TDS module? This will delete all ledger mappings, transactions, and vendor edits from the database to start fresh.",
+            confirmText: 'Reset Everything',
+            variant: 'destructive',
+        });
+        if (!ok) return;
         try {
-            const res = await fetch(`${getApiBase()}/api/tds/reset`, { method: 'POST' });
+            const res = await safeApiFetch('/api/tds/reset', { method: 'POST' });
             if (res.ok) {
                 setForm26qFile(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null);
                 setLedgerMappings([]); setGroupMappings([]); setSuggestions([]); setSelectedSuggestions({});

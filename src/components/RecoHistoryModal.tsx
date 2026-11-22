@@ -13,6 +13,8 @@ import {
   type RecoSnapshotPayload
 } from '@/lib/gdrive';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { safeApiFetch, parseJsonSafe } from '@/lib/api';
 
 interface Props {
   isOpen: boolean;
@@ -27,6 +29,7 @@ const fmt = (n: number) =>
   n === 0 ? '0.00' : new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConnectModal, clientGstin, fy }: Props) {
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<'db' | 'local' | 'gdrive'>('db');
   const [snapshots, setSnapshots] = useState<RecoSnapshotMeta[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,10 +41,10 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
     try {
       if (activeTab === 'db') {
         const gstin = clientGstin || localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
-        const currentFy = fy || '2024-25';
-        const res = await fetch(`/api/audit-storage/reco-runs/${encodeURIComponent(gstin)}/${encodeURIComponent(currentFy)}`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.runs)) {
+        const currentFy = fy || '2026-27';
+        const res = await safeApiFetch(`/api/audit-storage/reco-runs/${encodeURIComponent(gstin)}/${encodeURIComponent(currentFy)}`);
+        const { ok, data } = await parseJsonSafe(res);
+        if (ok && data?.success && Array.isArray(data.runs)) {
           setSnapshots(data.runs.map((r: any) => ({
             id: r.run_id,
             name: `${r.client_gstin} - ${r.fy} (${new Date(r.run_date).toLocaleString('en-IN')})`,
@@ -88,9 +91,9 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
     try {
       let payload: any;
       if (activeTab === 'db') {
-        const res = await fetch(`/api/audit-storage/reco-runs/detail/${encodeURIComponent(fileId)}`);
-        const data = await res.json();
-        if (data.success && data.data) {
+        const res = await safeApiFetch(`/api/audit-storage/reco-runs/detail/${encodeURIComponent(fileId)}`);
+        const { ok, data, error } = await parseJsonSafe(res);
+        if (ok && data?.success && data.data) {
           const d = data.data;
           payload = {
             version: '1.0',
@@ -105,7 +108,7 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
             outputResults: d.metadata?.outputResults
           };
         } else {
-          throw new Error(data.error || 'Failed to fetch run details from SQLite');
+          throw new Error(error || data?.error || 'Failed to fetch run details from SQLite');
         }
       } else if (activeTab === 'local') {
         payload = await downloadLocalRecoSnapshot(fileId);
@@ -123,12 +126,18 @@ export function RecoHistoryModal({ isOpen, onClose, onRestoreSession, onOpenConn
   };
 
   const handleDelete = async (fileId: string, fileName: string) => {
-    if (!confirm(`Are you sure you want to delete snapshot '${fileName}'?`)) return;
+    const ok = await confirm({
+      title: 'Delete Snapshot',
+      description: `Are you sure you want to delete snapshot '${fileName}'? This cannot be undone.`,
+      confirmText: 'Delete Snapshot',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
       if (activeTab === 'db') {
-        const res = await fetch(`/api/audit-storage/reco-runs/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Failed to delete run from database');
+        const res = await safeApiFetch(`/api/audit-storage/reco-runs/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+        const { ok, data, error } = await parseJsonSafe(res);
+        if (!ok || !data?.success) throw new Error(error || data?.error || 'Failed to delete run from database');
       } else if (activeTab === 'local') {
         await deleteLocalRecoSnapshot(fileId);
       } else {

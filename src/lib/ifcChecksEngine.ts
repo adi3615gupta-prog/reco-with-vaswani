@@ -192,7 +192,7 @@ export function evaluateIfcChecks(params: {
 
   // 8. Depreciation P&L vs Fixed Assets Register
   const pnlDep = pl.expenses.find((e) => e.noteNo === 32)?.cyAmount || 0;
-  const faDep = fixedAssets.reduce((s, a) => s + (a.depreciation_cy || 0), 0);
+  const faDep = fixedAssets.reduce((s, a) => s + (a.depreciation_cy ?? a.depreciation_for_year_books ?? a.depreciation_for_year ?? 0), 0);
   const depDiff = Math.abs(pnlDep - faDep);
   addCheck(
     'IFC-08',

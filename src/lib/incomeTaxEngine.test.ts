@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { calculateTaxLiability, compareRegimes } from './incomeTaxEngine';
+import { getAllTaxBracketRules } from './taxSlabData';
 import { D, Decimal } from './decimal';
 import {
   type TaxpayerProfile,
@@ -209,10 +210,11 @@ describe('CalculateTaxLiability Engine', () => {
   });
 
   // ── Test 4: STCG 111A ₹5L + Normal ₹3L — segregation ───
-  it('T4: STCG 111A ₹5L + Normal salary ₹3L — special rate segregation', () => {
+  it('T4: STCG 111A ₹5L + Normal salary ₹3L — special rate segregation (NR)', () => {
     const profile = makeProfile({
       opted_for_new_regime: true,
       age: 28,
+      residential_status: 'NR', // Non-resident: no Sec 111A basic exemption shortfall offset
     });
 
     const incomes = [
@@ -239,10 +241,11 @@ describe('CalculateTaxLiability Engine', () => {
   });
 
   // ── Test 5: LTCG 112A ₹3L — exemption + 87A exclusion ──
-  it('T5: LTCG 112A ₹3L — ₹1.25L exemption, 12.5% tax, 87A excludes 112A', () => {
+  it('T5: LTCG 112A ₹3L — ₹1.25L exemption, 12.5% tax, 87A excludes 112A (NR)', () => {
     const profile = makeProfile({
       opted_for_new_regime: true,
       age: 45,
+      residential_status: 'NR', // Non-resident: no Sec 112A basic exemption shortfall offset
     });
 
     const incomes = [
@@ -540,5 +543,113 @@ describe('CalculateTaxLiability Engine', () => {
     expect(result.surchargeAmount.toNumber()).toBe(110000);
     // Cess (4%): 4% of (11,00,000 + 1,10,000) = ₹48,400
     expect(result.cessAmount.toNumber()).toBe(48400);
+  });
+
+  // ── Statutory Provisos: Resident Basic Exemption Shortfall Set-off ─
+  it('Statutory: Resident basic exemption shortfall offsets LTCG 112A and STCG 111A', () => {
+    const profile = makeProfile({
+      opted_for_new_regime: true,
+      age: 35,
+      residential_status: 'ROR', // Resident
+      financial_year: 'FY2025-26', // Basic exemption = ₹4,00,000
+    });
+
+    const incomes = [
+      makeIncome(IncomeType.SALARY, 300000), // Normal salary ₹3L - 75k std ded = ₹2.25L
+      makeIncome(IncomeType.STCG_111A, 500000), // STCG 111A ₹5L
+    ];
+
+    const result = calculateTaxLiability(profile, incomes, []);
+
+    // Normal income = ₹2.25L. Basic exemption = ₹4.0L.
+    // Shortfall = ₹1.75L.
+    // STCG 111A reduced from ₹5L by ₹1.75L shortfall = ₹3.25L taxable at 20% = ₹65,000.
+    expectDecimalClose(result.taxOnNormalIncome, 0);
+    expectDecimalClose(result.taxOnSTCG111A, 65000);
+    expectDecimalClose(result.totalComputedTax, 65000);
+  });
+
+  // ── Deemed Income u/s 115BBE: Non-wipeout of Normal Income Base ─
+  it('Statutory: Sec 115BBE deemed income does not wipe out normal income base', () => {
+    const profile = makeProfile({
+      opted_for_new_regime: true,
+      age: 40,
+      residential_status: 'ROR',
+      financial_year: 'FY2025-26',
+    });
+
+    const incomes = [
+      makeIncome(IncomeType.SALARY, 875000), // ₹8.75L salary - 75k = ₹8.0L normal income
+      makeIncome(IncomeType.DEEMED_INCOME_115BBE, 500000), // ₹5.0L deemed income (flat 60%)
+    ];
+
+    const result = calculateTaxLiability(profile, incomes, []);
+
+    // Normal income base must remain ₹8,00,000 (NOT wiped out by 115BBE subtraction)
+    // Slabs on ₹8L: 0-4L @ 0% = 0, 4-8L @ 5% = 20,000.
+    expectDecimalClose(result.taxOnNormalIncome, 20000);
+    // Deemed income tax: 60% of 5,00,000 = 3,00,000.
+    expectDecimalClose(result.taxOnDeemedIncome115BBE || D(0), 300000);
+    // Total computed tax = 3,20,000
+    expectDecimalClose(result.totalComputedTax, 320000);
+  });
+
+  // ── Sec 288B Rounding to Nearest ₹10 ─────────────────────────
+  it('Statutory: Section 288B rounds total tax to nearest ₹10', () => {
+    const profile = makeProfile({
+      opted_for_new_regime: true,
+      age: 30,
+      financial_year: 'FY2025-26',
+    });
+
+    // Salary that generates non-zero ending digit
+    const incomes = [
+      makeIncome(IncomeType.SALARY, 475013), // Net normal: 4,00,013. Tax: 5% of 13 = 0.65 -> round
+    ];
+
+    const result = calculateTaxLiability(profile, incomes, []);
+    expect(result.totalTaxLiability.toNumber() % 10).toBe(0);
+  });
+
+  // ── LTCG 112A Detection via section_code === '112A' ─────────
+  it('Statutory: Resolves LTCG 112A when section_code is 112A on CAPITAL_GAINS type', () => {
+    const profile = makeProfile({
+      opted_for_new_regime: true,
+      age: 45,
+      residential_status: 'NR',
+      financial_year: 'FY2025-26',
+    });
+
+    const incomes = [
+      makeIncome(IncomeType.CAPITAL_GAINS, 300000, { section_code: '112A' }),
+    ];
+
+    const result = calculateTaxLiability(profile, incomes, []);
+
+    // Exemption: ₹1.25L. Taxable: ₹1.75L @ 12.5% = ₹21,875
+    expectDecimalClose(result.taxOnLTCG112A, 21875);
+  });
+
+  // ── Multi-FY New Regime Slabs ────────────────────────────────
+  it('Statutory: getAllTaxBracketRules branches New Regime slabs by FY', () => {
+    const rules2324 = getAllTaxBracketRules('FY2023-24');
+    const rules2425 = getAllTaxBracketRules('FY2024-25');
+    const rules2526 = getAllTaxBracketRules('FY2025-26');
+
+    const new2324 = rules2324.filter(r => r.regime_type === RegimeType.NEW && r.age_category === AgeCategory.NORMAL);
+    const new2425 = rules2425.filter(r => r.regime_type === RegimeType.NEW && r.age_category === AgeCategory.NORMAL);
+    const new2526 = rules2526.filter(r => r.regime_type === RegimeType.NEW && r.age_category === AgeCategory.NORMAL);
+
+    // FY 2023-24 basic exemption: ₹3,00,000, 2nd slab upper limit: ₹6,00,000
+    expect(new2324[0].upper_limit).toBe(300000);
+    expect(new2324[1].upper_limit).toBe(600000);
+
+    // FY 2024-25 basic exemption: ₹3,00,000, 2nd slab upper limit: ₹7,00,000
+    expect(new2425[0].upper_limit).toBe(300000);
+    expect(new2425[1].upper_limit).toBe(700000);
+
+    // FY 2025-26 basic exemption: ₹4,00,000, 2nd slab upper limit: ₹8,00,000
+    expect(new2526[0].upper_limit).toBe(400000);
+    expect(new2526[1].upper_limit).toBe(800000);
   });
 });

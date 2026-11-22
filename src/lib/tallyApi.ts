@@ -54,6 +54,9 @@ export interface TallyFlatVoucher {
 
 export interface TallyCompanyInfo {
   name: string;
+  companyName?: string;
+  formalName?: string;
+  guid?: string;
   address: string;
   gstin: string;
   state: string;
@@ -350,13 +353,13 @@ function parseXml(xmlStr: string): Document {
 export function unescapeXml(safe: string): string {
   if (!safe) return '';
   return safe
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/&amp;/g, '&');
 }
 
 export function escapeXml(unsafe: string): string {
@@ -414,7 +417,7 @@ export const DEFAULT_CONFIG: TallyConnectionConfig = {
   port: 9000,
 };
 
-import { getApiBase } from '@/lib/api';
+import { getApiBase, getToken, safeApiFetch } from '@/lib/api';
 
 export async function sendTallyRequest(
   xml: string,
@@ -439,7 +442,7 @@ export async function sendTallyRequest(
   let url = `http://${config.host || 'localhost'}:${config.port}`;
 
   if (!isElectron) {
-    const isBrowser = typeof window !== 'undefined' && typeof process === 'undefined';
+    const isBrowser = typeof window !== 'undefined' && !isElectron;
     if (isBrowser) {
       // Route through Express backend proxy (/api/tally-proxy) which gracefully handles offline Tally without noisy Vite proxy errors
       url = `${getApiBase()}/api/tally-proxy`;
@@ -456,12 +459,19 @@ export async function sendTallyRequest(
   } catch (e) {}
 
   try {
+    const port = config.port || 9000;
+    const reqHeaders: Record<string, string> = {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'x-tally-port': port.toString()
+    };
+    const token = getToken();
+    if (token && token !== 'null' && token !== 'undefined') {
+      reqHeaders['Authorization'] = `Bearer ${token}`;
+    }
+
     const fetchOptions: RequestInit = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'x-tally-port': config.port.toString()
-      },
+      headers: reqHeaders,
       body: xml
     };
 
@@ -469,11 +479,52 @@ export async function sendTallyRequest(
       fetchOptions.signal = controller.signal as any;
     }
 
-    const response = await fetch(url, fetchOptions);
+    let response: Response;
+    try {
+      response = (typeof window !== 'undefined' && !isElectron) ? await safeApiFetch('/api/tally-proxy', fetchOptions) : await fetch(url, fetchOptions);
+    } catch (fetchErr: any) {
+      if (typeof window !== 'undefined' && !isElectron) {
+        if (port === 9000) {
+          try {
+            const fallbackResp = await fetch('/tally-api', {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+              body: xml,
+              signal: controller?.signal as any
+            });
+            if (fallbackResp.ok) {
+              if (timeoutId) clearTimeout(timeoutId);
+              return await fallbackResp.text();
+            }
+          } catch {}
+        }
+        try {
+          const fallbackResp2 = await safeApiFetch('/api/tally-proxy', fetchOptions);
+          if (fallbackResp2.ok) {
+            if (timeoutId) clearTimeout(timeoutId);
+            return await fallbackResp2.text();
+          }
+        } catch {}
+      }
+      throw fetchErr;
+    }
 
     if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
+      if (typeof window !== 'undefined' && !isElectron && port === 9000) {
+        try {
+          const fallbackResp = await fetch('/tally-api', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+            body: xml,
+            signal: controller?.signal as any
+          });
+          if (fallbackResp.ok) {
+            return await fallbackResp.text();
+          }
+        } catch {}
+      }
       throw new Error(`Tally connection failed (HTTP ${response.status}). Is TallyPrime running on port ${config.port}?`);
     }
 
@@ -510,6 +561,9 @@ export async function fetchCompanyInfo(config: TallyConnectionConfig = DEFAULT_C
 
   return {
     name: getTextContent(co, 'NAME') || getTextContent(co, 'COMPANYNAME') || co?.getAttribute('NAME') || 'Unknown',
+    companyName: getTextContent(co, 'NAME') || getTextContent(co, 'COMPANYNAME') || co?.getAttribute('NAME') || 'Unknown',
+    formalName: getTextContent(co, 'FORMALNAME') || getTextContent(co, 'NAME') || '',
+    guid: getTextContent(co, 'GUID') || '',
     address: getTextContent(co, 'ADDRESS') || '',
     gstin: getTextContent(co, 'GSTIN') || '',
     state: getTextContent(co, 'STATE') || '',
@@ -791,12 +845,12 @@ export async function fetchLedgerClassifications(
 // ─── Fixed Assets API ───────────────────────────────────────
 
 export interface TallyFixedAsset {
-  ledgerName: string;
-  name: string; // for compatibility
+  ledgerName?: string;
+  name?: string; // for compatibility
   openingBalance: number; // positive = debit
   closingBalance?: number;
   additions: any[];
-  deletions: any[];
+  deletions?: any[];
   parentGroup: string;
 }
 
@@ -2888,48 +2942,35 @@ export async function fetchClause44Data(
     return chunks;
   };
 
-  console.log('[Clause44] Phase 2: Fetching GST-filtered vouchers (targeted query)...');
+  console.log('[Clause44] Phase 2: Fetching GST-filtered vouchers directly in quarterly chunks (Q1..Q4) to prevent Port 9000 XML timeouts...');
+  const quarters = generateQuarterlyChunks(from, to);
+  const quarterlyResponses: string[] = [];
+
+  for (let i = 0; i < quarters.length; i++) {
+    const q = quarters[i];
+    console.log(`[Clause44] Phase 2: Fetching quarter ${i + 1}/${quarters.length}: ${q.label} (${q.from} -> ${q.to})`);
+    try {
+      const qXml = buildGSTVoucherXml(q.from, q.to);
+      const qResp = await sendTallyRequest(qXml, config, 60000);
+      quarterlyResponses.push(qResp);
+      console.log(`[Clause44] Phase 2: Quarter ${q.label} fetched successfully.`);
+    } catch (qErr: any) {
+      console.error(`[Clause44] Phase 2: Quarter ${q.label} failed:`, qErr?.message);
+    }
+  }
 
   let gstVoucherResp: string;
-  const gstFullYearXml = buildGSTVoucherXml(from, to);
-
-  try {
-    gstVoucherResp = await sendTallyRequest(gstFullYearXml, config, 180000);
-    console.log('[Clause44] Phase 2: GST voucher fetch succeeded (full-year).');
-  } catch (gstErr: any) {
-    if (gstErr?.message?.includes('timed out')) {
-      console.warn('[Clause44] Phase 2: Full-year GST fetch timed out. Falling back to quarterly chunks...');
-      const quarters = generateQuarterlyChunks(from, to);
-      const quarterlyResponses: string[] = [];
-
-      for (let i = 0; i < quarters.length; i++) {
-        const q = quarters[i];
-        console.log(`[Clause44] Phase 2: Fetching quarter ${i + 1}/${quarters.length}: ${q.label} (${q.from} -> ${q.to})`);
-        try {
-          const qXml = buildGSTVoucherXml(q.from, q.to);
-          const qResp = await sendTallyRequest(qXml, config, 120000);
-          quarterlyResponses.push(qResp);
-          console.log(`[Clause44] Phase 2: Quarter ${q.label} fetched successfully.`);
-        } catch (qErr: any) {
-          console.error(`[Clause44] Phase 2: Quarter ${q.label} failed:`, qErr?.message);
-        }
-      }
-
-      if (quarterlyResponses.length === 0) {
-        console.warn('[Clause44] Phase 2 failed entirely. All expenses will be classified as Non-GST.');
-        gstVoucherResp = '<ENVELOPE><BODY><DATA><COLLECTION></COLLECTION></DATA></BODY></ENVELOPE>';
-      } else {
-        const allEntries: string[] = [];
-        for (const resp of quarterlyResponses) {
-          const entryMatches = resp.match(/<LEDGERENTRY>[\s\S]*?<\/LEDGERENTRY>/gi);
-          if (entryMatches) allEntries.push(...entryMatches);
-        }
-        gstVoucherResp = `<ENVELOPE><BODY><DATA><COLLECTION>${allEntries.join('\n')}</COLLECTION></DATA></BODY></ENVELOPE>`;
-        console.log(`[Clause44] Phase 2: Quarterly fallback complete. Merged ${allEntries.length} LEDGERENTRY nodes.`);
-      }
-    } else {
-      throw gstErr;
+  if (quarterlyResponses.length === 0) {
+    console.warn('[Clause44] Phase 2 failed entirely. All expenses will be classified as Non-GST.');
+    gstVoucherResp = '<ENVELOPE><BODY><DATA><COLLECTION></COLLECTION></DATA></BODY></ENVELOPE>';
+  } else {
+    const allEntries: string[] = [];
+    for (const resp of quarterlyResponses) {
+      const entryMatches = resp.match(/<LEDGERENTRY>[\s\S]*?<\/LEDGERENTRY>/gi);
+      if (entryMatches) allEntries.push(...entryMatches);
     }
+    gstVoucherResp = `<ENVELOPE><BODY><DATA><COLLECTION>${allEntries.join('\n')}</COLLECTION></DATA></BODY></ENVELOPE>`;
+    console.log(`[Clause44] Phase 2: Quarterly fetch complete. Merged ${allEntries.length} LEDGERENTRY nodes.`);
   }
 
   console.log('[Clause44] Phase 2 response (first 1000 chars):', gstVoucherResp.substring(0, 1000));

@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('app_navigate', handler);
   },
 
-  // Generic Invoke for IPC handles
-  invoke: (channel, data) => ipcRenderer.invoke(channel, data)
+  // Explicit App Mode, Activation & LAN Discovery IPC methods
+  getAppMode: () => ipcRenderer.invoke('get_app_mode'),
+  setAppMode: (mode) => ipcRenderer.invoke('set_app_mode', mode),
+  saveActivationInfo: (info) => ipcRenderer.invoke('save_activation_info', info),
+  scanNetwork: () => ipcRenderer.invoke('scan_network'),
+  getSystemInfo: () => ipcRenderer.invoke('get_system_info'),
+  getDeviceId: () => ipcRenderer.invoke('get_device_id')
 });

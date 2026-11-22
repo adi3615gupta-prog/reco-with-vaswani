@@ -16,13 +16,14 @@ import type {
   AsApplicabilityItem,
 } from './finStatements.types';
 import { MASTER_GROUP_CODES_SEED } from './finStatements.seed';
+import { safeApiFetch } from './api';
 
 // ---- Storage Keys ----
 const KEYS = {
-  MASTER:           'fs_master_groups_v2',
-  CLIENT:           'fs_client_setup_v2',
-  TRIAL_BALANCE:    'fs_trial_balance_v2',
-  FIXED_ASSETS:     'fs_fixed_assets_v2',
+  MASTER: 'fs_master_groups_v2',
+  CLIENT: 'fs_client_setup_v2',
+  TRIAL_BALANCE: 'fs_trial_balance_v2',
+  FIXED_ASSETS: 'fs_fixed_assets_v2',
   PARTNERS_CAPITAL: 'fs_partners_capital_v2',
 } as const;
 
@@ -119,9 +120,9 @@ export function evaluateNonCorporateLevel(turnover: number, borrowings: number):
   const standards: AsApplicabilityItem[] = [
     { as_number: 'AS 1', as_title: 'Disclosure of Accounting Policies', applicability: 'Applicable' },
     { as_number: 'AS 2', as_title: 'Valuation of Inventories', applicability: 'Applicable' },
-    { 
-      as_number: 'AS 3', 
-      as_title: 'Cash Flow Statements', 
+    {
+      as_number: 'AS 3',
+      as_title: 'Cash Flow Statements',
       applicability: level === 'Level I' ? 'Applicable' : 'Not Applicable',
       exemption_notes: level !== 'Level I' ? 'Exempt for Level II, III, and IV Non-Corporate entities under ICAI 2022 TG.' : undefined
     },
@@ -129,40 +130,40 @@ export function evaluateNonCorporateLevel(turnover: number, borrowings: number):
     { as_number: 'AS 5', as_title: 'Net Profit/Loss, Prior Period Items & Policy Changes', applicability: 'Applicable' },
     { as_number: 'AS 7', as_title: 'Construction Contracts', applicability: 'Applicable' },
     { as_number: 'AS 9', as_title: 'Revenue Recognition', applicability: 'Applicable' },
-    { 
-      as_number: 'AS 10', 
-      as_title: 'Property, Plant and Equipment', 
+    {
+      as_number: 'AS 10',
+      as_title: 'Property, Plant and Equipment',
       applicability: (level === 'Level I' || level === 'Level II') ? 'Applicable' : 'Applicable with Exemptions',
       exemption_notes: (level === 'Level III' || level === 'Level IV') ? 'Exempt from detailed reconciliation of gross/net block disclosures.' : undefined
     },
-    { 
-      as_number: 'AS 11', 
-      as_title: 'Effects of Changes in Foreign Exchange Rates', 
-      applicability: (level === 'Level I' || level === 'Level II') ? 'Applicable' : 'Applicable with Exemptions' 
+    {
+      as_number: 'AS 11',
+      as_title: 'Effects of Changes in Foreign Exchange Rates',
+      applicability: (level === 'Level I' || level === 'Level II') ? 'Applicable' : 'Applicable with Exemptions'
     },
     { as_number: 'AS 12', as_title: 'Government Grants', applicability: 'Applicable' },
     { as_number: 'AS 13', as_title: 'Accounting for Investments', applicability: level === 'Level IV' ? 'Applicable with Exemptions' : 'Applicable' },
     { as_number: 'AS 14', as_title: 'Accounting for Amalgamations', applicability: level === 'Level IV' ? 'Not Applicable' : 'Applicable' },
     { as_number: 'AS 15', as_title: 'Employee Benefits', applicability: level === 'Level I' ? 'Applicable' : 'Applicable with Exemptions', exemption_notes: 'Exempt from actuarial valuation for accrued leave/gratuity.' },
     { as_number: 'AS 16', as_title: 'Borrowing Costs', applicability: 'Applicable' },
-    { 
-      as_number: 'AS 17', 
-      as_title: 'Segment Reporting', 
+    {
+      as_number: 'AS 17',
+      as_title: 'Segment Reporting',
       applicability: level === 'Level I' ? 'Applicable' : 'Not Applicable',
-      exemption_notes: 'Exempt for all Non-Corporate Level II, III, IV entities.' 
+      exemption_notes: 'Exempt for all Non-Corporate Level II, III, IV entities.'
     },
-    { 
-      as_number: 'AS 18', 
-      as_title: 'Related Party Disclosures', 
+    {
+      as_number: 'AS 18',
+      as_title: 'Related Party Disclosures',
       applicability: (level === 'Level I' || level === 'Level II') ? 'Applicable' : 'Not Applicable',
       exemption_notes: (level === 'Level III' || level === 'Level IV') ? 'Exempt for Level III and IV entities.' : undefined
     },
     { as_number: 'AS 19', as_title: 'Leases', applicability: 'Applicable with Exemptions' },
     { as_number: 'AS 20', as_title: 'Earnings Per Share', applicability: 'Not Applicable', exemption_notes: 'Not applicable to non-corporate entities.' },
     { as_number: 'AS 21', as_title: 'Consolidated Financial Statements', applicability: 'Not Applicable' },
-    { 
-      as_number: 'AS 22', 
-      as_title: 'Accounting for Taxes on Income', 
+    {
+      as_number: 'AS 22',
+      as_title: 'Accounting for Taxes on Income',
       applicability: level === 'Level IV' ? 'Applicable with Exemptions' : 'Applicable',
       exemption_notes: level === 'Level IV' ? 'Exempt from Deferred Tax Asset/Liability calculation; only Current Tax applies.' : undefined
     },
@@ -194,13 +195,13 @@ export const DEFAULT_CLIENT: ClientSetup = {
   registered_address: 'Survey No. 45/2, Mumbai-Pune Highway, Tathawade, Pune - 411033',
   entity_type: 'corporate',
   corporate_sub_type: 'pvt_ltd',
-  financial_year: '2024-25',
-  assessment_year: '2025-26',
+  financial_year: '2026-27',
+  assessment_year: '2027-28',
   turnover_preceding_year: 420000000, // 42 Cr
   borrowings_preceding_year: 85000000, // 8.5 Cr
   denomination: 'in_rupees',
   presentation_format: 'vertical',
-  
+
   audit_firm_name: 'Vipul Patel & Associates',
   firm_reg_no: '155669W',
   partner_name: 'CA. Vipul Patel',
@@ -208,7 +209,7 @@ export const DEFAULT_CLIENT: ClientSetup = {
   udin: '25184754AAAAAA1234',
   place_of_signature: 'Pune',
   date_of_signature: '2025-09-25',
-  
+
   director_1_name: 'Om Ramchandani',
   director_1_din: '10598652',
   director_2_name: 'Ragini Ravindra Despande',
@@ -317,7 +318,7 @@ export function suggestTallyGroupMapping(
 
   // 8. P&L Items
   if (normPrimary.includes('sales accounts') || normParent.includes('sales accounts')) return { code: 3001, confidence: 95 };
-  
+
   if (normPrimary.includes('indirect incomes') || normParent.includes('indirect incomes')) {
     if (normLedger.includes('interest')) return { code: 3101, confidence: 95 };
     if (normLedger.includes('dividend')) return { code: 3102, confidence: 95 };
@@ -587,7 +588,7 @@ export async function saveWorkspaceToBackend(
   };
 
   try {
-    const res = await fetch('/api/audit-storage/fin-statements/save', {
+    const res = await safeApiFetch('/api/audit-storage/fin-statements/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -614,7 +615,7 @@ export async function loadWorkspaceFromBackend(
   taxonomyType = 'company'
 ): Promise<boolean> {
   try {
-    const res = await fetch(
+    const res = await safeApiFetch(
       `/api/audit-storage/fin-statements/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}?taxonomy=${encodeURIComponent(taxonomyType)}`
     );
     const json = await res.json();

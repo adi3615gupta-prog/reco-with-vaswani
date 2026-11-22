@@ -117,11 +117,17 @@ export function bulkSaveGstr1Invoices(db, clientGstin, returnPeriod, invoices, e
             const affectedPeriods = new Set();
             if (returnPeriod) affectedPeriods.add(returnPeriod);
 
-            for (const inv of invoices) {
+            for (let idx = 0; idx < invoices.length; idx++) {
+                const inv = invoices[idx];
                 const id = randomUUID();
                 const sec = (inv.section || 'B2B').toUpperCase();
                 const period = inv.return_period || returnPeriod;
                 affectedPeriods.add(period);
+
+                let inum = inv.inum;
+                if (!inum || inum === 'N/A' || ['B2CS', 'ADVREC', 'DOC'].includes(sec)) {
+                    inum = inum && inum !== 'N/A' ? inum : `${sec}_${inv.pos || 'POS'}_${inv.rt || 0}_${idx}`;
+                }
 
                 stmt.run([
                     id,
@@ -131,7 +137,7 @@ export function bulkSaveGstr1Invoices(db, clientGstin, returnPeriod, invoices, e
                     sec,
                     (inv.ctin || 'B2CS').toUpperCase(),
                     inv.cname || '',
-                    inv.inum || 'N/A',
+                    inum,
                     inv.idt || '',
                     inv.inv_typ || 'Regular',
                     inv.pos || '',
@@ -152,22 +158,28 @@ export function bulkSaveGstr1Invoices(db, clientGstin, returnPeriod, invoices, e
                     db.run('ROLLBACK');
                     return reject(err);
                 }
-                db.run('COMMIT');
-
-                // Recalculate metrics per affected period
-                for (const p of affectedPeriods) {
-                    recalculateGstr1Batch(db, clientGstin.toUpperCase(), p, excelPath, jsonPath);
-                }
-
-                resolve({ count: invoices.length });
+                db.run('COMMIT', (commitErr) => {
+                    if (commitErr) {
+                        return reject(commitErr);
+                    }
+                    const tasks = Array.from(affectedPeriods).map(p => 
+                        recalculateGstr1Batch(db, clientGstin.toUpperCase(), p, excelPath, jsonPath)
+                    );
+                    Promise.all(tasks).then(() => {
+                        resolve({ count: invoices.length });
+                    }).catch(() => {
+                        resolve({ count: invoices.length });
+                    });
+                });
             });
         });
     });
 }
 
 // ─── 3. RECALCULATE BATCH TOTALS ────────────────────────────────────────────
-function recalculateGstr1Batch(db, clientGstin, returnPeriod, excelPath = null, jsonPath = null) {
-    db.all(
+export function recalculateGstr1Batch(db, clientGstin, returnPeriod, excelPath = null, jsonPath = null) {
+    return new Promise((resolve) => {
+        db.all(
         `SELECT section,
                 COUNT(*) as count,
                 SUM(txval) as tot_txval,
@@ -243,10 +255,12 @@ function recalculateGstr1Batch(db, clientGstin, returnPeriod, excelPath = null, 
                     totalInvs, b2bCount, b2clCount, b2csCount, cdnrCount, expCount,
                     totalTxval, totalIgst, totalCgst, totalSgst, totalCess, totalTax,
                     excelPath, jsonPath, now, now, now
-                ]
+                ],
+                () => resolve()
             );
         }
     );
+    });
 }
 
 // ─── 4. PERSIST GSTR-1 SUMMARY IN SQLITE ────────────────────────────────────

@@ -1,0 +1,32 @@
+{
+  "module": "GSTR-2B Autopilot",
+  "version": "2.4.0",
+  "routes": {
+    "dashboard": "https://return.gst.gov.in/returns/auth/dashboard",
+    "inward_supplies": "https://return.gst.gov.in/returns/auth/gstr/2b"
+  },
+  "selectors": {
+    "search": {
+      "fy_dropdown": "select",
+      "quarter_dropdown": "select",
+      "month_dropdown": "select",
+      "search_button": "button:has-text('SEARCH'), input[value='SEARCH' i]"
+    },
+    "gstr2b_card": {
+      "title_keywords": ["GSTR-2B", "GSTR 2B", "AUTO - DRAFTED ITC"],
+      "exclude_keywords": ["GSTR-1", "OUTWARD SUPPLIES", "GSTR-3B"],
+      "download_button": "button:has-text('DOWNLOAD'), a:has-text('DOWNLOAD')"
+    },
+    "download_screen": {
+      "excel_download_link": "a:has-text('Excel'), button:has-text('Excel')",
+      "json_download_link": "a:has-text('JSON'), button:has-text('JSON')",
+      "on_screen_back_button": "button:has-text('BACK'), input[value='BACK' i]"
+    }
+  },
+  "timeouts": {
+    "search_settle_ms": 1200,
+    "download_wait_ms": 15000,
+    "nil_check_timeout_ms": 3000
+  }
+}
+

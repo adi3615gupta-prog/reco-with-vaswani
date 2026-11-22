@@ -11,6 +11,8 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
   const [viewMode, setViewMode] = useState<'matrix' | 'party' | 'cross-check'>('matrix');
   const [matrixFilter, setMatrixFilter] = useState<'b2b' | 'full'>('full');
   const [partyViewType, setPartyViewType] = useState<'annual' | 'monthly'>('annual');
+  const [annualPartyPage, setAnnualPartyPage] = useState<number>(1);
+  const PARTIES_PER_PAGE = 100;
   const summaries = results.monthlySummaries || [];
   const partySummaries = results.partySummaries || [];
 
@@ -430,7 +432,7 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {summaries.map((row) => (
                     <tr key={row.month} className="hover:bg-slate-50/80 transition-colors group">
-                      <td className="px-6 py-4 font-black text-white border-r border-slate-200 sticky left-0 bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{row.month}</td>
+                      <td className="px-6 py-4 font-black text-slate-900 border-r border-slate-200 sticky left-0 bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.06)] group-hover:bg-slate-100">{row.month}</td>
                       
                       {renderCols(row.booksSales)}
                       {renderCols(row.booksCn)}
@@ -544,9 +546,9 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {annualPartiesList.map((row, idx) => (
+                    {annualPartiesList.slice((annualPartyPage - 1) * PARTIES_PER_PAGE, annualPartyPage * PARTIES_PER_PAGE).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="px-6 py-4 font-black text-white border-r border-slate-200 sticky left-0 bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.2)] group-hover:bg-slate-800 max-w-sm truncate" title={row.booksPartyName || row.portalPartyName}>
+                        <td className="px-6 py-4 font-black text-slate-900 border-r border-slate-200 sticky left-0 bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.06)] group-hover:bg-slate-100 max-w-sm truncate" title={row.booksPartyName || row.portalPartyName}>
                           {row.booksPartyName || row.portalPartyName || 'UNKNOWN'}
                         </td>
                         <td className="px-6 py-4 font-black text-slate-700 border-r border-slate-200 font-mono">
@@ -554,7 +556,7 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
                         </td>
 
                         {/* NET BOOKS */}
-                        <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-white">{formatCurrency(row.booksNet.taxable)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-900">{formatCurrency(row.booksNet.taxable)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.booksNet.cgst)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.booksNet.sgst)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.booksNet.igst)}</td>
@@ -562,7 +564,7 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.booksNet.nonTaxable)}</td>
 
                         {/* NET PORTAL */}
-                        <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-white">{formatCurrency(row.portalNet.taxable)}</td>
+                        <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-900">{formatCurrency(row.portalNet.taxable)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.portalNet.cgst)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.portalNet.sgst)}</td>
                         <td className="px-4 py-3 text-right border-r border-slate-200 font-bold text-slate-600">{formatCurrency(row.portalNet.igst)}</td>
@@ -581,17 +583,17 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
 
                     {/* GRAND TOTAL ROW */}
                     <tr className="bg-slate-50 font-black border-t-2 border-slate-200 text-sm">
-                      <td className="px-6 py-4 text-white border-r border-slate-200 sticky left-0 bg-slate-50">ANNUAL GRAND TOTAL</td>
+                      <td className="px-6 py-4 text-slate-900 border-r border-slate-200 sticky left-0 bg-slate-50">ANNUAL GRAND TOTAL</td>
                       <td className="px-6 py-4 text-slate-600 border-r border-slate-200 font-mono">-</td>
 
-                      <td className="px-4 py-3 text-right border-r border-slate-200 text-white font-black">{formatCurrency(annualGrandTotal.booksNet.taxable)}</td>
+                      <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-900 font-black">{formatCurrency(annualGrandTotal.booksNet.taxable)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.booksNet.cgst)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.booksNet.sgst)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.booksNet.igst)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.booksNet.nilRated)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.booksNet.nonTaxable)}</td>
 
-                      <td className="px-4 py-3 text-right border-r border-slate-200 text-white font-black">{formatCurrency(annualGrandTotal.portalNet.taxable)}</td>
+                      <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-900 font-black">{formatCurrency(annualGrandTotal.portalNet.taxable)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.portalNet.cgst)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.portalNet.sgst)}</td>
                       <td className="px-4 py-3 text-right border-r border-slate-200 text-slate-700 font-black">{formatCurrency(annualGrandTotal.portalNet.igst)}</td>
@@ -608,6 +610,34 @@ export function OutputDashboard({ results, onDownload }: OutputDashboardProps) {
                   </tbody>
                 </table>
               </div>
+              {Math.ceil(annualPartiesList.length / PARTIES_PER_PAGE) > 1 && (
+                <div className="flex items-center justify-between px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
+                  <span>
+                    Showing {((annualPartyPage - 1) * PARTIES_PER_PAGE) + 1} to {Math.min(annualPartyPage * PARTIES_PER_PAGE, annualPartiesList.length)} of {annualPartiesList.length} vendors
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={annualPartyPage <= 1}
+                      onClick={() => setAnnualPartyPage((p: number) => Math.max(1, p - 1))}
+                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-slate-700"
+                    >
+                      Previous
+                    </button>
+                    <span className="font-mono font-bold text-slate-800">
+                      Page {annualPartyPage} of {Math.ceil(annualPartiesList.length / PARTIES_PER_PAGE)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={annualPartyPage >= Math.ceil(annualPartiesList.length / PARTIES_PER_PAGE)}
+                      onClick={() => setAnnualPartyPage((p: number) => Math.min(Math.ceil(annualPartiesList.length / PARTIES_PER_PAGE), p + 1))}
+                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-slate-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             Array.from(new Set(partySummaries.map(s => s.month))).map(month => {

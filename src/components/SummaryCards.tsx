@@ -27,19 +27,19 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
   return (
     <div className="space-y-3">
       {/* Reconciliation Health Bar */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px] block">Reconciliation Health</span>
-            <span className="text-emerald-600 font-extrabold text-sm">{matchRate.toFixed(1)}% Matched</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px] block">Reconciliation Health</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-extrabold text-sm">{matchRate.toFixed(1)}% Matched</span>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-slate-600 font-medium">
+        <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300 font-medium">
           <span className="font-mono text-xs">{summary.perfectMatch.toLocaleString('en-IN')} of {summary.total.toLocaleString('en-IN')} matched</span>
-          <div className="w-36 h-2.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200/80">
+          <div className="w-36 h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200/80 dark:border-slate-700">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-indigo-600 transition-all duration-700 rounded-full"
               style={{ width: `${Math.max(matchRate, 2)}%` }}
@@ -72,19 +72,21 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
               whileHover={{ scale: 1.02, y: -2, transition: { type: 'spring', stiffness: 400, damping: 15 } }}
               onClick={() => onFilterSelect && onFilterSelect(c.key)}
               className={cn(
-                'bg-white border rounded-xl shadow-xs group flex flex-col justify-between overflow-hidden min-h-[96px] transition-all cursor-pointer',
+                'bg-white dark:bg-slate-900 border rounded-xl shadow-xs group flex flex-col justify-between overflow-hidden min-h-[96px] transition-all cursor-pointer',
                 c.border,
-                isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs bg-indigo-50/10' : 'border-slate-200/80 hover:shadow-xs'
+                isSelected
+                  ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs bg-indigo-50/10 dark:bg-indigo-950/30'
+                  : 'border-slate-200/80 dark:border-slate-800 hover:shadow-xs'
               )}
             >
-              <div className="py-2 px-3 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider truncate mr-1">{c.label}</span>
+              <div className="py-2 px-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/40">
+                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider truncate mr-1">{c.label}</span>
                 <c.icon className="w-3.5 h-3.5 shrink-0" style={{ color: c.color }} />
               </div>
               
               <div className="p-3 pt-2 space-y-2 flex-1 flex flex-col justify-between">
                 <div>
-                  <div className="text-xl font-mono font-black text-slate-900 tracking-tight leading-none">
+                  <div className="text-xl font-mono font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none">
                     {c.value.toLocaleString('en-IN')}
                   </div>
                   <div className="text-[10px] font-mono font-bold uppercase tracking-wider mt-1" style={{ color: c.color }}>
@@ -92,7 +94,7 @@ export function SummaryCards({ summary, onFilterSelect, activeFilter }: SummaryC
                   </div>
                 </div>
                 
-                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700">
                   <div 
                     className="h-full transition-all duration-700 ease-out rounded-full" 
                     style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: c.color }} 

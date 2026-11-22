@@ -64,8 +64,40 @@ export function getAllTaxBracketRules(fy) {
     const rules = [];
     // ── NEW REGIME (115BAC) — Age-independent ──────────────────
     // All age categories get the same slabs under new regime
-    for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
-        rules.push(makeRule(RegimeType.NEW, age, 0, 400000, 0, fy), makeRule(RegimeType.NEW, age, 400001, 800000, 5, fy), makeRule(RegimeType.NEW, age, 800001, 1200000, 10, fy), makeRule(RegimeType.NEW, age, 1200001, 1600000, 15, fy), makeRule(RegimeType.NEW, age, 1600001, 2000000, 20, fy), makeRule(RegimeType.NEW, age, 2000001, 2400000, 25, fy), makeRule(RegimeType.NEW, age, 2400001, Infinity, 30, fy));
+    if (fy === 'FY2023-24') {
+        for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+            rules.push(
+                makeRule(RegimeType.NEW, age, 0, 300000, 0, fy),
+                makeRule(RegimeType.NEW, age, 300001, 600000, 5, fy),
+                makeRule(RegimeType.NEW, age, 600001, 900000, 10, fy),
+                makeRule(RegimeType.NEW, age, 900001, 1200000, 15, fy),
+                makeRule(RegimeType.NEW, age, 1200001, 1500000, 20, fy),
+                makeRule(RegimeType.NEW, age, 1500001, Infinity, 30, fy)
+            );
+        }
+    } else if (fy === 'FY2024-25') {
+        for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+            rules.push(
+                makeRule(RegimeType.NEW, age, 0, 300000, 0, fy),
+                makeRule(RegimeType.NEW, age, 300001, 700000, 5, fy),
+                makeRule(RegimeType.NEW, age, 700001, 1000000, 10, fy),
+                makeRule(RegimeType.NEW, age, 1000001, 1200000, 15, fy),
+                makeRule(RegimeType.NEW, age, 1200001, 1500000, 20, fy),
+                makeRule(RegimeType.NEW, age, 1500001, Infinity, 30, fy)
+            );
+        }
+    } else {
+        for (const age of [AgeCategory.NORMAL, AgeCategory.SENIOR, AgeCategory.SUPER_SENIOR]) {
+            rules.push(
+                makeRule(RegimeType.NEW, age, 0, 400000, 0, fy),
+                makeRule(RegimeType.NEW, age, 400001, 800000, 5, fy),
+                makeRule(RegimeType.NEW, age, 800001, 1200000, 10, fy),
+                makeRule(RegimeType.NEW, age, 1200001, 1600000, 15, fy),
+                makeRule(RegimeType.NEW, age, 1600001, 2000000, 20, fy),
+                makeRule(RegimeType.NEW, age, 2000001, 2400000, 25, fy),
+                makeRule(RegimeType.NEW, age, 2400001, Infinity, 30, fy)
+            );
+        }
     }
     // ── OLD REGIME — Normal (< 60) ────────────────────────────
     rules.push(makeRule(RegimeType.OLD, AgeCategory.NORMAL, 0, 250000, 0, fy), makeRule(RegimeType.OLD, AgeCategory.NORMAL, 250001, 500000, 5, fy), makeRule(RegimeType.OLD, AgeCategory.NORMAL, 500001, 1000000, 20, fy), makeRule(RegimeType.OLD, AgeCategory.NORMAL, 1000001, Infinity, 30, fy));
@@ -284,6 +316,18 @@ export const REBATE_87A_OLD = {
     incomeThreshold: 5_00_000,
     maxRebate: 12_500,
 };
+export function getRebate87AConfig(fy = 'FY2025-26', regime = RegimeType.NEW) {
+    if (regime === RegimeType.OLD) {
+        return REBATE_87A_OLD;
+    }
+    if (fy === 'FY2023-24' || fy === 'FY2024-25') {
+        return {
+            incomeThreshold: 7_00_000,
+            maxRebate: 25_000,
+        };
+    }
+    return REBATE_87A_NEW;
+}
 // ═══════════════════════════════════════════════════════════════════
 // SPECIAL INCOME TAX RATES — FY 2025-26
 // ═══════════════════════════════════════════════════════════════════

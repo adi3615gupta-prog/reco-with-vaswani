@@ -5,7 +5,9 @@ import crypto from 'crypto';
  * Manages persistent, immutable records of all user reconciliation overrides
  * (Force Match, Manual Match, Batch Match, Unlink, Auto Match) per requirement AUDIT-01.
  */
-export default function setupAuditTrailRoutes(app, db, userDataPath = '.') {
+export default function setupAuditTrailRoutes(app, db, userDataPath = '.', authenticateToken = null) {
+  const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+  app.use('/api/audit/reconciliation-override', authMiddleware);
   const VALID_ACTION_TYPES = new Set([
     'FORCE_MATCH',
     'MANUAL_MATCH',

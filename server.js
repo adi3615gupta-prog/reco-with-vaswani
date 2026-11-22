@@ -12,6 +12,23 @@ import crypto from 'crypto';
 import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first'); // FIX: Prevent Node 18 fetch timeouts on broken IPv6 networks
 
+// Lightweight .env loader for dev/on-prem runs (never overwrites existing process.env)
+try {
+    const envPath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(envPath)) {
+        for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx > 0) {
+                const k = trimmed.slice(0, eqIdx).trim();
+                const v = trimmed.slice(eqIdx + 1).trim();
+                if (k && process.env[k] === undefined) process.env[k] = v;
+            }
+        }
+    }
+} catch {}
+
 // Polyfill global DOM primitives if missing in Node runtime (prevents PDF parsing library crashes)
 if (typeof globalThis.DOMMatrix === 'undefined') {
     globalThis.DOMMatrix = class DOMMatrix {
@@ -70,18 +87,20 @@ import setupMonthlyAuditRoutes from './monthly_audit_routes.js';
 import setupAuditStorageRoutes from './audit_storage_routes.js';
 import setupGeminiRoutes, { syncCloudGeminiKey } from './gemini_routes.js';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
+import { encryptSecret, decryptSecret, isEncryptedSecret } from './cryptoVault.js';
+import { syncCredentialsWithCentral, getActiveDataPathFromDb } from './credentialsVaultSync.js';
 
 import helmet from 'helmet';
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, addDoc, serverTimestamp, onSnapshot, setLogLevel } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDfE2DBpfE5Oj5nwtErub8X0tvBfMsi9QA",
-  authDomain: "reco-vaswani-license.firebaseapp.com",
-  projectId: "reco-vaswani-license",
-  storageBucket: "reco-vaswani-license.appspot.com",
-  messagingSenderId: "594471668759",
-  appId: "1:594471668759:web:fb9f997aa87bd7e866e052"
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDfE2DBpfE5Oj5nwtErub8X0tvBfMsi9QA",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "reco-vaswani-license.firebaseapp.com",
+  projectId: process.env.FIREBASE_PROJECT_ID || "reco-vaswani-license",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "reco-vaswani-license.appspot.com",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "594471668759",
+  appId: process.env.FIREBASE_APP_ID || "1:594471668759:web:fb9f997aa87bd7e866e052"
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const firestore = getFirestore(firebaseApp);
@@ -91,17 +110,52 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            mediaSrc: ["'self'", "blob:"],
+            connectSrc: [
+                "'self'",
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "http://192.168.*:*",
+                "http://10.*:*",
+                "https://*.googleapis.com",
+                "https://firestore.googleapis.com",
+                "https://*.firebaseio.com",
+                "https://generativelanguage.googleapis.com",
+                "https://*.cloudfunctions.net"
+            ],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            frameAncestors: ["'self'"]
+        }
+    }
+}));
 const PORT = 3001;
 
 const userDataPath = process.env.USER_DATA_PATH || '.';
 
-// Load or generate JWT Secret locally
+// Load or generate JWT Secret locally (encrypted at rest via cryptoVault AES-256-GCM)
 const CONFIG_PATH = path.join(userDataPath, 'server_config.json');
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
     if (fs.existsSync(CONFIG_PATH)) {
-        try { JWT_SECRET = JSON.parse(fs.readFileSync(CONFIG_PATH)).jwtSecret; } catch(e) {}
+        try {
+            const rawCfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+            if (rawCfg && rawCfg.jwtSecret) {
+                JWT_SECRET = decryptSecret(rawCfg.jwtSecret);
+                // Migrate legacy plaintext jwtSecret to encrypted format at rest
+                if (!isEncryptedSecret(rawCfg.jwtSecret) && JWT_SECRET) {
+                    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 0o600 });
+                }
+            }
+        } catch(e) {}
     }
     if (!JWT_SECRET) {
         JWT_SECRET = crypto.randomBytes(32).toString('hex');
@@ -109,8 +163,8 @@ if (!JWT_SECRET) {
             if (!fs.existsSync(userDataPath)) {
                 fs.mkdirSync(userDataPath, { recursive: true });
             }
-            fs.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: JWT_SECRET }));
-            console.log("Generated new secure JWT Secret for this installation.");
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 0o600 });
+            console.log("Generated new secure encrypted JWT Secret for this installation.");
         } catch (err) {
             console.error("Failed to write server_config.json:", err);
         }
@@ -120,9 +174,29 @@ if (!JWT_SECRET) {
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token || token === 'null' || token === 'undefined') return res.sendStatus(401);
+
+    const getIsLocal = () => {
+        // Use the real socket only: x-forwarded-for is client-controlled. Public tunnel traffic also arrives on loopback, so exclude it.
+        const sock = String(req.socket.remoteAddress || '').replace('::ffff:', '');
+        const viaTunnel = /loca\.lt/i.test(`${req.headers['host'] || ''} ${req.headers['x-forwarded-host'] || ''}`);
+        return (sock === '127.0.0.1' || sock === '::1') && !viaTunnel;
+    };
+
+    if (!token || token === 'null' || token === 'undefined') {
+        if (getIsLocal()) {
+            req.user = { id: 'admin', username: 'admin', role: 'admin' };
+            return next();
+        }
+        return res.sendStatus(401);
+    }
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(401);
+        if (err) {
+            if (getIsLocal()) {
+                req.user = { id: 'admin', username: 'admin', role: 'admin' };
+                return next();
+            }
+            return res.sendStatus(401);
+        }
         req.user = user;
         next();
     });
@@ -130,9 +204,60 @@ const authenticateToken = (req, res, next) => {
 
 
 
+const isAdminUser = (user) => String(user?.role || '').toLowerCase() === 'admin';
+const isAdminOrSenior = (user) => {
+    const r = String(user?.role || '').toLowerCase();
+    return r === 'admin' || r === 'senior auditor' || r === 'senior';
+};
+const isSameUserOrAdmin = (user, targetUsername) => {
+    if (isAdminUser(user)) return true;
+    const actor = String(user?.username || '').toLowerCase().trim();
+    const target = String(targetUsername || '').toLowerCase().trim();
+    return Boolean(actor) && actor === target;
+};
+
+// Zero-dependency sliding-window rate limiter middleware
+const createRateLimiter = ({ windowMs, maxRequests, keyFn, message }) => {
+    const hits = new Map();
+    return (req, res, next) => {
+        const now = Date.now();
+        const key = String(keyFn ? keyFn(req) : (req.ip || req.socket?.remoteAddress || 'unknown'));
+        const cutoff = now - windowMs;
+        const fresh = (hits.get(key) || []).filter((t) => t > cutoff);
+        if (fresh.length >= maxRequests) {
+            hits.set(key, fresh);
+            return res.status(429).json({ success: false, error: message || 'Too many requests. Please try again later.' });
+        }
+        fresh.push(now);
+        hits.set(key, fresh);
+        if (hits.size > 1000) {
+            for (const [k, list] of hits.entries()) {
+                const kept = list.filter((t) => t > cutoff);
+                if (kept.length === 0) hits.delete(k);
+                else hits.set(k, kept);
+            }
+        }
+        next();
+    };
+};
+
+const authRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: 20,
+    keyFn: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
+    message: 'Too many authentication attempts. Please try again in 15 minutes.'
+});
+
+const mailRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 10,
+    keyFn: (req) => req.user?.username || req.ip || 'unknown',
+    message: 'Email dispatch rate limit exceeded (max 10 requests per minute).'
+});
+
 // Serve the updates folder statically so Electron can download the .yml and .exe files
 app.use('/updates', express.static(path.join(__dirname, 'updates')));
-app.use('/super-admin', express.static(path.join(__dirname, 'admin-web', 'dist')));
+// Note: /super-admin static serving removed from customer servers for security isolation
 // Serve the React frontend app statically with no-cache headers to prevent browser caching of code updates
 // Function to reliably find the 'dist' directory whether in dev, production asar, or unpacked
 function findDistPath() {
@@ -341,19 +466,80 @@ db.serialize(() => {
     db.run(`ALTER TABLE clients ADD COLUMN address TEXT`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN last_updated INTEGER DEFAULT 0`, (err) => { /* ignore if exists */ });
     db.run(`ALTER TABLE clients ADD COLUMN is_deleted INTEGER DEFAULT 0`, (err) => { /* ignore if exists */ });
+    db.run(`ALTER TABLE clients ADD COLUMN created_at INTEGER DEFAULT 0`, (err) => { /* ignore if exists */ });
     db.run(`CREATE INDEX IF NOT EXISTS idx_clients_gstin_deleted ON clients (gstin, is_deleted)`, (err) => { /* ignore */ });
+
+    // Run startup security migrations: hash legacy user passwords and encrypt stored secrets
+    db.serialize(() => {
+        // Upgrade legacy plaintext passwords in network_users to bcrypt
+        db.all(`SELECT username, password_hash FROM network_users`, [], async (err, rows) => {
+            if (!err && rows && rows.length > 0) {
+                for (const row of rows) {
+                    const current = row.password_hash || '';
+                    if (current && !current.startsWith('$2')) {
+                        try {
+                            const hashed = await bcrypt.hash(current, 10);
+                            db.run(`UPDATE network_users SET password_hash = ? WHERE username = ?`, [hashed, row.username]);
+                            console.log(`[Security] Upgraded plaintext password for user '${row.username}' to bcrypt`);
+                        } catch (hashErr) {
+                            console.error(`[Security] Failed to hash password for '${row.username}':`, hashErr.message);
+                        }
+                    }
+                }
+            }
+        });
+
+        // Encrypt legacy plaintext clients.portal_password
+        db.all(`SELECT id, gstin, portal_password FROM clients WHERE portal_password IS NOT NULL AND portal_password != ''`, [], (err, rows) => {
+            if (!err && rows && rows.length > 0) {
+                for (const row of rows) {
+                    if (row.portal_password && !isEncryptedSecret(row.portal_password)) {
+                        const enc = encryptSecret(row.portal_password);
+                        db.run(`UPDATE clients SET portal_password = ? WHERE id = ?`, [enc, row.id]);
+                    }
+                }
+            }
+        });
+
+        // Encrypt legacy plaintext ims_email_settings.app_password
+        db.all(`SELECT id, app_password FROM ims_email_settings WHERE app_password IS NOT NULL AND app_password != ''`, [], (err, rows) => {
+            if (!err && rows && rows.length > 0) {
+                for (const row of rows) {
+                    if (row.app_password && !isEncryptedSecret(row.app_password)) {
+                        const enc = encryptSecret(row.app_password);
+                        db.run(`UPDATE ims_email_settings SET app_password = ? WHERE id = ?`, [enc, row.id]);
+                    }
+                }
+            }
+        });
+    });
 });
 
 // 3. Initialize TDS Routes
 setupTdsRoutes(app, db, authenticateToken);
 
 // 4. Initialize Tax Routes
-setupTaxRoutes(app, db);
+setupTaxRoutes(app, db, authenticateToken);
 
 // 5. Initialize Google Drive Cloud Backup Routes
 setupGDriveRoutes(app, authenticateToken);
 
 // 6. Initialize GST IMS Routes (Multi-PC Central Vault Sync)
+app.use('/api/ims', (req, res, next) => {
+    if (req.path.startsWith('/public/review/') || req.path.startsWith('/public/submit/')) {
+        return next();
+    }
+    return authenticateToken(req, res, (err) => {
+        if (err) return next(err);
+        if (req.path === '/email-settings/save' || req.path === '/email-settings/test') {
+            if (!isAdminUser(req.user)) {
+                return res.status(403).json({ success: false, error: 'Admin privileges required for email settings' });
+            }
+        }
+        next();
+    });
+});
+app.post('/api/ims/broadcast-email', authenticateToken, mailRateLimiter);
 setupImsRoutes(app, db, userDataPath, authenticateToken);
 
 // 7. Initialize GSTR-2B Auto Downloader Routes
@@ -363,13 +549,14 @@ setupGstr2bRoutes(app, db, authenticateToken);
 setupGstr1Routes(app, db, authenticateToken);
 
 // 9. Initialize Returns Server Shared Storage Routes (Multi-PC LAN Access)
+app.post('/api/returns/send-client-mail', authenticateToken, mailRateLimiter);
 setupReturnsStorageRoutes(app, db, userDataPath, authenticateToken);
 
 // 10. Initialize Reconciliation Override Audit Trail Routes (Statutory AUDIT-01)
-setupAuditTrailRoutes(app, db, userDataPath);
-setupNoticesRoutes(app, db);
+setupAuditTrailRoutes(app, db, userDataPath, authenticateToken);
+setupNoticesRoutes(app, db, authenticateToken);
 setupMonthlyAuditRoutes(app, db, userDataPath, authenticateToken);
-setupAuditStorageRoutes(app, db, userDataPath);
+setupAuditStorageRoutes(app, db, userDataPath, authenticateToken);
 setupGeminiRoutes(app, db, firestore, authenticateToken);
 
 const saveUserToLocalDb = (user) => {
@@ -406,6 +593,12 @@ const getOfficeId = () => new Promise(res => {
     });
 });
 
+const getActiveSerialKey = () => new Promise(res => {
+    db.get(`SELECT value FROM app_config WHERE key = 'active_serial_key'`, [], (err, row) => {
+        res(row ? row.value : null);
+    });
+});
+
 
 const getMacAddress = () => {
     const interfaces = os.networkInterfaces();
@@ -438,6 +631,43 @@ const setupLicenseMonitoring = (officeId) => {
     LICENSE_DELETED = false;
     console.log(`[License Monitor] Initializing for office_id: ${officeId}`);
 
+    if (LICENSE_API_URL) {
+        const pollGateway = async () => {
+            try {
+                const now = Date.now();
+                for (const user in activeSessions) {
+                    if (now - activeSessions[user].lastSeen > 120000) delete activeSessions[user];
+                }
+                const gw = await callLicenseGateway('checkServerLicense', {
+                    officeId,
+                    activeUsernames: Object.keys(activeSessions),
+                    publicUrl: activeTunnel?.url || null
+                });
+                if (!gw || !gw.ok) return;
+                if (gw.data.deleted || gw.data.exists === false) {
+                    SERVER_REVOKED = true;
+                    LICENSE_DELETED = true;
+                    console.log("CRITICAL: LICENSE HAS BEEN DELETED OR NOT FOUND IN CLOUD DB!");
+                    return;
+                }
+                LICENSE_DELETED = false;
+                SERVER_REVOKED = Boolean(gw.data.revoked);
+                if (!SERVER_REVOKED && gw.data.geminiApiKey) {
+                    const encryptedCloudKey = encryptSecret(gw.data.geminiApiKey);
+                    db.serialize(() => {
+                        db.run("INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [encryptedCloudKey]);
+                        db.run("INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+                    });
+                }
+            } catch (err) {
+                console.warn("[License Monitor] Gateway polling warning:", err.message);
+            }
+        };
+        pollGateway();
+        _heartbeatInterval = setInterval(pollGateway, 30000);
+        return;
+    }
+
     const q = query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId), where('key_type', '==', 'server'));
     _licenseUnsubscribe = onSnapshot(q, (snap) => {
         if (!snap.empty) {
@@ -449,7 +679,7 @@ const setupLicenseMonitoring = (officeId) => {
                 SERVER_REVOKED = false;
                 LICENSE_DELETED = false; // Key found and active, clear any stale deleted flag
 
-            // Sync Gemini API Key if configured in cloud server key
+            // Sync AI API Key if configured in cloud server key
             let cloudKey = null;
             for (const [k, v] of Object.entries(serverKeyDoc)) {
                 if (k.trim() === 'gemini_api_key' && typeof v === 'string' && v.trim().length > 5) {
@@ -458,16 +688,17 @@ const setupLicenseMonitoring = (officeId) => {
                 }
             }
             if (cloudKey) {
+                const encryptedCloudKey = encryptSecret(cloudKey);
                 db.serialize(() => {
                     db.run(
                         "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                        [cloudKey]
+                        [encryptedCloudKey]
                     );
                     db.run(
                         "INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
                     );
                 });
-                console.log("[Gemini Cloud Sync] API key synced from office cloud license via live snapshot");
+                console.log("[AI Cloud Sync] Encrypted API key synced from office cloud license via live snapshot");
             }
             }
         } else {
@@ -504,12 +735,13 @@ const setupLicenseMonitoring = (officeId) => {
             for (const docSnap of usersSnap.docs) {
                 const userData = docSnap.data();
                 const username = String(userData.username).toLowerCase().trim();
-                const isOnline = !!activeSessions[username];
+                const lastActiveAt = Number(userData.last_active_at) || 0;
+                const hasRecentHeartbeat = lastActiveAt > 0 && (now - lastActiveAt < 180000);
+                const isOnline = Boolean(activeSessions[username]) || hasRecentHeartbeat;
                 const currentStatus = userData.status || 'offline';
-                const expectedStatus = isOnline ? 'online' : 'offline';
-                
-                if (currentStatus !== expectedStatus) {
-                    await updateDoc(docSnap.ref, { status: expectedStatus });
+
+                if (currentStatus === 'online' && !isOnline) {
+                    await updateDoc(docSnap.ref, { status: 'offline', current_device_id: null });
                 }
             }
         } catch (e) {
@@ -527,26 +759,58 @@ setTimeout(async () => {
         setupLicenseMonitoring(officeId);
     }
 
-    // Startup Gemini Cloud Sync (Office or Global Master)
+    // Startup AI Cloud Sync (Office or Global Master)
     try {
         const syncRes = await syncCloudGeminiKey(firestore, db, officeId);
         if (syncRes.synced) {
-            console.log(`[Gemini Cloud Sync] Startup sync successful (origin: ${syncRes.origin})`);
+            console.log(`[AI Cloud Sync] Startup sync successful (origin: ${syncRes.origin})`);
         }
     } catch (e) {
-        console.warn("[Gemini Cloud Sync] Startup sync warning:", e.message);
+        console.warn("[AI Cloud Sync] Startup sync warning:", e.message);
     }
 }, 5000);
 
-const LICENSE_EXEMPT_PATHS = ['/activate', '/reset-license', '/admin-exists', '/ping'];
-app.use('/api', (req, res, next) => {
+const LICENSE_EXEMPT_PATHS = [
+    '/activate',
+    '/activation-status',
+    '/reset-license',
+    '/admin-exists',
+    '/ping',
+    '/health',
+    '/network-info',
+    '/login',
+    '/logout'
+];
+app.use('/api', async (req, res, next) => {
     if (LICENSE_DELETED && !LICENSE_EXEMPT_PATHS.includes(req.path)) {
         return res.status(410).json({ error: "CRITICAL: License has been permanently deleted by Super Admin." });
     }
     if (SERVER_REVOKED && !LICENSE_EXEMPT_PATHS.includes(req.path)) {
         return res.status(403).json({ error: "CRITICAL: Server Key has been revoked by Super Admin. Access Denied." });
     }
+    if (!LICENSE_EXEMPT_PATHS.includes(req.path) && !req.path.startsWith('/ims/public/')) {
+        const officeId = await getOfficeId();
+        if (!officeId) {
+            return res.status(403).json({
+                error: "Application is not activated. Please enter a valid serial key.",
+                notActivated: true
+            });
+        }
+    }
     next();
+});
+
+app.get('/api/activation-status', async (req, res) => {
+    try {
+        const [officeId, activeKey] = await Promise.all([getOfficeId(), getActiveSerialKey()]);
+        res.json({
+            activated: Boolean(officeId && activeKey),
+            revoked: SERVER_REVOKED,
+            deleted: LICENSE_DELETED
+        });
+    } catch (err) {
+        res.status(500).json({ activated: false, revoked: SERVER_REVOKED, deleted: LICENSE_DELETED });
+    }
 });
 
 // --- API ENDPOINTS ---
@@ -564,38 +828,310 @@ app.get('/api/network-info', (req, res) => {
 });
 
 let activeTunnel = null;
+let activeTunnelExpiryTimer = null;
+const TUNNEL_TTL_MS = 2 * 60 * 60 * 1000; // Auto-close public tunnel after 2 hours
+const TUNNEL_BLOCKED_PREFIXES = ['/activate', '/reset-license', '/keys', '/users', '/network/go-global', '/network/stop-global'];
 import localtunnel from 'localtunnel';
 
+const isTunnelRequest = (req) => {
+    const fwdHost = String(req.headers['x-forwarded-host'] || '').toLowerCase();
+    const host = String(req.headers['host'] || '').toLowerCase();
+    return Boolean(activeTunnel) && (fwdHost.includes('loca.lt') || host.includes('loca.lt'));
+};
+
+app.use('/api', (req, res, next) => {
+    if (isTunnelRequest(req) && TUNNEL_BLOCKED_PREFIXES.some(p => req.path.startsWith(p))) {
+        return res.status(403).json({ error: 'Administrative and licensing endpoints are blocked over public remote tunnels.' });
+    }
+    next();
+});
+
 app.post('/api/network/go-global', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
+        if (activeTunnelExpiryTimer) {
+            clearTimeout(activeTunnelExpiryTimer);
+            activeTunnelExpiryTimer = null;
+        }
         if (activeTunnel) {
             activeTunnel.close();
             activeTunnel = null;
         }
         activeTunnel = await localtunnel({ port: PORT });
+        const expiresAt = Date.now() + TUNNEL_TTL_MS;
+        activeTunnelExpiryTimer = setTimeout(() => {
+            if (activeTunnel) {
+                try { activeTunnel.close(); } catch {}
+                activeTunnel = null;
+            }
+            console.log('[Global Tunnel] Auto-expired after 2 hours for security.');
+        }, TUNNEL_TTL_MS);
+
+        try {
+            const logs = getAuditLogs();
+            logs.unshift({
+                id: Date.now().toString(),
+                timestamp: Date.now(),
+                username: req.user.username,
+                action: 'Started Global Tunnel',
+                details: `Tunnel expires in 2h`
+            });
+            if (logs.length > 500) logs.pop();
+            fs.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
+        } catch {}
         
         const officeId = await getOfficeId();
         if (officeId) {
-            // Find the server key and update it
-            const snap = await getDocs(query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId), where('key_type', '==', 'server')));
-            if (!snap.empty) {
-                await updateDoc(snap.docs[0].ref, { public_url: activeTunnel.url, is_global: true });
+            if (LICENSE_API_URL) {
+                await callLicenseGateway('checkServerLicense', {
+                    officeId,
+                    activeUsernames: Object.keys(activeSessions),
+                    publicUrl: activeTunnel.url
+                }).catch(() => {});
+            } else {
+                // Find the server key and update it
+                const snap = await getDocs(query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId), where('key_type', '==', 'server')));
+                if (!snap.empty) {
+                    await updateDoc(snap.docs[0].ref, { public_url: activeTunnel.url, is_global: true });
+                }
             }
         }
         
-        res.json({ success: true, url: activeTunnel.url });
+        res.json({ success: true, url: activeTunnel.url, expiresAt });
     } catch (err) {
         res.status(500).json({ error: "Failed to start tunnel: " + err.message });
     }
 });
 
-app.get('/api/ping', (req, res) => {
-    res.json({ success: true, isServer: true, pcName: os.hostname() });
+app.post('/api/network/stop-global', authenticateToken, async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
+    if (activeTunnelExpiryTimer) {
+        clearTimeout(activeTunnelExpiryTimer);
+        activeTunnelExpiryTimer = null;
+    }
+    if (activeTunnel) {
+        try { activeTunnel.close(); } catch {}
+        activeTunnel = null;
+    }
+    res.json({ success: true });
 });
 
-app.post('/api/activate', async (req, res) => {
-    const { serialKey, deviceId } = req.body;
+const LICENSE_API_URL = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
+const LICENSE_GATEWAY_TOKEN = process.env.LICENSE_GATEWAY_TOKEN || '';
+
+async function callLicenseGateway(endpoint, body) {
+    if (!LICENSE_API_URL) return null;
+    const headers = { 'Content-Type': 'application/json' };
+    if (LICENSE_GATEWAY_TOKEN) headers['x-license-token'] = LICENSE_GATEWAY_TOKEN;
+    const res = await withTimeout(fetch(`${LICENSE_API_URL}/${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    }), 4000);
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, ok: res.ok, data };
+}
+
+async function syncAndValidateDevice({ officeId, serialKey, deviceId, pcName, osUser, clientIp, username, eventType }) {
+    if (!officeId) {
+        if (eventType === 'logout') return { allowed: true };
+        return { allowed: false, status: 403, code: 'NOT_ACTIVATED', error: 'Application is not activated.' };
+    }
+    if (!deviceId || deviceId === 'legacy_device') {
+        if (eventType === 'logout') return { allowed: true };
+        return { allowed: false, status: 400, code: 'DEVICE_ID_REQUIRED', error: 'Valid workstation device ID is required.' };
+    }
+    if (LICENSE_API_URL) {
+        try {
+            const gw = await callLicenseGateway('heartbeatSync', { officeId, serialKey, deviceId, pcName, osUser, clientIp, username, eventType });
+            if (gw) {
+                if (!gw.ok || gw.data?.allowed === false) {
+                    return {
+                        allowed: false,
+                        status: gw.status || 403,
+                        code: gw.data?.code || 'DEVICE_RESTRICTED',
+                        deviceRemoved: Boolean(gw.data?.deviceRemoved),
+                        error: gw.data?.error || 'Workstation license validation failed.'
+                    };
+                }
+                return { allowed: true };
+            }
+        } catch {
+            return { allowed: true, offline: true };
+        }
+    }
+    try {
+        const keysSnap = await withTimeout(
+            getDocs(query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId))),
+            3000
+        );
+        const normKey = serialKey ? String(serialKey).trim().toUpperCase() : '';
+        const nowMs = Date.now();
+        const nowStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+        // 1. Check restriction across any key in this office first
+        if (eventType !== 'logout') {
+            for (const keyDoc of keysSnap.docs) {
+                const kd = keyDoc.data();
+                const devEntry = kd.devices_info?.[deviceId];
+                if (devEntry && (devEntry.is_restricted === true || devEntry.status === 'RESTRICTED')) {
+                    return {
+                        allowed: false,
+                        status: 403,
+                        code: 'DEVICE_RESTRICTED',
+                        error: `Workstation "${devEntry.pc_name || deviceId}" has been restricted by Super Admin. Contact your administrator.`
+                    };
+                }
+            }
+        }
+
+        // 2. If client presented an activated serialKey, verify the key is active and this PC is still bound
+        let targetDocs = [];
+        if (normKey) {
+            const matchedKeyDoc = keysSnap.docs.find(d => d.id.toUpperCase() === normKey || String(d.data().key || '').toUpperCase() === normKey);
+            if (matchedKeyDoc) {
+                const kd = matchedKeyDoc.data();
+                if (eventType !== 'logout') {
+                    if (kd.is_active === 0) {
+                        return { allowed: false, status: 403, code: 'KEY_REVOKED', error: 'This Serial Key has been revoked by Super Admin.' };
+                    }
+                    const bound = Array.isArray(kd.bound_devices) ? kd.bound_devices : (kd.device_id ? [kd.device_id] : []);
+                    if (!bound.includes(deviceId)) {
+                        return {
+                            allowed: false,
+                            status: 403,
+                            code: 'DEVICE_REMOVED',
+                            deviceRemoved: true,
+                            error: 'This PC was removed from the Serial Key by Super Admin. Please activate again.'
+                        };
+                    }
+                }
+                targetDocs = [matchedKeyDoc];
+            }
+        }
+
+        // Fallback: find any key in this office where this deviceId is already bound/tracked
+        if (targetDocs.length === 0) {
+            targetDocs = keysSnap.docs.filter(d => {
+                const kd = d.data();
+                const bound = Array.isArray(kd.bound_devices) ? kd.bound_devices : (kd.device_id ? [kd.device_id] : []);
+                return bound.includes(deviceId) || Boolean(kd.devices_info?.[deviceId]);
+            });
+        }
+
+        // 3. On heartbeat, enforce Super Admin "Make Offline" action immediately
+        if (eventType === 'heartbeat') {
+            for (const keyDoc of targetDocs) {
+                const devEntry = keyDoc.data().devices_info?.[deviceId];
+                if (devEntry && devEntry.status === 'OFFLINE' && devEntry.force_offline_at) {
+                    return {
+                        allowed: false,
+                        status: 403,
+                        code: 'DEVICE_OFFLINE',
+                        error: `Session on "${devEntry.pc_name || deviceId}" was made offline by Super Admin.`
+                    };
+                }
+            }
+        }
+
+        // 4. Keep PC metadata, live status & last_seen synchronized in Firestore
+        for (const keyDoc of targetDocs) {
+            const kd = keyDoc.data();
+            const boundDevices = Array.isArray(kd.bound_devices) ? [...kd.bound_devices] : (kd.device_id ? [kd.device_id] : []);
+            const devicesInfo = (kd.devices_info && typeof kd.devices_info === 'object') ? { ...kd.devices_info } : {};
+            const existing = devicesInfo[deviceId] || {};
+
+            if (eventType === 'heartbeat') {
+                const needsSync =
+                    existing.status !== 'ONLINE' ||
+                    existing.current_user !== (username || null) ||
+                    !existing.last_seen_ms ||
+                    (nowMs - Number(existing.last_seen_ms) > 120000);
+                if (!needsSync) continue;
+            }
+
+            const nextStatus =
+                eventType === 'logout'
+                    ? (existing.is_restricted ? 'RESTRICTED' : 'OFFLINE')
+                    : 'ONLINE';
+
+            devicesInfo[deviceId] = {
+                ...existing,
+                device_id: deviceId,
+                pc_name: pcName || existing.pc_name || `PC-${deviceId.slice(-4)}`,
+                os_user: osUser || existing.os_user || 'User',
+                ip: clientIp || existing.ip || 'LAN',
+                activated_at: existing.activated_at || nowStr,
+                last_seen: nowStr,
+                last_seen_ms: nowMs,
+                status: nextStatus,
+                is_restricted: Boolean(existing.is_restricted),
+                current_user: eventType === 'logout' ? null : (username || existing.current_user || null),
+                force_offline_at: eventType === 'login' ? null : (existing.force_offline_at || null)
+            };
+
+            // Remove orphan devicesInfo entries not in boundDevices (if boundDevices is populated)
+            if (boundDevices.length > 0) {
+                for (const id of Object.keys(devicesInfo)) {
+                    if (!boundDevices.includes(id)) delete devicesInfo[id];
+                }
+            }
+
+            await withTimeout(updateDoc(keyDoc.ref, {
+                devices_info: devicesInfo,
+                devices_list: Object.values(devicesInfo),
+                active_pc_count: boundDevices.length
+            }), 3000).catch(() => {});
+        }
+
+        return { allowed: true };
+    } catch (err) {
+        // Never block workstation login/heartbeat during transient Firebase offline periods
+        return { allowed: true, offline: true };
+    }
+}
+
+app.post('/api/activate', authRateLimiter, async (req, res) => {
+    const { serialKey, deviceId, pcName, osUser } = req.body || {};
+    if (!serialKey || typeof serialKey !== 'string') {
+        return res.status(400).json({ error: "Serial key is required" });
+    }
+    if (!deviceId || typeof deviceId !== 'string' || deviceId === 'legacy_device') {
+        return res.status(400).json({ error: "Valid workstation device ID is required" });
+    }
+    if (LICENSE_API_URL) {
+        try {
+            const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Localhost').replace('::ffff:', '');
+            const gw = await callLicenseGateway('activateKey', {
+                serialKey,
+                deviceId,
+                pcName: pcName || os.hostname(),
+                osUser: osUser || os.userInfo().username,
+                clientIp,
+                boundMac: SERVER_MAC
+            });
+            if (!gw.ok) {
+                return res.status(gw.status || 403).json({ error: gw.data?.error || 'Activation rejected by Cloud License Gateway' });
+            }
+            if (gw.data?.officeId) {
+                await new Promise((resolve, reject) => {
+                    db.run(`INSERT INTO app_config (key, value) VALUES ('office_id', ?) ON CONFLICT(key) DO UPDATE SET value = ?`, [gw.data.officeId, gw.data.officeId], (err) => (err ? reject(err) : resolve()));
+                });
+                setupLicenseMonitoring(gw.data.officeId);
+            }
+            await new Promise((resolve) => {
+                db.run(`INSERT INTO app_config (key, value) VALUES ('active_serial_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?`, [serialKey, serialKey], () => resolve());
+            });
+            if (gw.data?.geminiApiKey) {
+                const encAiKey = encryptSecret(String(gw.data.geminiApiKey).trim());
+                db.run(`INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [encAiKey]);
+                db.run(`INSERT INTO app_config (key, value) VALUES ('gemini_key_origin', 'cloud_office') ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+            }
+            return res.json(gw.data);
+        } catch (gwErr) {
+            return res.status(502).json({ error: `Cloud License Gateway unavailable: ${gwErr.message}` });
+        }
+    }
     try {
         const keyRef = doc(firestore, 'serial_keys', serialKey);
         const keySnap = await getDoc(keyRef);
@@ -612,20 +1148,30 @@ app.post('/api/activate', async (req, res) => {
                 });
             });
         }
+        await new Promise((resolve) => {
+            db.run(`INSERT INTO app_config (key, value) VALUES ('active_serial_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?`, [serialKey, serialKey], () => resolve());
+        });
 
         // Multi-PC Seat Capacity Policy
         const maxDevices = Number(row.max_devices) || 1;
-        let boundDevices = Array.isArray(row.bound_devices) ? [...row.bound_devices] : [];
-        if (row.device_id && !boundDevices.includes(row.device_id)) {
-            boundDevices.push(row.device_id);
-        }
+        
+        // FIX: Respect current bound_devices array from Firestore WITHOUT resurrecting deleted devices from row.device_id
+        let boundDevices = Array.isArray(row.bound_devices)
+            ? [...row.bound_devices]
+            : (row.device_id ? [row.device_id] : []);
 
         const isAlreadyBound = deviceId && boundDevices.includes(deviceId);
+
+        if (deviceId && (row.devices_info?.[deviceId]?.is_restricted === true || row.devices_info?.[deviceId]?.status === 'RESTRICTED')) {
+            return res.status(403).json({
+                error: "This PC has been restricted by Super Admin. Contact your administrator."
+            });
+        }
 
         if (!isAlreadyBound) {
             if (boundDevices.length >= maxDevices) {
                 return res.status(403).json({
-                    error: `License limit reached (${boundDevices.length}/${maxDevices} PCs active). Contact Super Admin to increase allowed PC seats on this serial key.`
+                    error: `License limit reached (${boundDevices.length}/${maxDevices} PCs active). Remove an unused PC from Firebase Console or increase allowed PC seats on this serial key.`
                 });
             }
             if (deviceId) {
@@ -633,13 +1179,53 @@ app.post('/api/activate', async (req, res) => {
             }
         }
 
+        // Prepare rich devices detail map & list for clear Firebase Console visibility
+        const clientPcName = pcName || os.hostname() || ('PC-' + (deviceId ? deviceId.slice(-4) : 'UNKNOWN'));
+        const clientOsUser = osUser || os.userInfo().username || 'User';
+        const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Localhost').replace('::ffff:', '');
+        const currentTimestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+        let devicesInfo = (row.devices_info && typeof row.devices_info === 'object') ? { ...row.devices_info } : {};
+
+        // Sync: remove any devices from devices_info that were deleted from boundDevices
+        for (const existingId of Object.keys(devicesInfo)) {
+            if (!boundDevices.includes(existingId)) {
+                delete devicesInfo[existingId];
+            }
+        }
+
+        // Register / update this device
+        if (deviceId) {
+            devicesInfo[deviceId] = {
+                ...(devicesInfo[deviceId] || {}),
+                device_id: deviceId,
+                pc_name: clientPcName,
+                os_user: clientOsUser,
+                ip: clientIp,
+                activated_at: devicesInfo[deviceId]?.activated_at || currentTimestamp,
+                last_seen: currentTimestamp,
+                last_seen_ms: Date.now(),
+                status: 'ACTIVE',
+                is_restricted: false,
+                force_offline_at: null,
+                current_user: devicesInfo[deviceId]?.current_user || null
+            };
+        }
+
+        const devicesList = Object.values(devicesInfo);
+
+        const updatePayload = {
+            device_id: boundDevices[0] || null,
+            bound_devices: boundDevices,
+            max_devices: maxDevices,
+            devices_info: devicesInfo,
+            devices_list: devicesList,
+            active_pc_count: boundDevices.length
+        };
+
         if (row.key_type === 'server') {
-            await updateDoc(keyRef, {
-                device_id: deviceId || (boundDevices[0] || null),
-                bound_devices: boundDevices,
-                max_devices: maxDevices,
-                bound_mac: SERVER_MAC
-            });
+            updatePayload.bound_mac = SERVER_MAC;
+            await updateDoc(keyRef, updatePayload);
 
             if (row.office_id) {
                 setupLicenseMonitoring(row.office_id);
@@ -649,18 +1235,16 @@ app.post('/api/activate', async (req, res) => {
                 success: true,
                 isMaster: true,
                 maxDevices,
-                activeDevices: boundDevices.length
+                activeDevices: boundDevices.length,
+                devicesList
             });
         } else {
-            await updateDoc(keyRef, {
-                device_id: deviceId || (boundDevices[0] || null),
-                bound_devices: boundDevices,
-                max_devices: maxDevices
-            });
+            await updateDoc(keyRef, updatePayload);
             res.json({
                 success: true,
                 maxDevices,
-                activeDevices: boundDevices.length
+                activeDevices: boundDevices.length,
+                devicesList
             });
         }
     } catch (err) {
@@ -669,9 +1253,130 @@ app.post('/api/activate', async (req, res) => {
     }
 });
 
-// --- LICENSE RESET ENDPOINT ---
-app.post('/api/reset-license', async (req, res) => {
+// Endpoint to unbind a specific PC from a serial key
+app.post('/api/keys/:key/unbind-device', authenticateToken, async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
+        const { key } = req.params;
+        const { deviceId } = req.body;
+        if (!deviceId) return res.status(400).json({ error: "deviceId is required" });
+
+        const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', { action: 'unbindDevice', officeId, key, deviceId });
+            if (!gw.ok) return res.status(gw.status).json(gw.data);
+            return res.json({ success: true, message: 'Device removed successfully', remaining: gw.data.remaining });
+        }
+        const keyRef = doc(firestore, 'serial_keys', key);
+        const snap = await getDoc(keyRef);
+        if (!snap.exists()) return res.status(404).json({ error: "Serial key not found" });
+
+        const data = snap.data();
+        if (officeId && data.office_id && data.office_id !== officeId) {
+            return res.status(403).json({ error: "Access denied for external office key" });
+        }
+        let boundDevices = Array.isArray(data.bound_devices) ? [...data.bound_devices] : [];
+        boundDevices = boundDevices.filter(d => d !== deviceId);
+
+        let devicesInfo = (data.devices_info && typeof data.devices_info === 'object') ? { ...data.devices_info } : {};
+        delete devicesInfo[deviceId];
+
+        await updateDoc(keyRef, {
+            bound_devices: boundDevices,
+            device_id: boundDevices[0] || null,
+            devices_info: devicesInfo,
+            devices_list: Object.values(devicesInfo),
+            active_pc_count: boundDevices.length
+        });
+
+        res.json({ success: true, message: `Device removed successfully`, remaining: boundDevices.length });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- LICENSE RESET ENDPOINT ---
+app.post('/api/reset-license', authRateLimiter, async (req, res) => {
+    try {
+        let authorized = false;
+        const authHeader = req.headers['authorization'];
+        const bearerToken = authHeader && authHeader.split(' ')[1];
+
+        if (bearerToken && bearerToken !== 'null' && bearerToken !== 'undefined') {
+            try {
+                const decoded = jwt.verify(bearerToken, JWT_SECRET);
+                if (!isAdminUser(decoded)) {
+                    return res.status(403).json({ success: false, error: 'Admin privileges required to reset license.' });
+                }
+                authorized = true;
+            } catch (jwtErr) {
+                if (!req.body?.adminPassword) {
+                    return res.status(401).json({ success: false, error: 'Invalid or expired authorization token.' });
+                }
+            }
+        }
+
+        if (!authorized) {
+            const { adminUsername, adminPassword } = req.body || {};
+            if (!adminPassword || typeof adminPassword !== 'string') {
+                return res.status(401).json({ success: false, error: 'Admin authentication or admin password is required to reset license.' });
+            }
+
+            const targetUser = String(adminUsername || 'admin').toLowerCase().trim();
+            let adminRecord = await new Promise((resolve) => {
+                db.get(
+                    `SELECT * FROM network_users WHERE LOWER(username) = ? AND LOWER(role) = 'admin' LIMIT 1`,
+                    [targetUser],
+                    (err, row) => resolve(row || null)
+                );
+            });
+
+            if (!adminRecord) {
+                const officeId = await getOfficeId();
+                if (officeId) {
+                    if (LICENSE_API_URL) {
+                        try {
+                            const gw = await callLicenseGateway('manageUsers', {
+                                action: 'verifyAdminPassword',
+                                officeId,
+                                username: targetUser,
+                                password: adminPassword
+                            });
+                            if (gw && gw.ok && gw.data?.valid) {
+                                authorized = true;
+                            } else {
+                                return res.status(401).json({ success: false, error: gw?.data?.error || 'Invalid admin password.' });
+                            }
+                        } catch {}
+                    } else {
+                        try {
+                            const snap = await withTimeout(
+                                getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId), where('role', '==', 'admin'))),
+                                3000
+                            );
+                            const matchDoc = snap.docs.find(d => String(d.data().username || '').toLowerCase().trim() === targetUser);
+                            if (matchDoc) adminRecord = matchDoc.data();
+                        } catch (cloudErr) {}
+                    }
+                }
+            }
+
+            if (!authorized && !adminRecord) {
+                return res.status(401).json({ success: false, error: 'Admin account not found. Cannot verify reset authorization.' });
+            }
+
+            if (!authorized) {
+                const storedHash = adminRecord.password_hash || adminRecord.password || '';
+                const passwordValid = storedHash.startsWith('$2')
+                    ? await bcrypt.compare(adminPassword, storedHash)
+                    : false;
+
+                if (!passwordValid) {
+                    return res.status(401).json({ success: false, error: 'Invalid admin password.' });
+                }
+            }
+        }
+
         // 1. Tear down Firestore listeners and heartbeat
         if (_licenseUnsubscribe) { try { _licenseUnsubscribe(); } catch(e) {} _licenseUnsubscribe = null; }
         if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
@@ -681,8 +1386,8 @@ app.post('/api/reset-license', async (req, res) => {
         LICENSE_DELETED = false;
 
         // 3. Clear local SQLite state
-        db.run(`DELETE FROM app_config WHERE key = 'office_id'`);
-        db.run(`DELETE FROM network_users`);
+        await new Promise((resolve, reject) => db.run(`DELETE FROM app_config WHERE key = 'office_id'`, (err) => (err ? reject(err) : resolve())));
+        await new Promise((resolve, reject) => db.run(`DELETE FROM network_users`, (err) => (err ? reject(err) : resolve())));
 
         console.log('[License Reset] Backend state fully cleared.');
         res.json({ success: true, message: 'License and local state reset successfully.' });
@@ -693,19 +1398,28 @@ app.post('/api/reset-license', async (req, res) => {
 });
 
 // --- MODULE USAGE ENDPOINTS ---
-app.get('/api/usage', async (req, res) => {
+app.get('/api/usage', authenticateToken, async (req, res) => {
     try {
         const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('usageSync', { action: 'list', officeId });
+            return res.json(gw.ok && Array.isArray(gw.data?.rows) ? gw.data.rows : []);
+        }
         const snap = await getDocs(query(collection(firestore, 'module_usage'), where('office_id', '==', officeId)));
         const rows = snap.docs.map(d => ({ module_name: d.id, ...d.data() }));
         res.json(rows);
     } catch (err) { res.json([]); }
 });
 
-app.post('/api/usage/increment', async (req, res) => {
+app.post('/api/usage/increment', authenticateToken, async (req, res) => {
     const { module_name } = req.body;
     try {
         const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('usageSync', { action: 'increment', officeId, moduleName: module_name });
+            if (!gw.ok) return res.status(gw.status).json({ error: gw.data?.error || 'Module blocked' });
+            return res.json({ success: true, count: gw.data.usage_count });
+        }
         const ref = doc(firestore, 'module_usage', `${officeId}_${module_name}`);
         const snap = await getDoc(ref);
         let currentCount = 0;
@@ -732,6 +1446,10 @@ app.post('/api/usage/toggle', authenticateToken, async (req, res) => {
     const { module_name, is_enabled } = req.body;
     try {
         const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('usageSync', { action: 'toggle', officeId, moduleName: module_name, isEnabled: is_enabled });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.ok ? { success: true } : gw.data);
+        }
         await setDoc(doc(firestore, 'module_usage', `${officeId}_${module_name}`), { is_enabled }, { merge: true });
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: "Failed" }); }
@@ -747,6 +1465,11 @@ app.get('/api/keys', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
     try {
         const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', { action: 'list', officeId });
+            if (!gw.ok) return res.status(gw.status).json(gw.data);
+            return res.json(gw.data.keys || []);
+        }
         const snap = await getDocs(query(collection(firestore, 'serial_keys'), where('office_id', '==', officeId)));
         const rows = snap.docs.map(d => {
             const data = d.data();
@@ -768,6 +1491,16 @@ app.post('/api/keys', authenticateToken, async (req, res) => {
     try {
         const officeId = await getOfficeId();
         const seats = Math.max(1, Number(req.body.max_devices) || 1);
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', {
+                action: 'create',
+                officeId,
+                key: req.body.key,
+                maxDevices: seats,
+                keyType: req.body.key_type || 'PRO'
+            });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const customKey = (req.body.key && req.body.key.trim().toUpperCase()) || ('VASWANI-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase());
         const keyRef = doc(firestore, 'serial_keys', customKey);
         await setDoc(keyRef, {
@@ -786,9 +1519,19 @@ app.post('/api/keys', authenticateToken, async (req, res) => {
     }
 });
 app.patch('/api/keys/:key', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
+        const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', { action: 'toggle', officeId, key: req.params.key, isActive: req.body.is_active });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const keyRef = doc(firestore, 'serial_keys', req.params.key);
+        const snap = await getDoc(keyRef);
+        if (!snap.exists()) return res.status(404).json({ error: "Serial key not found" });
+        if (officeId && snap.data().office_id && snap.data().office_id !== officeId) {
+            return res.status(403).json({ error: "Access denied for external office key" });
+        }
         await updateDoc(keyRef, { is_active: req.body.is_active });
         res.json({ success: true });
     } catch (e) {
@@ -796,10 +1539,20 @@ app.patch('/api/keys/:key', authenticateToken, async (req, res) => {
     }
 });
 app.patch('/api/keys/:key/seats', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
+        const officeId = await getOfficeId();
         const newMax = Math.max(1, Number(req.body.max_devices) || 1);
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', { action: 'seats', officeId, key: req.params.key, maxDevices: newMax });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const keyRef = doc(firestore, 'serial_keys', req.params.key);
+        const snap = await getDoc(keyRef);
+        if (!snap.exists()) return res.status(404).json({ error: "Serial key not found" });
+        if (officeId && snap.data().office_id && snap.data().office_id !== officeId) {
+            return res.status(403).json({ error: "Access denied for external office key" });
+        }
         await updateDoc(keyRef, { max_devices: newMax });
         res.json({ success: true, max_devices: newMax });
     } catch (e) {
@@ -807,10 +1560,27 @@ app.patch('/api/keys/:key/seats', authenticateToken, async (req, res) => {
     }
 });
 app.patch('/api/keys/:key/unbind', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
+        const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageKeys', { action: 'unbind', officeId, key: req.params.key });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const keyRef = doc(firestore, 'serial_keys', req.params.key);
-        await updateDoc(keyRef, { device_id: null, bound_mac: null, bound_devices: [] });
+        const snap = await getDoc(keyRef);
+        if (!snap.exists()) return res.status(404).json({ error: "Serial key not found" });
+        if (officeId && snap.data().office_id && snap.data().office_id !== officeId) {
+            return res.status(403).json({ error: "Access denied for external office key" });
+        }
+        await updateDoc(keyRef, {
+            device_id: null,
+            bound_mac: null,
+            bound_devices: [],
+            devices_info: {},
+            devices_list: [],
+            active_pc_count: 0
+        });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -825,6 +1595,22 @@ app.delete('/api/keys/:key', authenticateToken, (req, res) => {
 const failedLoginAttempts = {};
 const lockoutTimeouts = {};
 
+// Clean up expired lockouts and stale screen frames every 15 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const user in lockoutTimeouts) {
+        if (lockoutTimeouts[user] <= now) {
+            delete lockoutTimeouts[user];
+            delete failedLoginAttempts[user];
+        }
+    }
+    for (const user in screenFrames) {
+        if (screenFrames[user] && (now - screenFrames[user].time > 30 * 60 * 1000)) {
+            delete screenFrames[user];
+        }
+    }
+}, 15 * 60 * 1000).unref();
+
 // Utility to wrap a promise with a timeout (e.g. for Firestore calls over VPN)
 const withTimeout = (promise, ms = 3000) => {
     return Promise.race([
@@ -833,85 +1619,130 @@ const withTimeout = (promise, ms = 3000) => {
     ]);
 };
 
-// --- FIRST RUN ADMIN SETUP ENDPOINTS ---
+// --- FIRST RUN ADMIN SETUP ENDPOINTS (Bypassed: All user administration managed via Firebase) ---
 app.get('/api/admin-exists', async (req, res) => {
-    try {
-        const officeId = await getOfficeId();
-        if (!officeId) return res.status(403).json({ error: "App not activated." });
-
-        // First check SQLite locally
-        db.get(`SELECT username FROM network_users WHERE username = 'admin'`, [], async (err, row) => {
-            if (row) {
-                return res.json({ exists: true });
-            }
-            
-            // If not in SQLite, check Firestore (online check)
-            try {
-                const q = query(collection(firestore, 'network_users'), where('office_id', '==', officeId), where('username', '==', 'admin'));
-                const snap = await withTimeout(getDocs(q), 3000);
-                if (!snap.empty) {
-                    // Cache admin locally
-                    const u = snap.docs[0].data();
-                    saveUserToLocalDb(u);
-                    return res.json({ exists: true });
-                }
-                return res.json({ exists: false });
-            } catch (e) {
-                // If offline and not in SQLite, return false
-                return res.json({ exists: false });
-            }
-        });
-    } catch (e) {
-        return res.status(500).json({ error: e.message });
-    }
+    return res.json({ exists: true });
 });
 
-app.post('/api/setup-admin', async (req, res) => {
-    try {
-        const officeId = await getOfficeId();
-        if (!officeId) return res.status(403).json({ error: "App not activated." });
-
-        const { password } = req.body;
-        if (!password || password.length < 5) return res.status(400).json({ error: "Password must be at least 5 characters long." });
-
-        const q = query(collection(firestore, 'network_users'), where('office_id', '==', officeId), where('username', '==', 'admin'));
-        const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            return res.status(403).json({ error: "Admin already exists. Setup locked." });
-        }
-
-        const hash = await bcrypt.hash(password, 10);
-        const adminUser = {
-            username: 'admin',
-            password_hash: hash,
-            role: 'admin',
-            is_active: 1,
-            office_id: officeId,
-            device_id: null
-        };
-        await addDoc(collection(firestore, 'network_users'), { ...adminUser, created_at: Date.now() });
-        saveUserToLocalDb(adminUser);
-
-        return res.json({ success: true, message: "Admin account secured successfully." });
-    } catch (e) {
-        return res.status(500).json({ error: e.message });
-    }
+app.post('/api/setup-admin', authRateLimiter, async (req, res) => {
+    return res.json({ success: true, message: "User administration is managed directly via Firebase." });
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     const userKey = String(username).toLowerCase().trim();
 
     // Check if account is locked out
-    if (lockoutTimeouts[userKey] && lockoutTimeouts[userKey] > Date.now()) {
-        const remainingMinutes = Math.ceil((lockoutTimeouts[userKey] - Date.now()) / 60000);
-        return res.status(429).json({ error: `Account locked due to consecutive failed attempts. Try again in ${remainingMinutes} minutes.` });
+    if (lockoutTimeouts[userKey]) {
+        if (lockoutTimeouts[userKey] > Date.now()) {
+            const remainingMinutes = Math.ceil((lockoutTimeouts[userKey] - Date.now()) / 60000);
+            return res.status(429).json({ error: `Account locked due to consecutive failed attempts. Try again in ${remainingMinutes} minutes.` });
+        } else {
+            delete lockoutTimeouts[userKey];
+            delete failedLoginAttempts[userKey];
+        }
     }
 
     try {
         const officeId = await getOfficeId();
         if (!officeId) return res.status(403).json({ error: "App not activated on this PC." });
+
+        const reqDeviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId.trim() : '';
+        if (!reqDeviceId || reqDeviceId === 'legacy_device') {
+            return res.status(400).json({ error: "Valid workstation device ID is required." });
+        }
+        const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Localhost').replace('::ffff:', '');
+        const isLocalConn = ['127.0.0.1', '::1'].includes(String(req.socket.remoteAddress || '').replace('::ffff:', '')) && !/loca\.lt/i.test(`${req.headers['host'] || ''} ${req.headers['x-forwarded-host'] || ''}`);
+        let reqSerialKey = req.body.serialKey ? String(req.body.serialKey).trim().toUpperCase() : '';
+        if (!reqSerialKey && isLocalConn && typeof getActiveSerialKey === 'function') {
+            reqSerialKey = (await getActiveSerialKey()) || '';
+        }
+        const clientPcName = req.body.pcName || (isLocalConn ? os.hostname() : `PC-${clientIp}`);
+        const clientOsUser = req.body.osUser || (isLocalConn ? os.userInfo().username : 'User');
+
+        if (LICENSE_API_URL) {
+            let gwLogin = null;
+            try {
+                gwLogin = await callLicenseGateway('verifyUserLogin', {
+                    officeId,
+                    username: userKey,
+                    password,
+                    deviceId: reqDeviceId,
+                    pcName: clientPcName,
+                    clientIp
+                });
+            } catch (gwNetErr) {
+                gwLogin = null; // Fall through to offline SQLite verification below
+            }
+
+            if (gwLogin) {
+                if (!gwLogin.ok || !gwLogin.data?.user) {
+                    if (gwLogin.status === 401) {
+                        failedLoginAttempts[userKey] = (failedLoginAttempts[userKey] || 0) + 1;
+                        if (failedLoginAttempts[userKey] >= 5) {
+                            lockoutTimeouts[userKey] = Date.now() + 15 * 60 * 1000;
+                            failedLoginAttempts[userKey] = 0;
+                            return res.status(429).json({ error: "Account locked out. Too many failed attempts. Locked for 15 minutes." });
+                        }
+                    }
+                    return res.status(gwLogin.status || 401).json({ error: gwLogin.data?.error || 'Authentication failed' });
+                }
+
+                const devCheck = await syncAndValidateDevice({
+                    officeId,
+                    serialKey: reqSerialKey,
+                    deviceId: reqDeviceId,
+                    pcName: clientPcName,
+                    osUser: clientOsUser,
+                    clientIp,
+                    username: gwLogin.data.user.username,
+                    eventType: 'login'
+                });
+                if (!devCheck.allowed) {
+                    return res.status(devCheck.status || 403).json({
+                        error: devCheck.error,
+                        deviceRestricted: devCheck.code === 'DEVICE_RESTRICTED',
+                        deviceRemoved: Boolean(devCheck.deviceRemoved)
+                    });
+                }
+
+                const u = gwLogin.data.user;
+                const localHash = await bcrypt.hash(password, 10);
+                saveUserToLocalDb({
+                    username: u.username,
+                    password_hash: localHash,
+                    role: u.role,
+                    is_active: 1,
+                    office_id: officeId,
+                    device_id: reqDeviceId,
+                    name: u.name,
+                    designation: u.designation,
+                    department: u.department,
+                    current_device_id: reqDeviceId
+                });
+
+                activeSessions[userKey] = { username: u.username, deviceId: reqDeviceId, lastSeen: Date.now(), loginTime: Date.now() };
+                delete failedLoginAttempts[userKey];
+                delete lockoutTimeouts[userKey];
+
+                const token = jwt.sign({
+                    id: u.id,
+                    username: u.username,
+                    role: u.role,
+                    designation: u.designation || (u.role === 'admin' ? 'Administrator' : u.role === 'Senior Auditor' ? 'Senior Auditor' : 'Article Assistant')
+                }, JWT_SECRET, { expiresIn: '12h' });
+
+                return res.json({
+                    token,
+                    role: u.role,
+                    username: u.username,
+                    userDocId: u.id,
+                    name: u.name || u.username,
+                    designation: u.designation || (u.role === 'admin' ? 'Administrator' : u.role === 'Senior Auditor' ? 'Senior Auditor' : 'Article Assistant'),
+                    department: u.department || 'Audit & Assurance'
+                });
+            }
+        }
 
         let user;
         let userDocId;
@@ -960,12 +1791,9 @@ app.post('/api/login', async (req, res) => {
         if (user.is_active === 0) return res.status(403).json({ error: "Account restricted." });
 
         let match = false;
-        if (user.password && !user.password.startsWith('$2')) {
-            match = (password === user.password);
-        } else if (user.password_hash) {
-            match = await bcrypt.compare(password, user.password_hash);
-        } else if (user.password && user.password.startsWith('$2')) {
-            match = await bcrypt.compare(password, user.password);
+        const storedSecret = user.password_hash || '';
+        if (storedSecret && storedSecret.startsWith('$2')) {
+            match = await bcrypt.compare(password, storedSecret);
         }
 
         if (!match) {
@@ -979,7 +1807,26 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).json({ error: `Invalid password. ${attemptsLeft} attempts remaining.` });
         }
 
-        const reqDeviceId = req.body.deviceId || 'legacy_device';
+        if (isOnline) {
+            const devCheck = await syncAndValidateDevice({
+                officeId,
+                serialKey: reqSerialKey,
+                deviceId: reqDeviceId,
+                pcName: clientPcName,
+                osUser: clientOsUser,
+                clientIp,
+                username: user.username,
+                eventType: 'login'
+            });
+            if (!devCheck.allowed) {
+                return res.status(devCheck.status || 403).json({
+                    error: devCheck.error,
+                    deviceRestricted: devCheck.code === 'DEVICE_RESTRICTED',
+                    deviceRemoved: Boolean(devCheck.deviceRemoved)
+                });
+            }
+        }
+
         const ACTIVE_SESSION_THRESHOLD_MS = 3 * 60 * 1000; // 3 min heartbeat timeout
         const lastActive = Number(user.last_active_at) || 0;
         const isSessionRecent = (Date.now() - lastActive) < ACTIVE_SESSION_THRESHOLD_MS;
@@ -991,6 +1838,13 @@ app.post('/api/login', async (req, res) => {
                 error: `Account "${user.username}" is currently active on another PC. Please log out from that PC first before logging in here.`
             });
         }
+
+        activeSessions[userKey] = {
+            username: user.username,
+            deviceId: reqDeviceId,
+            lastSeen: Date.now(),
+            loginTime: Date.now()
+        };
 
         // Set active session to this PC
         if (isOnline && docRef) {
@@ -1004,8 +1858,8 @@ app.post('/api/login', async (req, res) => {
             // LOG TO ACTIVITY MONITOR
             await withTimeout(addDoc(collection(firestore, 'audit_logs'), {
                 username: user.username,
-                ip: req.ip || '127.0.0.1',
-                system: os.hostname(),
+                ip: clientIp || req.ip || '127.0.0.1',
+                system: clientPcName,
                 time: new Date().toLocaleString(),
                 action: 'Logged In',
                 office_id: officeId
@@ -1017,10 +1871,15 @@ app.post('/api/login', async (req, res) => {
             [reqDeviceId, reqDeviceId, Date.now(), userKey]
         );
 
-        failedLoginAttempts[userKey] = 0;
+        delete failedLoginAttempts[userKey];
         delete lockoutTimeouts[userKey];
 
-        const token = jwt.sign({ id: userDocId, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
+        const token = jwt.sign({
+            id: userDocId,
+            username: user.username,
+            role: user.role,
+            designation: user.designation || (user.role === 'admin' ? 'Administrator' : user.role === 'Senior Auditor' ? 'Senior Auditor' : 'Article Assistant')
+        }, JWT_SECRET, { expiresIn: '12h' });
         
         // Return full user profile for display on client PC
         res.json({
@@ -1044,27 +1903,43 @@ app.post('/api/logout', async (req, res) => {
         if (token && token !== 'null' && token !== 'undefined') {
             jwt.verify(token, JWT_SECRET, async (err, user) => {
                 if (!err && user && user.username) {
+                    const userKey = String(user.username).toLowerCase().trim();
+                    delete activeSessions[userKey];
+                    delete screenFrames[userKey];
                     try {
                         const officeId = await getOfficeId();
+                        if (officeId && req.body?.deviceId) {
+                            await syncAndValidateDevice({
+                                officeId,
+                                serialKey: req.body?.serialKey,
+                                deviceId: req.body.deviceId,
+                                username: user.username,
+                                eventType: 'logout'
+                            }).catch(() => {});
+                        }
                         if (user.username !== 'admin') {
                             try {
-                                const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
-                                const userDoc = snap.docs.find(d => d.data().username === user.username);
-                                if (userDoc) {
-                                    await updateDoc(userDoc.ref, { status: 'offline', last_active_at: null });
+                                if (LICENSE_API_URL) {
+                                    await callLicenseGateway('manageUsers', { action: 'logout', officeId, username: userKey });
+                                } else {
+                                    const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
+                                    const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === userKey);
+                                    if (userDoc) {
+                                        await updateDoc(userDoc.ref, { status: 'offline', current_device_id: null, last_active_at: null });
+                                    }
                                 }
                             } catch (e) {
-                if (e && e.code !== 'unavailable') {
-                    console.warn('[Database Seed Warning]:', e.message);
-                }
-            }
-                            db.run("UPDATE network_users SET device_id = NULL WHERE username = ?", [user.username.toLowerCase().trim()]);
+                                if (e && e.code !== 'unavailable') {
+                                    console.warn('[Database Seed Warning]:', e.message);
+                                }
+                            }
+                            db.run("UPDATE network_users SET device_id = NULL, current_device_id = NULL, status = 'offline' WHERE username = ?", [userKey]);
                         }
                     } catch (e) {
-                if (e && e.code !== 'unavailable') {
-                    console.warn('[Database Seed Warning]:', e.message);
-                }
-            }
+                        if (e && e.code !== 'unavailable') {
+                            console.warn('[Database Seed Warning]:', e.message);
+                        }
+                    }
                 }
             });
         }
@@ -1079,6 +1954,33 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     try {
         const officeId = await getOfficeId();
         const usernameNorm = String(req.body.username).toLowerCase().trim();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageUsers', {
+                action: 'create',
+                officeId,
+                username: usernameNorm,
+                password: req.body.password,
+                name: req.body.name || req.body.username,
+                designation: req.body.designation || '',
+                department: req.body.department || '',
+                role: req.body.role || 'user'
+            });
+            if (!gw.ok) return res.status(gw.status).json(gw.data);
+            saveUserToLocalDb({
+                name: req.body.name || req.body.username,
+                designation: req.body.designation || '',
+                department: req.body.department || '',
+                username: usernameNorm,
+                password_hash: gw.data.passwordHash,
+                role: req.body.role || 'user',
+                is_active: 1,
+                office_id: officeId,
+                device_id: null,
+                current_device_id: null,
+                status: 'offline'
+            });
+            return res.json({ success: true, id: gw.data.id });
+        }
         const hash = await bcrypt.hash(req.body.password, 10);
         const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
         const existing = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === usernameNorm);
@@ -1117,9 +2019,23 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/heartbeat', authenticateToken, async (req, res) => {
-    if (req.user.username === 'admin') return res.json({ success: true });
     try {
         const userKey = String(req.user.username).toLowerCase().trim();
+        const reqDeviceId = req.body?.deviceId || '';
+        const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Localhost').replace('::ffff:', '');
+        const isLocalConn = ['127.0.0.1', '::1'].includes(String(req.socket.remoteAddress || '').replace('::ffff:', '')) && !/loca\.lt/i.test(`${req.headers['host'] || ''} ${req.headers['x-forwarded-host'] || ''}`);
+        let reqSerialKey = req.body?.serialKey ? String(req.body.serialKey).trim().toUpperCase() : '';
+        if (!reqSerialKey && isLocalConn && typeof getActiveSerialKey === 'function') {
+            reqSerialKey = (await getActiveSerialKey()) || '';
+        }
+        const clientPcName = req.body?.pcName || (isLocalConn ? os.hostname() : '');
+        const clientOsUser = req.body?.osUser || (isLocalConn ? os.userInfo().username : '');
+
+        if (activeSessions[userKey]) {
+            activeSessions[userKey].lastSeen = Date.now();
+        } else {
+            activeSessions[userKey] = { username: req.user.username, deviceId: reqDeviceId, lastSeen: Date.now(), loginTime: Date.now() };
+        }
 
         // 1. Check local SQLite database first (authoritative and instant on-premise)
         db.get("SELECT * FROM network_users WHERE LOWER(username) = ?", [userKey], async (err, localUser) => {
@@ -1131,14 +2047,41 @@ app.post('/api/heartbeat', authenticateToken, async (req, res) => {
             try {
                 const officeId = await getOfficeId();
                 if (officeId) {
-                    const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
-                    const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === userKey);
-                    if (userDoc) {
-                        if (userDoc.data().is_active === 0) {
-                            db.run("UPDATE network_users SET is_active = 0 WHERE username = ?", [userKey]);
-                            return res.status(403).json({ error: "User restricted" });
+                    const devCheck = await syncAndValidateDevice({
+                        officeId,
+                        serialKey: reqSerialKey,
+                        deviceId: reqDeviceId,
+                        pcName: clientPcName,
+                        osUser: clientOsUser,
+                        clientIp,
+                        username: req.user.username,
+                        eventType: 'heartbeat'
+                    });
+                    if (!devCheck.allowed) {
+                        delete activeSessions[userKey];
+                        return res.status(devCheck.status || 403).json({
+                            error: devCheck.error,
+                            deviceRestricted: devCheck.code === 'DEVICE_RESTRICTED',
+                            deviceRemoved: Boolean(devCheck.deviceRemoved),
+                            deviceOffline: devCheck.code === 'DEVICE_OFFLINE'
+                        });
+                    }
+
+                    if (userKey !== 'admin' && !LICENSE_API_URL) {
+                        const snap = await withTimeout(getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId))), 3000);
+                        const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === userKey);
+                        if (userDoc) {
+                            const ud = userDoc.data();
+                            if (ud.is_active === 0) {
+                                db.run("UPDATE network_users SET is_active = 0 WHERE username = ?", [userKey]);
+                                return res.status(403).json({ error: "User restricted" });
+                            }
+                            if (ud.status === 'offline' && !ud.current_device_id) {
+                                delete activeSessions[userKey];
+                                return res.status(403).json({ error: "Session terminated by Administrator.", deviceOffline: true });
+                            }
+                            await withTimeout(updateDoc(userDoc.ref, { last_active_at: Date.now() }), 3000).catch(() => {});
                         }
-                        await updateDoc(userDoc.ref, { last_active_at: Date.now() });
                     }
                 }
             } catch (cloudErr) {
@@ -1152,10 +2095,18 @@ app.post('/api/heartbeat', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/users', authenticateToken, async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: "Admin only" });
     try {
         const officeId = await getOfficeId();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageUsers', { action: 'list', officeId });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.ok ? (gw.data.users || []) : gw.data);
+        }
         const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
-        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs.map(d => {
+            const { password_hash: _ph, password: _pw, ...safeUser } = d.data() || {};
+            return { id: d.id, ...safeUser };
+        });
         res.json(rows);
     } catch (e) { 
         res.status(500).json({ error: e.message }); 
@@ -1168,6 +2119,10 @@ app.post('/api/users/:username/release-session', authenticateToken, async (req, 
         const officeId = await getOfficeId();
         const targetUsernameNorm = String(req.params.username).toLowerCase().trim();
         db.run("UPDATE network_users SET status = 'offline', current_device_id = NULL WHERE LOWER(username) = ?", [targetUsernameNorm]);
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageUsers', { action: 'releaseSession', officeId, username: targetUsernameNorm });
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
         const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === targetUsernameNorm);
         if (userDoc) {
@@ -1184,6 +2139,13 @@ app.delete('/api/users/:username', authenticateToken, async (req, res) => {
     try {
         const officeId = await getOfficeId();
         const targetUsernameNorm = String(req.params.username).toLowerCase().trim();
+        if (LICENSE_API_URL) {
+            const gw = await callLicenseGateway('manageUsers', { action: 'deactivate', officeId, username: targetUsernameNorm });
+            if (targetUsernameNorm !== 'admin') {
+                db.run("UPDATE network_users SET is_active = 0 WHERE username = ?", [targetUsernameNorm]);
+            }
+            return res.status(gw.ok ? 200 : gw.status).json(gw.data);
+        }
         const snap = await getDocs(query(collection(firestore, 'network_users'), where('office_id', '==', officeId)));
         const userDoc = snap.docs.find(d => String(d.data().username).toLowerCase().trim() === targetUsernameNorm);
         
@@ -1267,29 +2229,47 @@ app.delete('/api/consolidations/:id', authenticateToken, (req, res) => {
 });
 
 // --- MODULE 1: CLIENT MASTER & TASKS ---
-app.get('/api/clients', authenticateToken, (req, res) => {
-    db.all(`SELECT * FROM clients ORDER BY trade_name ASC`, [], (err, rows) => res.json(rows || []));
+app.get('/api/clients', authenticateToken, async (req, res) => {
+    try {
+        const dataPath = await getActiveDataPathFromDb(db, userDataPath);
+        await syncCredentialsWithCentral(db, dataPath);
+    } catch (syncErr) {
+        console.warn('[Clients GET] Central vault sync note:', syncErr.message);
+    }
+
+    db.all(`
+        SELECT id, username, gstin, trade_name, legal_name, email, phone, address,
+               portal_username, last_updated, is_deleted,
+               COALESCE(created_at, last_updated, 0) AS created_at,
+               (CASE WHEN portal_password IS NOT NULL AND LENGTH(portal_password) > 0 THEN 1 ELSE 0 END) AS has_password
+        FROM clients
+        WHERE is_deleted = 0 OR is_deleted IS NULL
+        ORDER BY trade_name COLLATE NOCASE ASC
+    `, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
 });
 app.post('/api/clients', authenticateToken, (req, res) => {
     const { id, gstin, trade_name, legal_name, email, phone } = req.body;
     db.run(`INSERT INTO clients (id, username, gstin, trade_name, legal_name, email, phone) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(gstin) DO UPDATE SET trade_name = ?, legal_name = ?, email = ?, phone = ?`, 
         [id, req.user.username, gstin, trade_name, legal_name, email, phone, trade_name, legal_name, email, phone], 
-        () => res.json({ success: true }));
+        function (err) { if (err) { console.error('[DB Mutation Error]:', err.message); return res.status(500).json({ success: false, error: err.message }); } res.json({ success: true }); });
 });
 app.delete('/api/clients/:id', authenticateToken, (req, res) => {
-    db.run(`DELETE FROM clients WHERE id = ?`, [req.params.id], () => res.json({ success: true }));
+    db.run(`DELETE FROM clients WHERE id = ?`, [req.params.id], function (err) { if (err) { console.error('[DB Error DELETE /api/clients]:', err.message); return res.status(500).json({ success: false, error: err.message }); } res.json({ success: true }); });
 });
 app.get('/api/tasks', authenticateToken, (req, res) => {
-    db.all(`SELECT * FROM tasks ORDER BY due_date ASC`, [], (err, rows) => res.json(rows || []));
+    db.all(`SELECT * FROM tasks ORDER BY due_date ASC`, [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json(rows || []); });
 });
 app.post('/api/tasks', authenticateToken, (req, res) => {
     const { id, client_gstin, return_type, period, due_date, status, tax_amount } = req.body;
     db.run(`INSERT INTO tasks (id, username, client_gstin, return_type, period, due_date, status, tax_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = ?, tax_amount = ?`, 
         [id, req.user.username, client_gstin, return_type, period, due_date, status, tax_amount, status, tax_amount], 
-        () => res.json({ success: true }));
+        function (err) { if (err) { console.error('[DB Mutation Error]:', err.message); return res.status(500).json({ success: false, error: err.message }); } res.json({ success: true }); });
 });
 app.delete('/api/tasks/:id', authenticateToken, (req, res) => {
-    db.run(`DELETE FROM tasks WHERE id = ?`, [req.params.id], () => res.json({ success: true }));
+    db.run(`DELETE FROM tasks WHERE id = ?`, [req.params.id], function (err) { if (err) { console.error('[DB Error DELETE /api/tasks]:', err.message); return res.status(500).json({ success: false, error: err.message }); } res.json({ success: true }); });
 });
 
 // --- MODULE 1: EXTERNAL AUTOMATION PLACEHOLDERS ---
@@ -1364,59 +2344,42 @@ app.post('/api/portal/import-client', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: 'Failed to fetch from portal or timeout waiting for CAPTCHA.' });
     }
 });
-app.post('/api/alerts/send', authenticateToken, (req, res) => {
-    // Placeholder: Email/SMS alert dispatch via SMTP/Twilio
-    setTimeout(() => res.json({ success: true }), 1000);
-});
-
-// --- MODULE 2: RETURNS PREPARATION & FILING ---
-app.post('/api/returns/validate-gstin', authenticateToken, (req, res) => {
-    // Placeholder: Headless browser login -> Search Taxpayer -> Return status
-    setTimeout(() => res.json({ success: true, message: "GSTIN Validated successfully via Portal.", status: "Active" }), 1500);
-});
-app.post('/api/returns/generate-json', authenticateToken, (req, res) => {
-    setTimeout(() => res.json({ success: true, message: "JSON Payload generated successfully." }), 1000);
-});
-app.post('/api/returns/upload', authenticateToken, (req, res) => {
-    // Placeholder: Headless browser -> Navigate to GSTR1/3B -> Upload JSON -> Poll for status
-    setTimeout(() => res.json({ success: true, message: "Data uploaded to GST Portal successfully." }), 2500);
-});
-app.post('/api/returns/draft-pdf', authenticateToken, (req, res) => {
-    setTimeout(() => res.json({ success: true, message: "Draft PDF generated for review." }), 1500);
-});
-app.post('/api/returns/file', authenticateToken, (req, res) => {
-    setTimeout(() => res.json({ success: true, message: "Return Filed Successfully via OTP!" }), 3000);
-});
 
 // --- LEGACY NETWORK ENDPOINTS (Screen, Messaging, Dashboard) ---
 app.post('/session/start', authenticateToken, (req, res) => {
-    const { username, userAgent, location } = req.body;
+    const targetUser = String(req.body?.username || req.user.username || '').trim();
+    if (!isSameUserOrAdmin(req.user, targetUser)) return res.status(403).json({ error: 'Cannot start session for another user' });
+    const { userAgent, location } = req.body;
     const banned = loadJson(BANNED_PATH);
-    if (banned[username]) return res.status(403).json({ error: 'Banned' });
+    if (banned[targetUser]) return res.status(403).json({ error: 'Banned' });
     const now = Date.now();
-    if (activeSessions[username] && (now - activeSessions[username].lastSeen < 6000)) return res.status(409).json({ error: 'Already logged in' });
+    if (activeSessions[targetUser] && (now - activeSessions[targetUser].lastSeen < 6000)) return res.status(409).json({ error: 'Already logged in' });
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown';
     const sessionId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-    activeSessions[username] = { id: sessionId, username, ip: ip.replace('::ffff:', ''), userAgent, location, loginTime: now, lastSeen: now };
+    activeSessions[targetUser] = { id: sessionId, username: targetUser, ip: ip.replace('::ffff:', ''), userAgent, location, loginTime: now, lastSeen: now };
     res.json({ sessionId });
 });
 
 app.post('/session/heartbeat', authenticateToken, (req, res) => {
-    const { sessionId, username } = req.body;
+    const targetUser = String(req.body?.username || req.user.username || '').trim();
+    if (!isSameUserOrAdmin(req.user, targetUser)) return res.status(403).json({ error: 'Cannot heartbeat session for another user' });
+    const { sessionId } = req.body;
     const banned = loadJson(BANNED_PATH);
-    if (banned[username]) return res.status(403).json({ error: 'Banned' });
-    if (!activeSessions[username] || activeSessions[username].id !== sessionId) return res.status(403).json({ error: 'Session Invalid' });
-    activeSessions[username].lastSeen = Date.now();
+    if (banned[targetUser]) return res.status(403).json({ error: 'Banned' });
+    if (!activeSessions[targetUser] || activeSessions[targetUser].id !== sessionId) return res.status(403).json({ error: 'Session Invalid' });
+    activeSessions[targetUser].lastSeen = Date.now();
     res.json({ success: true });
 });
 
 app.get('/sessions', authenticateToken, (req, res) => {
+    if (!isAdminOrSenior(req.user)) return res.status(403).json({ error: 'Admin or Senior Auditor privileges required' });
     const now = Date.now();
     for(const user in activeSessions) if (now - activeSessions[user].lastSeen > 120000) delete activeSessions[user];
     res.json({ sessions: Object.values(activeSessions), banned: loadJson(BANNED_PATH) });
 });
 
 app.post('/ban', authenticateToken, (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Admin only' });
     const { username, isBanned } = req.body;
     const banned = loadJson(BANNED_PATH);
     if (isBanned) { banned[username] = true; delete activeSessions[username]; } 
@@ -1425,45 +2388,72 @@ app.post('/ban', authenticateToken, (req, res) => {
     res.json({ success: true });
 });
 
-app.post('/screen/request', authenticateToken, (req, res) => { screenRequests[req.body.username] = true; res.json({ success: true }); });
+app.post('/screen/request', authenticateToken, (req, res) => {
+    if (!isAdminOrSenior(req.user)) return res.status(403).json({ error: 'Admin or Senior Auditor privileges required' });
+    screenRequests[req.body.username] = true;
+    res.json({ success: true });
+});
 app.get('/screen/check-request/:username', authenticateToken, (req, res) => {
+    if (!isSameUserOrAdmin(req.user, req.params.username)) return res.status(403).json({ error: 'Access denied' });
     const requested = !!screenRequests[req.params.username];
     if (requested) delete screenRequests[req.params.username];
     res.json({ requested });
 });
-app.post('/screen/send', authenticateToken, (req, res) => { screenFrames[req.body.username] = { image: req.body.image, time: Date.now() }; res.json({ success: true }); });
+app.post('/screen/send', authenticateToken, (req, res) => {
+    const targetUser = String(req.body?.username || req.user.username || '').trim();
+    if (!isSameUserOrAdmin(req.user, targetUser)) return res.status(403).json({ error: 'Cannot publish screen frame for another user' });
+    screenFrames[targetUser] = { image: req.body.image, time: Date.now() };
+    res.json({ success: true });
+});
 app.get('/screen/view/:username', authenticateToken, (req, res) => {
+    if (!isAdminOrSenior(req.user)) return res.status(403).json({ error: 'Admin or Senior Auditor privileges required' });
     const frame = screenFrames[req.params.username];
     res.json({ image: frame && (Date.now() - frame.time < 15000) ? frame.image : null });
 });
 
 app.post('/message/send', authenticateToken, (req, res) => {
+    if (!isAdminOrSenior(req.user)) return res.status(403).json({ error: 'Admin or Senior Auditor privileges required' });
     const { username, message } = req.body;
     if (username && message) { userMessages[username] = message; res.json({ success: true }); }
     else res.status(400).json({ success: false });
 });
 app.get('/message/check/:username', authenticateToken, (req, res) => {
+    if (!isSameUserOrAdmin(req.user, req.params.username)) return res.status(403).json({ error: 'Access denied' });
     const message = userMessages[req.params.username];
     if (message) delete userMessages[req.params.username];
     res.json({ message: message || null });
 });
 
-app.get('/audit', authenticateToken, (req, res) => res.json(getAuditLogs()));
+app.get('/audit', authenticateToken, (req, res) => {
+    if (!isAdminOrSenior(req.user)) return res.status(403).json({ error: 'Admin or Senior Auditor privileges required' });
+    res.json(getAuditLogs());
+});
+let auditWriteQueue = Promise.resolve();
 app.post('/audit', authenticateToken, (req, res) => {
-    const logs = getAuditLogs();
-    logs.unshift({ id: Date.now().toString(), timestamp: Date.now(), ...req.body });
-    if (logs.length > 500) logs.pop();
-    fs.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
-    res.json({ success: true });
+    auditWriteQueue = auditWriteQueue.then(() => {
+        const logs = getAuditLogs();
+        logs.unshift({
+            id: Date.now().toString(),
+            timestamp: Date.now(),
+            ...(req.body || {}),
+            username: req.user.username,
+            role: req.user.role
+        });
+        if (logs.length > 500) logs.pop();
+        fs.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
+    });
+    auditWriteQueue
+        .then(() => res.json({ success: true }))
+        .catch((err) => res.status(500).json({ success: false, error: err.message }));
 });
 
 // Tally XML API Proxy for Web Clients
 app.post('/api/tally-proxy', authenticateToken, express.text({ type: '*/*' }), async (req, res) => {
-    const rawPort = parseInt(req.headers['x-tally-port'], 10);
-    const port = (!isNaN(rawPort) && rawPort >= 9000 && rawPort <= 9010) ? rawPort : 9000;
+    const rawHeaderPort = req.headers['x-tally-port'];
+    const port = rawHeaderPort !== undefined && String(rawHeaderPort).trim() !== '' ? parseInt(String(rawHeaderPort), 10) : 9000;
+    if (isNaN(port) || port < 9000 || port > 9010) return res.status(400).send('Invalid Tally port');
     try {
-        const fetch = (await import('node-fetch')).default || global.fetch;
-        const response = await fetch(`http://127.0.0.1:${port}`, {
+        const response = await globalThis.fetch(`http://127.0.0.1:${port}`, {
             method: 'POST',
             headers: { 'Content-Type': 'text/xml; charset=utf-8' },
             body: typeof req.body === 'string' ? req.body : JSON.stringify(req.body)
@@ -1473,6 +2463,67 @@ app.post('/api/tally-proxy', authenticateToken, express.text({ type: '*/*' }), a
         res.send(text);
     } catch (err) {
         res.status(500).send("Tally Proxy Error: " + err.message);
+    }
+});
+
+// Live Tally Port Connection Tester & Active Company Extractor
+app.post('/api/tally/test-connection', async (req, res) => {
+    const rawHeaderPort = req.headers['x-tally-port'];
+    const bodyPort = req.body && typeof req.body === 'object' ? req.body.port : undefined;
+    const port = parseInt(bodyPort || rawHeaderPort || 9000, 10);
+    if (isNaN(port) || port < 9000 || port > 9010) {
+        return res.status(400).json({ success: false, isOnline: false, error: 'Invalid Tally port (9000-9010)' });
+    }
+    const xml = `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>ListOfCompanies</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES><TDL><TDLMESSAGE><COLLECTION NAME="ListOfCompanies"><TYPE>Company</TYPE><FETCH>Name, FormalName, BooksFrom, GSTIN, State, Address, GUID</FETCH></COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>`;
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const response = await globalThis.fetch(`http://127.0.0.1:${port}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+            body: xml,
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const text = await response.text();
+
+        const nameMatch = text.match(/<NAME[^>]*>(.*?)<\/NAME>/i) || text.match(/<COMPANYNAME[^>]*>(.*?)<\/COMPANYNAME>/i);
+        const formalMatch = text.match(/<FORMALNAME[^>]*>(.*?)<\/FORMALNAME>/i);
+        const gstinMatch = text.match(/<GSTIN[^>]*>(.*?)<\/GSTIN>/i);
+        const booksFromMatch = text.match(/<BOOKSFROM[^>]*>(.*?)<\/BOOKSFROM>/i);
+        const stateMatch = text.match(/<STATE[^>]*>(.*?)<\/STATE>/i);
+        const guidMatch = text.match(/<GUID[^>]*>(.*?)<\/GUID>/i);
+        const addressMatch = text.match(/<ADDRESS[^>]*>(.*?)<\/ADDRESS>/i);
+
+        const companyName = nameMatch ? nameMatch[1].trim() : '';
+        const formalName = formalMatch ? formalMatch[1].trim() : companyName;
+        const gstin = gstinMatch ? gstinMatch[1].trim().toUpperCase() : '';
+        const booksFrom = booksFromMatch ? booksFromMatch[1].trim() : '';
+        const state = stateMatch ? stateMatch[1].trim() : '';
+        const guid = guidMatch ? guidMatch[1].trim() : '';
+        const address = addressMatch ? addressMatch[1].trim() : '';
+
+        const isOnline = text.includes('COMPANY') || Boolean(companyName);
+        return res.json({
+            success: isOnline,
+            isOnline,
+            port,
+            companyName: companyName || (isOnline ? 'Tally Company' : ''),
+            formalName: formalName || companyName,
+            gstin,
+            booksFrom,
+            state,
+            guid,
+            address
+        });
+    } catch (err) {
+        return res.json({
+            success: false,
+            isOnline: false,
+            port,
+            error: err.name === 'AbortError' ? 'Connection timed out' : err.message
+        });
     }
 });
 
@@ -1536,23 +2587,39 @@ function resolvePythonExecutable() {
 
 // --- MODULE: CMA PROJECT REPORT EXCEL GENERATION ---
 app.post('/api/cma/generate', authenticateToken, async (req, res) => {
+    const runId = crypto.randomUUID();
+    const tempJsonPath = path.join(os.tmpdir(), `temp_cma_${runId}.json`);
+    const tempExcelPath = path.join(os.tmpdir(), `CMA_Report_${runId}.xlsx`);
+    const cleanupCmaFiles = () => {
+        for (const f of [tempJsonPath, tempExcelPath]) {
+            try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {}
+        }
+    };
+    let responded = false;
     try {
+        // payload extracted below
+        // payload extracted below
         const payload = req.body;
-        const tempJsonPath = path.join(__dirname, `temp_cma_${Date.now()}.json`);
-        const tempExcelPath = path.join(__dirname, `CMA_Report_${Date.now()}.xlsx`);
 
         // Save payload to temp json file
         fs.writeFileSync(tempJsonPath, JSON.stringify(payload));
 
         const pythonCmd = resolvePythonExecutable();
         if (!pythonCmd) {
-            try { if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath); } catch (e) {}
+            cleanupCmaFiles();
             return res.status(503).json({ error: 'Python runtime is not detected on this system. Please install Python to generate CMA Excel reports.' });
         }
         const generatorScript = path.join(__dirname, 'scripts', 'cma', 'cma_generator.py');
 
         // Spawn python script to build the spreadsheet
         const child = spawn(pythonCmd, [generatorScript, tempJsonPath, tempExcelPath]);
+        child.on('error', (spawnErr) => {
+            cleanupCmaFiles();
+            if (!responded && !res.headersSent) {
+                responded = true;
+                res.status(500).json({ error: 'Failed to invoke Python generator: ' + spawnErr.message });
+            }
+        });
         
         let stderrData = '';
         child.stderr.on('data', (data) => {
@@ -1565,7 +2632,10 @@ app.post('/api/cma/generate', authenticateToken, async (req, res) => {
                 if (fs.existsSync(tempJsonPath)) fs.unlinkSync(tempJsonPath);
             } catch (err) {}
 
+            if (responded) return;
+            responded = true;
             if (code !== 0) {
+                cleanupCmaFiles();
                 console.error("Python generator error:", stderrData);
                 return res.status(500).json({ error: "Failed to generate Excel report: " + stderrData });
             }
@@ -1573,14 +2643,16 @@ app.post('/api/cma/generate', authenticateToken, async (req, res) => {
             // Stream Excel file for download and cleanup after sending
             res.download(tempExcelPath, `${payload.client_metadata?.company_name || 'CMA'}_Project_Report.xlsx`, (err) => {
                 try {
-                    if (fs.existsSync(tempExcelPath)) fs.unlinkSync(tempExcelPath);
+                    cleanupCmaFiles();
                 } catch (cleanupErr) {}
             });
         });
 
     } catch (error) {
+        cleanupCmaFiles();
         console.error("CMA generation server error:", error);
-        res.status(500).json({ error: error.message });
+        if (!responded && !res.headersSent) { responded = true; return res.status(500).json({ error: error?.message || 'CMA failed' }); }
+        // duplicate res.status removed
     }
 });
 
@@ -1592,6 +2664,69 @@ app.use('/api', (req, res) => {
 // Catch-all to serve the React app for any other routes (client-side routing)
 app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(DIST_PATH, 'index.html'));
+});
+
+app.get('/api/network/servers', authenticateToken, async (req, res) => {
+    try {
+        const { office_id, is_global } = req.query;
+        const localOfficeId = await getOfficeId();
+        if (office_id) {
+            const targetOffice = String(office_id);
+            if (!isAdminUser(req.user) && localOfficeId && targetOffice !== localOfficeId) {
+                return res.status(403).json({ error: "Access denied for external office" });
+            }
+            if (LICENSE_API_URL) {
+                const gw = await callLicenseGateway('manageKeys', { action: 'listServers', officeId: targetOffice });
+                const list = gw.ok && Array.isArray(gw.data?.servers) ? gw.data.servers : [];
+                return res.json(list[0] || {});
+            }
+            const snap = await getDocs(query(
+                collection(firestore, 'serial_keys'),
+                where('office_id', '==', targetOffice),
+                where('key_type', '==', 'server')
+            ));
+            if (!snap.empty) {
+                const docData = snap.docs[0].data();
+                return res.json({ id: snap.docs[0].id, ...docData });
+            }
+            return res.json({});
+        }
+
+        if (is_global === 'true' || is_global === true) {
+            if (!isAdminUser(req.user)) {
+                return res.status(403).json({ error: "Admin only" });
+            }
+            if (LICENSE_API_URL) {
+                const gw = await callLicenseGateway('manageKeys', { action: 'listServers', isGlobal: true });
+                return res.json(gw.ok && Array.isArray(gw.data?.servers) ? gw.data.servers : []);
+            }
+            const snap = await getDocs(query(
+                collection(firestore, 'serial_keys'),
+                where('is_global', '==', true)
+            ));
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            return res.json(list);
+        }
+
+        if (localOfficeId) {
+            if (LICENSE_API_URL) {
+                const gw = await callLicenseGateway('manageKeys', { action: 'listServers', officeId: localOfficeId });
+                return res.json(gw.ok && Array.isArray(gw.data?.servers) ? gw.data.servers : []);
+            }
+            const snap = await getDocs(query(
+                collection(firestore, 'serial_keys'),
+                where('office_id', '==', localOfficeId),
+                where('key_type', '==', 'server')
+            ));
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            return res.json(list);
+        }
+
+        res.json([]);
+    } catch (err) {
+        console.error('[Network Servers Query Error]:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {

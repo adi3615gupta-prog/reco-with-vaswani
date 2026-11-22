@@ -40,11 +40,12 @@ export interface TaxBreakdown {
   cgst: number;
   sgst: number;
   igst: number;
+  cess?: number;
   total: number;
 }
 
 export function createEmptyTaxBreakdown(): TaxBreakdown {
-  return { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+  return { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0, total: 0 };
 }
 
 export interface OutwardSupplies {
@@ -63,6 +64,7 @@ export interface OutwardSupplies {
   advanceAdjusted: TaxBreakdown;       // (-) Advances Settled Against Services
   totalSaleWorking: TaxBreakdown;      // Auto-computed: SUM(D8:D17) - SUM(D18:D20)
   rcmInward: TaxBreakdown;             // Reverse charge on inward supplies (Table 3.1(d)) = SUM(D25:D28)
+  rcmOutward?: TaxBreakdown;           // Outward supplies subject to Reverse Charge
   rcmTransport: TaxBreakdown;          // RCM on Transport Charges 5%
   rcmSecurity: TaxBreakdown;           // RCM on Security Charges 18%
   rcmGuestHouse: TaxBreakdown;         // RCM on Guest House Charges 18%
@@ -141,7 +143,7 @@ export interface GSTR3BAnnualWorking {
  * Normalizes Financial Year to standard YYYY-YY format (e.g. "2024-2025" or "2024 25" -> "2024-25")
  */
 export function normalizeFy(val: string): string {
-  if (!val) return '2025-26';
+  if (!val) return '2026-27';
   const clean = val.trim();
   const m = clean.match(/^(\d{4})[\s\-\/]?(\d{2,4})$/);
   if (m) {
@@ -157,8 +159,8 @@ export function normalizeFy(val: string): string {
 export function parseFyYears(fy: string): { startYear: string; endYear: string; startYearShort: string; endYearShort: string } {
   const norm = normalizeFy(fy);
   const parts = norm.split('-');
-  const startYear = parts[0] || '2025';
-  const endShort = parts[1] || '26';
+  const startYear = parts[0] || '2026';
+  const endShort = parts[1] || '27';
   const endYear = parts[1] && parts[1].length === 4 ? parts[1] : (startYear.slice(0, 2) + endShort);
   const startYearShort = startYear.slice(-2);
   const endYearShort = endYear.slice(-2);
@@ -170,7 +172,7 @@ export const GSTR3B_MONTH_INDEX_MAP: Record<GSTR3BMonthKey, number> = {
   October: 10, November: 11, December: 12, January: 1, February: 2, March: 3
 };
 
-export function createEmptyMonthData(month: GSTR3BMonthKey, fy: string = '2025-26'): GSTR3BMonthData {
+export function createEmptyMonthData(month: GSTR3BMonthKey, fy: string = '2026-27'): GSTR3BMonthData {
   const { startYear, endYear } = parseFyYears(fy);
   const isNextYear = ['January', 'February', 'March'].includes(month);
   const year = isNextYear ? endYear : startYear;
@@ -237,7 +239,7 @@ export function createEmptyAnnualWorking(profile?: Partial<GSTR3BClientProfile>)
     gstin: profile?.gstin || '',
     address: profile?.address || '',
     contact: profile?.contact || '',
-    financialYear: profile?.financialYear || '2025-26',
+    financialYear: profile?.financialYear || '2026-27',
   };
 
   const months: Record<GSTR3BMonthKey, GSTR3BMonthData> = {} as any;
@@ -498,11 +500,8 @@ export function recalculateMonthData(
         surplus_ITC_igst = round2(surplus_ITC_igst - takeSgst);
       }
 
-      // 3. If surplus IGST still remains (both shortfalls met/zero), park in CGST as per CA working sheet standard (e.g. April-26)
-      if (surplus_ITC_igst > 0) {
-        u_igst_cgst = round2(u_igst_cgst + surplus_ITC_igst);
-        surplus_ITC_igst = 0;
-      }
+      // Rule 88A / Sec 49(5): Any remaining surplus IGST ITC is strictly carried forward as IGST credit.
+      // It is NOT artificially converted into CGST or SGST.
     }
 
     // Residual IGST Liability paid from CGST/SGST ITC
@@ -643,7 +642,7 @@ export function recalculateAnnualWorking(annual: GSTR3BAnnualWorking | any, prof
   // Support both annual object { profile, months } and direct months object
   const monthsSource = annual.months ? annual.months : annual;
   const profileSource = annual.profile || profileFallback || createEmptyAnnualWorking().profile;
-  const financialYear = normalizeFy(profileSource.financialYear || '2025-26');
+  const financialYear = normalizeFy(profileSource.financialYear || '2026-27');
   profileSource.financialYear = financialYear;
 
   const { startYear, endYear } = parseFyYears(financialYear);
@@ -1211,10 +1210,10 @@ export async function generateGstr3bWorkingExcel(annual: GSTR3BAnnualWorking): P
       '',
       'Final Liability Payable',
       null,
-      { formula: 'IF(E43-E44>0,E43-E44,0)-E46', result: m.setoff.payableAfterAdjustment.cgst },
-      { formula: 'IF(F43-F44>0,F43-F44,0)-F46', result: m.setoff.payableAfterAdjustment.sgst },
-      { formula: 'IF(G43-G44>0,G43-G44,0)-G46', result: m.setoff.payableAfterAdjustment.igst },
-      { formula: 'IF(H43-H44>0,H43-H44,0)-H46', result: m.setoff.payableAfterAdjustment.total },
+      { formula: 'MAX(0,IF(E43-E44>0,E43-E44,0)-E46)', result: m.setoff.payableAfterAdjustment.cgst },
+      { formula: 'MAX(0,IF(F43-F44>0,F43-F44,0)-F46)', result: m.setoff.payableAfterAdjustment.sgst },
+      { formula: 'MAX(0,IF(G43-G44>0,G43-G44,0)-G46)', result: m.setoff.payableAfterAdjustment.igst },
+      { formula: 'MAX(0,IF(H43-H44>0,H43-H44,0)-H46)', result: m.setoff.payableAfterAdjustment.total },
       { isPayable: true }
     );
 
@@ -1698,7 +1697,8 @@ export function generateGstr3bPortalJson(monthData: GSTR3BMonthData, profile: GS
   };
 
   // CR28570A: For periods prior to August 2025 (e.g. pre-Nov 2024), include inter_sup; for 2025-26+ portal auto-populates 3.2 from GSTR-1
-  const isAfterInterSupRemoval = (monthData.year > 2025) || (monthData.year === 2025 && mIndex >= 8);
+  const numYear = Number(monthData.year) || 0;
+  const isAfterInterSupRemoval = (numYear > 2025) || (numYear === 2025 && mIndex >= 8);
   if (!isAfterInterSupRemoval) {
     payload.inter_sup = {
       unreg_details: [],

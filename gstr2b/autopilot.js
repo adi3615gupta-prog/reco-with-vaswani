@@ -1,21 +1,51 @@
+import { decryptSecret } from '../cryptoVault.js';
 /*! javascript-obfuscator:disable */
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { exec } from 'child_process';
-import { bulkSaveGstr2bInvoices, saveGstr1Summary, markGstr2bMonthNilSynced } from './db.js';
+import { exec, execFile } from 'child_process';
+import {
+    bulkSaveGstr2bInvoices,
+    markGstr2bMonthNilSynced,
+    markGstr2bMonthRequested,
+    normalizeReturnPeriod,
+    buildStrictPeriodFilter,
+    recordGstr2bMonthError,
+    verifyGstr2bBatchChecksum,
+    updateGstr2bBatchVerification
+} from './db.js';
 import {
     parseGstr2bExcelHelper,
     parseGstr2bJsonHelper,
     parseGstr2bZipHelper,
-    parseGstr1ExcelHelper,
-    parseGstr1DataHelper,
-    parseGstr1ZipHelper
+    verifyParsedGstr2bPayload,
+    extractGstr2bPortalSummary
 } from './parsers.js';
+import { killBrowserWithPidFallback, resolveTargetPeriods } from './jobs.js';
 import { generateGstr2bFullYearWorkbook } from './fullYearExcel.js';
 import { launchAutopilotBrowser } from './browserLauncher.js';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
+
+/**
+ * buildIsolatedPeriodDir: Pure path helper that ensures automated downloads save exclusively into
+ * path-traversal-guarded scratch/downloads/gstr2b/${gstinUpper}/${jobId}/${periodSlug}
+ */
+export function buildIsolatedPeriodDir(gstinUpper, jobId, periodStr) {
+    if (String(gstinUpper || '').includes('..') || String(jobId || '').includes('..') || String(periodStr || '').includes('..')) {
+        throw new Error('Unsafe download directory path: path traversal detected');
+    }
+    const sessionRoot = path.resolve(process.cwd(), 'scratch', 'downloads', 'gstr2b');
+    const safeGstin = String(gstinUpper || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!safeGstin) throw new Error('Client GSTIN is required for isolated download directory');
+    const safeJobId = String(jobId || 'direct_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '') || 'session';
+    const periodSlug = (normalizeReturnPeriod(periodStr) || String(periodStr || 'period')).replace(/[^a-zA-Z0-9]+/g, '_');
+    const targetDir = path.resolve(sessionRoot, safeGstin, safeJobId, periodSlug);
+    if (!targetDir.startsWith(sessionRoot + path.sep)) {
+        throw new Error('Unsafe download directory path');
+    }
+    return targetDir;
+}
 
 /**
  * runGstr2bAutopilot — Autonomous Playwright automation engine for GST Portal:
@@ -26,8 +56,38 @@ const XLSX = xlsxModule.default || xlsxModule;
  * 5. Locate GSTR-2B card -> Click DOWNLOAD
  * 6. Download official Excel & JSON files, extract line-item invoices & persist to SQLite
  */
-export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYear, portal_username, portal_password, req, res, browserState, isFullYear = false }) {
-    const gstinUpper = gstin.trim().toUpperCase();
+export async function runGstr2bAutopilot({
+    db,
+    gstin,
+    returnPeriod,
+    financialYear,
+    portal_username,
+    portal_password,
+    req = null,
+    res = null,
+    browserState = null,
+    isFullYear = false,
+    jobId = null,
+    onlyPeriods = null,
+    skipSynced = false,
+    onEvent = null,
+    abortSignal = null
+}) {
+    const emit = (eventName, data = {}) => {
+        try {
+            if (typeof onEvent === 'function') onEvent(eventName, data);
+        } catch (e) {}
+    };
+
+    const sendOutcome = (httpStatus, payload) => {
+        if (res && !res.headersSent) {
+            res.status(httpStatus).json(payload);
+        }
+        return payload;
+    };
+
+    const gstinUpper = String(gstin || '').trim().toUpperCase();
+    const effectiveJobId = String(jobId || 'direct_' + Date.now());
 
     // 1. Fetch Client Credentials from Database Vault (with direct payload fallback)
     let portalUser = (portal_username || '').trim();
@@ -42,7 +102,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
         });
         if (clientRow) {
             portalUser = clientRow.portal_username || portalUser;
-            portalPass = clientRow.portal_password || portalPass;
+            portalPass = decryptSecret(clientRow.portal_password || portalPass);
             clientTradeName = clientRow.trade_name || clientRow.legal_name || '';
         }
     } catch (e) {
@@ -58,21 +118,121 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
     try {
         chromiumModule = await import('playwright');
     } catch (e) {
-        return res.status(500).json({ success: false, error: 'Playwright is not installed or available.' });
+        return sendOutcome(500, { success: false, error: 'Playwright is not installed or available.' });
     }
 
     let browser = null;
     let context = null;
     let page = null;
 
-    const downloadDir = path.join(process.cwd(), 'scratch', 'downloads', 'gstr2b', gstinUpper);
-    if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
+    // ─── Resolve Configured Storage Path from Settings Tab (app_config) ────────
+    let configuredDataPath = null;
+    try {
+        const configRow = await new Promise((resolve) => {
+            db.get(
+                "SELECT value FROM app_config WHERE key = 'returns_data_path' OR key = 'master_data_path' ORDER BY CASE WHEN key = 'returns_data_path' THEN 1 ELSE 2 END LIMIT 1",
+                [],
+                (err, row) => resolve(row)
+            );
+        });
+        if (configRow && configRow.value) {
+            const raw = String(configRow.value).trim().replace(/^["']|["']$/g, '');
+            if (raw && fs.existsSync(raw)) {
+                configuredDataPath = path.resolve(raw);
+            }
+        }
+    } catch (e) {
+        console.warn('[GSTR-2B Autopilot] Could not read configured storage path from app_config:', e.message);
+    }
+
+    const targetFy = financialYear || '2026-27';
+    const scratchDownloadDir = path.join(process.cwd(), 'scratch', 'downloads', 'gstr2b', gstinUpper);
+    if (!fs.existsSync(scratchDownloadDir)) fs.mkdirSync(scratchDownloadDir, { recursive: true });
+
+    const downloadDir = scratchDownloadDir;
+
+    // Build list of target storage folders configured in Settings
+    const configuredTargetDirs = [];
+    let configuredClientDir = null;
+    let configuredAnnualDir = null;
+    let configuredCentralDir = null;
+
+    if (configuredDataPath) {
+        // 1. Central 2B downloads folder: <configuredDataPath>/gstr2b/<GSTIN>
+        configuredCentralDir = path.join(configuredDataPath, 'gstr2b', gstinUpper);
+        if (!fs.existsSync(configuredCentralDir)) {
+            try { fs.mkdirSync(configuredCentralDir, { recursive: true }); } catch {}
+        }
+        if (fs.existsSync(configuredCentralDir)) configuredTargetDirs.push(configuredCentralDir);
+
+        // 2. Client Folder under configured data path: <configuredDataPath>/gst_returns_data/<ClientName> - <GSTIN>
+        const safeTradeName = (clientTradeName || '').replace(/[\\/:*?"<>|]/g, '').trim();
+        const clientFolderName = safeTradeName ? `${safeTradeName} - ${gstinUpper}` : gstinUpper;
+        
+        const candidateRoots = [
+            path.join(configuredDataPath, 'gst_returns_data'),
+            configuredDataPath
+        ];
+
+        for (const cRoot of candidateRoots) {
+            if (!fs.existsSync(cRoot)) continue;
+            const exact = path.join(cRoot, clientFolderName);
+            if (fs.existsSync(exact)) {
+                configuredClientDir = exact;
+                break;
+            }
+            try {
+                const entries = fs.readdirSync(cRoot, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory() && entry.name.toUpperCase().includes(gstinUpper)) {
+                        configuredClientDir = path.join(cRoot, entry.name);
+                        break;
+                    }
+                }
+            } catch {}
+            if (configuredClientDir) break;
+        }
+
+        if (!configuredClientDir) {
+            const primaryRoot = fs.existsSync(path.join(configuredDataPath, 'gst_returns_data'))
+                ? path.join(configuredDataPath, 'gst_returns_data')
+                : configuredDataPath;
+            configuredClientDir = path.join(primaryRoot, clientFolderName);
+            try { fs.mkdirSync(configuredClientDir, { recursive: true }); } catch {}
+        }
+
+        // 3. Client Annual GSTR-2B Folder: <clientDir>/<FY>/GSTR-2B
+        configuredAnnualDir = path.join(configuredClientDir, targetFy, 'GSTR-2B');
+        if (!fs.existsSync(configuredAnnualDir)) {
+            try { fs.mkdirSync(configuredAnnualDir, { recursive: true }); } catch {}
+        }
+        if (fs.existsSync(configuredAnnualDir) && !configuredTargetDirs.includes(configuredAnnualDir)) {
+            configuredTargetDirs.push(configuredAnnualDir);
+        }
+    }
+
+    const MONTH_FOLDERS = {
+        'April': '01 - April', 'May': '02 - May', 'June': '03 - June',
+        'July': '04 - July', 'August': '05 - August', 'September': '06 - September',
+        'October': '07 - October', 'November': '08 - November', 'December': '09 - December',
+        'January': '10 - January', 'February': '11 - February', 'March': '12 - March'
+    };
+
+    const getMonth2bDir = (periodStr) => {
+        if (!configuredClientDir) return null;
+        const monthMatch = (periodStr || '').match(/^([A-Za-z]+)/);
+        const mName = monthMatch ? monthMatch[1] : 'April';
+        const mFolder = MONTH_FOLDERS[mName] || `01 - ${mName}`;
+        const dir = path.join(configuredClientDir, targetFy, mFolder, '2B');
+        if (!fs.existsSync(dir)) {
+            try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+        }
+        return dir;
+    };
 
     let capturedExcelPath = null;
     let capturedJsonPath = null;
     let parsedInvoices = null;
-    let capturedGstr1Summary = null;
-    let capturedGstr1Path = null;
     let activeSyncPeriod = returnPeriod;
 
     if (browserState && browserState.current) {
@@ -109,79 +269,91 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
         page = await context.newPage();
 
-        // Close browser cleanly if user aborts HTTP request from UI
-        req.on('close', async () => {
-            if (browser && !parsedInvoices && !capturedGstr1Summary) {
-                console.log('[Autopilot] Request aborted from UI, closing browser');
-                await browser.close().catch(() => {});
+        // Close browser cleanly if user aborts HTTP request or abortSignal triggers
+        if (abortSignal) {
+            abortSignal.addEventListener('abort', async () => {
+                console.log('[GSTR-2B Autopilot] Abort signal triggered, closing browser...');
+                if (browser) await killBrowserWithPidFallback(browser);
                 if (browserState) browserState.current = null;
-            }
-        });
+            }, { once: true });
+        } else if (res) {
+            res.on('close', async () => {
+                if (!res.writableEnded && browser && !parsedInvoices) {
+                    console.log('[Autopilot] Client disconnected, closing browser');
+                    await killBrowserWithPidFallback(browser);
+                    if (browserState) browserState.current = null;
+                }
+            });
+        }
 
-        const browserPid = browser && typeof browser.process === 'function' ? browser.process()?.pid : null;
+        let browserPid = null;
+        try {
+            const cdp = await browser.newBrowserCDPSession();
+            const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+            browserPid = processInfo.find(x => x.type === 'browser')?.id || null;
+            if (browserPid) console.log('[GSTR-2B Autopilot] Detected Chrome Browser PID:', browserPid);
+        } catch (e) {}
+
         const focusDesktopWindow = () => {
             try {
-                let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
-                if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-                psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-                psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-                psParts.push(`$wshell.AppActivate('Goods & Services Tax (GST) | Login');`);
-                psParts.push(`$wshell.AppActivate('GST | Login');`);
-                psParts.push(`$wshell.AppActivate('Login');`);
-                psParts.push(`$wshell.AppActivate('Chrome');`);
-                psParts.push(`$wshell.AppActivate('Chromium');`);
-                const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
-                exec(psCmd, () => {});
-
-                if (browserPid) {
-                    const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
-                    if (fs.existsSync(bringPath)) {
-                        exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {});
-                    }
+                const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
+                if (fs.existsSync(bringPath)) {
+                    const arg = browserPid ? `-TargetPid ${browserPid}` : '';
+                    exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {});
+                } else {
+                    let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
+                    if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+                    psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+                    psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+                    psParts.push(`$wshell.AppActivate('GST | Login');`);
+                    psParts.push(`$wshell.AppActivate('Login');`);
+                    psParts.push(`$wshell.AppActivate('Chrome');`);
+                    const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
+                    exec(psCmd, () => {});
                 }
             } catch (e) {}
         };
+        focusDesktopWindow();
 
-        // ─── Set up Download Event listener for BOTH GSTR-1 and GSTR-2B ───────
+        // ─── Set up Download Event listener for GSTR-2B ───────
         const activeGstr2bDownloadPromises = new Set();
         page.on('download', (download) => {
             const dlTask = (async () => {
                 try {
                     const originalName = download.suggestedFilename();
-                    console.log(`[Autopilot] Download detected: ${originalName}`);
+                    console.log(`[GSTR-2B Autopilot] Download detected: ${originalName}`);
                     const savePath = path.join(downloadDir, `${Date.now()}_${originalName}`);
                     await download.saveAs(savePath);
-                    console.log(`[Autopilot] Saved file (${fs.existsSync(savePath) ? fs.statSync(savePath).size : 0} bytes) to: ${savePath}`);
+                    console.log(`[GSTR-2B Autopilot] Saved file (${fs.existsSync(savePath) ? fs.statSync(savePath).size : 0} bytes) to: ${savePath}`);
 
-                    const lower = originalName.toLowerCase();
-                const isGstr1File = lower.includes('gstr1') || lower.includes('gstr-1') || lower.includes('_r1_') || lower.includes('_r1.') || (lower.includes('returns_') && !lower.includes('2b') && !lower.includes('r2b'));
+                    // Synchronize downloaded file to Configured Settings Folders
+                    const activeMonthDir = getMonth2bDir(activeSyncPeriod);
+                    const allTargetDirs = [...configuredTargetDirs];
+                    if (activeMonthDir && !allTargetDirs.includes(activeMonthDir)) {
+                        allTargetDirs.push(activeMonthDir);
+                    }
 
-                if (isGstr1File) {
-                    capturedGstr1Path = savePath;
-                    if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
-                        const res = parseGstr1ExcelHelper(savePath, gstinUpper, returnPeriod);
-                        if (res) {
-                            capturedGstr1Summary = res;
-                            console.log(`[Autopilot GSTR-1] Extracted Excel: ₹${res.totalOutwardTaxable} Taxable, ₹${res.totalOutwardTax} Tax, ${res.counts.totalDocs} docs`);
-                        }
-                    } else if (lower.endsWith('.json')) {
+                    for (const tDir of allTargetDirs) {
                         try {
-                            const raw = JSON.parse(fs.readFileSync(savePath, 'utf8'));
-                            const res = parseGstr1DataHelper(raw, gstinUpper, returnPeriod);
-                            if (res) {
-                                capturedGstr1Summary = res;
-                                console.log(`[Autopilot GSTR-1] Extracted JSON: ₹${res.totalOutwardTaxable} Taxable, ₹${res.totalOutwardTax} Tax, ${res.counts.totalDocs} docs`);
-                            }
-                        } catch (e) {}
-                    } else if (lower.endsWith('.zip')) {
-                        const res = await parseGstr1ZipHelper(savePath, gstinUpper, returnPeriod);
-                        if (res) {
-                            capturedGstr1Summary = res;
-                            console.log(`[Autopilot GSTR-1] Extracted ZIP: ₹${res.totalOutwardTaxable} Taxable, ₹${res.totalOutwardTax} Tax, ${res.counts.totalDocs} docs`);
+                            if (!fs.existsSync(tDir)) fs.mkdirSync(tDir, { recursive: true });
+                            const destFile = path.join(tDir, `${Date.now()}_${originalName}`);
+                            fs.copyFileSync(savePath, destFile);
+                            console.log(`[GSTR-2B Autopilot] Synced download to Settings folder: ${destFile}`);
+                        } catch (cpErr) {
+                            console.warn(`[GSTR-2B Autopilot] Copy error to ${tDir}:`, cpErr.message);
                         }
                     }
-                } else {
-                    // GSTR-2B download handling
+
+                    // Also save a clean copy in user's Windows Downloads folder
+                    try {
+                        const userDl = path.join(os.homedir(), 'Downloads', originalName);
+                        fs.copyFileSync(savePath, userDl);
+                        console.log(`[GSTR-2B Autopilot] Clean copy saved to Downloads: ${userDl}`);
+                    } catch {}
+
+                    const lower = originalName.toLowerCase();
+
+                    // Dedicated GSTR-2B download handling
                     if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
                         capturedExcelPath = savePath;
                         const res = parseGstr2bExcelHelper(savePath, gstinUpper, activeSyncPeriod);
@@ -206,14 +378,13 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                             console.log(`[Autopilot GSTR-2B] Extracted ${res.invoices.length} invoices from downloaded ZIP!`);
                         }
                     }
+                } catch (err) {
+                    console.error('[GSTR-2B Autopilot] Error saving download:', err);
                 }
-            } catch (err) {
-                console.error('[Autopilot] Error saving download:', err);
-            }
-        })();
-        activeGstr2bDownloadPromises.add(dlTask);
-        dlTask.finally(() => activeGstr2bDownloadPromises.delete(dlTask));
-    });
+            })();
+            activeGstr2bDownloadPromises.add(dlTask);
+            dlTask.finally(() => activeGstr2bDownloadPromises.delete(dlTask));
+        });
 
         // Navigate to GST Portal Login
         console.log(`[GSTR-2B Autopilot] Navigating to GST login...`);
@@ -336,35 +507,6 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
         console.log('[GSTR-2B Autopilot] Logged in successfully!');
 
-        // ─── Set up Real-Time API Response Interceptor for live GSTR-1 data ───
-        page.on('response', async (response) => {
-            try {
-                if (!response || typeof response.url !== 'function') return;
-                const url = response.url().toLowerCase();
-                if ((url.includes('gstr1') || url.includes('/r1/') || url.includes('_r1') || url.includes('secsum') || url.includes('summary')) && response.status() === 200) {
-                    const headers = response.headers ? response.headers() : {};
-                    const ct = headers['content-type'] || '';
-                    if (ct.includes('json') || ct.includes('plain') || ct.includes('javascript') || !ct) {
-                        const text = await response.text().catch(() => '');
-                        if (text && (text.startsWith('{') || text.startsWith('['))) {
-                            try {
-                                const json = JSON.parse(text);
-                                const unwrapped = json.data && typeof json.data === 'object' ? json.data : json;
-                                if (unwrapped && (unwrapped.b2b || unwrapped.b2cs || unwrapped.sec_sum || unwrapped.sec_list || unwrapped.cur_sum || unwrapped.secsum || unwrapped.cur_gt)) {
-                                    console.log('[Autopilot GSTR-1] Live API intercepted from URL:', url);
-                                    const g1Parsed = parseGstr1DataHelper(unwrapped, gstinUpper, returnPeriod);
-                                    if (g1Parsed && (g1Parsed.totalOutwardTaxable > 0 || g1Parsed.counts.totalDocs > 0 || g1Parsed.totalOutwardTax > 0)) {
-                                        capturedGstr1Summary = g1Parsed;
-                                        console.log(`[Autopilot GSTR-1] Successfully parsed live API: ₹${g1Parsed.totalOutwardTaxable} Taxable, ₹${g1Parsed.totalOutwardTax} Tax`);
-                                    }
-                                }
-                            } catch(e) {}
-                        }
-                    }
-                }
-            } catch (e) {}
-        });
-
         // Helper to update banner text
         const updateBanner = async (stepText, color = '#38bdf8') => {
             try {
@@ -426,7 +568,7 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 targetFy = `${yearNum}-${String(yearNum + 1).slice(-2)}`;
             }
         }
-        if (!targetFy) targetFy = '2025-26';
+        if (!targetFy) targetFy = '2026-27';
 
         console.log(`[GSTR-2B Autopilot] Target Filing Period: Month=${targetMonth}, FY=${targetFy}`);
 
@@ -494,16 +636,57 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 // If select dropdowns are not present, check if an on-screen BACK button is visible (Download page, Inward page, etc.)
                 // Target strictly button / input[type="button"] / a.btn, excluding navbars and breadcrumbs
                 try {
-                    const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn')
-                        .filter({ hasText: /^back$/i })
-                        .filter({ hasNot: page.locator('.navbar, .breadcrumb, nav, header') })
-                        .first();
-                    if (await backBtn.isVisible({ timeout: 800 }).catch(() => false)) {
-                        console.log('[GSTR-2B Autopilot] Found on-screen BACK button. Clicking natively with Playwright...');
-                        await backBtn.scrollIntoViewIfNeeded().catch(() => {});
-                        await backBtn.click({ force: true }).catch(() => {});
+                    const backSelectors = [
+                        'button:text-is("BACK")',
+                        'input[value="BACK" i]',
+                        'button:text-is("Back")',
+                        'input[value="Back" i]',
+                        'button.btn:has-text("BACK")',
+                        'input.btn[value="BACK" i]',
+                        'button:has-text("BACK")',
+                        'input[type="button"][value*="BACK" i]'
+                    ];
 
-                        // Wait directly for returns search dropdowns to appear
+                    let backClicked = false;
+                    for (const sel of backSelectors) {
+                        try {
+                            const loc = page.locator(sel).first();
+                            if (await loc.isVisible({ timeout: 350 }).catch(() => false)) {
+                                await loc.scrollIntoViewIfNeeded().catch(() => {});
+                                await loc.click({ force: true }).catch(() => {});
+                                console.log(`[GSTR-2B Autopilot] ensureReturnsSearchScreen: Clicked BACK button via: ${sel}`);
+                                backClicked = true;
+                                break;
+                            }
+                        } catch(e) {}
+                    }
+
+                    if (!backClicked) {
+                        backClicked = await page.evaluate(() => {
+                            const candidates = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn'));
+                            const b = candidates.find(el => {
+                                if (el.closest('header, nav, .navbar, .breadcrumb, footer')) return false;
+                                const val = (el.value || el.innerText || el.textContent || '').trim().toUpperCase();
+                                return val === 'BACK';
+                            });
+                            if (b) {
+                                b.scrollIntoView({ block: 'center' });
+                                b.click();
+                                b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(b).triggerHandler('click');
+                                        const sc = window.angular.element(b).scope();
+                                        if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
+                                    } catch(e) {}
+                                }
+                                return true;
+                            }
+                            return false;
+                        }).catch(() => false);
+                    }
+
+                    if (backClicked) {
                         try {
                             await page.waitForSelector('select', { timeout: 8000 });
                             await dismissPopups();
@@ -937,201 +1120,388 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
 
             await page.waitForTimeout(1200);
 
-            // On GSTR-2B download page -> click download links
-            const clickDownloadLinks = async () => {
-                return await page.evaluate(() => {
-                    const links = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
-
-                    // 1. Direct Excel download link
-                    const excelLink = links.find(el => {
-                        const t = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
-                        return (t.includes('download') || t.includes('click here')) && t.includes('excel');
-                    });
-                    if (excelLink) { 
-                        excelLink.click(); 
-                        return { type: 'excel_download', text: excelLink.innerText }; 
-                    }
-
-                    // 2. Table cell download link (often generated xlsx link)
-                    const tblLink = document.querySelector('table tr td a');
-                    if (tblLink) { 
-                        tblLink.click(); 
-                        return { type: 'table_download', text: tblLink.innerText }; 
-                    }
-
-                    // 3. Direct JSON download link
-                    const jsonLink = links.find(el => {
-                        const t = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
-                        return (t.includes('download') || t.includes('click here')) && t.includes('json');
-                    });
-                    if (jsonLink) { 
-                        jsonLink.click(); 
-                        return { type: 'json_download', text: jsonLink.innerText }; 
-                    }
-
-                    // 4. If no ready download link, click Generate Excel
-                    const genExcelBtn = links.find(el => {
-                        const t = (el.innerText || el.textContent || el.value || '').trim().toUpperCase();
-                        return t.includes('GENERATE EXCEL');
-                    });
-                    if (genExcelBtn) { 
-                        genExcelBtn.click(); 
-                        return { type: 'generate_excel', text: genExcelBtn.innerText || genExcelBtn.value }; 
-                    }
-
-                    return { type: 'none' };
-                });
-            };
-
-            await clickDownloadLinks();
-            await page.waitForTimeout(1000);
-
-            let curExcelPath = capturedExcelPath;
-            let curJsonPath = capturedJsonPath;
-            let curParsedInvoices = parsedInvoices;
-
-            const waitStart = Date.now();
-            while (!curParsedInvoices && (Date.now() - waitStart < 15000)) {
-                if (page.isClosed()) break;
-                if (parsedInvoices) {
-                    curParsedInvoices = parsedInvoices;
-                    curExcelPath = capturedExcelPath;
-                    curJsonPath = capturedJsonPath;
-                    break;
-                }
-
-                // Check local scratch downloads directory
-                if (fs.existsSync(downloadDir)) {
-                    const files = fs.readdirSync(downloadDir)
-                        .map(f => {
-                            const p = path.join(downloadDir, f);
-                            let time = 0;
-                            try { time = fs.statSync(p).mtimeMs; } catch(e) {}
-                            return { name: f, path: p, time };
-                        })
-                        .filter(f => f.time >= (actionStartTime - 6000))
-                        .sort((a, b) => b.time - a.time);
-
-                    for (const fItem of files) {
-                        const fPath = fItem.path;
-                        const lower = fItem.name.toLowerCase();
-                        if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
-                            curExcelPath = fPath;
-                            const r = parseGstr2bExcelHelper(fPath, gstinUpper, currentPeriodStr);
-                            if (r && Array.isArray(r.invoices)) {
-                                curParsedInvoices = r.invoices;
-                                break;
-                            }
-                        } else if (lower.endsWith('.json')) {
-                            curJsonPath = fPath;
-                            try {
-                                const raw = JSON.parse(fs.readFileSync(fPath, 'utf8'));
-                                const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
-                                if (r && Array.isArray(r.invoices)) {
-                                    curParsedInvoices = r.invoices;
-                                    break;
-                                }
-                            } catch (e) {}
-                        } else if (lower.endsWith('.zip')) {
-                            const r = await parseGstr2bZipHelper(fPath, gstinUpper, currentPeriodStr);
-                            if (r && Array.isArray(r.invoices)) {
-                                curParsedInvoices = r.invoices;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Check user Downloads folder
-                const userDownloads = path.join(os.homedir(), 'Downloads');
-                if (!curParsedInvoices && fs.existsSync(userDownloads)) {
-                    const userFiles = fs.readdirSync(userDownloads)
-                        .filter(f => {
-                            const l = f.toLowerCase();
-                            return (l.includes('2b') || l.includes('gstr2b') || l.includes('returns')) && (l.endsWith('.xlsx') || l.endsWith('.json') || l.endsWith('.zip'));
-                        })
-                        .map(f => {
-                            const p = path.join(userDownloads, f);
-                            let time = 0;
-                            try { time = fs.statSync(p).mtimeMs; } catch(e) {}
-                            return { name: f, path: p, time };
-                        })
-                        .filter(f => f.time >= (actionStartTime - 6000))
-                        .sort((a, b) => b.time - a.time);
-
-                    if (userFiles.length > 0) {
-                        const latest = userFiles[0];
-                        if (latest.name.toLowerCase().endsWith('.xlsx') || latest.name.toLowerCase().endsWith('.xls')) {
-                            curExcelPath = latest.path;
-                            const r = parseGstr2bExcelHelper(latest.path, gstinUpper, currentPeriodStr);
-                            if (r && Array.isArray(r.invoices)) {
-                                curParsedInvoices = r.invoices;
-                                break;
-                            }
-                        } else if (latest.name.toLowerCase().endsWith('.json')) {
-                            curJsonPath = latest.path;
-                            try {
-                                const raw = JSON.parse(fs.readFileSync(latest.path, 'utf8'));
-                                const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
-                                if (r && Array.isArray(r.invoices)) {
-                                    curParsedInvoices = r.invoices;
-                                    break;
-                                }
-                            } catch(e) {}
-                        } else if (latest.name.toLowerCase().endsWith('.zip')) {
-                            const r = await parseGstr2bZipHelper(latest.path, gstinUpper, currentPeriodStr);
-                            if (r && Array.isArray(r.invoices)) {
-                                curParsedInvoices = r.invoices;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (curParsedInvoices) break;
-                await page.waitForTimeout(250); // Fast 250ms polling
-            }
-
-            // Helper to immediately click on-screen BACK button upon download completion
+            // Helper to immediately click on-screen BACK button to return to search dashboard
             const clickBackImmediately = async () => {
                 try {
-                    console.log('[GSTR-2B Autopilot] Clicking on-screen BACK button to return to search dashboard...');
-                    const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn')
-                        .filter({ hasText: /^back$/i })
-                        .filter({ hasNot: page.locator('.navbar, .breadcrumb, nav, header') })
-                        .first();
-                    if (await backBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
-                        await backBtn.scrollIntoViewIfNeeded().catch(() => {});
-                        await backBtn.click({ force: true }).catch(() => {});
-                        console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via Playwright native click');
-                    } else {
-                        await page.evaluate(() => {
-                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                            const b = btns.find(el => {
-                                if (el.closest('.navbar, .breadcrumb, nav, header')) return false;
-                                const t = (el.innerText || el.value || '').trim().toUpperCase();
-                                return t === 'BACK';
+                    console.log('[GSTR-2B Autopilot] Navigating BACK to returns search dashboard...');
+
+                    // 1. If already on Returns Dashboard and select dropdowns are visible, we're ready!
+                    const curSelectCount = await page.locator('select').count().catch(() => 0);
+                    if (curSelectCount >= 2 && !page.url().includes('offlinedl')) {
+                        console.log('[GSTR-2B Autopilot] Already on returns search dashboard.');
+                        return true;
+                    }
+
+                    // 2. Click official on-screen BACK button via Playwright native locators
+                    const backSelectors = [
+                        'button:text-is("BACK")',
+                        'input[value="BACK" i]',
+                        'button:text-is("Back")',
+                        'input[value="Back" i]',
+                        'button.btn:has-text("BACK")',
+                        'input.btn[value="BACK" i]',
+                        'button:has-text("BACK")',
+                        'input[type="button"][value*="BACK" i]'
+                    ];
+
+                    let clicked = false;
+                    for (const sel of backSelectors) {
+                        try {
+                            const loc = page.locator(sel).first();
+                            if (await loc.isVisible({ timeout: 400 }).catch(() => false)) {
+                                await loc.scrollIntoViewIfNeeded().catch(() => {});
+                                await loc.click({ force: true }).catch(() => {});
+                                console.log(`[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via: ${sel}`);
+                                clicked = true;
+                                break;
+                            }
+                        } catch(e) {}
+                    }
+
+                    // 3. Fallback to DOM evaluate if Playwright locator didn't fire
+                    if (!clicked) {
+                        clicked = await page.evaluate(() => {
+                            const candidates = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn'));
+                            const b = candidates.find(el => {
+                                if (el.closest('header, nav, .navbar, .breadcrumb, footer')) return false;
+                                const val = (el.value || el.innerText || el.textContent || '').trim().toUpperCase();
+                                return val === 'BACK';
                             });
                             if (b) {
                                 b.scrollIntoView({ block: 'center' });
                                 b.click();
+                                b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                                 if (window.angular) {
                                     try {
                                         window.angular.element(b).triggerHandler('click');
-                                        window.angular.element(b).scope()?.$apply();
+                                        const sc = window.angular.element(b).scope();
+                                        if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
+                                    } catch(e) {}
+                                }
+                                return true;
+                            }
+                            return false;
+                        }).catch(() => false);
+                        if (clicked) {
+                            console.log('[GSTR-2B Autopilot] ✓ Clicked on-screen BACK button via DOM evaluate');
+                        }
+                    }
+
+                    // 4. Actively wait up to 5s for the page to navigate back to /returns/auth/dashboard
+                    const waitBackStart = Date.now();
+                    while (Date.now() - waitBackStart < 5000) {
+                        if (page.isClosed()) break;
+                        const u = page.url();
+                        const selects = await page.locator('select').count().catch(() => 0);
+                        if (!u.includes('offlinedl') && (selects >= 2 || u.includes('/dashboard'))) {
+                            console.log('[GSTR-2B Autopilot] ✓ Landed back on returns search dashboard!');
+                            return true;
+                        }
+                        await page.waitForTimeout(200);
+                    }
+
+                    // 5. If STILL on offlinedl after 5s, fallback to breadcrumb or window.history.back()
+                    if (page.url().includes('offlinedl')) {
+                        console.log('[GSTR-2B Autopilot] Still on download page, attempting breadcrumb / history.back()...');
+                        try {
+                            const retBreadcrumb = page.locator('.breadcrumb a').filter({ hasText: /Return/i }).first();
+                            if (await retBreadcrumb.isVisible({ timeout: 600 }).catch(() => false)) {
+                                await retBreadcrumb.click({ force: true }).catch(() => {});
+                            } else {
+                                await page.evaluate(() => window.history.back()).catch(() => {});
+                            }
+                        } catch(e) {}
+                        await page.waitForTimeout(800);
+                    }
+
+                    return true;
+                } catch(e) {
+                    console.error('[GSTR-2B Autopilot] Error in clickBackImmediately:', e.message);
+                    return false;
+                }
+            };
+
+            // Inspect GSTR-2B offline download page: distinguish ready download vs generate request
+            const inspection = await page.evaluate(() => {
+                const allElements = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
+
+                // 1. Direct ready download link (Excel or JSON or Zip)
+                // Strictly exclude any button or link containing "GENERATE"
+                const readyLink = allElements.find(el => {
+                    const t = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+                    if (t.includes('generate')) return false;
+                    return (t.includes('click here') || t.includes('download') || t.includes('file 1')) &&
+                           (t.includes('excel') || t.includes('json') || t.includes('.xlsx') || t.includes('.zip') || t.includes('click here'));
+                });
+                if (readyLink) {
+                    readyLink.click();
+                    return { type: 'ready_download', text: readyLink.innerText || readyLink.textContent };
+                }
+
+                // 2. Table cell download link (often generated xlsx link)
+                const tblLink = document.querySelector('table tr td a, .table a');
+                if (tblLink) {
+                    const t = (tblLink.innerText || tblLink.textContent || '').trim().toLowerCase();
+                    if (!t.includes('generate')) {
+                        tblLink.click();
+                        return { type: 'table_download', text: tblLink.innerText };
+                    }
+                }
+
+                // 3. Check if Generate button is present
+                const genBtn = allElements.find(el => {
+                    const t = (el.innerText || el.textContent || el.value || '').trim().toUpperCase();
+                    return t.includes('GENERATE EXCEL') || t.includes('GENERATE JSON');
+                });
+                if (genBtn) {
+                    return { type: 'generate_needed', text: genBtn.innerText || genBtn.value };
+                }
+
+                // 4. Check if 20-min processing banner is visible
+                const bodyText = (document.body?.innerText || '').toUpperCase();
+                if (bodyText.includes('20 MINUTES') || bodyText.includes('REQUEST HAS BEEN ACCEPTED') || bodyText.includes('IS IN PROGRESS')) {
+                    return { type: 'already_requested' };
+                }
+
+                return { type: 'none' };
+            });
+
+            console.log(`[GSTR-2B Autopilot] Download page inspection for ${currentPeriodStr}:`, JSON.stringify(inspection));
+
+            // Case A: If GENERATE buttons are present, click BOTH GENERATE JSON and GENERATE EXCEL natively
+            if (inspection.type === 'generate_needed') {
+                console.log(`[GSTR-2B Autopilot] Clicking both 'GENERATE JSON' and 'GENERATE EXCEL' for ${currentPeriodStr}...`);
+
+                // 1. Click GENERATE JSON FILE TO DOWNLOAD
+                try {
+                    const genJsonLoc = page.locator('button, input[type="button"]').filter({ hasText: /GENERATE JSON/i }).first();
+                    if (await genJsonLoc.isVisible({ timeout: 1200 }).catch(() => false)) {
+                        await genJsonLoc.scrollIntoViewIfNeeded().catch(() => {});
+                        await genJsonLoc.click({ force: true }).catch(() => {});
+                        console.log(`[GSTR-2B Autopilot] ✓ Clicked 'GENERATE JSON FILE TO DOWNLOAD' natively for ${currentPeriodStr}`);
+                    } else {
+                        await page.evaluate(() => {
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
+                            const b = btns.find(el => (el.innerText || el.value || '').toUpperCase().includes('GENERATE JSON'));
+                            if (b) {
+                                b.scrollIntoView({ block: 'center' });
+                                b.click();
+                                b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(b).triggerHandler('click');
+                                        const sc = window.angular.element(b).scope();
+                                        if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
                                     } catch(e) {}
                                 }
                             }
                         });
                     }
                 } catch(e) {}
-            };
+
+                await page.waitForTimeout(600);
+                await dismissPopups();
+
+                // 2. Click GENERATE EXCEL FILE TO DOWNLOAD
+                try {
+                    const genExcelLoc = page.locator('button, input[type="button"]').filter({ hasText: /GENERATE EXCEL/i }).first();
+                    if (await genExcelLoc.isVisible({ timeout: 1200 }).catch(() => false)) {
+                        await genExcelLoc.scrollIntoViewIfNeeded().catch(() => {});
+                        await genExcelLoc.click({ force: true }).catch(() => {});
+                        console.log(`[GSTR-2B Autopilot] ✓ Clicked 'GENERATE EXCEL FILE TO DOWNLOAD' natively for ${currentPeriodStr}`);
+                    } else {
+                        await page.evaluate(() => {
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
+                            const b = btns.find(el => (el.innerText || el.value || '').toUpperCase().includes('GENERATE EXCEL'));
+                            if (b) {
+                                b.scrollIntoView({ block: 'center' });
+                                b.click();
+                                b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(b).triggerHandler('click');
+                                        const sc = window.angular.element(b).scope();
+                                        if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
+                                    } catch(e) {}
+                                }
+                            }
+                        });
+                    }
+                } catch(e) {}
+
+                await page.waitForTimeout(800);
+                await dismissPopups();
+
+                console.log(`[GSTR-2B Autopilot] Both JSON and Excel generation requested for ${currentPeriodStr} (GSTN ~20 min window). Recording REQUESTED.`);
+                await markGstr2bMonthRequested(db, gstinUpper, currentPeriodStr);
+                await updateBanner(`[${currentPeriodStr}] JSON + Excel generation requested (20-min window). Returning to search...`, '#f59e0b');
+
+                await clickBackImmediately();
+                return { count: 0, status: 'REQUESTED', excelPath: null, jsonPath: null, metrics: null, requestedAt: Date.now() };
+            }
+
+            // Case B: If generation is already in progress (20-min window)
+            if (inspection.type === 'already_requested') {
+                console.log(`[GSTR-2B Autopilot] File generation already in progress for ${currentPeriodStr} (20-min window). Recording REQUESTED.`);
+                await markGstr2bMonthRequested(db, gstinUpper, currentPeriodStr);
+                await updateBanner(`[${currentPeriodStr}] Generation in progress (20-min window). Returning to search...`, '#f59e0b');
+                await clickBackImmediately();
+                return { count: 0, status: 'REQUESTED', excelPath: null, jsonPath: null, metrics: null, requestedAt: Date.now() };
+            }
+
+            // Case C: Ready download link exists - wait for download and parse invoices
+            let curExcelPath = capturedExcelPath;
+            let curJsonPath = capturedJsonPath;
+            let curParsedInvoices = parsedInvoices;
+
+            if (inspection.type === 'ready_download' || inspection.type === 'table_download') {
+                try {
+                    const readyLoc = page.locator('a, button').filter({ hasText: /click here|download/i }).filter({ hasNotText: /generate/i }).first();
+                    if (await readyLoc.isVisible({ timeout: 800 }).catch(() => false)) {
+                        await readyLoc.click({ force: true }).catch(() => {});
+                    }
+                } catch(e) {}
+
+                const waitStart = Date.now();
+                while (!curParsedInvoices && (Date.now() - waitStart < 15000)) {
+                    if (page.isClosed()) break;
+                    if (parsedInvoices) {
+                        curParsedInvoices = parsedInvoices;
+                        curExcelPath = capturedExcelPath;
+                        curJsonPath = capturedJsonPath;
+                        break;
+                    }
+
+                    // Check local scratch downloads directory, test directories, and all Configured Settings folders
+                    const curMonthDir = getMonth2bDir(currentPeriodStr);
+                    const candidateExtraDirs = ['D:\\test files', 'C:\\test files', 'E:\\test files'].filter(d => fs.existsSync(d));
+                    const searchDirs = [downloadDir, curMonthDir, configuredAnnualDir, configuredCentralDir, ...candidateExtraDirs].filter(Boolean);
+
+                    for (const sDir of searchDirs) {
+                        if (curParsedInvoices) break;
+                        if (!fs.existsSync(sDir)) continue;
+                        const files = fs.readdirSync(sDir)
+                            .map(f => {
+                                const p = path.join(sDir, f);
+                                let time = 0;
+                                try { time = fs.statSync(p).mtimeMs; } catch(e) {}
+                                return { name: f, path: p, time };
+                            })
+                            .filter(f => {
+                                const l = f.name.toLowerCase();
+                                const gLower = gstinUpper.toLowerCase();
+                                const isClientFile = l.includes(gLower);
+                                const isRecent = f.time >= (actionStartTime - 10000);
+                                return isClientFile || isRecent;
+                            })
+                            .sort((a, b) => b.time - a.time);
+
+                        for (const fItem of files) {
+                            const fPath = fItem.path;
+                            const lower = fItem.name.toLowerCase();
+                            if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+                                curExcelPath = fPath;
+                                const r = parseGstr2bExcelHelper(fPath, gstinUpper, currentPeriodStr);
+                                if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                    curParsedInvoices = r.invoices;
+                                    break;
+                                }
+                            } else if (lower.endsWith('.json')) {
+                                curJsonPath = fPath;
+                                try {
+                                    const raw = JSON.parse(fs.readFileSync(fPath, 'utf8'));
+                                    const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
+                                    if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                        curParsedInvoices = r.invoices;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            } else if (lower.endsWith('.zip')) {
+                                const r = await parseGstr2bZipHelper(fPath, gstinUpper, currentPeriodStr);
+                                if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                    curParsedInvoices = r.invoices;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Check user Downloads folder
+                    const userDownloads = path.join(os.homedir(), 'Downloads');
+                    if (!curParsedInvoices && fs.existsSync(userDownloads)) {
+                        const userFiles = fs.readdirSync(userDownloads)
+                            .filter(f => {
+                                const l = f.toLowerCase();
+                                return (l.includes('2b') || l.includes('gstr2b') || l.includes('returns') || l.includes('r2b')) && (l.endsWith('.xlsx') || l.endsWith('.xls') || l.endsWith('.json') || l.endsWith('.zip'));
+                            })
+                            .map(f => {
+                                const p = path.join(userDownloads, f);
+                                let time = 0;
+                                try { time = fs.statSync(p).mtimeMs; } catch(e) {}
+                                return { name: f, path: p, time };
+                            })
+                            .filter(f => {
+                                const l = f.name.toLowerCase();
+                                const gLower = gstinUpper.toLowerCase();
+                                const isClientFile = l.includes(gLower);
+                                const isRecent = f.time >= (actionStartTime - 10000);
+                                return isClientFile || isRecent;
+                            })
+                            .sort((a, b) => b.time - a.time);
+
+                        for (const uItem of userFiles) {
+                            if (curParsedInvoices) break;
+                            const uPath = uItem.path;
+                            const uLower = uItem.name.toLowerCase();
+                            if (uLower.endsWith('.xlsx') || uLower.endsWith('.xls')) {
+                                curExcelPath = uPath;
+                                const r = parseGstr2bExcelHelper(uPath, gstinUpper, currentPeriodStr);
+                                if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                    curParsedInvoices = r.invoices;
+                                    break;
+                                }
+                            } else if (uLower.endsWith('.json')) {
+                                curJsonPath = uPath;
+                                try {
+                                    const raw = JSON.parse(fs.readFileSync(uPath, 'utf8'));
+                                    const r = parseGstr2bJsonHelper(raw, gstinUpper, currentPeriodStr);
+                                    if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                        curParsedInvoices = r.invoices;
+                                        break;
+                                    }
+                                } catch(e) {}
+                            } else if (uLower.endsWith('.zip')) {
+                                const r = await parseGstr2bZipHelper(uPath, gstinUpper, currentPeriodStr);
+                                if (r && Array.isArray(r.invoices) && (!r.period || normalizeReturnPeriod(r.period) === normalizeReturnPeriod(currentPeriodStr))) {
+                                    curParsedInvoices = r.invoices;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (curParsedInvoices) break;
+                    await page.waitForTimeout(250); // Fast 250ms polling
+                }
+            }
 
             if (curParsedInvoices && curParsedInvoices.length > 0) {
                 console.log(`[GSTR-2B Autopilot] Persisting ${curParsedInvoices.length} invoices for ${currentPeriodStr}...`);
                 const saveRes = await bulkSaveGstr2bInvoices(db, gstinUpper, currentPeriodStr, curParsedInvoices, curExcelPath, curJsonPath);
                 await clickBackImmediately();
                 return { count: curParsedInvoices.length, status: 'SYNCED', excelPath: curExcelPath, jsonPath: curJsonPath, metrics: saveRes.metrics };
+            }
+
+            const isRequested20Min = await page.evaluate(() => {
+                const text = (document.body?.innerText || '').toUpperCase();
+                return text.includes('20 MINUTES') || text.includes('REQUEST HAS BEEN ACCEPTED') || text.includes('IS IN PROGRESS');
+            }).catch(() => false);
+
+            if (isRequested20Min) {
+                console.log(`[GSTR-2B Autopilot] File generation in progress for ${currentPeriodStr} (20-min window). Recording REQUESTED.`);
+                await markGstr2bMonthRequested(db, gstinUpper, currentPeriodStr);
+                await clickBackImmediately();
+                return { count: 0, status: 'REQUESTED', excelPath: curExcelPath, jsonPath: curJsonPath, metrics: null, requestedAt: Date.now() };
             }
 
             if (isPortalConfirmedNil || (curParsedInvoices && curParsedInvoices.length === 0 && (curExcelPath || curJsonPath))) {
@@ -1236,6 +1606,18 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                 consExcelPath = path.join(downloadDir, `GSTR2B_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`);
                 XLSX.writeFile(wb, consExcelPath);
                 console.log(`[Full Year 2B] Generated consolidated workbook at: ${consExcelPath}`);
+
+                // Synchronize consolidated 12-month Excel to all Configured Settings Folders
+                for (const tDir of configuredTargetDirs) {
+                    try {
+                        if (!fs.existsSync(tDir)) fs.mkdirSync(tDir, { recursive: true });
+                        const destCons = path.join(tDir, `GSTR2B_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`);
+                        XLSX.writeFile(wb, destCons);
+                        console.log(`[Full Year 2B] Saved consolidated Excel to Settings folder: ${destCons}`);
+                    } catch (cpErr) {
+                        console.warn(`[Full Year 2B] Error copying consolidated Excel to ${tDir}:`, cpErr.message);
+                    }
+                }
             } catch (xlErr) {
                 console.error('[Full Year 2B] Error generating consolidated Excel:', xlErr.message);
             }
@@ -1317,6 +1699,23 @@ export async function runGstr2bAutopilot({ db, gstin, returnPeriod, financialYea
                     excelPath: dlRes.excelPath,
                     jsonPath: dlRes.jsonPath
                 });
+            } else if (dlRes.status === 'REQUESTED') {
+                await updateBanner(`[${returnPeriod}] Excel generation requested on GST Portal (20-min window). Closing in 2s...`, '#f59e0b');
+                await page.waitForTimeout(2000);
+
+                await browser.close().catch(() => {});
+                if (browserState) browserState.current = null;
+
+                return res.json({
+                    success: true,
+                    message: `Excel generation requested on GST Portal for ${gstinUpper} (${returnPeriod}). Portal requires ~20 minutes to compile.`,
+                    gstin: gstinUpper,
+                    period: returnPeriod,
+                    status: 'REQUESTED',
+                    invoiceCount: 0,
+                    excelPath: null,
+                    jsonPath: null
+                });
             } else {
                 await updateBanner('Download request submitted or timed out. Old records retained.', '#f59e0b');
                 await page.waitForTimeout(2000);
@@ -1373,7 +1772,7 @@ export async function openPortalLoginHelper({ db, gstin, portal_username, portal
             portalUser = String(clientRow.portal_username).trim();
         }
         if (!portalPass && clientRow.portal_password) {
-            portalPass = String(clientRow.portal_password).trim();
+            portalPass = decryptSecret(String(clientRow.portal_password).trim());
         }
         clientName = clientRow.trade_name || clientRow.legal_name || gstinUpper;
     }
@@ -1409,8 +1808,40 @@ export async function openPortalLoginHelper({ db, gstin, portal_username, portal
         browserState.current = browser;
     }
 
-    const context = await browser.newContext({ viewport: null });
+    const userDownloadsDir = path.join(os.homedir(), 'Downloads');
+
+    const context = await browser.newContext({
+        viewport: null,
+        acceptDownloads: true
+    });
+
+    const bindPageDownloads = async (targetPage) => {
+        try {
+            const session = await context.newCDPSession(targetPage);
+            await session.send('Page.setDownloadBehavior', {
+                behavior: 'allow',
+                downloadPath: userDownloadsDir
+            });
+        } catch (cdpErr) {}
+
+        targetPage.on('download', async (download) => {
+            try {
+                const originalName = download.suggestedFilename();
+                console.log(`[Launch Portal] Saving manual download to Downloads: ${originalName}`);
+                const destPath = path.join(userDownloadsDir, originalName);
+                await download.saveAs(destPath);
+                console.log(`[Launch Portal] Successfully saved download to: ${destPath}`);
+            } catch (err) {
+                console.warn('[Launch Portal] Download save error:', err.message);
+            }
+        });
+    };
+
     const page = await context.newPage();
+    await bindPageDownloads(page);
+    context.on('page', (newPage) => {
+        bindPageDownloads(newPage);
+    });
 
     // Navigate to GST Portal login
     await page.goto('https://services.gst.gov.in/services/login', { waitUntil: 'domcontentloaded', timeout: 35000 });

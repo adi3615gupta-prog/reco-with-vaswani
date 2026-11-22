@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Select-Object ProcessId, @{n='Cmd';e={$_.CommandLine.Substring\\(0,[Math]::Min\\(160,$_.CommandLine.Length\\)\\)}} | Format-List | Out-String -Width 250; Get-Content \"C:\\\\Users\\\\vaswa\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\0b5cf8d18b0414d5\\\\58c82581-5583-447c-b663-9e155da74f2a\\\\tasks\\\\bb2ig4c6x.output\" -ErrorAction SilentlyContinue | Measure-Object -Line | Select-Object -ExpandProperty Lines)"
+    ]
+  }
+}

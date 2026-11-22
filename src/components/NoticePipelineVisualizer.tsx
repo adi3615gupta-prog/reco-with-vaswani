@@ -8,6 +8,7 @@ interface NoticePipelineVisualizerProps {
     currentStage: PipelineStage;
     isProcessing: boolean;
     stageMessage?: string;
+    stageLabels?: string[];
     onViewPrivacyVault?: () => void;
 }
 
@@ -41,7 +42,7 @@ const STAGES = [
     },
     {
         stage: 4,
-        title: 'Gemini Statutory AI',
+        title: 'Statutory Legal AI',
         subtitle: 'Indian GST Legal Reasoning',
         icon: Sparkles,
         color: 'text-purple-700 font-bold',
@@ -63,8 +64,12 @@ export const NoticePipelineVisualizer: React.FC<NoticePipelineVisualizerProps> =
     currentStage,
     isProcessing,
     stageMessage,
+    stageLabels,
     onViewPrivacyVault
 }) => {
+    const activeStages = stageLabels && stageLabels.length === 5
+        ? STAGES.map((st, idx) => ({ ...st, title: stageLabels[idx] }))
+        : STAGES;
     return (
         <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs p-5 relative overflow-hidden">
             {/* Top Bar with Live Processing Message */}
@@ -94,7 +99,7 @@ export const NoticePipelineVisualizer: React.FC<NoticePipelineVisualizerProps> =
 
             {/* Stepper Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 relative">
-                {STAGES.map((s, idx) => {
+                {activeStages.map((s, idx) => {
                     const isCompleted = currentStage > s.stage;
                     const isCurrent = currentStage === s.stage;
                     const Icon = s.icon;

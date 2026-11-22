@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Calculator, IndianRupee, PieChart, ShieldCheck, TrendingUp, Landmark, FileText, Download, ArrowLeft, Info, FileSpreadsheet, Upload, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { IncomeType, RegimeType, EntityType } from '@/lib/incomeTaxTypes';
-import { apiPost, apiGet } from '@/lib/api';
+import { apiPost, apiGet, safeApiFetch } from '@/lib/api';
 import { jsPDF } from 'jspdf';
 import ExcelJS from 'exceljs';
 
@@ -109,8 +109,8 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
   // Profile
   const [profile, setProfile] = useState<any>({
-    financial_year: 'FY2025-26',
-    assessment_year: 'AY2026-27',
+    financial_year: 'FY2026-27',
+    assessment_year: 'AY2027-28',
     age: 35,
     opted_for_new_regime: true,
     residential_status: 'ROR',
@@ -275,7 +275,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
 
       setLevitateStatus('parsing');
 
-      const res = await fetch('/api/tax/extract-26as-pdf', {
+      const res = await safeApiFetch('/api/tax/extract-26as-pdf', {
         method: 'POST',
         body: formData,
       });
@@ -336,7 +336,7 @@ export default function IncomeTaxDashboard({ onBack }: { onBack?: () => void }) 
       formData.append('file', file);
 
       // Post file to Express backend
-      const res = await fetch(`/api/tax/import/ais-json?profile_id=CURRENT_USER`, {
+      const res = await safeApiFetch(`/api/tax/import/ais-json?profile_id=CURRENT_USER`, {
         method: 'POST',
         body: formData,
       });

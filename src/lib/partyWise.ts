@@ -63,6 +63,8 @@ export interface PartySummary {
     cgstDiff: number;
     sgstDiff: number;
     totalDiff: number;
+    grossVariance?: number;
+    netTaxDiff?: number;
   };
   overall: PartyOverallStatus;
 }
@@ -339,15 +341,18 @@ export function aggregateByParty(
         igstPR: 0, cgstPR: 0, sgstPR: 0,
         igst2B: 0, cgst2B: 0, sgst2B: 0,
         igstDiff: 0, cgstDiff: 0, sgstDiff: 0, totalDiff: 0,
-      }
+        grossVariance: 0, netTaxDiff: 0,
+      } as PartySummary['totals']
     );
 
     totals.igstDiff = +(totals.igstPR - totals.igst2B).toFixed(2);
     totals.cgstDiff = +(totals.cgstPR - totals.cgst2B).toFixed(2);
     totals.sgstDiff = +(totals.sgstPR - totals.sgst2B).toFixed(2);
-    totals.totalDiff = +(
+    totals.netTaxDiff = +(totals.igstDiff + totals.cgstDiff + totals.sgstDiff).toFixed(2);
+    totals.grossVariance = +(
       Math.abs(totals.igstDiff) + Math.abs(totals.cgstDiff) + Math.abs(totals.sgstDiff)
     ).toFixed(2);
+    totals.totalDiff = totals.grossVariance;
     totals.igstPR = +totals.igstPR.toFixed(2);
     totals.cgstPR = +totals.cgstPR.toFixed(2);
     totals.sgstPR = +totals.sgstPR.toFixed(2);

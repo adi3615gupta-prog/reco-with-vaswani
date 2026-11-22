@@ -226,8 +226,8 @@ export default function DepreciationAuditor({
     setCompanyName: (name: string) => void;
     setConnectionStatus: (status: 'disconnected' | 'connecting' | 'connected' | 'error') => void;
 }) {
-    const [fromDate, setFromDate] = useState('2024-04-01');
-    const [toDate, setToDate] = useState('2025-03-31');
+    const [fromDate, setFromDate] = useState('2026-04-01');
+    const [toDate, setToDate] = useState('2027-03-31');
     const [entityType, setEntityType] = useState<'company' | 'individual'>('company');
     const [compActMethod, setCompActMethod] = useState<'SLM' | 'WDV'>('WDV');
     const [taxRate, setTaxRate] = useState(25);
@@ -534,7 +534,7 @@ export default function DepreciationAuditor({
             "IT Act Rate (%)", "IT Act Depr", "IT Closing WDV", "Depr Variance", "Deferred Tax Impact", "Type"
         ];
 
-        const registerRows = [
+        const registerRows: any[][] = [
             ["Fixed Asset Comparison Register (Schedule II vs Appendix I)"],
             [],
             registerHeaders

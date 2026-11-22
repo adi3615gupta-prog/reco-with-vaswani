@@ -227,9 +227,9 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
   };
 
   const handleExportDiffSheets = () => {
-    if (!rows || rows.length === 0) return;
+    if (!results || results.length === 0) return;
     try {
-      const exportRows: MonthlyComparisonRow[] = rows.map((r) => {
+      const exportRows: MonthlyComparisonRow[] = results.map((r) => {
         const pr = r.prRecord;
         const tb = r.twoBRecord;
         return {
@@ -278,7 +278,7 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
       {/* Premium Topbar with dynamic sub-tabs */}
       <div className="bg-slate-50/80 px-6 py-3.5 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-           <div className="dash-dots"><span style={{background:'#A87EE8'}}></span><span style={{background:'#38BDF8'}}></span></div>
+           <div className="dash-dots"><span className="bg-indigo-500"></span><span className="bg-sky-500"></span></div>
            <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 font-mono">
              <Layers className="w-4 h-4 text-indigo-600" />
              Monthly Reconciliation Suite

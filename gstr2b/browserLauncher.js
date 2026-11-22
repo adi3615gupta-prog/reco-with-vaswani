@@ -43,6 +43,7 @@ export async function launchAutopilotBrowser(chromiumEngine, customOptions = {})
 
     const defaultArgs = [
         '--start-maximized',
+        '--window-position=50,50',
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
         '--no-first-run',

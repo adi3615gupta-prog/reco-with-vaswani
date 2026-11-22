@@ -23,7 +23,7 @@ describe('Monthly Audit Backend Database & Logic Tests', () => {
         }
     });
 
-    it('Schema Verification: creates all 5 tables and performance indexes', async () => {
+    it('Schema Verification: creates all 6 tables and performance indexes', async () => {
         const tables = await new Promise<string[]>((resolve, reject) => {
             db.all("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;", (err, rows: any[]) => {
                 if (err) reject(err);
@@ -36,6 +36,8 @@ describe('Monthly Audit Backend Database & Logic Tests', () => {
         expect(tables).toContain('audit_observations');
         expect(tables).toContain('audit_pending_points');
         expect(tables).toContain('audit_verification_data');
+        expect(tables).toContain('audit_voucher_samples');
+        expect(tables).toContain('monthly_audit_clients');
 
         const indexes = await new Promise<string[]>((resolve, reject) => {
             db.all("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name;", (err, rows: any[]) => {
@@ -44,11 +46,16 @@ describe('Monthly Audit Backend Database & Logic Tests', () => {
             });
         });
 
+        expect(indexes).toContain('idx_monthly_audit_clients_name');
+        expect(indexes).toContain('idx_monthly_audit_clients_gstin');
+        expect(indexes).toContain('idx_monthly_audit_clients_tally');
         expect(indexes).toContain('idx_monthly_audits_client');
         expect(indexes).toContain('idx_monthly_audits_status');
         expect(indexes).toContain('idx_audit_checklists_audit_id');
         expect(indexes).toContain('idx_audit_observations_audit_id');
         expect(indexes).toContain('idx_pending_points_client');
+        expect(indexes).toContain('idx_voucher_samples_audit');
+        expect(indexes).toContain('idx_voucher_samples_status');
     });
 
     it('Master Audit Header: inserts and enforces unique (client_gstin, fy, month)', async () => {
@@ -338,5 +345,131 @@ describe('Monthly Audit Backend Database & Logic Tests', () => {
         expect(stmt.materialConsumptionPct).toBe(76.57);
         expect(stmt.employeeCostPct).toBe(15.45);
         expect(stmt.financeCostPct).toBe(1.97);
+    });
+
+    it('Voucher Sampling (Approach A): inserts, updates status, and cascade deletes with audit', async () => {
+        const auditId = 'audit_vouchers_test';
+        const now = Date.now();
+
+        // 1. Create audit
+        await new Promise<void>((resolve, reject) => {
+            db.run(`
+                INSERT INTO monthly_audits (id, client_gstin, client_name, fy, month, created_at, updated_at)
+                VALUES (?, '27TESTVOUCH', 'Voucher Client', '2026-27', 'April', ?, ?)
+            `, [auditId, now, now], (err) => (err ? reject(err) : resolve()));
+        });
+
+        // 2. Insert sample vouchers
+        await new Promise<void>((resolve, reject) => {
+            db.run(`
+                INSERT INTO audit_voucher_samples (
+                    id, audit_id, register_key, voucher_type, voucher_number,
+                    date, party_name, amount, sampling_rule, stratum, status, created_at, updated_at
+                ) VALUES (?, ?, 'sales', 'Sales', 'INV-001', '2026-04-10', 'Tata Motors Ltd', 150000, 'Stratified Sampling', 'High Value', 'Pending', ?, ?)
+            `, ['samp_1', auditId, now, now], (err) => (err ? reject(err) : resolve()));
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(`
+                INSERT INTO audit_voucher_samples (
+                    id, audit_id, register_key, voucher_type, voucher_number,
+                    date, party_name, amount, sampling_rule, stratum, status, created_at, updated_at
+                ) VALUES (?, ?, 'purchase', 'Purchase', 'PUR-102', '2026-04-15', 'JSW Steel Ltd', 85000, 'Stratified Sampling', 'Medium Value', 'Pending', ?, ?)
+            `, ['samp_2', auditId, now, now], (err) => (err ? reject(err) : resolve()));
+        });
+
+        let samples = await new Promise<any[]>((resolve, reject) => {
+            db.all(`SELECT * FROM audit_voucher_samples WHERE audit_id = ?`, [auditId], (err, rows) => (err ? reject(err) : resolve(rows)));
+        });
+        expect(samples.length).toBe(2);
+
+        // 3. Update status & remarks
+        await new Promise<void>((resolve, reject) => {
+            db.run(`
+                UPDATE audit_voucher_samples SET
+                    status = 'Verified',
+                    auditor_remarks = 'E-way bill & e-invoice QR scanned and verified',
+                    supporting_doc_ref = 'EWB# 1234567890',
+                    verified_by = 'Senior Auditor',
+                    verified_at = ?,
+                    updated_at = ?
+                WHERE id = 'samp_1'
+            `, [now + 10, now + 10], (err) => (err ? reject(err) : resolve()));
+        });
+
+        const samp1 = await new Promise<any>((resolve, reject) => {
+            db.get(`SELECT * FROM audit_voucher_samples WHERE id = 'samp_1'`, (err, row) => (err ? reject(err) : resolve(row)));
+        });
+        expect(samp1.status).toBe('Verified');
+        expect(samp1.auditor_remarks).toContain('E-way bill');
+        expect(samp1.verified_by).toBe('Senior Auditor');
+
+        // 4. Cascade delete when monthly audit is deleted
+        await new Promise<void>((resolve, reject) => {
+            db.run(`DELETE FROM monthly_audits WHERE id = ?`, [auditId], (err) => (err ? reject(err) : resolve()));
+        });
+
+        const remainingSamples = await new Promise<any[]>((resolve, reject) => {
+            db.all(`SELECT * FROM audit_voucher_samples WHERE audit_id = ?`, [auditId], (err, rows) => (err ? reject(err) : resolve(rows)));
+        });
+        expect(remainingSamples.length).toBe(0);
+    });
+
+    it('Monthly Audit Clients: inserts, updates, queries and deletes independent audit clients', async () => {
+        const now = Date.now();
+        const clientId = 'mac_dyp_infra_001';
+
+        // 1. Insert new client
+        await new Promise<void>((resolve, reject) => {
+            db.run(`
+                INSERT INTO monthly_audit_clients (
+                    id, client_name, company_name, tally_company_name, tally_guid,
+                    gstin, pan, email, phone, address, state, financial_year, is_active,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            `, [
+                clientId,
+                'DYP INFRAPROJECTS PVT.LTD.',
+                'DYP INFRAPROJECTS PVT.LTD.',
+                'DYP INFRAPROJECTS PVT.LTD.',
+                'e119f621-ae19-4689-81bf-1b5bdf1b5eef',
+                '27AAGCD4105L1ZO',
+                'AAGCD4105L',
+                'audit@dypinfra.com',
+                '+91 98200 12345',
+                'Navi Mumbai, Maharashtra',
+                'Maharashtra',
+                '20220401',
+                now,
+                now
+            ], (err) => (err ? reject(err) : resolve()));
+        });
+
+        // 2. Query client
+        const client = await new Promise<any>((resolve, reject) => {
+            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [clientId], (err, row) => (err ? reject(err) : resolve(row)));
+        });
+        expect(client).toBeDefined();
+        expect(client.client_name).toBe('DYP INFRAPROJECTS PVT.LTD.');
+        expect(client.tally_company_name).toBe('DYP INFRAPROJECTS PVT.LTD.');
+        expect(client.gstin).toBe('27AAGCD4105L1ZO');
+
+        // 3. Update client notes
+        await new Promise<void>((resolve, reject) => {
+            db.run(`UPDATE monthly_audit_clients SET notes = 'Statutory audit client' WHERE id = ?`, [clientId], (err) => (err ? reject(err) : resolve()));
+        });
+        const updated = await new Promise<any>((resolve, reject) => {
+            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [clientId], (err, row) => (err ? reject(err) : resolve(row)));
+        });
+        expect(updated.notes).toBe('Statutory audit client');
+
+        // 4. Delete client
+        await new Promise<void>((resolve, reject) => {
+            db.run(`DELETE FROM monthly_audit_clients WHERE id = ?`, [clientId], (err) => (err ? reject(err) : resolve()));
+        });
+        const deleted = await new Promise<any>((resolve, reject) => {
+            db.get(`SELECT * FROM monthly_audit_clients WHERE id = ?`, [clientId], (err, row) => (err ? reject(err) : resolve(row)));
+        });
+        expect(deleted).toBeUndefined();
     });
 });

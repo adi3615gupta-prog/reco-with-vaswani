@@ -131,7 +131,7 @@ function applyStandardMetadata(ws: any, sectionTitle: string, dealerName: string
  */
 export function generateGstr1FullYearWorkbook({
   clientInfo = {},
-  financialYear = '2025-2026',
+  financialYear = '2026-2027',
   invoices = [],
   summaries = []
 }: {
@@ -143,7 +143,7 @@ export function generateGstr1FullYearWorkbook({
   const wb = XLSX.utils.book_new();
   const dealerName = clientInfo.trade_name || clientInfo.legal_name || 'DEALER';
   const gstin = (clientInfo.gstin || '').toUpperCase();
-  const cleanFy = financialYear.length === 7 ? financialYear : (financialYear.includes('-') ? financialYear : '2025-2026');
+  const cleanFy = financialYear.length === 7 ? financialYear : (financialYear.includes('-') ? financialYear : '2026-2027');
   const timestampStr = formatGeneratedTimestamp();
 
   // ─── 1. BUCKET INVOICES BY SECTION ──────────────────────────────────────────

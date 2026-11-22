@@ -1,0 +1,4 @@
+{
+  "payload": "{\"algorithm\":\"sha256\",\"generatedAt\":\"2026-11-12T13:50:01.856Z\",\"files\":{\"server.obfuscated.cjs\":\"6a5fa68bc67e5b154ba49fcb6ffd67e6aed47524386d8fcebf5dcb7c78e59cec\",\"preload.js\":\"a0b9a23745a2c90df30bfd2c826743b2f98fe11b84ad17c2a4269a031003e3d5\",\"dist/index.html\":\"c89624305c9937c94926d0f901271bbd10c8a579b2b855de5ceaad2c2dee688d\"}}",
+  "signature": "m+/NzuBQv0IDDqh8+Gpvy2Lq8uKh8vPEP8oud5JMCtXH70Q2ItwUFB85KuQQCrpvt7euRJazdWeJLD8tViX2+kaqLemppxumsZPNHtubVKuBP+0DZRjjIqMHzPDwkgKDtD38dEDeyI35UZRrg5vUmbWcNcKH7yNEmvitn+WJrEBeHKDlvCgJEv0MwHUpmtXZXi+Spz1RYzk2unnOt7hIH0G3aqHKaxxZ23Vo7CuQ3kQVqMeqY13+jEgbVUjF4rsEGGs95jcEwGXSGCl3uQhBF2nInASdS+Ur6ZFxoDSLCDYlYyBlqa/CTxBPocZBJJShgJErqQFRGtj8O6YuGkf8Eg=="
+}

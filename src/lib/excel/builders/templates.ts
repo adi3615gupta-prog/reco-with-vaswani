@@ -26,7 +26,7 @@ export function exportClientTemplate(): XLSX.WorkBook {
   return wb;
 }
 
-export function exportClientAdditionTemplate(): XLSX.WorkBook {
+export function exportClientAdditionTemplate(filename = 'GST_Client_Addition_Template.xlsx', autoDownload = true): XLSX.WorkBook {
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
@@ -59,10 +59,12 @@ export function exportClientAdditionTemplate(): XLSX.WorkBook {
 
   XLSX.utils.book_append_sheet(wb, ws, 'Client Master Addition');
   removeAllMergesFromWorkbook(wb);
-  try {
-    XLSX.writeFile(wb, 'GST_Client_Addition_Template.xlsx');
-  } catch (err) {
-    console.error('Failed to write client addition template:', err);
+  if (autoDownload) {
+    try {
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error('Failed to write client addition template:', err);
+    }
   }
   return wb;
 }

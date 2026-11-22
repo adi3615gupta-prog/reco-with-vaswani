@@ -62,8 +62,8 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
   const [groupFilter, setGroupFilter] = useState<string>('');
 
   // Date range
-  const [fromDate, setFromDate] = useState('2025-04-01');
-  const [toDate, setToDate] = useState('2026-03-31');
+  const [fromDate, setFromDate] = useState('2026-04-01');
+  const [toDate, setToDate] = useState('2027-03-31');
 
   // Results
   const [voucherEntries, setVoucherEntries] = useState<LedgerVoucherEntry[]>([]);
@@ -73,6 +73,8 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
   // Table controls
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [entriesPage, setEntriesPage] = useState(1);
+  const ENTRIES_PER_PAGE = 100;
   const [tableSearch, setTableSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [ledgerFilter, setLedgerFilter] = useState<string>('');
@@ -871,7 +873,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                       </td>
                     </tr>
                   ) : (
-                    processedEntries.map((entry, idx) => (
+                    processedEntries.slice((entriesPage - 1) * ENTRIES_PER_PAGE, entriesPage * ENTRIES_PER_PAGE).map((entry, idx) => (
                       <tr
                         key={`${entry.voucherNumber}-${entry.ledgerName}-${idx}`}
                         className="border-b border-slate-200/30 hover:bg-slate-100/20 transition-colors"
@@ -928,6 +930,35 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                 )}
               </table>
             </div>
+
+            {Math.ceil(processedEntries.length / ENTRIES_PER_PAGE) > 1 && (
+              <div className="flex items-center justify-between px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
+                <span>
+                  Showing {((entriesPage - 1) * ENTRIES_PER_PAGE) + 1} to {Math.min(entriesPage * ENTRIES_PER_PAGE, processedEntries.length)} of {processedEntries.length} entries
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={entriesPage <= 1}
+                    onClick={() => setEntriesPage(p => Math.max(1, p - 1))}
+                    className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-slate-700"
+                  >
+                    Previous
+                  </button>
+                  <span className="font-mono font-bold text-slate-800">
+                    Page {entriesPage} of {Math.ceil(processedEntries.length / ENTRIES_PER_PAGE)}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={entriesPage >= Math.ceil(processedEntries.length / ENTRIES_PER_PAGE)}
+                    onClick={() => setEntriesPage(p => Math.min(Math.ceil(processedEntries.length / ENTRIES_PER_PAGE), p + 1))}
+                    className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-slate-700"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Bottom actions */}

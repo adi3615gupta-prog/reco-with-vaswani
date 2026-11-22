@@ -18,8 +18,10 @@ import { ResultsCategoryTabs } from '../components/ResultsCategoryTabs';
 import { GDriveConnectModal } from '../components/GDriveConnectModal';
 import { RecoHistoryModal } from '../components/RecoHistoryModal';
 import { uploadRecoSnapshotToDrive, checkGDriveStatus, saveLocalRecoSnapshot, type RecoSnapshotPayload } from '../lib/gdrive';
+import { idbSet, idbGet, idbRemove } from '../lib/idbStorage';
 import { getSummary } from '../lib/reconciliation';
-import { cn, safeSetItem } from '../lib/utils';
+import { cn, safeSetItem, safeRemoveItem } from '../lib/utils';
+import { safeApiFetch } from '../lib/api';
 import { toast } from 'sonner';
 import { TERMS, getTerms, normalizeMode } from '../lib/mode';
 import { motion } from 'framer-motion';
@@ -101,7 +103,7 @@ export default function Reconciliation(props: any) {
         version: '1.0',
         timestamp: new Date().toISOString(),
         companyName: companyName || 'Company',
-        financialYear: 'FY 2024-25',
+        financialYear: 'FY 2026-27',
         mode: mode || 'input',
         results,
         debitNotes: parsedDebitNotes,
@@ -136,7 +138,7 @@ export default function Reconciliation(props: any) {
       const run_id = `reco_${client_gstin}_${fy}_${Date.now()}`;
 
       // 1. Central SQLite Persistence (Suite 02 unified storage)
-      const res = await fetch('/api/audit-storage/reco-runs/save', {
+      const res = await safeApiFetch('/api/audit-storage/reco-runs/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,7 +219,8 @@ export default function Reconciliation(props: any) {
     }
     if (payload.results) {
       setResults(payload.results);
-      safeSetItem('np_reco_results', JSON.stringify(payload.results));
+      idbSet('np_reco_results', payload.results);
+      safeRemoveItem('np_reco_results');
     }
     if (payload.outputResults && setOutputResults) {
       setOutputResults(payload.outputResults);
@@ -948,17 +951,19 @@ export default function Reconciliation(props: any) {
                   };
                   setGstIssues(newIssues);
                   safeSetItem('np_reco_issues', JSON.stringify(newIssues));
-                  safeSetItem('np_reco_results', JSON.stringify(newResults));
+                  idbSet('np_reco_results', newResults);
+                  safeRemoveItem('np_reco_results');
                   toast.success(`Applied GSTIN to ${updated} record(s) for ${partyName}`);
                 }}
-                onApplyAll={() => {
+                onApplyAll={(updates: Record<string, string> = {}) => {
                   if (!results) return;
                   const newResults = [...results];
                   let updated = 0;
                   for (const s of gstIssues.suggested) {
+                    const finalGstin = updates[s.supplierName] ?? s.suggestedGstin ?? '';
                     for (const r of newResults) {
                       if (r.prRecord && r.prRecord.supplierName === s.supplierName) {
-                        r.prRecord.gstin = s.suggestedGstin || '';
+                        r.prRecord.gstin = finalGstin;
                         updated++;
                       }
                     }
@@ -970,7 +975,7 @@ export default function Reconciliation(props: any) {
                     ...gstIssues.suggested.map((s) => ({
                       partyName: s.supplierName,
                       originalGstin: s.originalGstin || 'Missing',
-                      appliedGstin: s.suggestedGstin || '',
+                      appliedGstin: updates[s.supplierName] ?? s.suggestedGstin ?? '',
                       status: s.issueType || 'Corrected',
                     }))
                   ];
@@ -980,7 +985,8 @@ export default function Reconciliation(props: any) {
                   const newIssues = { ...gstIssues, suggested: [] };
                   setGstIssues(newIssues);
                   safeSetItem('np_reco_issues', JSON.stringify(newIssues));
-                  safeSetItem('np_reco_results', JSON.stringify(newResults));
+                  idbSet('np_reco_results', newResults);
+                  safeRemoveItem('np_reco_results');
                   toast.success(`Successfully applied all ${gstIssues.suggested.length} suggested GSTINs to ${updated} records!`);
                 }}
                 onProceed={() => {
@@ -1195,7 +1201,8 @@ export default function Reconciliation(props: any) {
                     onResultsChange={(newRes) => {
                       setResults(newRes);
                       setSummary(getSummary(newRes));
-                      safeSetItem('np_reco_results', JSON.stringify(newRes));
+                      idbSet('np_reco_results', newRes);
+                      safeRemoveItem('np_reco_results');
                     }}
                   />
                 </div>

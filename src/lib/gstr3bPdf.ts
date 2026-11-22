@@ -256,7 +256,7 @@ export function exportGstr3bMonthPdf(
     doc.setFontSize(8.5);
     doc.setTextColor(203, 213, 225); // Slate 300
     doc.text(
-      `Period: ${monthData.month.toUpperCase()} ${monthData.year}  |  FY: ${profile.financialYear || '2025-26'}`,
+      `Period: ${monthData.month.toUpperCase()} ${monthData.year}  |  FY: ${profile.financialYear || '2026-27'}`,
       marginX,
       33
     );

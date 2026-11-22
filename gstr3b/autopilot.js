@@ -2,6 +2,7 @@
 import path from 'path';
 import fs from 'fs';
 import { launchAutopilotBrowser } from '../gstr2b/browserLauncher.js';
+import { decryptSecret } from '../cryptoVault.js';
 
 /**
  * runGstr3bUploadAutopilot
@@ -69,7 +70,7 @@ export async function runGstr3bUploadAutopilot({
                 });
                 if (clientRow) {
                     portalUser = clientRow.portal_username || '';
-                    portalPass = clientRow.portal_password || '';
+                    portalPass = decryptSecret(clientRow.portal_password || '');
                     clientTradeName = clientRow.trade_name || clientRow.legal_name || gstinUpper;
                 }
             } catch (e) {

@@ -267,7 +267,7 @@ describe('Returns Preparation (Suite 04) Bulletproof Saving Architecture', () =>
 
     // Write to memory buffer
     const buffer = await wb.xlsx.writeBuffer();
-    expect(buffer.length).toBeGreaterThan(0);
+    expect((buffer as any).byteLength || (buffer as any).length).toBeGreaterThan(0);
 
     // Re-parse with ExcelJS to assert strictly 0 merges exist
     const readWb = new ExcelJS.Workbook();

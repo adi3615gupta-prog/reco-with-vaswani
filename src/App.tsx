@@ -5,6 +5,7 @@ import { AlertTriangle, Copy, Check, RotateCcw, Home } from "lucide-react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { AuthProvider } from "@/lib/authContext";
 import Index from "./pages/Index.tsx";
 
@@ -15,6 +16,10 @@ const TBImportFullscreen = lazy(() => import("./pages/TBImportFullscreen.tsx"));
 const IncomeTaxDashboard = lazy(() => import("./pages/IncomeTaxDashboard.tsx"));
 const ClientImsReview = lazy(() => import("./pages/ClientImsReview.tsx"));
 const GstNoticesDashboard = lazy(() => import("./pages/GstNoticesDashboard.tsx"));
+const TallyXmlSuite = lazy(() => import("./pages/TallyXmlSuite.tsx"));
+const MonthlyAuditSuite = lazy(() => import("./pages/MonthlyAuditSuite.tsx"));
+const LandingPage = lazy(() => import("./pages/LandingPage.tsx"));
+const PerspectiveTunnelDemo = lazy(() => import("./pages/PerspectiveTunnelDemo.tsx"));
 
 const RouteLoadingFallback = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-[var(--np-bg,#F8FAFC)] text-slate-700 font-sans">
@@ -27,14 +32,23 @@ const RouteLoadingFallback = () => (
 
 const queryClient = new QueryClient();
 
-class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; errorMsg: string; copied: boolean }> {
+function scrubSensitivePaths(str: string): string {
+  return (str || '').replace(/([A-Za-z]:)?(\\|\/)(Users|home|root)(\\|\/)[^\\\/]+/gi, '[PATH_REDACTED]');
+}
+
+class GlobalErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; errorMessage: string; errorStack: string; copied: boolean; showDiagnostics: boolean }
+> {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false, errorMsg: "", copied: false };
+    this.state = { hasError: false, errorMessage: "", errorStack: "", copied: false, showDiagnostics: false };
   }
 
   static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMsg: error.message + "\n" + error.stack, copied: false };
+    const scrubbedMsg = scrubSensitivePaths(error.message || 'An unexpected runtime error occurred.');
+    const scrubbedStack = scrubSensitivePaths(error.stack || '');
+    return { hasError: true, errorMessage: scrubbedMsg, errorStack: scrubbedStack, copied: false, showDiagnostics: false };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -42,7 +56,8 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
 
   handleCopy = () => {
-    navigator.clipboard.writeText(this.state.errorMsg);
+    const fullLog = `${this.state.errorMessage}\n\nTechnical Stack:\n${this.state.errorStack}`;
+    navigator.clipboard.writeText(fullLog);
     this.setState({ copied: true });
     setTimeout(() => this.setState({ copied: false }), 2000);
   };
@@ -58,13 +73,22 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
               </div>
               <div>
                 <h1 className="text-lg font-bold text-white tracking-tight">Application Interface Interrupted</h1>
-                <p className="text-xs text-slate-400 mt-0.5">A runtime error occurred in the active view. You can reload or copy diagnostic details.</p>
+                <p className="text-xs text-slate-400 mt-0.5">A runtime error occurred in the active view. You can reload or inspect diagnostic details.</p>
               </div>
             </div>
 
-            <pre className="max-h-64 overflow-y-auto p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono text-rose-300 leading-relaxed whitespace-pre-wrap select-all">
-              {this.state.errorMsg}
-            </pre>
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono text-rose-300 leading-relaxed whitespace-pre-wrap select-all">
+              {this.state.errorMessage}
+            </div>
+
+            <details className="group">
+              <summary className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer font-medium select-none list-none flex items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">▶ Toggle Technical Stack Trace</span>
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-y-auto p-3 rounded-lg bg-black/40 border border-slate-800 text-[11px] font-mono text-slate-400 leading-relaxed whitespace-pre-wrap select-all">
+                {this.state.errorStack || 'No stack trace available.'}
+              </pre>
+            </details>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
               <button
@@ -110,23 +134,29 @@ const App = () => (
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <div className="min-h-screen bg-[var(--np-bg)] text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white">
-            <HashRouter>
-              <Suspense fallback={<RouteLoadingFallback />}>
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/live-preview" element={<LivePreviewWindow />} />
-                  <Route path="/mapping-fullscreen" element={<TBImportFullscreen />} />
-                  <Route path="/income-tax-calculator" element={<IncomeTaxDashboard />} />
-                  <Route path="/gst-notices" element={<GstNoticesDashboard />} />
-                  <Route path="/ims-review/:token" element={<ClientImsReview />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-            </HashRouter>
-          </div>
+          <ConfirmProvider>
+            <Toaster />
+            <Sonner />
+            <div className="min-h-screen bg-[var(--np-bg)] text-[var(--np-text)] selection:bg-[var(--np-sky)]/30 selection:text-white">
+              <HashRouter>
+                <Suspense fallback={<RouteLoadingFallback />}>
+                  <Routes>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/live-preview" element={<LivePreviewWindow />} />
+                    <Route path="/mapping-fullscreen" element={<TBImportFullscreen />} />
+                    <Route path="/income-tax-calculator" element={<IncomeTaxDashboard />} />
+                    <Route path="/gst-notices" element={<GstNoticesDashboard />} />
+                    <Route path="/ims-review/:token" element={<ClientImsReview />} />
+                    <Route path="/tally-xml" element={<TallyXmlSuite onBack={() => { window.location.hash = '#/'; }} />} />
+                    <Route path="/monthly-audit" element={<MonthlyAuditSuite onBack={() => { window.location.hash = '#/'; }} />} />
+                    <Route path="/landing" element={<LandingPage />} />
+<Route path="/tunnel-demo" element={<PerspectiveTunnelDemo />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </HashRouter>
+            </div>
+          </ConfirmProvider>
         </TooltipProvider>
       </QueryClientProvider>
     </AuthProvider>

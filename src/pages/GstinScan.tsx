@@ -4,7 +4,7 @@ import { type GstinIssue } from '@/lib/reconciliation';
 
 interface GstinScanProps {
   onBack: () => void;
-  gstIssues: { suggested: GstinIssue[]; conflicts: GstinIssue[] } | null;
+  gstIssues?: { suggested: GstinIssue[]; conflicts: GstinIssue[] } | null;
 }
 
 const summaryCard = (title: string, value: number, description: string) => (

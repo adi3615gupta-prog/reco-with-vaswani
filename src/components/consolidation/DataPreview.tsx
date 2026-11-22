@@ -16,7 +16,7 @@ interface DataPreviewProps {
   files: FileResult[];
   company: CompanyInfo;
   onReset: () => void;
-  onSendToReco?: () => void;
+  
 }
 
 const PAGE_SIZE = 25;
@@ -37,7 +37,7 @@ function fmt(n: number) {
   return n === 0 ? "â€”" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function DataPreview({ files, company, onReset, onSendToReco }: DataPreviewProps) {
+export function DataPreview({ files, company, onReset }: DataPreviewProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isSentToReco, setIsSentToReco] = useState(false);
@@ -125,36 +125,6 @@ export function DataPreview({ files, company, onReset, onSendToReco }: DataPrevi
              isSaved ? <><CheckCircle className="w-4 h-4 mr-1.5" /> Saved Workspace</> : 
              <><Database className="w-4 h-4 mr-1.5" /> Save Workspace</>}
           </Button>
-          
-          {onSendToReco && (
-            <>
-              <Button 
-                size="sm" 
-                disabled={isSaving || isSentToReco}
-                onClick={async () => {
-                  if (!isSaved) {
-                    const success = await handleSaveToNetwork();
-                    if (!success) return;
-                  }
-                  setIsSentToReco(true);
-                  toast.success("Ready for Reconciliation!", { description: "Data has been sent to the Reco Engine." });
-                }} 
-                className={isSentToReco ? "bg-slate-700 text-slate-400 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-900/20"}
-              >
-                {isSaving ? "Processing..." : isSentToReco ? "Sent to Reco" : "Send to Reco"}
-              </Button>
-
-              {isSentToReco && (
-                <Button 
-                  size="sm" 
-                  onClick={onSendToReco} 
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20 animate-pop-in"
-                >
-                  Go to GST Reconciliation <ArrowRight className="w-4 h-4 ml-1.5" />
-                </Button>
-              )}
-            </>
-          )}
         </div>
       </div>
 

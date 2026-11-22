@@ -476,7 +476,7 @@ export default function TBImportMapping({ onDataChanged, fullScreen = false }: P
 
     // Cross window note filter
     if (navNoteFilter !== null) {
-      const validCodes = masterCodes.filter(c => c.schedule_note_reference === navNoteFilter).map(c => c.group_code);
+      const validCodes = masterCodes.filter(c => (c.schedule_note_reference ?? c.note_reference) === navNoteFilter).map(c => c.group_code);
       entries = entries.filter(e => e.mapped_group_code !== null && validCodes.includes(e.mapped_group_code));
     }
 

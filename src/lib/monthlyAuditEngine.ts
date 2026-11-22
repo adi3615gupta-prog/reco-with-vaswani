@@ -43,6 +43,8 @@ export interface MonthlyAuditHeader {
     periodMode?: 'single' | 'multiple';
     selectedMonths?: string[];
     auditorName?: string;
+    partnerName?: string;
+    signOffDate?: string;
     firmName?: string;
     firmRegistrationNo?: string;
     membershipNo?: string;
@@ -96,7 +98,7 @@ export interface StandardChecklistItem {
     sectionKey: string;
     itemKey: string;
     itemTitle: string;
-    status: 'Verified' | 'Discrepancy Found' | 'Not Applicable' | 'Pending';
+    status: 'Verified' | 'Discrepancy Found' | 'Not Applicable' | 'Pending' | 'Under Review' | 'Compliant';
     sampleChecked: string;
     remarks: string;
     amountInvolved: number;
@@ -105,30 +107,41 @@ export interface StandardChecklistItem {
 export interface AuditObservationItem {
     id: string;
     auditId: string;
-    clientGstin: string;
-    sectionKey: string;
+    clientGstin?: string;
+    sectionKey?: string;
+    section?: string;
+    pointNumber?: string;
     title: string;
     description: string;
-    severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
+    severity?: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
+    riskSeverity?: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info' | string;
     riskCategory: string;
-    financialExposure: number;
+    financialExposure?: number;
+    amountInvolved?: number;
     voucherRef?: string;
-    auditorRecommendation: string;
+    implication?: string;
+    auditorRecommendation?: string;
+    suggestedAction?: string;
     managementResponse?: string;
     status: 'Open' | 'Resolved' | 'Disputed';
-    createdAt: number;
-    updatedAt: number;
+    createdAt?: number;
+    updatedAt?: number;
 }
 
 export interface AuditPendingPointItem {
     id: string;
-    clientGstin: string;
-    clientName: string;
-    originAuditId: string;
+    auditId?: string;
+    clientGstin?: string;
+    clientName?: string;
+    originAuditId?: string;
     originFy: string;
     originMonth: string;
-    pointTitle: string;
-    pointDescription: string;
+    pointNumber?: string;
+    pointTitle?: string;
+    title?: string;
+    pointDescription?: string;
+    description?: string;
+    actionRequired?: string;
     category: string;
     severity: 'Critical' | 'High' | 'Medium' | 'Low';
     status: 'Pending' | 'In Progress' | 'Cleared';
@@ -137,9 +150,9 @@ export interface AuditPendingPointItem {
     resolutionRemarks?: string;
     resolvedInMonth?: string;
     verifiedBy?: string;
-    createdAt: number;
+    createdAt?: number;
     clearedAt?: number;
-    updatedAt: number;
+    updatedAt?: number;
 }
 
 // ─── Section 3 Sub-Models ───────────────────────────────────────────────────
@@ -256,14 +269,18 @@ export interface PurchaseRecoVerification {
     booksTax: number;
     twoBPurchases: number;
     twoBTax: number;
+    differencePurchases?: number;
+    differenceTax?: number;
     tax3b?: number;
     taxDifference?: number;
     isDrc01cTriggered?: boolean;
     drc01cReason?: string;
     missingIn2BCount: number;
     missingIn2BAmount: number;
-    missingIn2BTax: number;
-    mismatchedCount: number;
+    missingIn2BTax?: number;
+    missingInBooksCount?: number;
+    missingInBooksAmount?: number;
+    mismatchedCount?: number;
     sec16_4_RiskCount: number; // Invoices filed past statutory deadline (30th Nov)
     sec17_5_BlockedItcAmount: number;
     eligibleItcClaimable: number;
@@ -272,19 +289,218 @@ export interface PurchaseRecoVerification {
     excelAttachment?: AuditExcelAttachment;
 }
 
+export interface TdsSectionWorkingRow {
+    id: string;
+    section: string;
+    natureOfPayment: string;
+    rate: number;
+    booksTaxable: number;
+    booksTds: number;
+    actualTaxable: number;
+    actualTds: number;
+    returnTaxable: number;
+    returnTds: number;
+    remarks?: string;
+}
+
+export function createDefaultTdsSectionMatrix(): TdsSectionWorkingRow[] {
+    return [
+        {
+            id: 'tds_194c',
+            section: '194C',
+            natureOfPayment: 'Payment to Contractors / Transporters',
+            rate: 2,
+            booksTaxable: 1850000,
+            booksTds: 37000,
+            actualTaxable: 1850000,
+            actualTds: 37000,
+            returnTaxable: 1850000,
+            returnTds: 37000,
+            remarks: 'All contractor bills matched with Form 26Q'
+        },
+        {
+            id: 'tds_194j',
+            section: '194J',
+            natureOfPayment: 'Fees for Professional / Technical Services',
+            rate: 10,
+            booksTaxable: 620000,
+            booksTds: 62000,
+            actualTaxable: 750000,
+            actualTds: 75000,
+            returnTaxable: 620000,
+            returnTds: 62000,
+            remarks: '₹1,30,000 legal consultancy bill pending booking in books (₹13,000 TDS payable)'
+        },
+        {
+            id: 'tds_194i',
+            section: '194I',
+            natureOfPayment: 'Rent for Land, Building & Furniture',
+            rate: 10,
+            booksTaxable: 480000,
+            booksTds: 48000,
+            actualTaxable: 480000,
+            actualTds: 48000,
+            returnTaxable: 480000,
+            returnTds: 48000,
+            remarks: 'Office rent agreement verified u/s 194I(b)'
+        },
+        {
+            id: 'tds_194h',
+            section: '194H',
+            natureOfPayment: 'Commission or Brokerage',
+            rate: 2,
+            booksTaxable: 150000,
+            booksTds: 3000,
+            actualTaxable: 150000,
+            actualTds: 3000,
+            returnTaxable: 150000,
+            returnTds: 3000,
+            remarks: 'Commission agreements and PAN cards verified'
+        },
+        {
+            id: 'tds_194q',
+            section: '194Q',
+            natureOfPayment: 'Purchase of Goods exceeding ₹50 Lakhs',
+            rate: 0.1,
+            booksTaxable: 8500000,
+            booksTds: 8500,
+            actualTaxable: 8500000,
+            actualTds: 8500,
+            returnTaxable: 8500000,
+            returnTds: 8500,
+            remarks: 'Purchase turnover > ₹50L verified against GSTR-2B vendors'
+        },
+        {
+            id: 'tds_194a',
+            section: '194A',
+            natureOfPayment: 'Interest other than Interest on Securities',
+            rate: 10,
+            booksTaxable: 240000,
+            booksTds: 24000,
+            actualTaxable: 240000,
+            actualTds: 24000,
+            returnTaxable: 240000,
+            returnTds: 24000,
+            remarks: 'Unsecured loan interest certificates verified'
+        },
+        {
+            id: 'tds_192',
+            section: '192',
+            natureOfPayment: 'Salaries (Form 24Q)',
+            rate: 0,
+            booksTaxable: 2400000,
+            booksTds: 96000,
+            actualTaxable: 2400000,
+            actualTds: 96000,
+            returnTaxable: 2400000,
+            returnTds: 96000,
+            remarks: 'Gross salary reconciled with Form 24Q Annexure II'
+        }
+    ];
+}
+
+export interface TdsMatrixTotals {
+    totalBooksTaxable: number;
+    totalBooksTds: number;
+    totalActualTaxable: number;
+    totalActualTds: number;
+    totalReturnTaxable: number;
+    totalReturnTds: number;
+    totalBookingPending: number;
+    totalTdsPayable: number;
+    totalChallanPending: number;
+    sec40aDisallowance: number;
+    matchedCount: number;
+    payableCount: number;
+    bookingPendingCount: number;
+    challanPendingCount: number;
+}
+
+export function calculateTdsMatrixTotals(matrix: TdsSectionWorkingRow[]): TdsMatrixTotals {
+    let totalBooksTaxable = 0;
+    let totalBooksTds = 0;
+    let totalActualTaxable = 0;
+    let totalActualTds = 0;
+    let totalReturnTaxable = 0;
+    let totalReturnTds = 0;
+    let totalBookingPending = 0;
+    let totalTdsPayable = 0;
+    let totalChallanPending = 0;
+    let sec40aDisallowance = 0;
+    let matchedCount = 0;
+    let payableCount = 0;
+    let bookingPendingCount = 0;
+    let challanPendingCount = 0;
+
+    matrix.forEach(r => {
+        totalBooksTaxable += Number(r.booksTaxable || 0);
+        totalBooksTds += Number(r.booksTds || 0);
+        totalActualTaxable += Number(r.actualTaxable || 0);
+        totalActualTds += Number(r.actualTds || 0);
+        totalReturnTaxable += Number(r.returnTaxable || 0);
+        totalReturnTds += Number(r.returnTds || 0);
+
+        const bookingPending = Math.max(0, (r.actualTaxable || 0) - (r.booksTaxable || 0));
+        const tdsPayable = Math.max(0, (r.actualTds || 0) - (r.returnTds || 0));
+        const challanPending = Math.max(0, (r.booksTds || 0) - (r.returnTds || 0));
+
+        totalBookingPending += bookingPending;
+        totalTdsPayable += tdsPayable;
+        totalChallanPending += challanPending;
+
+        if (tdsPayable > 0) {
+            payableCount++;
+            const unbookedOrUnderdepositedExpense = Math.max(bookingPending, (r.actualTaxable || 0) - (r.returnTaxable || 0));
+            sec40aDisallowance += unbookedOrUnderdepositedExpense > 0 ? (unbookedOrUnderdepositedExpense * 0.3) : ((r.actualTaxable || 0) * 0.3);
+        }
+        if (bookingPending > 0) {
+            bookingPendingCount++;
+        }
+        if (challanPending > 0) {
+            challanPendingCount++;
+        }
+        if (tdsPayable === 0 && bookingPending === 0 && challanPending === 0) {
+            matchedCount++;
+        }
+    });
+
+    return {
+        totalBooksTaxable,
+        totalBooksTds,
+        totalActualTaxable,
+        totalActualTds,
+        totalReturnTaxable,
+        totalReturnTds,
+        totalBookingPending,
+        totalTdsPayable,
+        totalChallanPending,
+        sec40aDisallowance,
+        matchedCount,
+        payableCount,
+        bookingPendingCount,
+        challanPendingCount
+    };
+}
+
 export interface JournalAndTdsVerification {
-    totalJournalVouchers: number;
+    totalJournalVouchers?: number;
     suspenseEntriesCount: number;
     suspenseAmount: number;
-    rectificationEntriesCount: number;
+    rectificationEntriesCount?: number;
+    yearEndProvisionsCount?: number;
+    yearEndProvisionsAmount?: number;
     tds194C_MissingPanCount: number;
     tds194Q_HighVolumeCount: number; // Purchases > 50 Lakhs
-    tds194J_RateMismatchCount: number; // 10% vs 2% technical services
-    tds194I_RentCount: number;
+    tds194J_RateMismatchCount?: number; // 10% vs 2% technical services
+    tds194J_TechnicalCount?: number;
+    tds194I_RentCount?: number;
     form24Q_GrossSalaryBooks: number;
-    form24Q_DeclaredSalary: number;
+    form24Q_DeclaredSalary?: number;
+    form24Q_GrossSalaryReturns?: number;
     salaryVariance: number;
     remarks: string;
+    tdsSectionMatrix?: TdsSectionWorkingRow[];
+    excelAttachment?: AuditExcelAttachment;
 }
 
 export type BankFacilityType =
@@ -372,14 +588,16 @@ export function createInitialBankFacilities(): BankFacilityItem[] {
 }
 
 export interface BankLoanVerification {
-    bankAccountsCount: number;
+    bankAccountsCount?: number;
     loanAccountsCount: number;
+    totalPrincipalOutstanding?: number;
     unreconciledChequesCount: number;
+    unreconciledAmount?: number;
     staleChequesCount: number; // > 3 months old
     interestServicingCheck: 'Serviced Regularly' | 'Interest Overdue / Default Risk' | 'Not Applicable';
-    form26AS_BooksTurnover: number;
-    form26AS_TdsCreditBooks: number;
-    form26AS_TdsCreditPortal: number;
+    form26AS_BooksTurnover?: number;
+    form26AS_TdsCreditBooks?: number;
+    form26AS_TdsCreditPortal?: number;
     form26AS_MismatchAmount: number;
     aisSftHighValueMismatches: number;
     remarks: string;
@@ -482,7 +700,7 @@ export interface RocNewLoansVerification {
     newLoansCount: number;
     newLoansTotalAmount: number;
     cashLoansSec269SS_Count: number; // Loans received in cash >= 20k (Sec 269SS Violation)
-    chargesCreatedOrSatisfied: boolean;
+    chargesCreatedOrSatisfied?: boolean;
     formCHG1_PendingCount: number; // Charge creation pending > 30 days
     formCHG4_PendingCount: number; // Charge satisfaction pending > 30 days
     remarks: string;
@@ -490,30 +708,49 @@ export interface RocNewLoansVerification {
 }
 
 export interface CashComplianceVerification {
-    cashDaybookTotal: number;
-    singleDayPaymentsOver10kCount: number; // Sec 40A(3) violations
-    singleDayPaymentsOver10kAmount: number;
+    cashDaybookTotal?: number;
+    singleDayPaymentsOver10kCount?: number; // Sec 40A(3) violations
+    singleDayPaymentsOver10kAmount?: number;
+    cashPaymentsExceeding10kCount?: number;
+    cashPaymentsExceeding10kAmount?: number;
     negativeCashDaysCount: number;
-    closingProvisionsDone: boolean;
-    closingProvisionsAmount: number;
-    openingProvisionsReversed: boolean;
-    fixedAssetAdditionsTotal: number;
-    ineligibleFaItcAmount: number; // Sec 17(5)(c)/(d) blocked ITC
-    faDoubleDepreciationRisk: boolean;
+    minCashBalance?: number;
+    provisionsCreatedCount?: number;
+    provisionsReversedCount?: number;
+    closingProvisionsDone?: boolean;
+    closingProvisionsAmount?: number;
+    openingProvisionsReversed?: boolean;
+    fixedAssetAdditionsTotal?: number;
+    fixedAssetAdditionsCount?: number;
+    ineligibleFaItcAmount?: number; // Sec 17(5)(c)/(d) blocked ITC
+    fixedAssetIneligibleItcAmount?: number;
+    faDoubleDepreciationRisk?: boolean;
     remarks: string;
 }
 
 export interface LaborComplianceVerification {
-    grossWages: number;
-    pfEmployeesDeduction: number;
-    pfEmployersContribution: number;
-    pfAdminAndEdli: number;
-    esicEmployeesDeduction: number;
-    esicEmployersContribution: number;
-    ptDeduction: number;
+    grossWages?: number;
+    totalGrossSalary?: number;
+    pfEmployeesDeduction?: number;
+    pfEmployersContribution?: number;
+    pfAdminAndEdli?: number;
+    pfEmployeeShareCalculated?: number;
+    pfEmployerShareCalculated?: number;
+    pfAdminEdliCalculated?: number;
+    pfTotalCalculated?: number;
+    esicEmployeesDeduction?: number;
+    esicEmployersContribution?: number;
+    esicEmployeeShareCalculated?: number;
+    esicEmployerShareCalculated?: number;
+    esicTotalCalculated?: number;
+    ptDeduction?: number;
+    ptDeductedCalculated?: number;
     pfDepositDate?: string;
+    pfActualDepositDate?: string;
     esicDepositDate?: string;
+    esicActualDepositDate?: string;
     ptDepositDate?: string;
+    ptActualDepositDate?: string;
     isPfDelayedSec36_1_va: boolean; // After 15th of following month -> permanent disallowance
     isEsicDelayedSec36_1_va: boolean;
     permanentDisallowanceExposure: number;
@@ -656,7 +893,8 @@ export const DEFAULT_PROFITABILITY_STATEMENT: ProfitabilityStatement = createEmp
 export interface FullAuditVerificationSnapshot {
     sales: SalesRecoVerification;
     purchase: PurchaseRecoVerification;
-    journalTds: JournalAndTdsVerification;
+    journalTds?: JournalAndTdsVerification;
+    journal?: JournalAndTdsVerification;
     bankLoans: BankLoanVerification;
     rocLoans: RocNewLoansVerification;
     cashCompliance: CashComplianceVerification;
@@ -797,12 +1035,14 @@ export function verifyPurchaseVs2B(
         if (inv.isBlocked17_5) {
             blockedItc += inv.tax || 0;
         }
-        // Section 16(4) check: If invoice is from prior FY and filed past 30th November
+        // Section 16(4) check: If invoice is from prior FY and filed past 30th November following FY end
         if (inv.invoiceDate) {
             const d = new Date(inv.invoiceDate);
             if (!isNaN(d.getTime())) {
-                const year = d.getFullYear();
-                const deadline = new Date(`${year + 1}-11-30`);
+                // In Indian FY, Jan-Mar (months 0-2) belongs to the FY ending in the same calendar year.
+                // Invoices from Apr-Dec (months 3-11) belong to the FY ending in the next calendar year.
+                const fyEndYear = d.getMonth() <= 2 ? d.getFullYear() : d.getFullYear() + 1;
+                const deadline = new Date(fyEndYear, 10, 30, 23, 59, 59); // 30th November (month index 10)
                 if (new Date() > deadline) {
                     sec16_4Count++;
                 }
@@ -851,7 +1091,9 @@ export function verifyPurchaseVs2B(
 export function verifyJournalAndTds(
     journalVouchers: Array<{ voucherNumber?: string; ledgerName?: string; amount?: number; narration?: string }> = [],
     salaryInBooks = 0,
-    salaryIn24Q = 0
+    salaryIn24Q = 0,
+    existingTdsMatrix?: TdsSectionWorkingRow[],
+    excelAttachment?: AuditExcelAttachment
 ): JournalAndTdsVerification {
     let suspenseCount = 0;
     let suspenseAmt = 0;
@@ -904,7 +1146,9 @@ export function verifyJournalAndTds(
         salaryVariance: salaryDiff,
         remarks: suspenseCount > 0
             ? `WARNING: ${suspenseCount} Suspense entries totaling ₹${suspenseAmt.toFixed(2)} must be cleared before audit sign-off.`
-            : 'Journal register and TDS scrutiny completed cleanly.'
+            : 'Journal register and TDS scrutiny completed cleanly.',
+        tdsSectionMatrix: existingTdsMatrix || createDefaultTdsSectionMatrix(),
+        excelAttachment
     };
 }
 
@@ -1163,7 +1407,7 @@ export async function autoPopulateMonthlyAudit({
     tallyConfig?: TallyConnectionConfig;
     existingGstData?: { r1Turnover?: number; gstr3bTurnover?: number; twoBPurchases?: number; twoBTax?: number };
 }): Promise<{
-    header: Partial<MonthlyAuditHeader>;
+    header: MonthlyAuditHeader;
     checklists: StandardChecklistItem[];
     verification: FullAuditVerificationSnapshot;
     suggestedObservations: AuditObservationItem[];
@@ -1258,6 +1502,8 @@ export async function autoPopulateMonthlyAudit({
             auditType: 'Monthly Statutory Audit',
             status: 'Draft',
             auditStatus: 'DRAFT',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
             teamMembers: [
                 { id: '1', name: 'Engagement Article (Lead)', role: 'Engagement Article', assignedAreas: 'Overall Sign-Off' },
                 { id: '2', name: 'Article Assistant', role: 'Lead Article Assistant', assignedAreas: 'Vouching & Reconciliation' }
@@ -1296,6 +1542,8 @@ export function initializeMonthlyAudit(
         turnoverVariance: 0,
         status: 'Draft',
         auditStatus: 'DRAFT',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         teamMembers: [
             { id: '1', name: '', role: 'Engagement Article', assignedAreas: 'Overall Sign-Off' },
             { id: '2', name: '', role: 'Lead Article Assistant', assignedAreas: 'Vouching & Reconciliation' }

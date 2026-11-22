@@ -10,7 +10,7 @@ describe('GST Notices Limitation & Countdown Engine (NOTICES-03, T-12-02)', () =
         expect(dueDateC).toBe('2024-05-17');
     });
 
-    it('should calculate 30-day statutory limitation for ASMT-10, DRC-01, and DRC-01A', () => {
+    it('should calculate 30-day statutory limitation for ASMT-10/DRC-01 and 15-day Rule 142(1A) window for DRC-01A', () => {
         const dueDateAsmt = computeLimitationDueDate('ASMT-10', '2024-06-01');
         expect(dueDateAsmt).toBe('2024-07-01');
 
@@ -18,7 +18,7 @@ describe('GST Notices Limitation & Countdown Engine (NOTICES-03, T-12-02)', () =
         expect(dueDateDrc1).toBe('2024-07-01');
 
         const dueDateDrc1A = computeLimitationDueDate('DRC-01A', '2024-06-01');
-        expect(dueDateDrc1A).toBe('2024-07-01');
+        expect(dueDateDrc1A).toBe('2024-06-16');
     });
 
     it('should parse DD/MM/YYYY slash format correctly', () => {

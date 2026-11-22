@@ -1,0 +1,18 @@
+{
+  "module": "GST IMS Autopilot",
+  "version": "1.0.0",
+  "routes": {
+    "dashboard": "https://return.gst.gov.in/returns/auth/dashboard",
+    "ims_dashboard": "https://services.gst.gov.in/services/auth/ims",
+    "ims_inward": "https://services.gst.gov.in/services/auth/ims/inward"
+  },
+  "selectors": {
+    "ims_tile": "div.card:has-text('Invoice Management System'), div:has-text('IMS')",
+    "generate_json": "button:has-text('GENERATE JSON FILE'), input[value*='GENERATE' i]",
+    "download_link": "a:has-text('Click here to download'), a:has-text('File 1')"
+  },
+  "timeouts": {
+    "settle_ms": 1500,
+    "wait_window_minutes": 20
+  }
+}

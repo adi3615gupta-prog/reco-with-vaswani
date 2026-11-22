@@ -29,6 +29,7 @@ import {
     DollarSign,
     Check,
     X,
+    ChevronLeft,
     ChevronRight,
     ChevronDown,
     UserCheck,
@@ -63,11 +64,13 @@ import {
     CheckSquare,
     ListChecks,
     Settings,
-    Eye
+    Eye,
+    Zap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
-import { getApiBase, getAuthToken, safeApiFetch, getToken } from '@/lib/api';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { getApiBase, getAuthToken, safeApiFetch, getToken, getSessionUserFromToken } from '@/lib/api';
 import {
     submitAuditForSeniorReviewInFirebase,
     approveAuditInFirebase,
@@ -84,6 +87,7 @@ import {
 } from '../lib/firebaseAuditSync';
 import {
     type MonthlyAuditHeader,
+    type AuditWorkflowStatus,
     type VouchingScopeRegister,
     type StandardChecklistItem,
     type AuditObservationItem,
@@ -120,7 +124,11 @@ import {
     ROC_LOAN_CATEGORIES,
     ROC_CHARGE_STATUSES,
     STANDARD_ROC_AUDIT_COMMENTS,
-    createInitialRocLoanCharges
+    createInitialRocLoanCharges,
+    type TdsSectionWorkingRow,
+    type TdsMatrixTotals,
+    createDefaultTdsSectionMatrix,
+    calculateTdsMatrixTotals
 } from '@/lib/monthlyAuditEngine';
 import {
     exportMonthlyAuditToExcel,
@@ -131,6 +139,11 @@ import {
     exportMonthlyAuditToPdf,
     generateMonthlyAuditPdf
 } from '@/lib/monthlyAuditPdf';
+import {
+    type AuditVoucherSample,
+    pullAndSampleFromTally,
+    exportVoucherSamplesToExcel
+} from '@/lib/tallySampling';
 
 const FINANCIAL_YEARS = ['2026-27', '2027-28', '2028-29', '2029-30', '2030-31'];
 const MONTHS = [
@@ -165,13 +178,12 @@ interface MonthlyAuditSuiteProps {
 }
 
 export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
-    // ─── Client & Navigation State ──────────────────────────────────────────────
-    const [clients, setClients] = useState<Array<{ id?: string; gstin: string; legalName: string; tradeName?: string; email?: string; phone?: string }>>([]);
+    const confirm = useConfirm();
+    // ─── Client & Navigation State (Dedicated Monthly Audit Master) ─────────────
+    const [clients, setClients] = useState<Array<{ id?: string; gstin: string; legalName: string; tradeName?: string; tallyCompanyName?: string; email?: string; phone?: string; address?: string; pan?: string }>>([]);
     const [selectedClientGstin, setSelectedClientGstin] = useState<string>(() => {
         try {
-            return localStorage.getItem('monthly_audit_selected_client') ||
-                   localStorage.getItem('last_active_gstin') ||
-                   localStorage.getItem('gstr3b_active_client_gstin') || '';
+            return localStorage.getItem('monthly_audit_selected_client') || '';
         } catch {
             return '';
         }
@@ -198,6 +210,13 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         { key: 'debit_credit_notes', registerName: 'Debit & Credit Notes', samplingTechnique: '100% Comprehensive Examination', vouched: 'Yes', sampleChecked: '100%', totalVouchers: 0, auditedAmount: 0, remarks: 'Matched with CDNR' },
         { key: 'bank_loans', registerName: 'Bank & Loan Statements', samplingTechnique: 'Systematic Selection (Interval Sampling)', vouched: 'Yes', sampleChecked: '100% statement lines', totalVouchers: 0, auditedAmount: 0, remarks: 'Interest verified' }
     ]);
+    const [voucherSamples, setVoucherSamples] = useState<AuditVoucherSample[]>([]);
+    const [isSamplingTally, setIsSamplingTally] = useState<boolean>(false);
+    const [sampleDrawerOpen, setSampleDrawerOpen] = useState<boolean>(false);
+    const [activeSampleRegisterKey, setActiveSampleRegisterKey] = useState<string | 'all'>('all');
+    const [sampleSearchQuery, setSampleSearchQuery] = useState<string>('');
+    const [sampleStatusFilter, setSampleStatusFilter] = useState<'all' | 'Pending' | 'Verified' | 'Query Raised' | 'Document Missing'>('all');
+    const [activeVouchingRegisterTab, setActiveVouchingRegisterTab] = useState<'all' | 'sales' | 'purchase' | 'journal' | 'debit_credit_notes' | 'bank_loans'>('all');
     const [checklists, setChecklists] = useState<StandardChecklistItem[]>([]);
     const [verification, setVerification] = useState<FullAuditVerificationSnapshot>({
         sales: {
@@ -217,7 +236,8 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             suspenseEntriesCount: 0, suspenseAmount: 0, yearEndProvisionsCount: 0,
             yearEndProvisionsAmount: 0, tds194C_MissingPanCount: 0, tds194Q_HighVolumeCount: 0,
             tds194J_TechnicalCount: 0, form24Q_GrossSalaryBooks: 0, form24Q_GrossSalaryReturns: 0,
-            salaryVariance: 0, remarks: ''
+            salaryVariance: 0, remarks: '',
+            tdsSectionMatrix: createDefaultTdsSectionMatrix()
         },
         bankLoans: {
             unreconciledChequesCount: 0, unreconciledAmount: 0, staleChequesCount: 0,
@@ -250,25 +270,18 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     // ─── Maker-Checker Role & UI Tabs ──────────────────────────────────────────
     // Determines if the authenticated user has Senior CA Partner / Manager / Admin authority
+    // Security: derived strictly from signed JWT claims rather than client-mutable localStorage flags
     const isSeniorUser = useMemo(() => {
         try {
-            const rawUser = localStorage.getItem('np_user') || sessionStorage.getItem('np_user') || '';
-            const rawRole = localStorage.getItem('np_user_role') || sessionStorage.getItem('np_user_role') || '';
-            const rawDesig = localStorage.getItem('np_user_designation') || sessionStorage.getItem('np_user_designation') || '';
-            const isAdmin = localStorage.getItem('np_admin') === 'true' || sessionStorage.getItem('np_admin') === 'true';
+            const claims = getSessionUserFromToken();
+            if (!claims) return false;
 
-            let parsedRole = rawRole;
-            let parsedDesig = rawDesig;
-            let parsedUsername = rawUser;
+            const jwtRole = String(claims.role || '').toLowerCase();
+            const jwtDesig = String(claims.designation || '').toLowerCase();
+            const jwtUsername = String(claims.username || '').toLowerCase();
+            const isAdmin = jwtRole === 'admin';
 
-            if (rawUser.startsWith('{')) {
-                const u = JSON.parse(rawUser);
-                parsedRole = u.role || parsedRole;
-                parsedDesig = u.designation || parsedDesig;
-                parsedUsername = u.username || parsedUsername;
-            }
-
-            const combined = `${parsedRole} ${parsedDesig} ${parsedUsername}`.toLowerCase();
+            const combined = `${jwtRole} ${jwtDesig} ${jwtUsername}`;
 
             // Senior / Partner / Admin / Manager authority check
             return isAdmin ||
@@ -284,17 +297,102 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     const [currentRole, setCurrentRole] = useState<'junior' | 'senior'>('junior');
     const [activeTab, setActiveTab] = useState<'scope' | 'profitability' | 'verification' | 'observations' | 'pending'>('scope');
-    const [verificationSubTab, setVerificationSubTab] = useState<'sales' | 'purchase' | 'journal' | 'bank' | 'roc' | 'cash' | 'labor'>('sales');
+    const [isNavDropdownOpen, setIsNavDropdownOpen] = useState(false);
+    const [configuredFirmName, setConfiguredFirmName] = useState<string>('');
+
+    const auditNavTabs = useMemo(() => [
+        { id: 'scope' as const, label: '1. Basic Details & Scope', htmlLabel: '1. Basic Details &amp; Scope', icon: Building2, color: 'text-indigo-600' },
+        { id: 'profitability' as const, label: '2. Profitability Status', htmlLabel: '2. Profitability Status', icon: TrendingUp, color: 'text-emerald-600' },
+        { id: 'verification' as const, label: '3. Core Verification Workings (3.1–3.7)', htmlLabel: '3. Core Verification Workings (3.1–3.7)', icon: FileCheck2, color: 'text-indigo-600' },
+        { id: 'observations' as const, label: '4. Current Period Observations', htmlLabel: '4. Current Period Observations', icon: AlertTriangle, color: 'text-amber-500', count: observations.length, countColor: 'bg-amber-100 text-amber-800' },
+        { id: 'pending' as const, label: '5. Previous Audit Pending Points', htmlLabel: '5. Previous Audit Pending Points', icon: Clock, color: 'text-blue-600', count: pendingPoints.filter(p => p.status !== 'Cleared').length, countColor: 'bg-blue-100 text-blue-800' },
+    ], [observations.length, pendingPoints]);
+
+    const [verificationSubTab, setVerificationSubTab] = useState<'vouching' | 'gst' | 'sales' | 'purchase' | 'journal' | 'bank' | 'roc' | 'cash' | 'labor'>('gst');
+    const [gstSubTab, setGstSubTab] = useState<'sales' | 'purchase'>('sales');
+    const [isVerificationSubTabOpen, setIsVerificationSubTabOpen] = useState<boolean>(false);
+
+    const isGstActive = verificationSubTab === 'gst' || verificationSubTab === 'sales' || verificationSubTab === 'purchase';
+    const activeGstSubTab: 'sales' | 'purchase' = verificationSubTab === 'purchase' ? 'purchase' : (verificationSubTab === 'sales' ? 'sales' : gstSubTab);
+
+    const verificationSubTabs = useMemo(() => [
+        { 
+            id: 'vouching' as const, 
+            label: '3.0 Vouching Scope', 
+            subtitle: '5 Core registers & sample checking checklist', 
+            icon: Layers, 
+            badge: 'Checklist', 
+            color: 'text-indigo-600', 
+            bg: 'bg-indigo-50' 
+        },
+        { 
+            id: 'gst' as const, 
+            label: 'GST Workings', 
+            subtitle: 'Sales (Reco R1) & Purchase (Reco 2B)', 
+            icon: FileSpreadsheet, 
+            badge: 'GSTR-1 & 2B', 
+            color: 'text-blue-600', 
+            bg: 'bg-blue-50'
+        },
+        { 
+            id: 'journal' as const, 
+            label: '3.3 TDS Working', /* 3.3 Journal & TDS */
+            subtitle: 'RCM liability & TDS 194C/J/Q/H/I deductions', 
+            icon: FileCheck2, 
+            badge: 'TDS & RCM', 
+            color: 'text-purple-600', 
+            bg: 'bg-purple-50' 
+        },
+        { 
+            id: 'bank' as const, 
+            label: '3.4 Bank, Loans & 26AS', 
+            subtitle: '269SS/T loans, 26AS & AIS tax reconciliation', 
+            icon: Landmark, 
+            badge: 'Banking', 
+            color: 'text-amber-600', 
+            bg: 'bg-amber-50' 
+        },
+        { 
+            id: 'roc' as const, 
+            label: '3.5 ROC Charges', 
+            subtitle: 'MCA charge registration & index of charges', 
+            icon: Building2, 
+            badge: 'MCA / ROC', 
+            color: 'text-cyan-600', 
+            bg: 'bg-cyan-50' 
+        },
+        { 
+            id: 'cash' as const, 
+            label: '3.6 Cash 40A(3) & FA', 
+            subtitle: '40A(3) cash limits, 269ST & Fixed Assets', 
+            icon: DollarSign, 
+            badge: 'Tax Audit', 
+            color: 'text-rose-600', 
+            bg: 'bg-rose-50' 
+        },
+        { 
+            id: 'labor' as const, 
+            label: '3.7 Labor Compliances', 
+            subtitle: 'PF / ESI / PT challans timely deposits', 
+            icon: ShieldCheck, 
+            badge: 'PF / ESI', 
+            color: 'text-teal-600', 
+            bg: 'bg-teal-50' 
+        },
+    ], []);
     const [salesMatrixViewMode, setSalesMatrixViewMode] = useState<'all' | 'books_r1' | 'books_3b' | 'drc01b'>('all');
     const [salesSelectedPeriod, setSalesSelectedPeriod] = useState<string>('active');
     const [purchaseMatrixViewMode, setPurchaseMatrixViewMode] = useState<'all' | 'books_2b' | 'books_3b' | 'drc01c'>('all');
+    const [purchaseSelectedPeriod, setPurchaseSelectedPeriod] = useState<string>('active');
     const [pendingFilter, setPendingFilter] = useState<'All' | 'Pending' | 'In Progress' | 'Cleared'>('All');
 
-    // ─── Excel Attachments State (Sales & Purchase Reco) ──────────────────────
+    // ─── Excel Attachments State (Sales, Purchase & TDS Reco) ────────────────
     const salesFileInputRef = React.useRef<HTMLInputElement | null>(null);
     const purchaseFileInputRef = React.useRef<HTMLInputElement | null>(null);
+    const tdsFileInputRef = React.useRef<HTMLInputElement | null>(null);
     const [salesLocalPathInput, setSalesLocalPathInput] = useState<string>('');
     const [purchaseLocalPathInput, setPurchaseLocalPathInput] = useState<string>('');
+    const [tdsLocalPathInput, setTdsLocalPathInput] = useState<string>('');
 
     // ─── Profitability Status (Schedule III P&L) ──────────────────────────────
     const [profitability, setProfitability] = useState<ProfitabilityStatement>(DEFAULT_PROFITABILITY_STATEMENT);
@@ -305,6 +403,11 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     // ─── Tally & System State ──────────────────────────────────────────────────
     const [isTallyOnline, setIsTallyOnline] = useState<boolean>(false);
     const [isPingingTally, setIsPingingTally] = useState<boolean>(false);
+    const [tallyPort, setTallyPort] = useState<number>(9000);
+    const [tallyCompanyName, setTallyCompanyName] = useState<string>('');
+    const [tallyGstin, setTallyGstin] = useState<string>('');
+    const [tallyBooksFrom, setTallyBooksFrom] = useState<string>('');
+    const [isTallyModalOpen, setIsTallyModalOpen] = useState<boolean>(false);
     const [isLoadingAudit, setIsLoadingAudit] = useState<boolean>(false);
     const [isSaving, setIsSaving] = useState<boolean>(false);
     const [isAutoPopulating, setIsAutoPopulating] = useState<boolean>(false);
@@ -348,11 +451,13 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const [revisionSeverity, setRevisionSeverity] = useState<'Mandatory Fix' | 'Clarification' | 'Advisory'>('Mandatory Fix');
     const [resolvedRevisionPoints, setResolvedRevisionPoints] = useState<Record<string, boolean>>({});
 
-    // ─── Client Quick Add Modal State ─────────────────────────────────────────
+    // ─── Client Quick Add Modal State (Monthly Audit Master) ───────────────────
     const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
     const [newClientGstin, setNewClientGstin] = useState('');
     const [newClientLegalName, setNewClientLegalName] = useState('');
     const [newClientTradeName, setNewClientTradeName] = useState('');
+    const [newClientPan, setNewClientPan] = useState('');
+    const [newClientAddress, setNewClientAddress] = useState('');
     const [newClientEmail, setNewClientEmail] = useState('');
     const [newClientPhone, setNewClientPhone] = useState('');
     const [isSavingClient, setIsSavingClient] = useState(false);
@@ -372,6 +477,26 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         }).catch((err) => {
             console.warn('[MonthlyAuditSuite] Could not load senior auditors from cloud:', err);
         });
+        return () => { isMounted = false; };
+    }, []);
+
+    // Load CA Office Name / Firm Name from system config / Firebase
+    useEffect(() => {
+        let isMounted = true;
+        safeApiFetch('/api/monthly-audits/firm-info')
+            .then(res => res.json())
+            .then(data => {
+                if (isMounted && data && data.firmName) {
+                    setConfiguredFirmName(data.firmName);
+                    setAuditHeader(prev => {
+                        if (!prev.firmName || prev.firmName.trim() === '') {
+                            return { ...prev, firmName: data.firmName };
+                        }
+                        return prev;
+                    });
+                }
+            })
+            .catch(() => {});
         return () => { isMounted = false; };
     }, []);
 
@@ -516,7 +641,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             const auditId = item.id || `audit_${targetGstin}_${targetFy}_${targetMonth}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
             // 1. Update SQLite backend with multiple lookup keys for guaranteed match
-            await fetch(`${apiBase}/api/monthly-audits/${auditId}/senior-review`, {
+            await safeApiFetch(`/api/monthly-audits/${auditId}/senior-review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -616,19 +741,21 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     };
 
     const activeClient = useMemo(() => {
-        const found = clients.find(c => c.gstin === selectedClientGstin);
+        const found = clients.find(c => c.gstin === selectedClientGstin || (c.id && c.id === selectedClientGstin));
         if (found) return found;
         if (clients.length > 0 && !selectedClientGstin) return clients[0];
         let savedName = '';
         try {
-            savedName = localStorage.getItem('np_company_name') || '';
+            savedName = localStorage.getItem('monthly_audit_selected_client_name') || localStorage.getItem('np_company_name') || '';
         } catch {}
         return {
+            id: 'temp_active',
             gstin: selectedClientGstin || '',
-            legalName: savedName || (selectedClientGstin ? `Client (${selectedClientGstin})` : 'No Client Selected'),
-            tradeName: savedName
+            legalName: savedName || tallyCompanyName || (selectedClientGstin ? `Client (${selectedClientGstin})` : 'Selected Client'),
+            tradeName: savedName || tallyCompanyName || (selectedClientGstin ? `Client (${selectedClientGstin})` : 'Selected Client'),
+            tallyCompanyName: tallyCompanyName || ''
         };
-    }, [clients, selectedClientGstin]);
+    }, [clients, selectedClientGstin, tallyCompanyName]);
 
     const filteredClients = useMemo(() => {
         if (!clientSearchQuery.trim()) return clients;
@@ -680,80 +807,70 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         return Array.from(partners);
     }, [auditHeader.partnerName, auditHeader.reviewedBy, auditHeader.teamMembers, cloudSeniors]);
 
-    // ─── Load Clients from DB (Central Master Vault + Fallback) ───────────────────
+    // ─── Load Dedicated Monthly Audit Clients Master (Separate from GST) ─────────
     const fetchClients = useCallback(async () => {
         try {
             let clientList: any[] = [];
-            // 1. Primary source: /api/ims/credentials (Central client master vault, no auth barrier)
             try {
-                const imsRes = await safeApiFetch('/api/ims/credentials');
-                if (imsRes.ok) {
-                    const imsData = await imsRes.json();
-                    if (imsData && Array.isArray(imsData.clients) && imsData.clients.length > 0) {
-                        clientList = imsData.clients;
+                const res = await safeApiFetch('/api/monthly-audit-clients');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && Array.isArray(data.clients)) {
+                        clientList = data.clients;
                     }
                 }
-            } catch (imsErr) {
-                console.warn('[MonthlyAuditSuite] /api/ims/credentials fetch error:', imsErr);
-            }
-
-            // 2. Secondary fallback: /api/clients
-            if (clientList.length === 0) {
-                try {
-                    const token = getToken() || localStorage.getItem('np_token') || localStorage.getItem('np_auth_token') || sessionStorage.getItem('np_auth_token');
-                    const res = await safeApiFetch('/api/clients', {
-                        headers: token ? { Authorization: `Bearer ${token}` } : {}
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (Array.isArray(data) && data.length > 0) {
-                            clientList = data;
-                        }
-                    }
-                } catch (clientErr) {
-                    console.warn('[MonthlyAuditSuite] /api/clients fetch error:', clientErr);
-                }
+            } catch (cliErr) {
+                console.warn('[MonthlyAuditSuite] /api/monthly-audit-clients fetch error:', cliErr);
             }
 
             if (clientList.length > 0) {
                 const mapped = clientList.map((c: any) => ({
                     id: c.id,
-                    gstin: c.gstin,
-                    legalName: c.legal_name || c.trade_name || c.gstin,
-                    tradeName: c.trade_name,
+                    gstin: c.gstin || c.id,
+                    legalName: c.company_name || c.client_name || c.tally_company_name,
+                    tradeName: c.tally_company_name || c.company_name || c.client_name,
+                    tallyCompanyName: c.tally_company_name,
                     email: c.email,
-                    phone: c.phone
+                    phone: c.phone,
+                    address: c.address,
+                    pan: c.pan
                 }));
                 setClients(mapped);
                 setSelectedClientGstin(prev => {
-                    if (prev && mapped.some((m: any) => m.gstin === prev)) {
+                    if (prev && mapped.some((m: any) => m.gstin === prev || m.id === prev)) {
                         return prev;
                     }
-                    const savedGstin = localStorage.getItem('monthly_audit_selected_client') ||
-                                       localStorage.getItem('last_active_gstin') ||
-                                       localStorage.getItem('gstr3b_active_client_gstin');
-                    if (savedGstin && mapped.some((m: any) => m.gstin === savedGstin)) {
+                    const savedGstin = localStorage.getItem('monthly_audit_selected_client');
+                    if (savedGstin && mapped.some((m: any) => m.gstin === savedGstin || m.id === savedGstin)) {
                         return savedGstin;
                     }
                     return mapped[0].gstin;
                 });
+            } else {
+                setClients([]);
             }
         } catch (err) {
             console.warn('[MonthlyAuditSuite] Could not load clients from server:', err);
         }
     }, []);
 
-    const handleSelectClient = useCallback((c: { gstin: string; legalName: string; tradeName?: string }) => {
-        setSelectedClientGstin(c.gstin);
+    const handleSelectClient = useCallback((c: { id?: string; gstin: string; legalName: string; tradeName?: string; tallyCompanyName?: string }) => {
+        const clientIdentifier = c.gstin || c.id || '';
+        setSelectedClientGstin(clientIdentifier);
         setIsClientDropdownOpen(false);
+        const effectiveClientName = c.tallyCompanyName || c.tradeName || c.legalName;
         try {
-            localStorage.setItem('monthly_audit_selected_client', c.gstin);
-            localStorage.setItem('last_active_gstin', c.gstin);
-            localStorage.setItem('gstr3b_active_client_gstin', c.gstin);
-            localStorage.setItem('np_company_name', c.tradeName || c.legalName);
+            localStorage.setItem('monthly_audit_selected_client', clientIdentifier);
+            localStorage.setItem('monthly_audit_selected_client_name', effectiveClientName);
+            localStorage.setItem('np_company_name', effectiveClientName);
         } catch {}
+        setAuditHeader(prev => ({
+            ...prev,
+            clientGstin: clientIdentifier,
+            clientName: effectiveClientName
+        }));
         window.dispatchEvent(new CustomEvent('client-selected', {
-            detail: { gstin: c.gstin, legalName: c.legalName, tradeName: c.tradeName }
+            detail: { gstin: clientIdentifier, legalName: c.legalName, tradeName: c.tradeName, tallyCompanyName: c.tallyCompanyName }
         }));
     }, []);
 
@@ -763,152 +880,113 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             fetchClients();
         };
         const handleClientSelected = (e: any) => {
-            const { gstin, trade_name, legal_name, clientName } = e.detail || {};
+            const { gstin, trade_name, legal_name, clientName, tallyCompanyName } = e.detail || {};
             if (gstin) {
                 const cleanGstin = String(gstin).trim().toUpperCase();
                 setSelectedClientGstin(cleanGstin);
+                const name = tallyCompanyName || trade_name || legal_name || clientName;
                 try {
                     localStorage.setItem('monthly_audit_selected_client', cleanGstin);
-                    localStorage.setItem('last_active_gstin', cleanGstin);
-                    localStorage.setItem('gstr3b_active_client_gstin', cleanGstin);
-                    const name = trade_name || legal_name || clientName;
-                    if (name) localStorage.setItem('np_company_name', name);
+                    if (name) {
+                        localStorage.setItem('monthly_audit_selected_client_name', name);
+                        localStorage.setItem('np_company_name', name);
+                    }
                 } catch {}
 
-                setClients(prev => {
-                    if (prev.some(c => c.gstin === cleanGstin)) return prev;
-                    const displayName = trade_name || legal_name || clientName || cleanGstin;
-                    return [{
-                        gstin: cleanGstin,
-                        legalName: displayName,
-                        tradeName: trade_name || displayName
-                    }, ...prev];
-                });
-            }
-        };
-        const handleAppNav = (e: any) => {
-            const { gstin, trade_name, legal_name, clientName, fy, month } = e.detail || {};
-            if (gstin) {
-                const cleanGstin = String(gstin).trim().toUpperCase();
-                setSelectedClientGstin(cleanGstin);
-                try {
-                    localStorage.setItem('monthly_audit_selected_client', cleanGstin);
-                    localStorage.setItem('last_active_gstin', cleanGstin);
-                    localStorage.setItem('gstr3b_active_client_gstin', cleanGstin);
-                    const name = trade_name || legal_name || clientName;
-                    if (name) localStorage.setItem('np_company_name', name);
-                } catch {}
-
-                setClients(prev => {
-                    if (prev.some(c => c.gstin === cleanGstin)) return prev;
-                    const displayName = trade_name || legal_name || clientName || cleanGstin;
-                    return [{
-                        gstin: cleanGstin,
-                        legalName: displayName,
-                        tradeName: trade_name || displayName
-                    }, ...prev];
-                });
-            }
-            if (fy) {
-                setSelectedFy(fy);
-            }
-            if (month) {
-                setSelectedMonth(month);
+                if (name) {
+                    setAuditHeader(prev => ({
+                        ...prev,
+                        clientGstin: cleanGstin,
+                        clientName: name
+                    }));
+                }
             }
         };
         window.addEventListener('clients-updated', handleClientsUpdated);
         window.addEventListener('client-selected', handleClientSelected);
-        window.addEventListener('app-navigate', handleAppNav);
         return () => {
             window.removeEventListener('clients-updated', handleClientsUpdated);
             window.removeEventListener('client-selected', handleClientSelected);
-            window.removeEventListener('app-navigate', handleAppNav);
         };
     }, [fetchClients]);
 
-    // ─── Client Master Management (Add & Delete) ───────────────────────────────
+    // ─── Monthly Audit Client Management (Add & Delete) ────────────────────────
     const handleSaveNewClient = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        const trimmedGstin = newClientGstin.trim().toUpperCase();
         const trimmedLegal = newClientLegalName.trim();
         const trimmedTrade = newClientTradeName.trim() || trimmedLegal;
+        const trimmedGstin = newClientGstin.trim().toUpperCase();
 
-        if (!trimmedGstin) {
-            toast.error('Please enter client GSTIN');
+        if (!trimmedLegal && !trimmedTrade) {
+            toast.error('Please enter Client or Company Name');
             return;
         }
-        if (trimmedGstin.length !== 15) {
-            toast.error('GSTIN must be exactly 15 characters (e.g. 27AAGCD4105L1ZO)');
-            return;
-        }
-        if (!trimmedLegal) {
-            toast.error('Please enter client Legal Name');
+        if (trimmedGstin && trimmedGstin.length !== 15) {
+            toast.error('GSTIN must be 15 characters (e.g. 27AAGCD4105L1ZO) or leave blank if non-GST');
             return;
         }
 
         setIsSavingClient(true);
-        const loadingId = toast.loading(`Saving client "${trimmedTrade}"...`);
+        const loadingId = toast.loading(`Registering audit client "${trimmedTrade}"...`);
         try {
-            const apiBase = getApiBase();
-            const token = getAuthToken();
-            const newId = `cli_${Date.now()}`;
-            const res = await fetch(`${apiBase}/api/clients`, {
+            const newId = `audit_cli_${Date.now()}`;
+            const res = await safeApiFetch('/api/monthly-audit-clients', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     id: newId,
+                    client_name: trimmedLegal,
+                    company_name: trimmedTrade,
+                    tally_company_name: trimmedTrade,
                     gstin: trimmedGstin,
-                    legal_name: trimmedLegal,
-                    trade_name: trimmedTrade,
+                    pan: newClientPan.trim() || (trimmedGstin.length === 15 ? trimmedGstin.substring(2, 12) : undefined),
                     email: newClientEmail.trim() || undefined,
-                    phone: newClientPhone.trim() || undefined
+                    phone: newClientPhone.trim() || undefined,
+                    address: newClientAddress.trim() || undefined
                 })
             });
 
             if (res.ok) {
-                toast.success(`Client "${trimmedTrade}" registered successfully!`, { id: loadingId });
+                toast.success(`Client "${trimmedTrade}" registered in Monthly Audit DB!`, { id: loadingId });
                 const newClientObj = {
                     id: newId,
-                    gstin: trimmedGstin,
+                    gstin: trimmedGstin || newId,
                     legalName: trimmedLegal,
                     tradeName: trimmedTrade,
+                    tallyCompanyName: trimmedTrade,
                     email: newClientEmail.trim() || undefined,
-                    phone: newClientPhone.trim() || undefined
+                    phone: newClientPhone.trim() || undefined,
+                    address: newClientAddress.trim() || undefined,
+                    pan: newClientPan.trim() || undefined
                 };
-                setClients(prev => {
-                    const exists = prev.some(c => c.gstin === trimmedGstin);
-                    return exists ? prev.map(c => c.gstin === trimmedGstin ? newClientObj : c) : [newClientObj, ...prev];
-                });
-                handleSelectClient({
-                    gstin: trimmedGstin,
-                    legalName: trimmedLegal,
-                    tradeName: trimmedTrade
-                });
-                safeApiFetch('/api/ims/credentials/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        gstin: trimmedGstin,
-                        trade_name: trimmedTrade,
-                        legal_name: trimmedLegal,
-                        email: newClientEmail.trim() || undefined,
-                        phone: newClientPhone.trim() || undefined
-                    })
-                }).catch(() => {});
-                setIsAddClientModalOpen(false);
-                setIsClientDropdownOpen(false);
-                window.dispatchEvent(new CustomEvent('clients-updated'));
+
+                setClients(prev => [newClientObj, ...prev.filter(c => c.id !== newId)]);
+                setSelectedClientGstin(trimmedGstin || newId);
+                setAuditHeader(prev => ({
+                    ...prev,
+                    clientName: trimmedTrade,
+                    clientGstin: trimmedGstin || newId
+                }));
+                try {
+                    localStorage.setItem('monthly_audit_selected_client', trimmedGstin || newId);
+                    localStorage.setItem('monthly_audit_selected_client_name', trimmedTrade);
+                    localStorage.setItem('np_company_name', trimmedTrade);
+                } catch {}
+
+                // Reset modal state
                 setNewClientGstin('');
                 setNewClientLegalName('');
                 setNewClientTradeName('');
+                setNewClientPan('');
+                setNewClientAddress('');
                 setNewClientEmail('');
                 setNewClientPhone('');
+                setIsAddClientModalOpen(false);
             } else {
                 const errData = await res.json().catch(() => ({}));
-                toast.error(errData.error || 'Failed to save client', { id: loadingId });
+                toast.error(errData.error || 'Failed to save client in Monthly Audit DB', { id: loadingId });
             }
         } catch (err: any) {
             toast.error(`Error saving client: ${err.message || err}`, { id: loadingId });
@@ -917,27 +995,36 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         }
     };
 
-    const handleDeleteClient = async (gstin: string, legalName: string, clientId?: string) => {
-        if (!confirm(`Are you sure you want to delete client "${legalName}" (${gstin})? This cannot be undone.`)) {
-            return;
-        }
+    const handleDeleteClient = async (gstinOrId: string, legalName: string, clientId?: string) => {
+        const idToDelete = clientId || gstinOrId;
+        const ok = await confirm({
+            title: 'Delete Monthly Audit Client?',
+            message: `Are you sure you want to delete "${legalName}" from the Monthly Audit Client Master?`,
+            confirmText: 'Delete Client',
+            type: 'danger'
+        });
+        if (!ok) return;
+
         try {
-            const apiBase = getApiBase();
-            const token = getAuthToken();
-            const idToDelete = clientId || gstin;
-            const res = await fetch(`${apiBase}/api/clients/${idToDelete}`, {
-                method: 'DELETE',
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            const res = await safeApiFetch(`/api/monthly-audit-clients/${encodeURIComponent(idToDelete)}`, {
+                method: 'DELETE'
             });
             if (res.ok) {
-                toast.success(`Client "${legalName}" deleted from master`);
-                setClients(prev => prev.filter(c => c.gstin !== gstin));
-                if (selectedClientGstin === gstin) {
-                    const remaining = clients.filter(c => c.gstin !== gstin);
+                toast.success(`Client "${legalName}" deleted from Monthly Audit master`);
+                setClients(prev => prev.filter(c => (c.id ? c.id !== idToDelete : c.gstin !== idToDelete)));
+                if (selectedClientGstin === gstinOrId || selectedClientGstin === idToDelete) {
+                    const remaining = clients.filter(c => (c.id ? c.id !== idToDelete : c.gstin !== idToDelete));
                     if (remaining.length > 0) {
-                        setSelectedClientGstin(remaining[0].gstin);
+                        const nextClient = remaining[0];
+                        setSelectedClientGstin(nextClient.gstin || nextClient.id || '');
+                        setAuditHeader(prev => ({
+                            ...prev,
+                            clientName: nextClient.legalName || nextClient.tradeName,
+                            clientGstin: nextClient.gstin || nextClient.id || ''
+                        }));
                     } else {
                         setSelectedClientGstin('');
+                        setAuditHeader(prev => ({ ...prev, clientName: '', clientGstin: '' }));
                     }
                 }
             } else {
@@ -948,24 +1035,91 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         }
     };
 
-    // ─── Ping Tally Port 9000 ──────────────────────────────────────────────────
-    const pingTally = useCallback(async () => {
+    // ─── Live Tally XML Gateway & Active Company Extractor ──────────────────────
+    const pingTally = useCallback(async (customPort?: number) => {
+        const targetPort = customPort || tallyPort || 9000;
         setIsPingingTally(true);
         try {
-            const apiBase = getApiBase();
-            const res = await fetch(`${apiBase}/api/tally/test-connection`, {
+            const res = await safeApiFetch('/api/tally/test-connection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port: 9000 })
+                body: JSON.stringify({ port: targetPort })
             });
             const data = await res.json();
-            setIsTallyOnline(Boolean(data.success));
+            const online = Boolean(data.success && data.isOnline);
+            setIsTallyOnline(online);
+            if (online) {
+                const detectedCompany = data.companyName || '';
+                setTallyCompanyName(detectedCompany);
+                setTallyGstin(data.gstin || '');
+                setTallyBooksFrom(data.booksFrom || '');
+
+                // Automatically update auditHeader clientName so report reflects the live Tally company name!
+                if (detectedCompany) {
+                    setAuditHeader(prev => {
+                        if (!prev.clientName || prev.clientName === 'Selected Client' || prev.clientName === 'Client Entity' || prev.clientName === 'No Client Selected') {
+                            return {
+                                ...prev,
+                                clientName: detectedCompany,
+                                clientGstin: data.gstin || prev.clientGstin
+                            };
+                        }
+                        return prev;
+                    });
+                }
+            } else {
+                setIsTallyOnline(false);
+                setTallyCompanyName('');
+            }
+            return data;
         } catch {
             setIsTallyOnline(false);
+            setTallyCompanyName('');
+            return { success: false, isOnline: false };
         } finally {
             setIsPingingTally(false);
         }
-    }, []);
+    }, [tallyPort]);
+
+    const syncActiveTallyCompanyAsClient = useCallback(async () => {
+        if (!tallyCompanyName) {
+            toast.error('No active company detected from Tally Prime');
+            return;
+        }
+        const toastId = toast.loading(`Setting "${tallyCompanyName}" as client on report...`);
+        try {
+            const res = await safeApiFetch('/api/monthly-audit-clients/sync-tally', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tally_company_name: tallyCompanyName,
+                    gstin: tallyGstin,
+                    financial_year: tallyBooksFrom
+                })
+            });
+            const data = await res.json();
+            if (data.success && data.client) {
+                toast.success(`Client "${tallyCompanyName}" set on Report & saved to Monthly Audit DB!`, { id: toastId });
+                await fetchClients();
+                const targetGstin = data.client.gstin || data.client.id;
+                setSelectedClientGstin(targetGstin);
+                setAuditHeader(prev => ({
+                    ...prev,
+                    clientName: tallyCompanyName,
+                    clientGstin: targetGstin
+                }));
+                try {
+                    localStorage.setItem('monthly_audit_selected_client', targetGstin);
+                    localStorage.setItem('monthly_audit_selected_client_name', tallyCompanyName);
+                    localStorage.setItem('np_company_name', tallyCompanyName);
+                } catch {}
+            } else {
+                toast.error(data.error || 'Could not sync Tally company', { id: toastId });
+            }
+        } catch (err: any) {
+            toast.error(`Sync error: ${err.message || err}`, { id: toastId });
+        }
+    }, [tallyCompanyName, tallyGstin, tallyBooksFrom, fetchClients]);
 
     useEffect(() => {
         pingTally();
@@ -976,9 +1130,8 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         if (!selectedClientGstin) return;
         setIsLoadingAudit(true);
         try {
-            const apiBase = getApiBase();
             // 1. Fetch Month Audit Header
-            const auditRes = await fetch(`${apiBase}/api/monthly-audits?client_gstin=${encodeURIComponent(selectedClientGstin)}&fy=${encodeURIComponent(selectedFy)}&month=${encodeURIComponent(selectedMonth)}`);
+            const auditRes = await safeApiFetch(`/api/monthly-audits?client_gstin=${encodeURIComponent(selectedClientGstin)}&fy=${encodeURIComponent(selectedFy)}&month=${encodeURIComponent(selectedMonth)}`);
             if (auditRes.ok) {
                 const auditsData = await auditRes.json();
                 const audits = Array.isArray(auditsData) ? auditsData : (auditsData?.audits || []);
@@ -1025,7 +1178,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         periodMode: parsedMeta.periodMode || (found.period_mode as any) || 'single',
                         selectedMonths: parsedMeta.selectedMonths || (found.selected_months as any) || [found.month || selectedMonth],
                         auditorName: found.auditor_name || parsedMeta.auditorName || '',
-                        firmName: parsedMeta.firmName || found.firm_name || '',
+                        firmName: parsedMeta.firmName || found.firm_name || configuredFirmName || '',
                         firmRegistrationNo: parsedMeta.firmRegistrationNo || found.firm_registration_no || '',
                         membershipNo: parsedMeta.membershipNo || found.membership_no || '',
                         engagementRef: parsedMeta.engagementRef || found.engagement_ref || '',
@@ -1070,7 +1223,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     }
 
                     // Fetch detail sub-records
-                    const detRes = await fetch(`${apiBase}/api/monthly-audits/${found.id}`);
+                    const detRes = await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(found.id)}`);
                     if (detRes.ok) {
                         const det = await detRes.json();
                         if (det.checklists && det.checklists.length > 0) {
@@ -1104,6 +1257,29 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 updatedAt: o.updated_at
                             })));
                         }
+                        if (det.voucherSamples && Array.isArray(det.voucherSamples)) {
+                            setVoucherSamples(det.voucherSamples.map((s: any) => ({
+                                id: s.id,
+                                auditId: s.audit_id || s.auditId,
+                                registerKey: s.register_key || s.registerKey,
+                                registerName: s.register_name || s.registerName || s.register_key || 'Register',
+                                voucherId: s.voucher_id || s.voucherId,
+                                voucherType: s.voucher_type || s.voucherType,
+                                voucherNumber: s.voucher_number || s.voucherNumber,
+                                date: s.date,
+                                partyName: s.party_name || s.partyName,
+                                amount: Number(s.amount) || 0,
+                                samplingRule: s.sampling_rule || s.samplingRule,
+                                stratum: s.stratum,
+                                status: s.status || 'Pending',
+                                auditorRemarks: s.auditor_remarks || s.auditorRemarks || '',
+                                supportingDocRef: s.supporting_doc_ref || s.supportingDocRef || '',
+                                verifiedBy: s.verified_by || s.verifiedBy,
+                                verifiedAt: s.verified_at || s.verifiedAt,
+                                createdAt: s.created_at || s.createdAt,
+                                updatedAt: s.updated_at || s.updatedAt
+                            })));
+                        }
                         if (det.verificationData) {
                             const vd = det.verificationData;
                             const safeParse = (val: any, fallback: any) => {
@@ -1135,7 +1311,14 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                             : (prev.purchase?.monthlyMatrix || createInitialPurchase3WayMatrix()),
                                         excelAttachment: parsedPurchase?.excelAttachment || prev.purchase?.excelAttachment
                                     },
-                                    journal: { ...prev.journal, ...safeParse(vd.journal_reco_data, prev.journal) },
+                                    journal: (() => {
+                                        const parsedJournal = safeParse(vd.journal_reco_data, prev.journal);
+                                        return {
+                                            ...prev.journal,
+                                            ...parsedJournal,
+                                            excelAttachment: parsedJournal?.excelAttachment || prev.journal?.excelAttachment
+                                        };
+                                    })(),
                                     bankLoans: (() => {
                                         const parsedBank = safeParse(vd.bank_loan_data, prev.bankLoans);
                                         return {
@@ -1166,13 +1349,14 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     const fresh = initializeMonthlyAudit(selectedClientGstin, activeClient.legalName, selectedFy, selectedMonth);
                     const userTitle = getLoggedInUserTitle();
                     if (userTitle) fresh.preparedBy = userTitle;
+                    if (configuredFirmName) fresh.firmName = configuredFirmName;
                     setAuditHeader(fresh);
                     setProfitability(createEmptyProfitabilityStatement(activeClient.legalName, '', '', `${selectedMonth} ${selectedFy}`));
                 }
             }
 
             // 2. Fetch Cross-Month Pending Points
-            const pendingRes = await fetch(`${apiBase}/api/audit-pending-points?client_gstin=${encodeURIComponent(selectedClientGstin)}`);
+            const pendingRes = await safeApiFetch(`/api/audit-pending-points?client_gstin=${encodeURIComponent(selectedClientGstin)}`);
             if (pendingRes.ok) {
                 const pointsData = await pendingRes.json();
                 const points = Array.isArray(pointsData) ? pointsData : (pointsData?.points || []);
@@ -1202,7 +1386,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             }
 
             // 3. Fetch 12-Month overview statuses
-            const allAuditsRes = await fetch(`${apiBase}/api/monthly-audits?client_gstin=${encodeURIComponent(selectedClientGstin)}&fy=${encodeURIComponent(selectedFy)}`);
+            const allAuditsRes = await safeApiFetch(`/api/monthly-audits?client_gstin=${encodeURIComponent(selectedClientGstin)}&fy=${encodeURIComponent(selectedFy)}`);
             if (allAuditsRes.ok) {
                 const allData = await allAuditsRes.json();
                 const allList = Array.isArray(allData) ? allData : (allData?.audits || []);
@@ -1374,8 +1558,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         }
         setLoadingProfitability(true);
         try {
-            const apiBase = getApiBase();
-            const resp = await fetch(`${apiBase}/api/monthly-audits/profitability/from-file?filePath=${encodeURIComponent(target)}`);
+            const resp = await safeApiFetch(`/api/monthly-audits/profitability/from-file?filePath=${encodeURIComponent(target)}`);
             const data = await resp.json();
             if (data.success && data.statement) {
                 setProfitability(data.statement);
@@ -2457,6 +2640,243 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         };
     }, [rocLoansData]);
 
+    // ─── 3.3 TDS Working (Section-Wise Reconciliation & Discrepancies) ─────────
+    const [tdsMatrixFilter, setTdsMatrixFilter] = useState<'all' | 'payable' | 'pending_booking' | 'matched'>('all');
+
+    const tdsSectionMatrixData: TdsSectionWorkingRow[] = useMemo(() => {
+        return verification?.journal?.tdsSectionMatrix && verification.journal.tdsSectionMatrix.length > 0
+            ? verification.journal.tdsSectionMatrix
+            : createDefaultTdsSectionMatrix();
+    }, [verification?.journal?.tdsSectionMatrix]);
+
+    const tdsMatrixTotals: TdsMatrixTotals = useMemo(() => {
+        return calculateTdsMatrixTotals(tdsSectionMatrixData);
+    }, [tdsSectionMatrixData]);
+
+    const handleUpdateTdsSectionRow = (id: string, field: keyof TdsSectionWorkingRow, value: any) => {
+        setVerification(prev => {
+            const list = prev.journal?.tdsSectionMatrix && prev.journal.tdsSectionMatrix.length > 0
+                ? [...prev.journal.tdsSectionMatrix]
+                : createDefaultTdsSectionMatrix();
+
+            const idx = list.findIndex(r => r.id === id);
+            if (idx === -1) return prev;
+
+            const isNumeric = ['rate', 'booksTaxable', 'booksTds', 'actualTaxable', 'actualTds', 'returnTaxable', 'returnTds'].includes(field);
+            const parsedVal = isNumeric
+                ? (value === '' ? 0 : (isNaN(parseFloat(value)) ? 0 : parseFloat(value)))
+                : value;
+
+            const updatedRow: TdsSectionWorkingRow = {
+                ...list[idx],
+                [field]: parsedVal
+            };
+
+            // Auto-compute suggested actualTds if actualTaxable was modified and rate is positive
+            if (field === 'actualTaxable' && updatedRow.rate > 0) {
+                updatedRow.actualTds = Math.round((Number(parsedVal) * updatedRow.rate) / 100);
+            }
+
+            list[idx] = updatedRow;
+
+            return {
+                ...prev,
+                journal: {
+                    ...prev.journal!,
+                    tdsSectionMatrix: list
+                }
+            };
+        });
+    };
+
+    const handleAddTdsSection = (sectionName = '194C', nature = 'Contractors / Transporters', defaultRate = 2) => {
+        const newRow: TdsSectionWorkingRow = {
+            id: `tds_sec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            section: sectionName,
+            natureOfPayment: nature,
+            rate: defaultRate,
+            booksTaxable: 0,
+            booksTds: 0,
+            actualTaxable: 0,
+            actualTds: 0,
+            returnTaxable: 0,
+            returnTds: 0,
+            remarks: 'Statutory scrutiny verified'
+        };
+
+        setVerification(prev => {
+            const list = prev.journal?.tdsSectionMatrix && prev.journal.tdsSectionMatrix.length > 0
+                ? [...prev.journal.tdsSectionMatrix, newRow]
+                : [...createDefaultTdsSectionMatrix(), newRow];
+
+            return {
+                ...prev,
+                journal: {
+                    ...prev.journal!,
+                    tdsSectionMatrix: list
+                }
+            };
+        });
+        toast.success(`Added TDS Section ${sectionName} to working matrix`);
+    };
+
+    const handleDeleteTdsSection = (id: string) => {
+        setVerification(prev => {
+            const list = prev.journal?.tdsSectionMatrix && prev.journal.tdsSectionMatrix.length > 0
+                ? [...prev.journal.tdsSectionMatrix]
+                : createDefaultTdsSectionMatrix();
+
+            if (list.length <= 1) {
+                toast.warning('At least one TDS section must remain in the working matrix');
+                return prev;
+            }
+
+            const filtered = list.filter(r => r.id !== id);
+            return {
+                ...prev,
+                journal: {
+                    ...prev.journal!,
+                    tdsSectionMatrix: filtered
+                }
+            };
+        });
+        toast.info('TDS Section removed from matrix');
+    };
+
+    const handleResetTdsMatrix = () => {
+        const initial = createDefaultTdsSectionMatrix();
+        setVerification(prev => ({
+            ...prev,
+            journal: {
+                ...prev.journal!,
+                tdsSectionMatrix: initial
+            }
+        }));
+        toast.info('TDS Section Working Matrix reset to standard statutory template');
+    };
+
+    const filteredTdsRows = useMemo(() => {
+        return tdsSectionMatrixData.filter(row => {
+            const bookingPending = Math.max(0, Number(row.actualTaxable || 0) - Number(row.booksTaxable || 0));
+            const tdsPayable = Math.max(0, Number(row.actualTds || 0) - Number(row.returnTds || 0));
+            const challanPending = Math.max(0, Number(row.booksTds || 0) - Number(row.returnTds || 0));
+
+            if (tdsMatrixFilter === 'payable') return tdsPayable > 0;
+            if (tdsMatrixFilter === 'pending_booking') return bookingPending > 0;
+            if (tdsMatrixFilter === 'matched') return bookingPending === 0 && tdsPayable === 0 && challanPending === 0;
+            return true;
+        });
+    }, [tdsSectionMatrixData, tdsMatrixFilter]);
+
+    // ─── TDS Excel Working Paper Attachment Handlers ─────────────────────────
+    const handleTdsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const arrayBuffer = evt.target?.result as ArrayBuffer;
+                let sheetNames: string[] = [];
+                try {
+                    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+                    sheetNames = wb.SheetNames || [];
+                } catch (parseErr) {
+                    console.warn('[MonthlyAuditSuite] Could not read sheet names from uploaded TDS working file:', parseErr);
+                }
+
+                const uint8 = new Uint8Array(arrayBuffer);
+                let binary = '';
+                const len = uint8.byteLength;
+                const chunkSize = 0x8000;
+                for (let i = 0; i < len; i += chunkSize) {
+                    binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize) as any);
+                }
+                const base64Data = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${btoa(binary)}`;
+
+                const attachment: AuditExcelAttachment = {
+                    fileName: file.name,
+                    fileSize: file.size,
+                    uploadedAt: new Date().toLocaleString('en-IN'),
+                    uploadedBy: auditHeader.preparedBy || 'Junior Auditor',
+                    fileData: base64Data,
+                    sheetNames
+                };
+
+                setVerification(prev => ({
+                    ...prev,
+                    journal: {
+                        ...prev.journal!,
+                        excelAttachment: attachment
+                    }
+                }));
+
+                toast.success(`TDS Excel working sheet "${file.name}" attached successfully!`);
+            } catch (err: any) {
+                toast.error(`Failed to process TDS Excel attachment: ${err.message}`);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const handleLinkTdsLocalPath = () => {
+        if (!tdsLocalPathInput.trim()) {
+            toast.warning('Please enter a valid file path (e.g. E:\\TDS_Working_26Q.xlsx)');
+            return;
+        }
+        const cleaned = tdsLocalPathInput.trim();
+        const fileName = cleaned.split(/[\/\\]/).pop() || cleaned;
+
+        const attachment: AuditExcelAttachment = {
+            fileName,
+            filePath: cleaned,
+            uploadedAt: new Date().toLocaleString('en-IN'),
+            uploadedBy: auditHeader.preparedBy || 'Junior Auditor'
+        };
+
+        setVerification(prev => ({
+            ...prev,
+            journal: {
+                ...prev.journal!,
+                excelAttachment: attachment
+            }
+        }));
+
+        setTdsLocalPathInput('');
+        toast.success(`Linked TDS Excel working path: ${fileName}`);
+    };
+
+    const handleRemoveTdsAttachment = () => {
+        setVerification(prev => ({
+            ...prev,
+            journal: {
+                ...prev.journal!,
+                excelAttachment: undefined
+            }
+        }));
+        if (tdsFileInputRef.current) {
+            tdsFileInputRef.current.value = '';
+        }
+        toast.info('TDS Excel attachment removed');
+    };
+
+    const handleDownloadTdsAttachment = () => {
+        const att = verification?.journal?.excelAttachment;
+        if (!att) return;
+
+        if (att.fileData) {
+            const a = document.createElement('a');
+            a.href = att.fileData;
+            a.download = att.fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            toast.success(`Downloaded "${att.fileName}"`);
+        } else if (att.filePath) {
+            toast.info(`TDS working file is linked to local disk: ${att.filePath}`);
+        }
+    };
+
     // ─── Auto-Populate Orchestrator (Tally & GST) ──────────────────────────────
     const handleAutoPopulate = async () => {
         setIsAutoPopulating(true);
@@ -2585,7 +3005,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 }
             };
 
-            await fetch(`${apiBase}/api/monthly-audits`, {
+            await safeApiFetch('/api/monthly-audits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(headerPayload)
@@ -2607,14 +3027,41 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                     amount_involved: c.amountInvolved || 0,
                     amountInvolved: c.amountInvolved || 0
                 }));
-                await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/checklists/batch`, {
+                await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/checklists/batch`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: normalizedChecklists })
                 });
             }
 
-            await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/save-verification-data`, {
+            if (voucherSamples.length > 0) {
+                await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/samples/batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        samples: voucherSamples.map(s => ({
+                            id: s.id,
+                            register_key: s.registerKey,
+                            registerKey: s.registerKey,
+                            voucher_id: s.voucherId,
+                            voucher_type: s.voucherType,
+                            voucher_number: s.voucherNumber,
+                            date: s.date,
+                            party_name: s.partyName,
+                            amount: s.amount,
+                            sampling_rule: s.samplingRule,
+                            stratum: s.stratum,
+                            status: s.status,
+                            auditor_remarks: s.auditorRemarks,
+                            supporting_doc_ref: s.supportingDocRef,
+                            verified_by: s.verifiedBy,
+                            verified_at: s.verifiedAt
+                        }))
+                    })
+                });
+            }
+
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/save-verification-data`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2646,7 +3093,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             };
 
             const base64Payload = generateMonthlyAuditBase64(exportBundle);
-            const dirRes = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/save-directory`, {
+            const dirRes = await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/save-directory`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(base64Payload)
@@ -2738,7 +3185,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             const juniorName = auditHeader.preparedBy || 'Junior Article';
 
             // 1. Update Local Backend (SQLite)
-            const res = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/submit-review`, {
+            const res = await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/submit-review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2800,7 +3247,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             }
 
             // 1. Update Local SQLite Backend with fallback identifiers
-            await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/senior-review`, {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/senior-review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2858,7 +3305,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             const finalNotes = `[${revisionSeverity.toUpperCase()}] [${revisionSection}]\n${revisionNotes.trim()}`;
 
             // 1. Update Local SQLite Backend
-            const res = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/senior-review`, {
+            const res = await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/senior-review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2927,7 +3374,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             const base64Data = generateMonthlyAuditBase64(exportBundle);
             const pdfData = generateMonthlyAuditPdf(exportBundle, { autoDownload: false });
 
-            const res = await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/release-client`, {
+            const res = await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/release-client`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3000,8 +3447,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         };
 
         try {
-            const apiBase = getApiBase();
-            await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/observations`, {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/observations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3035,8 +3481,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
 
     const handleDeleteObservation = async (obsId: string) => {
         try {
-            const apiBase = getApiBase();
-            await fetch(`${apiBase}/api/monthly-audits/${auditHeader.id}/observations/${obsId}`, {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/observations/${encodeURIComponent(obsId)}`, {
                 method: 'DELETE'
             });
             setObservations(prev => prev.filter(o => o.id !== obsId));
@@ -3067,8 +3512,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         };
 
         try {
-            const apiBase = getApiBase();
-            await fetch(`${apiBase}/api/audit-pending-points`, {
+            await safeApiFetch('/api/audit-pending-points', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3096,7 +3540,6 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const handleUpdatePendingPoint = async () => {
         if (!selectedPendingPoint) return;
         try {
-            const apiBase = getApiBase();
             const payload = {
                 status: resolveStatus,
                 resolutionRemarks: resolveRemarks,
@@ -3107,7 +3550,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 verified_by: resolveStatus === 'Cleared' ? (auditHeader.reviewedBy || 'Senior Auditor') : undefined
             };
 
-            await fetch(`${apiBase}/api/audit-pending-points/${selectedPendingPoint.id}`, {
+            await safeApiFetch(`/api/audit-pending-points/${encodeURIComponent(selectedPendingPoint.id)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -3180,10 +3623,1132 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
         toast.success('Corporate Executive Audit Report (PDF) downloaded!');
     };
 
+    // ─── Tally SA 530 Voucher Sampling Handlers (Approach A) ───────────────────
+    const handlePullAndSampleFromTally = async () => {
+        setIsSamplingTally(true);
+        try {
+            const res = await pullAndSampleFromTally({
+                auditId: auditHeader.id,
+                clientGstin: selectedClientGstin,
+                clientName: activeClient.legalName,
+                fy: selectedFy,
+                month: selectedMonth,
+                existingRegisters: registers,
+                existingSamples: voucherSamples
+            });
+
+            setRegisters(res.updatedRegisters);
+            setVoucherSamples(res.samples);
+
+            // Automatically persist to SQLite DB backend
+            try {
+                await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/samples/batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        replaceAll: true,
+                        samples: res.samples.map(s => ({
+                            id: s.id,
+                            register_key: s.registerKey,
+                            voucher_id: s.voucherId,
+                            voucher_type: s.voucherType,
+                            voucher_number: s.voucherNumber,
+                            date: s.date,
+                            party_name: s.partyName,
+                            amount: s.amount,
+                            sampling_rule: s.samplingRule,
+                            stratum: s.stratum,
+                            status: s.status,
+                            auditor_remarks: s.auditorRemarks,
+                            supporting_doc_ref: s.supportingDocRef,
+                            verified_by: s.verifiedBy,
+                            verified_at: s.verifiedAt
+                        }))
+                    })
+                });
+            } catch (saveErr) {
+                console.warn('[Voucher Sampling] Backend save error:', saveErr);
+            }
+
+            if (res.isOnline) {
+                toast.success('Live Tally Vouchers Pulled & Sampled!', {
+                    description: `Extracted live vouchers from Port 9000. Generated ${res.totalSampleCount} SA 530 samples.`
+                });
+            } else {
+                toast.info('Tally Port 9000 Offline — Demo Mode Active', {
+                    description: `Generated ${res.totalSampleCount} simulated test samples across all 5 registers for ${selectedMonth} ${selectedFy}.`
+                });
+            }
+        } catch (err: any) {
+            toast.error(`Sampling failed: ${err.message}`);
+        } finally {
+            setIsSamplingTally(false);
+        }
+    };
+
+    const handleUpdateSampleStatus = async (sampleId: string, status: AuditVoucherSample['status']) => {
+        const userTitle = getLoggedInUserTitle() || 'Auditor';
+        setVoucherSamples(prev => prev.map(s => {
+            if (s.id === sampleId) {
+                return {
+                    ...s,
+                    status,
+                    verifiedBy: status === 'Verified' ? userTitle : s.verifiedBy,
+                    verifiedAt: status === 'Verified' ? Date.now() : s.verifiedAt
+                };
+            }
+            return s;
+        }));
+
+        try {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/samples/${encodeURIComponent(sampleId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    status,
+                    verified_by: status === 'Verified' ? userTitle : undefined
+                })
+            });
+        } catch (err) {
+            console.warn('[Update Sample Status] Error:', err);
+        }
+    };
+
+    const handleUpdateSampleRemarks = (sampleId: string, remarks: string) => {
+        setVoucherSamples(prev => prev.map(s => s.id === sampleId ? { ...s, auditorRemarks: remarks } : s));
+    };
+
+    const handleUpdateSampleDocRef = (sampleId: string, ref: string) => {
+        setVoucherSamples(prev => prev.map(s => s.id === sampleId ? { ...s, supportingDocRef: ref } : s));
+    };
+
+    const handleMarkAllFilteredVerified = async () => {
+        const userTitle = getLoggedInUserTitle() || 'Auditor';
+        const filteredIds = new Set(
+            voucherSamples
+                .filter(s => activeSampleRegisterKey === 'all' || s.registerKey === activeSampleRegisterKey)
+                .map(s => s.id)
+        );
+
+        setVoucherSamples(prev => prev.map(s => {
+            if (filteredIds.has(s.id)) {
+                return { ...s, status: 'Verified', verifiedBy: userTitle, verifiedAt: Date.now() };
+            }
+            return s;
+        }));
+
+        toast.success(`Marked all ${filteredIds.size} samples as Verified`);
+    };
+
+    const handlePushSampleToObservation = async (sample: AuditVoucherSample) => {
+        const obsId = `OBS_${Date.now()}`;
+        const exposure = Number(sample.amount) || 0;
+        const newFinding: AuditObservationItem = {
+            id: obsId,
+            auditId: auditHeader.id,
+            clientGstin: selectedClientGstin,
+            sectionKey: sample.registerKey === 'sales' ? 'sales' : (sample.registerKey === 'purchase' ? 'purchase' : 'journal'),
+            title: `Vouching Query: ${sample.voucherType} #${sample.voucherNumber} (${sample.partyName})`,
+            description: `Audit sample scrutiny under ${sample.samplingRule} (${sample.stratum || 'General'}). Auditor remark: ${sample.auditorRemarks || 'Supporting documentation / tax discrepancy under audit scrutiny.'}`,
+            severity: exposure >= 100000 ? 'High' : 'Medium',
+            riskCategory: sample.registerKey === 'sales' ? 'GST Outward' : (sample.registerKey === 'purchase' ? 'ITC Blocked/Eligibility' : 'Internal Controls'),
+            financialExposure: exposure,
+            voucherRef: `${sample.voucherType} #${sample.voucherNumber} Dt: ${sample.date}`,
+            auditorRecommendation: 'Obtain vendor confirmation, e-way bill / physical GRN, and reconcile with GST returns.',
+            status: 'Open',
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+
+        setObservations(prev => [newFinding, ...prev]);
+
+        try {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/observations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...newFinding,
+                    obsId: newFinding.id,
+                    client_gstin: selectedClientGstin,
+                    section_key: newFinding.sectionKey,
+                    risk_category: newFinding.riskCategory,
+                    financial_exposure: newFinding.financialExposure,
+                    voucher_ref: newFinding.voucherRef,
+                    auditor_recommendation: newFinding.auditorRecommendation
+                })
+            });
+            toast.success(`Created observation for voucher ${sample.voucherNumber}`, {
+                description: 'Finding linked to Section 4. Current Period Observations'
+            });
+        } catch (err: any) {
+            toast.error(`Could not save observation: ${err.message}`);
+        }
+    };
+
+    const handleExportSamplingExcel = () => {
+        try {
+            exportVoucherSamplesToExcel(
+                voucherSamples,
+                registers,
+                activeClient.legalName,
+                `${selectedMonth} ${selectedFy}`
+            );
+            toast.success('Downloaded SA 530 Voucher Samples Excel Paper (Zero-Merge)');
+        } catch (err: any) {
+            toast.error(`Export failed: ${err.message}`);
+        }
+    };
+
     // ─── Permissions Logic ─────────────────────────────────────────────────────
     const isJuniorAllowedToEdit = canJuniorEdit(auditHeader.auditStatus);
     const isSeniorReviewAllowed = auditHeader.auditStatus !== 'APPROVED';
     const isReleaseAllowed = canReleaseToClient(auditHeader.auditStatus);
+
+    // ─── 5 Core Registers Vouching Scope Checklist Section Renderer ────────────
+    const renderVouchingScopeSection = () => {
+        const totalPopCount = registers.reduce((sum, r) => sum + (Number(r.totalVouchers) || 0), 0);
+        const totalSampleCount = voucherSamples.length;
+        const totalAuditedVal = registers.reduce((sum, r) => sum + (Number(r.auditedAmount) || 0), 0);
+        const totalVerifiedCount = voucherSamples.filter(s => s.status === 'Verified').length;
+        const totalQueryCount = voucherSamples.filter(s => s.status === 'Query Raised').length;
+        const totalDocMissingCount = voucherSamples.filter(s => s.status === 'Document Missing').length;
+
+        const filteredSamples = voucherSamples.filter(s => {
+            const matchesReg = activeSampleRegisterKey === 'all' || s.registerKey === activeSampleRegisterKey;
+            const matchesStatus = sampleStatusFilter === 'all' || s.status === sampleStatusFilter;
+            const query = sampleSearchQuery.trim().toLowerCase();
+            const matchesQuery = !query ||
+                (s.partyName && s.partyName.toLowerCase().includes(query)) ||
+                (s.voucherNumber && s.voucherNumber.toLowerCase().includes(query)) ||
+                (s.voucherType && s.voucherType.toLowerCase().includes(query)) ||
+                (s.auditorRemarks && s.auditorRemarks.toLowerCase().includes(query)) ||
+                String(s.amount).includes(query);
+            return matchesReg && matchesStatus && matchesQuery;
+        });
+
+        return (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-indigo-600" />
+                            <span>3. 5 Core Registers Vouching Scope Checklist</span>
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                            Substantive audit sampling framework under ICAI Standards (SA 530) across 5 core business registers
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-mono text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200 font-bold uppercase tracking-wider">
+                            ICAI SA 530 Sampling
+                        </span>
+
+                        {/* Pull & Sample from Tally Button */}
+                        <button
+                            type="button"
+                            onClick={handlePullAndSampleFromTally}
+                            disabled={isSamplingTally || !isJuniorAllowedToEdit}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                            title="Connects to Tally Prime Port 9000, pulls register vouchers, and runs ICAI SA 530 sampling"
+                        >
+                            <RotateCcw className={`w-3.5 h-3.5 ${isSamplingTally ? 'animate-spin' : ''}`} />
+                            <span>{isSamplingTally ? 'Sampling from Tally...' : 'Pull & Sample from Tally'}</span>
+                        </button>
+
+                        {/* View Samples Drawer Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setActiveSampleRegisterKey('all');
+                                setSampleDrawerOpen(true);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition border border-slate-200 shadow-2xs cursor-pointer"
+                        >
+                            <Eye className="w-3.5 h-3.5 text-slate-600" />
+                            <span>View Samples ({voucherSamples.length})</span>
+                        </button>
+
+                        {/* Export SA 530 Excel */}
+                        <button
+                            type="button"
+                            onClick={handleExportSamplingExcel}
+                            disabled={voucherSamples.length === 0}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition border border-emerald-200 cursor-pointer disabled:opacity-40"
+                            title="Export SA 530 Voucher Working Papers to Zero-Merge Excel"
+                        >
+                            <Download className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="hidden sm:inline">Export Samples</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Vouching Key Metrics Ribbon */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                    <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Total Population</span>
+                        <div className="text-sm font-bold text-slate-800 font-mono">
+                            {totalPopCount.toLocaleString('en-IN')} <span className="text-[10px] text-slate-500 font-normal">vouchers</span>
+                        </div>
+                    </div>
+                    <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Sample Drawn (SA 530)</span>
+                        <div className="text-sm font-bold text-indigo-700 font-mono">
+                            {totalSampleCount} <span className="text-[10px] text-indigo-500 font-normal">({totalPopCount > 0 ? Math.round((totalSampleCount / totalPopCount) * 100) : 0}%)</span>
+                        </div>
+                    </div>
+                    <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Audited Sample Value</span>
+                        <div className="text-sm font-bold text-slate-900 font-mono">
+                            ₹{totalAuditedVal.toLocaleString('en-IN')}
+                        </div>
+                    </div>
+                    <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Audit Scrutiny Status</span>
+                        <div className="text-xs font-semibold flex items-center gap-2 flex-wrap">
+                            <span className="text-emerald-700 font-mono">{totalVerifiedCount} Verified</span>
+                            {totalQueryCount > 0 && <span className="text-amber-700 font-mono">({totalQueryCount} Queries)</span>}
+                            {totalDocMissingCount > 0 && <span className="text-rose-700 font-mono">({totalDocMissingCount} Missing)</span>}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Register Names Tabs Navigation */}
+                <div className="flex items-center gap-1.5 border-b border-slate-200 overflow-x-auto pb-0 pt-1">
+                    <button
+                        type="button"
+                        onClick={() => setActiveVouchingRegisterTab('all')}
+                        className={`flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-t-xl transition border-b-2 whitespace-nowrap cursor-pointer ${
+                            activeVouchingRegisterTab === 'all'
+                                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/70 shadow-2xs'
+                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                        }`}
+                    >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>All 5 Registers (Overview)</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-700">5</span>
+                    </button>
+                    {registers.map(r => {
+                        const count = voucherSamples.filter(s => s.registerKey === r.key).length;
+                        const verified = voucherSamples.filter(s => s.registerKey === r.key && s.status === 'Verified').length;
+                        const queries = voucherSamples.filter(s => s.registerKey === r.key && s.status === 'Query Raised').length;
+                        const isSelected = activeVouchingRegisterTab === r.key;
+                        return (
+                            <button
+                                key={r.key}
+                                type="button"
+                                onClick={() => setActiveVouchingRegisterTab(r.key as any)}
+                                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-t-xl transition border-b-2 whitespace-nowrap cursor-pointer ${
+                                    isSelected
+                                        ? 'border-indigo-600 text-indigo-700 bg-indigo-50/70 shadow-2xs'
+                                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                                }`}
+                            >
+                                <span>{r.registerName}</span>
+                                {count > 0 ? (
+                                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                                        isSelected ? 'bg-indigo-200/80 text-indigo-800 font-bold' : 'bg-slate-100 text-slate-600'
+                                    }`}>
+                                        {count}{verified > 0 ? ` (${verified}✓)` : ''}{queries > 0 ? ` (${queries}⚠️)` : ''}
+                                    </span>
+                                ) : null}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* TAB CONTENT 1: ALL 5 REGISTERS OVERVIEW TABLE */}
+                {activeVouchingRegisterTab === 'all' && (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] border-b border-slate-200">
+                                <tr>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Register Name</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Sampling Technique Used (SA 530)</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Sample % Checked</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Total Vouchers</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Audited Amount (₹)</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Voucher Samples</th>
+                                    <th className="py-3 px-4 whitespace-normal break-words">Auditor Notes &amp; Observations</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {registers.map((r, idx) => {
+                                    const regSamples = voucherSamples.filter(s => s.registerKey === r.key);
+                                    const regVerifiedCount = regSamples.filter(s => s.status === 'Verified').length;
+                                    const regQueryCount = regSamples.filter(s => s.status === 'Query Raised').length;
+
+                                    return (
+                                        <tr key={r.key} className="hover:bg-slate-50/80 transition-colors">
+                                            <td className="py-3 px-4 font-bold text-slate-900 whitespace-normal break-words">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveVouchingRegisterTab(r.key as any)}
+                                                    className="flex items-center gap-1.5 text-left text-slate-900 hover:text-indigo-600 transition font-bold group cursor-pointer"
+                                                    title={`Open ${r.registerName} Tab`}
+                                                >
+                                                    <span>{r.registerName}</span>
+                                                    <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 opacity-60 group-hover:opacity-100 transition" />
+                                                </button>
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <select
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    value={r.samplingTechnique || (r.vouched === 'Yes' ? '100% Comprehensive Examination' : 'Stratified Sampling')}
+                                                    onChange={(e) => {
+                                                        const updated = [...registers];
+                                                        updated[idx].samplingTechnique = e.target.value;
+                                                        updated[idx].vouched = e.target.value.includes('100%') ? 'Yes' : 'Partial';
+                                                        setRegisters(updated);
+                                                    }}
+                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition cursor-pointer max-w-[280px]"
+                                                >
+                                                    <option value="Random Selection (Simple Random Sampling)">
+                                                        Random Selection (Simple Random Sampling)
+                                                    </option>
+                                                    <option value="Systematic Selection (Interval Sampling)">
+                                                        Systematic Selection (Interval Sampling)
+                                                    </option>
+                                                    <option value="Stratified Sampling">
+                                                        Stratified Sampling (Value-Stratified)
+                                                    </option>
+                                                    <option value="Monetary Unit Sampling (MUS)">
+                                                        Monetary Unit Sampling (MUS)
+                                                    </option>
+                                                    <option value="100% Comprehensive Examination">
+                                                        100% Comprehensive Examination
+                                                    </option>
+                                                    <option value="Haphazard Selection">
+                                                        Haphazard Selection
+                                                    </option>
+                                                </select>
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <input
+                                                    type="text"
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    value={r.sampleChecked}
+                                                    onChange={(e) => {
+                                                        const updated = [...registers];
+                                                        updated[idx].sampleChecked = e.target.value;
+                                                        setRegisters(updated);
+                                                    }}
+                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-28 focus:outline-none"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <input
+                                                    type="number"
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    value={r.totalVouchers}
+                                                    onChange={(e) => {
+                                                        const updated = [...registers];
+                                                        updated[idx].totalVouchers = Number(e.target.value) || 0;
+                                                        setRegisters(updated);
+                                                    }}
+                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-24 focus:outline-none"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <input
+                                                    type="number"
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    value={r.auditedAmount}
+                                                    onChange={(e) => {
+                                                        const updated = [...registers];
+                                                        updated[idx].auditedAmount = Number(e.target.value) || 0;
+                                                        setRegisters(updated);
+                                                    }}
+                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-32 focus:outline-none"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                {regSamples.length > 0 ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveVouchingRegisterTab(r.key as any)}
+                                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition shadow-2xs cursor-pointer"
+                                                        title={`Inspect ${regSamples.length} sampled vouchers in ${r.registerName} Tab`}
+                                                    >
+                                                        <Eye className="w-3 h-3" />
+                                                        <span>{regSamples.length} Samples</span>
+                                                        <span className="text-[10px] text-emerald-600 font-mono font-normal">({regVerifiedCount}✓)</span>
+                                                        {regQueryCount > 0 && <span className="text-[10px] text-amber-600 font-mono font-bold">({regQueryCount}⚠️)</span>}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handlePullAndSampleFromTally}
+                                                        disabled={isSamplingTally || !isJuniorAllowedToEdit}
+                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-indigo-600 hover:bg-slate-50 border border-dashed border-slate-300 transition cursor-pointer"
+                                                    >
+                                                        <Zap className="w-3 h-3 text-amber-500" />
+                                                        <span>Pull Samples</span>
+                                                    </button>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <input
+                                                    type="text"
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    value={r.remarks}
+                                                    onChange={(e) => {
+                                                        const updated = [...registers];
+                                                        updated[idx].remarks = e.target.value;
+                                                        setRegisters(updated);
+                                                    }}
+                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 w-full focus:outline-none"
+                                                    placeholder="Vouching notes..."
+                                                />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* TAB CONTENT 2: SPECIFIC REGISTER FOCUSED WORKING PAPER VIEW */}
+                {activeVouchingRegisterTab !== 'all' && (() => {
+                    const activeReg = registers.find(r => r.key === activeVouchingRegisterTab) || registers[0];
+                    const activeRegIdx = registers.findIndex(r => r.key === activeVouchingRegisterTab);
+                    const regVouchers = voucherSamples.filter(s => s.registerKey === activeVouchingRegisterTab);
+                    const regVerified = regVouchers.filter(s => s.status === 'Verified').length;
+                    const regQueries = regVouchers.filter(s => s.status === 'Query Raised').length;
+                    const regMissing = regVouchers.filter(s => s.status === 'Document Missing').length;
+
+                    const regFilteredVouchers = regVouchers.filter(s => {
+                        const matchesStatus = sampleStatusFilter === 'all' || s.status === sampleStatusFilter;
+                        const query = sampleSearchQuery.trim().toLowerCase();
+                        const matchesQuery = !query ||
+                            (s.partyName && s.partyName.toLowerCase().includes(query)) ||
+                            (s.voucherNumber && s.voucherNumber.toLowerCase().includes(query)) ||
+                            (s.voucherType && s.voucherType.toLowerCase().includes(query)) ||
+                            (s.auditorRemarks && s.auditorRemarks.toLowerCase().includes(query)) ||
+                            String(s.amount).includes(query);
+                        return matchesStatus && matchesQuery;
+                    });
+
+                    return (
+                        <div className="space-y-4 animate-fade-in">
+                            {/* Focused Register Substantive Parameters Card */}
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-slate-900 uppercase">
+                                            {activeReg.registerName} — Substantive Audit Working Paper
+                                        </h3>
+                                        <span className="text-[10px] font-mono text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded font-bold uppercase">
+                                            {activeReg.samplingTechnique || 'Stratified Sampling'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveVouchingRegisterTab('all')}
+                                            className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-indigo-600 bg-white border border-slate-200 rounded-lg transition"
+                                        >
+                                            ← Back to Overview Table
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleMarkAllFilteredVerified}
+                                            disabled={!isJuniorAllowedToEdit || regVouchers.length === 0}
+                                            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition border border-slate-200 cursor-pointer disabled:opacity-40"
+                                            title="Mark all samples in this register as Verified"
+                                        >
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>Mark All Verified</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-1">
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase">Sampling Technique</label>
+                                        <select
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={activeReg.samplingTechnique || 'Stratified Sampling'}
+                                            onChange={(e) => {
+                                                const updated = [...registers];
+                                                if (activeRegIdx >= 0) {
+                                                    updated[activeRegIdx].samplingTechnique = e.target.value;
+                                                    updated[activeRegIdx].vouched = e.target.value.includes('100%') ? 'Yes' : 'Partial';
+                                                    setRegisters(updated);
+                                                }
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500 transition"
+                                        >
+                                            <option value="Stratified Sampling">Stratified Sampling (Value-Stratified)</option>
+                                            <option value="100% Comprehensive Examination">100% Comprehensive Examination</option>
+                                            <option value="Random Selection (Simple Random Sampling)">Random Selection (Simple Random Sampling)</option>
+                                            <option value="Systematic Selection (Interval Sampling)">Systematic Selection (Interval Sampling)</option>
+                                            <option value="Monetary Unit Sampling (MUS)">Monetary Unit Sampling (MUS)</option>
+                                            <option value="Haphazard Selection">Haphazard Selection</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase">Sample % Checked</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={activeReg.sampleChecked}
+                                            onChange={(e) => {
+                                                const updated = [...registers];
+                                                if (activeRegIdx >= 0) {
+                                                    updated[activeRegIdx].sampleChecked = e.target.value;
+                                                    setRegisters(updated);
+                                                }
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono focus:outline-none focus:border-indigo-500 transition"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase">Total Population</label>
+                                        <input
+                                            type="number"
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={activeReg.totalVouchers}
+                                            onChange={(e) => {
+                                                const updated = [...registers];
+                                                if (activeRegIdx >= 0) {
+                                                    updated[activeRegIdx].totalVouchers = Number(e.target.value) || 0;
+                                                    setRegisters(updated);
+                                                }
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono focus:outline-none focus:border-indigo-500 transition"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase">Audited Amount (₹)</label>
+                                        <input
+                                            type="number"
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={activeReg.auditedAmount}
+                                            onChange={(e) => {
+                                                const updated = [...registers];
+                                                if (activeRegIdx >= 0) {
+                                                    updated[activeRegIdx].auditedAmount = Number(e.target.value) || 0;
+                                                    setRegisters(updated);
+                                                }
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono focus:outline-none focus:border-indigo-500 transition"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase">Auditor Notes</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isJuniorAllowedToEdit}
+                                            value={activeReg.remarks}
+                                            onChange={(e) => {
+                                                const updated = [...registers];
+                                                if (activeRegIdx >= 0) {
+                                                    updated[activeRegIdx].remarks = e.target.value;
+                                                    setRegisters(updated);
+                                                }
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 transition"
+                                            placeholder="Vouching notes..."
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Register Sampled Vouchers Inline Section */}
+                            <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+                                <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-800">
+                                            {activeReg.registerName} Samples ({regVouchers.length})
+                                        </span>
+                                        <span className="text-slate-400">•</span>
+                                        <span className="text-emerald-700 font-semibold">{regVerified} Verified</span>
+                                        {regQueries > 0 && <span className="text-amber-700 font-bold">({regQueries} Queries)</span>}
+                                        {regMissing > 0 && <span className="text-rose-700 font-bold">({regMissing} Missing)</span>}
+                                    </div>
+
+                                    {/* Register Filter Controls */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <div className="relative">
+                                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search in this register..."
+                                                value={sampleSearchQuery}
+                                                onChange={e => setSampleSearchQuery(e.target.value)}
+                                                className="bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 transition w-48 sm:w-56"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-slate-200/60 p-0.5 rounded-lg text-xs font-semibold">
+                                            {(['all', 'Pending', 'Verified', 'Query Raised', 'Document Missing'] as const).map(st => (
+                                                <button
+                                                    key={st}
+                                                    type="button"
+                                                    onClick={() => setSampleStatusFilter(st)}
+                                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                                        sampleStatusFilter === st
+                                                            ? 'bg-white text-slate-900 shadow-2xs'
+                                                            : 'text-slate-500 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    {st === 'all' ? 'All' : st}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-3.5 space-y-2.5 max-h-[500px] overflow-y-auto bg-[#F8FAFC]">
+                                    {regFilteredVouchers.length === 0 ? (
+                                        <div className="text-center py-10 text-slate-400 text-xs">
+                                            {regVouchers.length === 0 ? (
+                                                <div className="space-y-2">
+                                                    <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                                                    <p className="font-semibold text-slate-600">No samples drawn for {activeReg.registerName} yet.</p>
+                                                    <p>Click "Pull &amp; Sample from Tally" to extract live or test vouchers under SA 530.</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handlePullAndSampleFromTally}
+                                                        className="mt-2 px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold transition hover:bg-indigo-700 cursor-pointer"
+                                                    >
+                                                        Pull &amp; Sample Now
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <p>No vouchers in {activeReg.registerName} match your current filter.</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        regFilteredVouchers.map((sample) => (
+                                            <div
+                                                key={sample.id}
+                                                className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-300 transition"
+                                            >
+                                                {/* Voucher Metadata */}
+                                                <div className="space-y-1 min-w-[220px] flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-mono text-[11px] font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                                            {sample.voucherNumber}
+                                                        </span>
+                                                        <span className="text-xs font-semibold text-slate-500 font-mono">
+                                                            {sample.date}
+                                                        </span>
+                                                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold bg-slate-100 text-slate-700">
+                                                            {sample.voucherType}
+                                                        </span>
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                                            sample.stratum?.includes('High') ? 'bg-red-50 text-red-700 border-red-200' :
+                                                            sample.stratum?.includes('Medium') ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                            'bg-slate-100 text-slate-700 border-slate-200'
+                                                        }`}>
+                                                            {sample.stratum || 'General Stratum'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs font-bold text-slate-900">
+                                                        {sample.partyName}
+                                                    </div>
+                                                    <div className="text-[11px] font-mono font-bold text-indigo-700">
+                                                        ₹{sample.amount.toLocaleString('en-IN')}
+                                                    </div>
+                                                </div>
+
+                                                {/* Inputs: Remarks & Doc Ref */}
+                                                <div className="flex-1 space-y-1.5 min-w-[200px]">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Auditor scrutiny remarks / findings..."
+                                                        value={sample.auditorRemarks || ''}
+                                                        onChange={e => handleUpdateSampleRemarks(sample.id, e.target.value)}
+                                                        disabled={!isJuniorAllowedToEdit}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 transition"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Supporting Doc Ref (Invoice / EWB / GRN #)..."
+                                                        value={sample.supportingDocRef || ''}
+                                                        onChange={e => handleUpdateSampleDocRef(sample.id, e.target.value)}
+                                                        disabled={!isJuniorAllowedToEdit}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 transition"
+                                                    />
+                                                </div>
+
+                                                {/* Status Selector & Push to Obs Button */}
+                                                <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0">
+                                                    <select
+                                                        value={sample.status}
+                                                        disabled={!isJuniorAllowedToEdit}
+                                                        onChange={e => handleUpdateSampleStatus(sample.id, e.target.value as any)}
+                                                        className={`border rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer transition w-full ${
+                                                            sample.status === 'Verified' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                                            sample.status === 'Query Raised' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                                            sample.status === 'Document Missing' ? 'bg-rose-50 text-rose-800 border-rose-300' :
+                                                            'bg-slate-50 text-slate-800 border-slate-300'
+                                                        }`}
+                                                    >
+                                                        <option value="Pending">Pending</option>
+                                                        <option value="Verified">Verified ✓</option>
+                                                        <option value="Query Raised">Query Raised ⚠️</option>
+                                                        <option value="Document Missing">Document Missing 📄</option>
+                                                    </select>
+
+                                                    <div className="flex items-center gap-1.5">
+                                                        {/* Quick Tick Box (Verify Voucher) */}
+                                                        <label
+                                                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer select-none ${
+                                                                sample.status === 'Verified'
+                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs'
+                                                                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                                                            }`}
+                                                            title={sample.status === 'Verified' ? 'Voucher Verified (Click to uncheck)' : 'Click to tick & verify voucher'}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                checked={sample.status === 'Verified'}
+                                                                onChange={(e) => handleUpdateSampleStatus(sample.id, e.target.checked ? 'Verified' : 'Pending')}
+                                                                className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
+                                                            />
+                                                            <span>Verify</span>
+                                                        </label>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePushSampleToObservation(sample)}
+                                                            className="flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition cursor-pointer"
+                                                            title="Push this voucher deficiency into Section 4. Current Period Observations"
+                                                        >
+                                                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                                            <span>Push to Obs</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* ICAI SA 530 Audit Sampling Technical Reference Callout */}
+                <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2.5">
+                    <div className="font-bold text-slate-900 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                        <span>ICAI SA 530 — Standardized Audit Sampling Techniques Guide:</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-slate-600">
+                        <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                            <span className="font-bold text-slate-900 block mb-1">
+                                • Random Selection (Simple Random Sampling):
+                            </span>
+                            <span>Items are selected using random number tables or computer generators (like audit software). Every single voucher in the population has an equal chance of selection.</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                            <span className="font-bold text-slate-900 block mb-1">
+                                • Systematic Selection (Interval Sampling):
+                            </span>
+                            <span>The auditor selects items at regular intervals determined by a calculated sampling gap (e.g., checking every 20th invoice voucher) after a randomly chosen starting point.</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                            <span className="font-bold text-slate-900 block mb-1">
+                                • Stratified Sampling:
+                            </span>
+                            <span>The population is divided into separate groups (strata) based on specific characteristics—such as grouping vouchers by monetary value (e.g., above ₹1,00,000). Random or systematic sampling is then applied to each group.</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                            <span className="font-bold text-slate-900 block mb-1">
+                                • Monetary Unit Sampling (MUS):
+                            </span>
+                            <span>A value-weighted selection method where the sample size, selection, and evaluation result in a conclusion in monetary amounts rather than transaction counts.</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ─── MODAL / DRAWER: SA 530 SUBSTANTIVE VOUCHER SAMPLES ─────────── */}
+                {sampleDrawerOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+                        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+                            {/* Drawer Header */}
+                            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <Layers className="w-5 h-5 text-indigo-600" />
+                                        <h3 className="text-base font-bold text-slate-900 uppercase tracking-wide">
+                                            SA 530 Substantive Audit Voucher Samples
+                                        </h3>
+                                        <span className="text-[11px] font-mono text-indigo-700 bg-indigo-100 px-2.5 py-0.5 rounded-full font-bold">
+                                            {voucherSamples.length} Samples
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Client: <strong className="text-slate-800">{activeClient.legalName}</strong> | Period: <strong className="text-slate-800">{selectedMonth} {selectedFy}</strong> | Standard on Auditing (SA 530)
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleExportSamplingExcel}
+                                        disabled={voucherSamples.length === 0}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                                        title="Export Zero-Merge Excel Working Paper"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Export Excel</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSampleDrawerOpen(false)}
+                                        className="w-8 h-8 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition cursor-pointer"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Register Filter Tabs */}
+                            <div className="px-5 pt-3 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto bg-white shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveSampleRegisterKey('all')}
+                                    className={`px-3 py-2 text-xs font-bold rounded-t-lg transition border-b-2 whitespace-nowrap cursor-pointer ${
+                                        activeSampleRegisterKey === 'all'
+                                            ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
+                                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                                    }`}
+                                >
+                                    All Registers ({voucherSamples.length})
+                                </button>
+                                {registers.map(r => {
+                                    const count = voucherSamples.filter(s => s.registerKey === r.key).length;
+                                    return (
+                                        <button
+                                            key={r.key}
+                                            type="button"
+                                            onClick={() => setActiveSampleRegisterKey(r.key)}
+                                            className={`px-3 py-2 text-xs font-bold rounded-t-lg transition border-b-2 whitespace-nowrap cursor-pointer ${
+                                                activeSampleRegisterKey === r.key
+                                                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
+                                                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                                            }`}
+                                        >
+                                            {r.registerName} ({count})
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Toolbar: Search, Status Filter & Bulk Actions */}
+                            <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-white shrink-0">
+                                <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+                                    <div className="relative flex-1">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search by party, voucher no., amount..."
+                                            value={sampleSearchQuery}
+                                            onChange={e => setSampleSearchQuery(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+                                        />
+                                    </div>
+                                    {sampleSearchQuery && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSampleSearchQuery('')}
+                                            className="text-xs text-slate-400 hover:text-slate-600 font-bold"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {/* Status Filter Dropdown / Pills */}
+                                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+                                        {(['all', 'Pending', 'Verified', 'Query Raised', 'Document Missing'] as const).map(st => (
+                                            <button
+                                                key={st}
+                                                type="button"
+                                                onClick={() => setSampleStatusFilter(st)}
+                                                className={`px-2.5 py-1 rounded-lg transition text-[11px] font-bold cursor-pointer ${
+                                                    sampleStatusFilter === st
+                                                        ? 'bg-white text-slate-900 shadow-2xs'
+                                                        : 'text-slate-500 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                {st === 'all' ? 'All' : st}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Mark All Filtered as Verified */}
+                                    <button
+                                        type="button"
+                                        onClick={handleMarkAllFilteredVerified}
+                                        disabled={!isJuniorAllowedToEdit || filteredSamples.length === 0}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition border border-slate-200 cursor-pointer disabled:opacity-40"
+                                        title="Mark all currently visible samples as Verified"
+                                    >
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Mark Visible Verified</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Samples Table / List */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F8FAFC]">
+                                {filteredSamples.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 text-xs">
+                                        {voucherSamples.length === 0 ? (
+                                            <div className="space-y-2">
+                                                <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                                                <p className="font-semibold text-slate-600">No voucher samples pulled yet.</p>
+                                                <p>Click "Pull &amp; Sample from Tally" to extract live or test vouchers under SA 530.</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={handlePullAndSampleFromTally}
+                                                    className="mt-2 px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold transition hover:bg-indigo-700 cursor-pointer"
+                                                >
+                                                    Pull &amp; Sample Now
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <p>No vouchers match your current register and search filters.</p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    filteredSamples.map((sample) => (
+                                        <div
+                                            key={sample.id}
+                                            className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-300 transition"
+                                        >
+                                            {/* Voucher Metadata */}
+                                            <div className="space-y-1 min-w-[240px] flex-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-mono text-[11px] font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                                        {sample.voucherNumber}
+                                                    </span>
+                                                    <span className="text-xs font-semibold text-slate-500">
+                                                        {sample.date}
+                                                    </span>
+                                                    <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold bg-slate-100 text-slate-700">
+                                                        {sample.voucherType}
+                                                    </span>
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                                        sample.stratum?.includes('High') ? 'bg-red-50 text-red-700 border-red-200' :
+                                                        sample.stratum?.includes('Medium') ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                        'bg-slate-100 text-slate-700 border-slate-200'
+                                                    }`}>
+                                                        {sample.stratum || 'General Stratum'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs font-bold text-slate-900">
+                                                    {sample.partyName}
+                                                </div>
+                                                <div className="text-[11px] font-mono font-bold text-indigo-700">
+                                                    ₹{sample.amount.toLocaleString('en-IN')}
+                                                </div>
+                                            </div>
+
+                                            {/* Inputs: Auditor Remarks & Supporting Doc */}
+                                            <div className="flex-1 space-y-1.5 min-w-[220px]">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Auditor scrutiny remarks / findings..."
+                                                    value={sample.auditorRemarks || ''}
+                                                    onChange={e => handleUpdateSampleRemarks(sample.id, e.target.value)}
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 transition"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Supporting Doc Ref (Invoice / EWB / GRN #)..."
+                                                    value={sample.supportingDocRef || ''}
+                                                    onChange={e => handleUpdateSampleDocRef(sample.id, e.target.value)}
+                                                    disabled={!isJuniorAllowedToEdit}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 transition"
+                                                />
+                                            </div>
+
+                                                {/* Status Selector & Push to Obs Button */}
+                                                <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0">
+                                                    <select
+                                                        value={sample.status}
+                                                        disabled={!isJuniorAllowedToEdit}
+                                                        onChange={e => handleUpdateSampleStatus(sample.id, e.target.value as any)}
+                                                        className={`border rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer transition w-full ${
+                                                            sample.status === 'Verified' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                                            sample.status === 'Query Raised' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                                            sample.status === 'Document Missing' ? 'bg-rose-50 text-rose-800 border-rose-300' :
+                                                            'bg-slate-50 text-slate-800 border-slate-300'
+                                                        }`}
+                                                    >
+                                                        <option value="Pending">Pending</option>
+                                                        <option value="Verified">Verified ✓</option>
+                                                        <option value="Query Raised">Query Raised ⚠️</option>
+                                                        <option value="Document Missing">Document Missing 📄</option>
+                                                    </select>
+
+                                                    <div className="flex items-center gap-1.5">
+                                                        {/* Quick Tick Box (Verify Voucher) */}
+                                                        <label
+                                                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer select-none ${
+                                                                sample.status === 'Verified'
+                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs'
+                                                                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                                                            }`}
+                                                            title={sample.status === 'Verified' ? 'Voucher Verified (Click to uncheck)' : 'Click to tick & verify voucher'}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                checked={sample.status === 'Verified'}
+                                                                onChange={(e) => handleUpdateSampleStatus(sample.id, e.target.checked ? 'Verified' : 'Pending')}
+                                                                className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
+                                                            />
+                                                            <span>Verify</span>
+                                                        </label>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePushSampleToObservation(sample)}
+                                                            className="flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition cursor-pointer"
+                                                            title="Push this voucher deficiency into Section 4. Current Period Observations"
+                                                        >
+                                                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                                            <span>Push to Obs</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Drawer Footer */}
+                            <div className="p-3.5 border-t border-slate-200 flex items-center justify-between bg-slate-50/80 text-xs text-slate-500">
+                                <div>
+                                    Showing <strong className="text-slate-800">{filteredSamples.length}</strong> of <strong className="text-slate-800">{voucherSamples.length}</strong> total samples
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSampleDrawerOpen(false)}
+                                    className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                                >
+                                    Close Working Paper
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="min-h-screen w-full bg-[#F8FAFC] text-slate-900 font-sans pb-16 animate-fade-in">
@@ -3206,9 +4771,27 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         </div>
                         <div className="flex flex-col text-left min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                                <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight truncate">
-                                    {activeClient.legalName}
+                                <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight truncate" title="Report Client Entity">
+                                    {auditHeader.clientName || activeClient.legalName}
                                 </h1>
+                                {isTallyOnline && tallyCompanyName && (
+                                    auditHeader.clientName === tallyCompanyName ? (
+                                        <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold uppercase tracking-wider shrink-0" title="Tally Prime Company Synced with Report">
+                                            <Check className="w-3 h-3 text-emerald-600" />
+                                            <span>Tally Synced: {tallyCompanyName}</span>
+                                        </span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={syncActiveTallyCompanyAsClient}
+                                            className="flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 transition shadow-2xs shrink-0 cursor-pointer"
+                                            title="Click to put active Tally company name on this report"
+                                        >
+                                            <Sparkles className="w-3 h-3 text-amber-600" />
+                                            <span>Use Tally Company: {tallyCompanyName}</span>
+                                        </button>
+                                    )
+                                )}
                                 <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-bold uppercase tracking-wider shrink-0">
                                     Suite 08 · Monthly Audit
                                 </span>
@@ -3256,13 +4839,48 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setIsClientDropdownOpen(false)} />
                                     <div className="absolute left-0 top-full mt-2 w-[calc(100vw-3rem)] sm:w-96 max-w-sm sm:max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 z-50 animate-pop-in ring-1 ring-slate-200">
+                                        <div className="flex items-center justify-between mb-2 px-1">
+                                            <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">
+                                                Monthly Audit Client Master
+                                            </span>
+                                            <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                                Dedicated DB
+                                            </span>
+                                        </div>
+
+                                        {/* Tally Active Company Quick-Sync Card */}
+                                        {isTallyOnline && tallyCompanyName && (
+                                            <div className="mb-2 p-2 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
+                                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                        <span>Active in Tally</span>
+                                                    </div>
+                                                    <div className="text-xs font-bold text-emerald-950 truncate font-mono">
+                                                        {tallyCompanyName}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        syncActiveTallyCompanyAsClient();
+                                                        setIsClientDropdownOpen(false);
+                                                    }}
+                                                    className="shrink-0 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                                                    title="Sets this Tally company as the active client for this Monthly Audit and puts it on the report"
+                                                >
+                                                    Set on Report
+                                                </button>
+                                            </div>
+                                        )}
+
                                         <div className="relative mb-2">
                                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                             <input
                                                 type="text"
                                                 value={clientSearchQuery}
                                                 onChange={e => setClientSearchQuery(e.target.value)}
-                                                placeholder="Search client name or GSTIN..."
+                                                placeholder="Search monthly audit clients..."
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-500 transition-colors"
                                                 autoFocus
                                             />
@@ -3271,56 +4889,77 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         <div className="max-h-72 overflow-y-auto py-1 space-y-1 divide-y divide-slate-100 custom-scrollbar">
                                             {filteredClients.length === 0 ? (
                                                 <div className="p-4 text-center text-xs text-slate-500">
-                                                    No clients match "{clientSearchQuery}".
+                                                    No monthly audit clients registered yet.
                                                 </div>
                                             ) : (
                                                 filteredClients.map(c => {
-                                                    const isCurrent = selectedClientGstin === c.gstin;
+                                                    const isCurrent = selectedClientGstin === c.gstin || (c.id && selectedClientGstin === c.id);
                                                     return (
-                                                        <button
-                                                            key={c.gstin}
-                                                            type="button"
-                                                            onClick={() => handleSelectClient(c)}
-                                                            className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
+                                                        <div
+                                                            key={c.id || c.gstin}
+                                                            className={`w-full p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 ${
                                                                 isCurrent
                                                                     ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold shadow-2xs'
                                                                     : 'hover:bg-slate-50 text-slate-700'
                                                             }`}
                                                         >
-                                                            <div className="truncate min-w-0 flex-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectClient(c)}
+                                                                className="truncate min-w-0 flex-1 text-left cursor-pointer"
+                                                            >
                                                                 <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
                                                                     <Building2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                                                     <span className="truncate">{c.tradeName || c.legalName}</span>
                                                                 </div>
-                                                                <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                                                                    {c.gstin}
+                                                                <div className="text-[11px] font-mono text-slate-400 mt-0.5 flex items-center gap-2">
+                                                                    <span>{c.gstin && c.gstin.length === 15 ? c.gstin : 'Non-GST Client'}</span>
+                                                                    {c.tallyCompanyName && (
+                                                                        <span className="text-[9px] text-emerald-700 bg-emerald-50 px-1 rounded border border-emerald-200 font-semibold">
+                                                                            Tally: {c.tallyCompanyName}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
+                                                            </button>
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                {isCurrent && (
+                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200 shadow-2xs">
+                                                                        <Check className="w-3 h-3 text-indigo-600" />
+                                                                        <span>Active</span>
+                                                                    </span>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleDeleteClient(c.gstin, c.legalName, c.id)}
+                                                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                                    title="Delete client from Monthly Audit DB"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
                                                             </div>
-                                                            {isCurrent && (
-                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200 shrink-0 shadow-2xs">
-                                                                    <Check className="w-3 h-3 text-indigo-600" />
-                                                                    <span>Active</span>
-                                                                </span>
-                                                            )}
-                                                        </button>
+                                                        </div>
                                                     );
                                                 })
                                             )}
                                         </div>
 
                                         <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setIsClientDropdownOpen(false);
-                                                    window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'clients' } }));
-                                                }}
-                                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition cursor-pointer"
-                                                title="Open Client Master in System Settings"
-                                            >
-                                                <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                                <span>Client Master</span>
-                                            </button>
+                                            {isTallyOnline && tallyCompanyName ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        syncActiveTallyCompanyAsClient();
+                                                        setIsClientDropdownOpen(false);
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer"
+                                                    title="Sync open Tally company"
+                                                >
+                                                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                                    <span>Import Tally</span>
+                                                </button>
+                                            ) : (
+                                                <span className="text-[10px] text-slate-400 font-mono">Tally: {isTallyOnline ? 'Online' : 'Offline'}</span>
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -3356,18 +4995,22 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         {/* Tally Port 9000 Ping */}
                         <button
                             type="button"
-                            onClick={pingTally}
-                            disabled={isPingingTally}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                            onClick={() => setIsTallyModalOpen(true)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                                 isTallyOnline
                                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 shadow-2xs'
                                     : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
                             }`}
-                            title="Tally Port 9000 XML Connection"
+                            title="Tally Port 9000 XML Connection & Client Sync"
                         >
-                            <span className={`w-2 h-2 rounded-full ${isTallyOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                            <span className={`w-2.5 h-2.5 rounded-full ${isTallyOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                             <span className="hidden sm:inline">Tally Port 9000:</span>
                             <span className="font-bold">{isTallyOnline ? 'Online' : 'Offline'}</span>
+                            {isTallyOnline && tallyCompanyName && (
+                                <span className="hidden md:inline-block max-w-[130px] truncate text-[11px] font-mono font-bold bg-emerald-200/70 text-emerald-950 px-1.5 py-0.5 rounded">
+                                    {tallyCompanyName}
+                                </span>
+                            )}
                             <RefreshCw className={`w-3 h-3 ${isPingingTally ? 'animate-spin' : ''}`} />
                         </button>
 
@@ -3683,38 +5326,79 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             </button>
                         </div>
 
+                        {/* Audit Verification Sections Dropdown Menu (Beside Junior Article / Senior CA Partner) */}
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsNavDropdownOpen(prev => !prev)}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-300 text-slate-800 font-bold text-xs shadow-2xs transition cursor-pointer group"
+                                title="Select Audit Section"
+                            >
+                                {(() => {
+                                    const currentTab = auditNavTabs.find(t => t.id === activeTab) || auditNavTabs[0];
+                                    const TabIcon = currentTab.icon;
+                                    return (
+                                        <>
+                                            <TabIcon className={`w-4 h-4 ${currentTab.color}`} />
+                                            <span className="text-slate-900">{currentTab.label}</span>
+                                            {currentTab.count !== undefined && (
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${currentTab.countColor}`}>
+                                                    {currentTab.count}
+                                                </span>
+                                            )}
+                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${isNavDropdownOpen ? 'rotate-180' : ''}`} />
+                                        </>
+                                    );
+                                })()}
+                            </button>
+
+                            {isNavDropdownOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setIsNavDropdownOpen(false)} />
+                                    <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 animate-pop-in ring-1 ring-slate-200">
+                                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                                            <span>Audit Sections &amp; Workings</span>
+                                            <span className="text-[9px] font-mono font-normal text-slate-400">5 Sections</span>
+                                        </div>
+                                        <div className="py-1 flex flex-col gap-0.5">
+                                            {auditNavTabs.map(tab => {
+                                                const Icon = tab.icon;
+                                                const isSelected = activeTab === tab.id;
+                                                return (
+                                                    <button
+                                                        key={tab.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setActiveTab(tab.id as any);
+                                                            setIsNavDropdownOpen(false);
+                                                        }}
+                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
+                                                            isSelected
+                                                                ? 'bg-indigo-50 text-indigo-900 font-bold border border-indigo-200/80 shadow-2xs'
+                                                                : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2.5 truncate">
+                                                            <Icon className={`w-4 h-4 shrink-0 ${tab.color}`} />
+                                                            <span className="truncate">{tab.label}</span>
+                                                        </div>
+                                                        {tab.count !== undefined && (
+                                                            <span className={`ml-2 px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold shrink-0 ${tab.countColor}`}>
+                                                                {tab.count}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
                         {/* Junior Actions */}
                         {currentRole === 'junior' && (
                             <div className="flex items-center gap-2 flex-wrap">
-                                {/* Prominent Senior Auditor Selection for Junior Article */}
-                                <div className="flex items-center gap-2 bg-indigo-50/90 border border-indigo-200/90 rounded-xl px-3 py-1 text-xs shadow-2xs">
-                                    <UserCheck className="w-4 h-4 text-indigo-700 shrink-0" />
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-900">
-                                            Assign Senior Reviewer:
-                                        </span>
-                                        <select
-                                            disabled={!isJuniorAllowedToEdit}
-                                            value={selectedSenior}
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                setSelectedSenior(val);
-                                                setAuditHeader(prev => ({ ...prev, reviewedBy: val }));
-                                            }}
-                                            className="bg-transparent font-bold text-indigo-950 text-xs focus:outline-none cursor-pointer max-w-[210px] truncate disabled:cursor-not-allowed"
-                                            title="Select which Senior CA Partner will receive this audit"
-                                        >
-                                            {availableSeniorOptions.length > 0 ? (
-                                                availableSeniorOptions.map(opt => (
-                                                    <option key={opt} value={opt}>{opt}</option>
-                                                ))
-                                            ) : (
-                                                <option value="" disabled>-- No Senior Configured --</option>
-                                            )}
-                                        </select>
-                                    </div>
-                                </div>
-
                                 <button
                                     type="button"
                                     onClick={handleOpenSubmitReviewModal}
@@ -3956,80 +5640,6 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         </div>
                     </div>
                 )}
-
-                {/* ─── 5 Main Tabs Navigation ────────────────────────────────────── */}
-                <nav className="max-w-[1520px] mx-auto mt-2 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-2xs p-1.5 flex items-center gap-1 text-xs font-bold overflow-x-auto">
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('scope')}
-                        className={`py-2 px-4 rounded-xl flex items-center gap-2 transition cursor-pointer ${
-                            activeTab === 'scope'
-                                ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                        }`}
-                    >
-                        <Layers className="w-4 h-4 text-indigo-600" />
-                        <span>1. Basic Details &amp; Scope</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('profitability')}
-                        className={`py-2 px-4 rounded-xl flex items-center gap-2 transition cursor-pointer ${
-                            activeTab === 'profitability'
-                                ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                        }`}
-                    >
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        <span>2. Profitability Status</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('verification')}
-                        className={`py-2 px-4 rounded-xl flex items-center gap-2 transition cursor-pointer ${
-                            activeTab === 'verification'
-                                ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                        }`}
-                    >
-                        <FileCheck2 className="w-4 h-4 text-indigo-600" />
-                        <span>3. Core Verification Workings (3.1–3.7)</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('observations')}
-                        className={`py-2 px-4 rounded-xl flex items-center gap-2 transition cursor-pointer ${
-                            activeTab === 'observations'
-                                ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                        }`}
-                    >
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        <span>4. Current Period Observations</span>
-                        <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-mono">
-                            {observations.length}
-                        </span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('pending')}
-                        className={`py-2 px-4 rounded-xl flex items-center gap-2 transition cursor-pointer ${
-                            activeTab === 'pending'
-                                ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-                        }`}
-                    >
-                        <Clock className="w-4 h-4 text-blue-600" />
-                        <span>5. Previous Audit Pending Points</span>
-                        <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-800 font-mono">
-                            {pendingPoints.filter(p => p.status !== 'Cleared').length}
-                        </span>
-                    </button>
-                </nav>
             </header>
 
             {/* ─── STANDALONE MAIN WORKSPACE CANVAS ─────────────────────────────── */}
@@ -4083,18 +5693,6 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         onChange={(e) => setAuditHeader(prev => ({ ...prev, firmRegistrationNo: e.target.value }))}
                                         className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-mono font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
                                         placeholder="e.g. 123456W"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1.5">Partner Membership No.</label>
-                                    <input
-                                        type="text"
-                                        disabled={!isJuniorAllowedToEdit}
-                                        value={auditHeader.membershipNo || ''}
-                                        onChange={(e) => setAuditHeader(prev => ({ ...prev, membershipNo: e.target.value }))}
-                                        className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 font-mono font-medium border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                        placeholder="e.g. 158942"
                                     />
                                 </div>
 
@@ -4521,153 +6119,32 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             )}
                         </div>
 
-                        {/* 3. 5 Core Registers Vouching Scope Checklist */}
-                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6">
-                            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <Layers className="w-4 h-4 text-indigo-600" />
-                                <span>3. 5 Core Registers Vouching Scope Checklist</span>
-                            </h2>
-
-                            <div className="overflow-x-auto rounded-xl border border-slate-200">
-                                <table className="w-full text-left text-xs">
-                                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] border-b border-slate-200">
-                                        <tr>
-                                            <th className="py-3 px-4">Register Name</th>
-                                            <th className="py-3 px-4">Sampling Technique Used (SA 530)</th>
-                                            <th className="py-3 px-4">Sample % Checked</th>
-                                            <th className="py-3 px-4">Total Vouchers</th>
-                                            <th className="py-3 px-4">Audited Amount (₹)</th>
-                                            <th className="py-3 px-4">Auditor Notes &amp; Observations</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {registers.map((r, idx) => (
-                                            <tr key={r.key} className="hover:bg-slate-50/80 transition-colors">
-                                                <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">{r.registerName}</td>
-                                                <td className="py-3 px-4">
-                                                    <select
-                                                        disabled={!isJuniorAllowedToEdit}
-                                                        value={r.samplingTechnique || (r.vouched === 'Yes' ? '100% Comprehensive Examination' : 'Stratified Sampling')}
-                                                        onChange={(e) => {
-                                                            const updated = [...registers];
-                                                            updated[idx].samplingTechnique = e.target.value;
-                                                            updated[idx].vouched = e.target.value.includes('100%') ? 'Yes' : 'Partial';
-                                                            setRegisters(updated);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition cursor-pointer max-w-[280px]"
-                                                    >
-                                                        <option value="Random Selection (Simple Random Sampling)">
-                                                            Random Selection (Simple Random Sampling)
-                                                        </option>
-                                                        <option value="Systematic Selection (Interval Sampling)">
-                                                            Systematic Selection (Interval Sampling)
-                                                        </option>
-                                                        <option value="Stratified Sampling">
-                                                            Stratified Sampling (Value-Stratified)
-                                                        </option>
-                                                        <option value="Monetary Unit Sampling (MUS)">
-                                                            Monetary Unit Sampling (MUS)
-                                                        </option>
-                                                        <option value="100% Comprehensive Examination">
-                                                            100% Comprehensive Examination
-                                                        </option>
-                                                        <option value="Haphazard Selection">
-                                                            Haphazard Selection
-                                                        </option>
-                                                    </select>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <input
-                                                        type="text"
-                                                        disabled={!isJuniorAllowedToEdit}
-                                                        value={r.sampleChecked}
-                                                        onChange={(e) => {
-                                                            const updated = [...registers];
-                                                            updated[idx].sampleChecked = e.target.value;
-                                                            setRegisters(updated);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-24 focus:outline-none"
-                                                    />
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <input
-                                                        type="number"
-                                                        disabled={!isJuniorAllowedToEdit}
-                                                        value={r.totalVouchers}
-                                                        onChange={(e) => {
-                                                            const updated = [...registers];
-                                                            updated[idx].totalVouchers = Number(e.target.value) || 0;
-                                                            setRegisters(updated);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-24 focus:outline-none"
-                                                    />
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <input
-                                                        type="number"
-                                                        disabled={!isJuniorAllowedToEdit}
-                                                        value={r.auditedAmount}
-                                                        onChange={(e) => {
-                                                            const updated = [...registers];
-                                                            updated[idx].auditedAmount = Number(e.target.value) || 0;
-                                                            setRegisters(updated);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-mono w-32 focus:outline-none"
-                                                    />
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <input
-                                                        type="text"
-                                                        disabled={!isJuniorAllowedToEdit}
-                                                        value={r.remarks}
-                                                        onChange={(e) => {
-                                                            const updated = [...registers];
-                                                            updated[idx].remarks = e.target.value;
-                                                            setRegisters(updated);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 w-full focus:outline-none"
-                                                        placeholder="Vouching notes..."
-                                                    />
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* ICAI SA 530 Audit Sampling Technical Reference Callout */}
-                            <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2.5">
-                                <div className="font-bold text-slate-900 flex items-center gap-2">
-                                    <Sparkles className="w-4 h-4 text-indigo-600" />
-                                    <span>ICAI SA 530 — Standardized Audit Sampling Techniques Guide:</span>
+                        {/* 3. 5 Core Registers Vouching Scope Quick Access Banner */}
+                        <div className="p-5 rounded-2xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50/70 via-slate-50 to-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                    <Layers className="w-5 h-5" />
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-slate-600">
-                                    <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
-                                        <span className="font-bold text-slate-900 block mb-1">
-                                            • Random Selection (Simple Random Sampling):
+                                <div>
+                                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                        <span>3. 5 Core Registers Vouching Scope Checklist</span>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                            SA 530
                                         </span>
-                                        <span>Items are selected using random number tables or computer generators (like audit software). Every single voucher in the population has an equal chance of selection.</span>
-                                    </div>
-                                    <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
-                                        <span className="font-bold text-slate-900 block mb-1">
-                                            • Systematic Selection (Interval Sampling):
-                                        </span>
-                                        <span>The auditor selects items at regular intervals determined by a calculated sampling gap (e.g., checking every 20th invoice voucher) after a randomly chosen starting point.</span>
-                                    </div>
-                                    <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
-                                        <span className="font-bold text-slate-900 block mb-1">
-                                            • Stratified Sampling:
-                                        </span>
-                                        <span>The population is divided into separate groups (strata) based on specific characteristics—such as grouping vouchers by monetary value (e.g., above ₹1,00,000). Random or systematic sampling is then applied to each group.</span>
-                                    </div>
-                                    <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
-                                        <span className="font-bold text-slate-900 block mb-1">
-                                            • Monetary Unit Sampling (MUS):
-                                        </span>
-                                        <span>A value-weighted selection method where the sample size, selection, and evaluation result in a conclusion in monetary amounts rather than transaction counts.</span>
-                                    </div>
+                                    </h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Vouching scope and audit sampling framework shifted to <strong>Audit Sections &amp; Workings</strong> for focused working paper execution.
+                                    </p>
                                 </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('vouching')}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                            >
+                                <span>Open Vouching Scope</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
                         </div>
                     </div>
                 )}
@@ -5303,90 +6780,224 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 {/* ─── TAB 3: Core Verification Workings (3.1–3.7) ────────────────── */}
                 {activeTab === 'verification' && (
                     <div className="space-y-5">
-                        {/* Sub-tab Navigation Pill Bar */}
-                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-1.5 flex items-center gap-1.5 overflow-x-auto text-xs font-semibold">
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('sales')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'sales'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.1 Sales (Reco R1)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('purchase')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'purchase'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.2 Purchase (Reco 2B)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('journal')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'journal'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.3 Journal &amp; TDS
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('bank')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'bank'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.4 Bank, Loans &amp; 26AS
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('roc')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'roc'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.5 ROC Charges
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('cash')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer ${
-                                    verificationSubTab === 'cash'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                3.6 Cash 40A(3) &amp; FA
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVerificationSubTab('labor')}
-                                className={`px-3.5 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 ${
-                                    verificationSubTab === 'labor'
-                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                }`}
-                            >
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                                <span>3.7 Labor Compliances</span>
-                            </button>
+                        {/* Sub-working Navigation Dropdown Menu */}
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-2.5 flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-3">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1 hidden sm:inline">
+                                    Working Paper:
+                                </span>
+                                <div className="relative">
+                                    {(() => {
+                                        let currentIcon = Layers;
+                                        let currentLabel = '3.0 Vouching Scope';
+                                        let currentBadge = 'Checklist';
+                                        let currentColor = 'text-indigo-600';
+                                        let currentBg = 'bg-indigo-50';
+
+                                        if (isGstActive) {
+                                            currentIcon = FileSpreadsheet;
+                                            currentLabel = 'GST Workings';
+                                            currentBadge = 'GSTR-1 & 2B';
+                                            currentColor = 'text-blue-600';
+                                            currentBg = 'bg-blue-50';
+                                        } else {
+                                            const found = verificationSubTabs.find(t => t.id === verificationSubTab) || verificationSubTabs[0];
+                                            currentIcon = found.icon;
+                                            currentLabel = found.label;
+                                            currentBadge = found.badge;
+                                            currentColor = found.color;
+                                            currentBg = found.bg;
+                                        }
+                                        const SubIcon = currentIcon;
+                                        return (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsVerificationSubTabOpen(prev => !prev)}
+                                                    className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/90 hover:border-indigo-300 text-slate-900 font-bold text-xs shadow-2xs transition cursor-pointer group"
+                                                    title="Select Verification Working"
+                                                >
+                                                    <div className={`p-1 rounded-lg ${currentBg} ${currentColor} shrink-0`}>
+                                                        <SubIcon className="w-3.5 h-3.5" />
+                                                    </div>
+                                                    <span className="font-extrabold">{currentLabel}</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${currentBg} ${currentColor} border border-slate-200/60`}>
+                                                        {currentBadge}
+                                                    </span>
+                                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${isVerificationSubTabOpen ? 'rotate-180' : ''}`} />
+                                                </button>
+
+                                                {isVerificationSubTabOpen && (
+                                                    <>
+                                                        <div className="fixed inset-0 z-40" onClick={() => setIsVerificationSubTabOpen(false)} />
+                                                        <div className="absolute left-0 top-full mt-2 w-76 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-pop-in ring-1 ring-slate-200">
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                                                                <span>Core Verification Workings</span>
+                                                                <span className="text-[9px] font-mono font-normal text-slate-400">7 Modules</span>
+                                                            </div>
+                                                            <div className="py-1 flex flex-col gap-0.5 max-h-[300px] overflow-y-auto">
+                                                                {verificationSubTabs.map(tab => {
+                                                                    const Icon = tab.icon;
+                                                                    const isSelected = tab.id === 'gst' ? isGstActive : verificationSubTab === tab.id;
+                                                                    return (
+                                                                        <button
+                                                                            key={tab.id}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setVerificationSubTab(tab.id as any);
+                                                                                setIsVerificationSubTabOpen(false);
+                                                                            }}
+                                                                            title={tab.subtitle}
+                                                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
+                                                                                isSelected
+                                                                                    ? 'bg-indigo-50 text-indigo-950 font-bold border border-indigo-200/90 shadow-2xs'
+                                                                                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+                                                                            }`}
+                                                                        >
+                                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                                <div className={`p-1 rounded-lg ${tab.bg} ${tab.color} shrink-0`}>
+                                                                                    <Icon className="w-3.5 h-3.5" />
+                                                                                </div>
+                                                                                <span className="font-bold text-slate-800 truncate text-xs">{tab.label}</span>
+                                                                            </div>
+                                                                            <span className={`ml-2 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold shrink-0 ${tab.bg} ${tab.color} border border-slate-200/60`}>
+                                                                                {tab.badge}
+                                                                            </span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+
+                            {/* Previous & Next Stepper Controls */}
+                            {(() => {
+                                const STEPPER_STEPS = [
+                                    { id: 'vouching', label: '3.0 Vouching Scope' },
+                                    { id: 'gst', label: 'GST Workings' },
+                                    { id: 'journal', label: '3.3 TDS Working' },
+                                    { id: 'bank', label: '3.4 Bank, Loans & 26AS' },
+                                    { id: 'roc', label: '3.5 ROC Charges' },
+                                    { id: 'cash', label: '3.6 Cash 40A(3) & FA' },
+                                    { id: 'labor', label: '3.7 Labor Compliances' }
+                                ] as const;
+
+                                const currentStepIndex = (() => {
+                                    if (verificationSubTab === 'vouching') return 0;
+                                    if (isGstActive) return 1;
+                                    if (verificationSubTab === 'journal') return 2;
+                                    if (verificationSubTab === 'bank') return 3;
+                                    if (verificationSubTab === 'roc') return 4;
+                                    if (verificationSubTab === 'cash') return 5;
+                                    if (verificationSubTab === 'labor') return 6;
+                                    return 1;
+                                })();
+
+                                const handleStep = (targetIdx: number) => {
+                                    const target = STEPPER_STEPS[targetIdx];
+                                    if (!target) return;
+                                    setVerificationSubTab(target.id as any);
+                                };
+
+                                return (
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                        <button
+                                            type="button"
+                                            disabled={currentStepIndex <= 0}
+                                            onClick={() => handleStep(currentStepIndex - 1)}
+                                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-semibold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                            title="Previous Working"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                            <span className="hidden sm:inline">Prev</span>
+                                        </button>
+                                        <span className="text-[11px] font-mono text-slate-400 px-1 font-bold">
+                                            {currentStepIndex + 1} / {STEPPER_STEPS.length}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            disabled={currentStepIndex >= STEPPER_STEPS.length - 1}
+                                            onClick={() => handleStep(currentStepIndex + 1)}
+                                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-semibold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                            title="Next Working"
+                                        >
+                                            <span className="hidden sm:inline">Next</span>
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
-                        {/* 3.1 Sales Reco View */}
-                        {verificationSubTab === 'sales' && (() => {
+                        {/* 3.0 Vouching Scope Checklist View */}
+                        {verificationSubTab === 'vouching' && renderVouchingScopeSection()}
+
+                        {/* ─── 3.1 & 3.2 GST Workings (Merged Container) ────────────────────────── */}
+                        {isGstActive && (
+                            <div className="space-y-4 animate-in fade-in-50 duration-200">
+                                {/* GST Sub-Module Switcher Bar */}
+                                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-2.5 flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 pl-1 hidden sm:inline">
+                                            GST Module:
+                                        </span>
+                                        <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setGstSubTab('sales');
+                                                    setVerificationSubTab('gst');
+                                                }}
+                                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                                                    activeGstSubTab === 'sales'
+                                                        ? 'bg-white text-blue-900 shadow-2xs border border-blue-200/90 font-extrabold'
+                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                                }`}
+                                            >
+                                                <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
+                                                <span>3.1 Sales (Reco R1)</span>
+                                                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200 font-bold">
+                                                    GSTR-1
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setGstSubTab('purchase');
+                                                    setVerificationSubTab('gst');
+                                                }}
+                                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                                                    activeGstSubTab === 'purchase'
+                                                        ? 'bg-white text-emerald-900 shadow-2xs border border-emerald-200/90 font-extrabold'
+                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                                }`}
+                                            >
+                                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                                <span>3.2 Purchase (Reco 2B)</span>
+                                                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                                                    GSTR-2B
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-[11px] text-slate-500 pr-2 hidden md:flex items-center gap-2">
+                                        <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+                                        <span>R1 Outward vs Books</span>
+                                        <span className="text-slate-300">•</span>
+                                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span>2B Inward vs Books (Sec 16(2)(aa))</span>
+                                    </div>
+                                </div>
+
+                                {/* 3.1 Sales Reco View */}
+                                {activeGstSubTab === 'sales' && (() => {
                             const monthsList = [
                                 'April', 'May', 'June', 'July', 'August', 'September',
                                 'October', 'November', 'December', 'January', 'February', 'March'
@@ -6251,29 +7862,119 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                         })()}
 
                         {/* 3.2 Purchase Reco View */}
-                        {verificationSubTab === 'purchase' && (() => {
+                        {activeGstSubTab === 'purchase' && (() => {
+                            const monthsList = [
+                                'April', 'May', 'June', 'July', 'August', 'September',
+                                'October', 'November', 'December', 'January', 'February', 'March'
+                            ];
+
+                            const isFullFy = purchaseSelectedPeriod === 'FULL_FY';
+                            const effectiveMonth = purchaseSelectedPeriod === 'active' ? selectedMonth : purchaseSelectedPeriod;
+                            const activeMonthIdx = monthsList.findIndex(m => m.toLowerCase() === effectiveMonth.toLowerCase());
+                            const safeMonthIdx = activeMonthIdx >= 0 ? activeMonthIdx : 0;
+                            const activeMonthName = isFullFy ? 'FULL FY TOTAL (APR - MAR)' : monthsList[safeMonthIdx];
+
+                            const booksRow = isFullFy
+                                ? {
+                                    cgst: purchaseMatrixTotals.books.cgst,
+                                    sgst: purchaseMatrixTotals.books.sgst,
+                                    igst: purchaseMatrixTotals.books.igst,
+                                    cess: purchaseMatrixTotals.books.cess,
+                                    nilRated: purchaseMatrixTotals.books.nilRated,
+                                    totalTax: purchaseMatrixTotals.books.totalTax
+                                }
+                                : {
+                                    cgst: purchaseMatrixData[safeMonthIdx]?.books?.cgst || 0,
+                                    sgst: purchaseMatrixData[safeMonthIdx]?.books?.sgst || 0,
+                                    igst: purchaseMatrixData[safeMonthIdx]?.books?.igst || 0,
+                                    cess: purchaseMatrixData[safeMonthIdx]?.books?.cess || 0,
+                                    nilRated: purchaseMatrixData[safeMonthIdx]?.books?.nilRated || 0,
+                                    totalTax: (purchaseMatrixData[safeMonthIdx]?.books?.cgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.books?.sgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.books?.igst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.books?.cess || 0)
+                                };
+
+                            const gstr2bRow = isFullFy
+                                ? {
+                                    cgst: purchaseMatrixTotals.gstr2b.cgst,
+                                    sgst: purchaseMatrixTotals.gstr2b.sgst,
+                                    igst: purchaseMatrixTotals.gstr2b.igst,
+                                    cess: purchaseMatrixTotals.gstr2b.cess,
+                                    nilRated: purchaseMatrixTotals.gstr2b.nilRated,
+                                    totalTax: purchaseMatrixTotals.gstr2b.totalTax
+                                }
+                                : {
+                                    cgst: purchaseMatrixData[safeMonthIdx]?.gstr2b?.cgst || 0,
+                                    sgst: purchaseMatrixData[safeMonthIdx]?.gstr2b?.sgst || 0,
+                                    igst: purchaseMatrixData[safeMonthIdx]?.gstr2b?.igst || 0,
+                                    cess: purchaseMatrixData[safeMonthIdx]?.gstr2b?.cess || 0,
+                                    nilRated: purchaseMatrixData[safeMonthIdx]?.gstr2b?.nilRated || 0,
+                                    totalTax: (purchaseMatrixData[safeMonthIdx]?.gstr2b?.cgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr2b?.sgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr2b?.igst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr2b?.cess || 0)
+                                };
+
+                            const gstr3bRow = isFullFy
+                                ? {
+                                    cgst: purchaseMatrixTotals.gstr3b.cgst,
+                                    sgst: purchaseMatrixTotals.gstr3b.sgst,
+                                    igst: purchaseMatrixTotals.gstr3b.igst,
+                                    cess: purchaseMatrixTotals.gstr3b.cess,
+                                    nilRated: purchaseMatrixTotals.gstr3b.nilRated,
+                                    totalTax: purchaseMatrixTotals.gstr3b.totalTax
+                                }
+                                : {
+                                    cgst: purchaseMatrixData[safeMonthIdx]?.gstr3b?.cgst || 0,
+                                    sgst: purchaseMatrixData[safeMonthIdx]?.gstr3b?.sgst || 0,
+                                    igst: purchaseMatrixData[safeMonthIdx]?.gstr3b?.igst || 0,
+                                    cess: purchaseMatrixData[safeMonthIdx]?.gstr3b?.cess || 0,
+                                    nilRated: purchaseMatrixData[safeMonthIdx]?.gstr3b?.nilRated || 0,
+                                    totalTax: (purchaseMatrixData[safeMonthIdx]?.gstr3b?.cgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr3b?.sgst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr3b?.igst || 0) +
+                                              (purchaseMatrixData[safeMonthIdx]?.gstr3b?.cess || 0)
+                                };
+
+                            const diff2b = {
+                                cgst: booksRow.cgst - gstr2bRow.cgst,
+                                sgst: booksRow.sgst - gstr2bRow.sgst,
+                                igst: booksRow.igst - gstr2bRow.igst,
+                                cess: booksRow.cess - gstr2bRow.cess,
+                                nilRated: booksRow.nilRated - gstr2bRow.nilRated,
+                                totalTax: booksRow.totalTax - gstr2bRow.totalTax
+                            };
+
+                            const diff3b = {
+                                cgst: booksRow.cgst - gstr3bRow.cgst,
+                                sgst: booksRow.sgst - gstr3bRow.sgst,
+                                igst: booksRow.igst - gstr3bRow.igst,
+                                cess: booksRow.cess - gstr3bRow.cess,
+                                nilRated: booksRow.nilRated - gstr3bRow.nilRated,
+                                totalTax: booksRow.totalTax - gstr3bRow.totalTax
+                            };
+
+                            const diffDrc = {
+                                cgst: gstr3bRow.cgst - gstr2bRow.cgst,
+                                sgst: gstr3bRow.sgst - gstr2bRow.sgst,
+                                igst: gstr3bRow.igst - gstr2bRow.igst,
+                                cess: gstr3bRow.cess - gstr2bRow.cess,
+                                nilRated: gstr3bRow.nilRated - gstr2bRow.nilRated,
+                                totalTax: gstr3bRow.totalTax - gstr2bRow.totalTax
+                            };
+
                             const renderDiffCell = (diff: number) => {
                                 const isZero = diff === 0;
                                 return (
-                                    <td className="p-1.5 text-right font-mono text-xs">
-                                        <span className={`px-1.5 py-0.5 rounded block ${
+                                    <td className="p-3 text-right font-mono text-xs">
+                                        <span className={`px-2.5 py-1 rounded-lg inline-block ${
                                             isZero
-                                                ? 'text-slate-400 font-normal'
-                                                : (diff > 0 ? 'text-amber-700 bg-amber-50 font-bold' : 'text-rose-700 bg-rose-50 font-bold')
+                                                ? 'text-slate-400 font-normal bg-slate-50'
+                                                : (diff > 0 ? 'text-amber-700 bg-amber-50 font-bold border border-amber-200' : 'text-rose-700 bg-rose-50 font-bold border border-rose-200')
                                         }`}>
                                             {isZero ? '₹0' : (diff > 0 ? `+₹${diff.toLocaleString('en-IN')}` : `-₹${Math.abs(diff).toLocaleString('en-IN')}`)}
                                         </span>
-                                    </td>
-                                );
-                            };
-
-                            const renderDiffTotalCell = (diff: number) => {
-                                const isZero = diff === 0;
-                                return (
-                                    <td className={`p-2 text-right font-mono ${
-                                        isZero ? 'text-slate-400 font-normal' : (diff > 0 ? 'text-amber-400 font-bold' : 'text-rose-400 font-bold')
-                                    }`}>
-                                        {isZero ? '₹0' : (diff > 0 ? `+₹${diff.toLocaleString('en-IN')}` : `-₹${Math.abs(diff).toLocaleString('en-IN')}`)}
                                     </td>
                                 );
                             };
@@ -6632,461 +8333,399 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         </div>
                                     )}
 
-                                    {/* The 12-Month 5-Block 3-Way Reconciliation Table (NO TAXABLE COLUMN) */}
-                                    <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-2xs max-h-[640px] relative">
-                                        <table className="w-full text-left border-collapse text-xs">
-                                            <thead className="sticky top-0 z-30 shadow-xs">
-                                                {/* Header Row 1: Block Grouping Titles */}
-                                                <tr className="divide-x divide-slate-200 text-center font-bold uppercase tracking-wider text-[11px]">
-                                                    <th className="sticky left-0 z-40 bg-slate-100 text-slate-800 p-2.5 text-left min-w-[130px] border-r border-b border-slate-300">
-                                                        Month / Period
-                                                    </th>
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <th colSpan={6} className="bg-blue-100/90 text-blue-950 p-2 border-b border-blue-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-blue-600" />
-                                                                1. As Per Books (Purchase Register)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <th colSpan={6} className="bg-indigo-100/90 text-indigo-950 p-2 border-b border-indigo-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-indigo-600" />
-                                                                2. As Per GSTR-2B (Portal Inward Supplies)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b') && (
-                                                        <th colSpan={6} className="bg-amber-100/90 text-amber-950 p-2 border-b border-amber-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-amber-600" />
-                                                                3. Comparison: Books vs GSTR-2B (Books - 2B)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <th colSpan={6} className="bg-purple-100/90 text-purple-950 p-2 border-b border-purple-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-purple-600" />
-                                                                4. As Per GSTR-3B (ITC Availed)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <th colSpan={6} className="bg-rose-100/90 text-rose-950 p-2 border-b border-rose-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-rose-600" />
-                                                                5. Comparison: Books vs GSTR-3B (Books - 3B)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                    {purchaseMatrixViewMode === 'drc01c' && (
-                                                        <th colSpan={6} className="bg-red-200 text-red-950 p-2 border-b border-red-300">
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
-                                                                Rule 88D / DRC-01C Diff: GSTR-3B vs GSTR-2B (3B - 2B)
-                                                            </span>
-                                                        </th>
-                                                    )}
-                                                </tr>
+                                    {/* ─── Period Selector Bar ─── */}
+                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mr-1">
+                                                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                                                <span>Period View:</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPurchaseSelectedPeriod('active')}
+                                                className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-bold flex items-center gap-1.5 ${
+                                                    purchaseSelectedPeriod === 'active' || purchaseSelectedPeriod === selectedMonth
+                                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                                <span>Active Audit Month ({selectedMonth})</span>
+                                            </button>
 
-                                                {/* Header Row 2: Sub-column Labels (NO TAXABLE) */}
-                                                <tr className="divide-x divide-slate-200 text-center font-semibold text-[10px] text-slate-600 uppercase tracking-tight">
-                                                    <th className="sticky left-0 z-40 bg-slate-100 text-slate-700 p-2 text-left border-r border-b border-slate-300">
-                                                        FY Month
-                                                    </th>
-                                                    {/* Books Columns */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">Cess</th>
-                                                            <th className="bg-blue-50/70 text-blue-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-blue-100/90 text-blue-950 p-2 min-w-[95px] font-bold">Total ITC</th>
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-2B Columns */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">Cess</th>
-                                                            <th className="bg-indigo-50/70 text-indigo-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-indigo-100/90 text-indigo-950 p-2 min-w-[95px] font-bold">Total ITC</th>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs 2B Columns */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b') && (
-                                                        <>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff Cess</th>
-                                                            <th className="bg-amber-50/70 text-amber-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-amber-100/90 text-amber-950 p-2 min-w-[95px] font-bold">Diff Total</th>
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-3B Columns */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">CGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">SGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">IGST</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">Cess</th>
-                                                            <th className="bg-purple-50/70 text-purple-900 p-2 min-w-[85px]">Nil/Exempt</th>
-                                                            <th className="bg-purple-100/90 text-purple-950 p-2 min-w-[95px] font-bold">Total ITC</th>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs 3B Columns */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff Cess</th>
-                                                            <th className="bg-rose-50/70 text-rose-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-rose-100/90 text-rose-950 p-2 min-w-[95px] font-bold">Diff Total</th>
-                                                        </>
-                                                    )}
-                                                    {/* DRC-01C Diff Columns */}
-                                                    {purchaseMatrixViewMode === 'drc01c' && (
-                                                        <>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff CGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff SGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff IGST</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff Cess</th>
-                                                            <th className="bg-red-50 text-red-900 p-2 min-w-[85px]">Diff Nil</th>
-                                                            <th className="bg-red-200 text-red-950 p-2 min-w-[95px] font-bold">Diff Total</th>
-                                                        </>
-                                                    )}
-                                                </tr>
-                                            </thead>
+                                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                                                {monthsList.map((m) => (
+                                                    <button
+                                                        key={m}
+                                                        type="button"
+                                                        onClick={() => setPurchaseSelectedPeriod(m)}
+                                                        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${
+                                                            (purchaseSelectedPeriod === m) || (purchaseSelectedPeriod === 'active' && m === selectedMonth)
+                                                                ? 'bg-indigo-100 text-indigo-900 font-bold'
+                                                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                                        }`}
+                                                        title={m}
+                                                    >
+                                                        {m.slice(0, 3)}
+                                                    </button>
+                                                ))}
+                                            </div>
 
-                                            <tbody className="divide-y divide-slate-200">
-                                                {purchaseMatrixData.map((row, idx) => {
-                                                    const isSelected = row.month.toLowerCase() === selectedMonth.toLowerCase();
-                                                    const booksRowTotal = (row.books?.cgst || 0) + (row.books?.sgst || 0) + (row.books?.igst || 0) + (row.books?.cess || 0);
-                                                    const twoBRowTotal = (row.gstr2b?.cgst || 0) + (row.gstr2b?.sgst || 0) + (row.gstr2b?.igst || 0) + (row.gstr2b?.cess || 0);
-                                                    const threeBRowTotal = (row.gstr3b?.cgst || 0) + (row.gstr3b?.sgst || 0) + (row.gstr3b?.igst || 0) + (row.gstr3b?.cess || 0);
+                                            <button
+                                                type="button"
+                                                onClick={() => setPurchaseSelectedPeriod('FULL_FY')}
+                                                className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-bold ${
+                                                    purchaseSelectedPeriod === 'FULL_FY'
+                                                        ? 'bg-slate-900 text-amber-400 shadow-2xs'
+                                                        : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                FULL FY TOTAL (APR - MAR)
+                                            </button>
+                                        </div>
 
-                                                    return (
-                                                        <tr
-                                                            key={row.month}
-                                                            className={`divide-x divide-slate-100 transition hover:bg-slate-50/80 ${
-                                                                isSelected ? 'bg-indigo-50/30' : ''
-                                                            }`}
-                                                        >
-                                                            {/* Sticky Month Cell */}
-                                                            <td className={`sticky left-0 z-20 p-2.5 font-bold border-r border-slate-200 whitespace-nowrap text-xs ${
-                                                                isSelected
-                                                                    ? 'bg-indigo-100/90 text-indigo-950 ring-1 ring-inset ring-indigo-400'
-                                                                    : 'bg-white text-slate-800'
-                                                            }`}>
-                                                                <div className="flex items-center justify-between gap-1.5">
-                                                                    <span>{row.month}</span>
-                                                                    {isSelected && (
-                                                                        <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-600 text-white font-mono font-bold">
-                                                                            ACTIVE
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-
-                                                            {/* Block 1: Books */}
-                                                            {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'books_3b') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.cgst === 0 ? '' : row.books?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'books', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.sgst === 0 ? '' : row.books?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'books', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.igst === 0 ? '' : row.books?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'books', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.cess === 0 ? '' : row.books?.cess}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'books', 'cess', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-blue-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.books?.nilRated === 0 ? '' : row.books?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'books', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1.5 text-right font-mono font-bold text-blue-950 bg-blue-100/30">
-                                                                        ₹{booksRowTotal.toLocaleString('en-IN')}
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 2: GSTR-2B */}
-                                                            {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr2b?.cgst === 0 ? '' : row.gstr2b?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr2b', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr2b?.sgst === 0 ? '' : row.gstr2b?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr2b', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr2b?.igst === 0 ? '' : row.gstr2b?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr2b', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr2b?.cess === 0 ? '' : row.gstr2b?.cess}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr2b', 'cess', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-indigo-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr2b?.nilRated === 0 ? '' : row.gstr2b?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr2b', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1.5 text-right font-mono font-bold text-indigo-950 bg-indigo-100/30">
-                                                                        ₹{twoBRowTotal.toLocaleString('en-IN')}
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 3: Diff Books vs 2B */}
-                                                            {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b') && (
-                                                                <>
-                                                                    {renderDiffCell((row.books?.cgst || 0) - (row.gstr2b?.cgst || 0))}
-                                                                    {renderDiffCell((row.books?.sgst || 0) - (row.gstr2b?.sgst || 0))}
-                                                                    {renderDiffCell((row.books?.igst || 0) - (row.gstr2b?.igst || 0))}
-                                                                    {renderDiffCell((row.books?.cess || 0) - (row.gstr2b?.cess || 0))}
-                                                                    {renderDiffCell((row.books?.nilRated || 0) - (row.gstr2b?.nilRated || 0))}
-                                                                    {renderDiffCell(booksRowTotal - twoBRowTotal)}
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 4: GSTR-3B */}
-                                                            {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                                <>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.cgst === 0 ? '' : row.gstr3b?.cgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr3b', 'cgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.sgst === 0 ? '' : row.gstr3b?.sgst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr3b', 'sgst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.igst === 0 ? '' : row.gstr3b?.igst}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr3b', 'igst', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.cess === 0 ? '' : row.gstr3b?.cess}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr3b', 'cess', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1 text-right bg-purple-50/20">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={row.gstr3b?.nilRated === 0 ? '' : row.gstr3b?.nilRated}
-                                                                            placeholder="0"
-                                                                            onChange={(e) => handleUpdatePurchaseMatrixCell(idx, 'gstr3b', 'nilRated', e.target.value)}
-                                                                            disabled={!isJuniorAllowedToEdit}
-                                                                            className="w-20 px-1.5 py-1 text-right text-xs font-mono bg-white border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 disabled:bg-slate-50 disabled:text-slate-500"
-                                                                        />
-                                                                    </td>
-                                                                    <td className="p-1.5 text-right font-mono font-bold text-purple-950 bg-purple-100/30">
-                                                                        ₹{threeBRowTotal.toLocaleString('en-IN')}
-                                                                    </td>
-                                                                </>
-                                                            )}
-
-                                                            {/* Block 5: Diff Books vs 3B */}
-                                                            {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b') && (
-                                                                <>
-                                                                    {renderDiffCell((row.books?.cgst || 0) - (row.gstr3b?.cgst || 0))}
-                                                                    {renderDiffCell((row.books?.sgst || 0) - (row.gstr3b?.sgst || 0))}
-                                                                    {renderDiffCell((row.books?.igst || 0) - (row.gstr3b?.igst || 0))}
-                                                                    {renderDiffCell((row.books?.cess || 0) - (row.gstr3b?.cess || 0))}
-                                                                    {renderDiffCell((row.books?.nilRated || 0) - (row.gstr3b?.nilRated || 0))}
-                                                                    {renderDiffCell(booksRowTotal - threeBRowTotal)}
-                                                                </>
-                                                            )}
-
-                                                            {/* DRC-01C View Diff: 3B vs 2B (Rule 88D) */}
-                                                            {purchaseMatrixViewMode === 'drc01c' && (
-                                                                <>
-                                                                    {renderDiffCell((row.gstr3b?.cgst || 0) - (row.gstr2b?.cgst || 0))}
-                                                                    {renderDiffCell((row.gstr3b?.sgst || 0) - (row.gstr2b?.sgst || 0))}
-                                                                    {renderDiffCell((row.gstr3b?.igst || 0) - (row.gstr2b?.igst || 0))}
-                                                                    {renderDiffCell((row.gstr3b?.cess || 0) - (row.gstr2b?.cess || 0))}
-                                                                    {renderDiffCell((row.gstr3b?.nilRated || 0) - (row.gstr2b?.nilRated || 0))}
-                                                                    {renderDiffCell(threeBRowTotal - twoBRowTotal)}
-                                                                </>
-                                                            )}
-                                                        </tr>
-                                                    );
-                                                })}
-
-                                                {/* 13th Row: Full FY Total */}
-                                                <tr className="bg-slate-900 text-white font-bold divide-x divide-slate-800 text-xs">
-                                                    <td className="sticky left-0 z-20 bg-slate-950 text-amber-400 p-2.5 font-bold border-r border-slate-800 whitespace-nowrap">
-                                                        FULL FY TOTAL (APR - MAR)
-                                                    </td>
-                                                    {/* Books FY Totals */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.books.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.books.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.books.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.books.cess.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.books.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-amber-300 font-bold">₹{purchaseMatrixTotals.books.totalTax.toLocaleString('en-IN')}</td>
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-2B FY Totals */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr2b.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr2b.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr2b.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr2b.cess.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr2b.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-amber-300 font-bold">₹{purchaseMatrixTotals.gstr2b.totalTax.toLocaleString('en-IN')}</td>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs 2B FY Totals */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b') && (
-                                                        <>
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.cgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.sgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.igst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.cess)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.nilRated)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff2b.totalTax)}
-                                                        </>
-                                                    )}
-                                                    {/* GSTR-3B FY Totals */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b' || purchaseMatrixViewMode === 'drc01c') && (
-                                                        <>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr3b.cgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr3b.sgst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr3b.igst.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr3b.cess.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-slate-100">₹{purchaseMatrixTotals.gstr3b.nilRated.toLocaleString('en-IN')}</td>
-                                                            <td className="p-2 text-right font-mono text-amber-300 font-bold">₹{purchaseMatrixTotals.gstr3b.totalTax.toLocaleString('en-IN')}</td>
-                                                        </>
-                                                    )}
-                                                    {/* Diff Books vs 3B FY Totals */}
-                                                    {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b') && (
-                                                        <>
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.cgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.sgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.igst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.cess)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.nilRated)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diff3b.totalTax)}
-                                                        </>
-                                                    )}
-                                                    {/* DRC-01C Diff FY Totals */}
-                                                    {purchaseMatrixViewMode === 'drc01c' && (
-                                                        <>
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.cgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.sgst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.igst)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.cess)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.nilRated)}
-                                                            {renderDiffTotalCell(purchaseMatrixTotals.diffDrc.totalTax)}
-                                                        </>
-                                                    )}
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                                        {isFullFy ? (
+                                            <span className="text-[11px] text-amber-700 font-semibold bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                                                Viewing 12-Month Cumulative FY Totals (Select any month to edit values)
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] text-slate-500">
+                                                Editing <span className="font-semibold text-slate-800">{activeMonthName}</span> inward figures
+                                            </span>
+                                        )}
                                     </div>
 
+                                    {/* ─── Compact 3-Way Inward ITC Table (Columns: CGST, SGST, IGST, Cess, Nil/Exempt, Total ITC - NO TAXABLE) ─── */}
+                                    <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-2xs bg-white">
+                                        <table className="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-800 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 divide-x divide-slate-200">
+                                                    <th className="p-3 text-left min-w-[240px]">
+                                                        Source / Return ({isFullFy ? 'Full FY Total' : activeMonthName})
+                                                    </th>
+                                                    <th className="p-3 text-right min-w-[115px]">CGST</th>
+                                                    <th className="p-3 text-right min-w-[115px]">SGST</th>
+                                                    <th className="p-3 text-right min-w-[115px]">IGST</th>
+                                                    <th className="p-3 text-right min-w-[100px]">Cess</th>
+                                                    <th className="p-3 text-right min-w-[100px]">Nil/Exempt</th>
+                                                    <th className="p-3 text-right min-w-[125px] bg-slate-200/80 text-slate-900 font-black">
+                                                        Total ITC
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-200">
+                                                {/* Row 1: As Per Books (Purchase Register) */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'books_3b') && (
+                                                    <tr className="hover:bg-blue-50/20 transition divide-x divide-slate-100">
+                                                        <td className="p-3 font-bold text-blue-950 bg-blue-50/30">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+                                                                <span className="font-bold">1. As Per Books (Purchase Register)</span>
+                                                            </div>
+                                                        </td>
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.cgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={booksRow.cgst === 0 ? '' : booksRow.cgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'books', 'cgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.sgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={booksRow.sgst === 0 ? '' : booksRow.sgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'books', 'sgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.igst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={booksRow.igst === 0 ? '' : booksRow.igst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'books', 'igst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.cess.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={booksRow.cess === 0 ? '' : booksRow.cess}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'books', 'cess', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{booksRow.nilRated.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={booksRow.nilRated === 0 ? '' : booksRow.nilRated}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'books', 'nilRated', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-900 bg-blue-50/40">
+                                                            ₹{booksRow.totalTax.toLocaleString('en-IN')}
+                                                        </td>
+                                                    </tr>
+                                                )}
+
+                                                {/* Row 2: As Per GSTR-2B (Portal Inward Supplies) */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b' || purchaseMatrixViewMode === 'drc01c') && (
+                                                    <tr className="hover:bg-indigo-50/20 transition divide-x divide-slate-100">
+                                                        <td className="p-3 font-bold text-indigo-950 bg-indigo-50/30">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0" />
+                                                                <span className="font-bold">2. As Per GSTR-2B (Portal Inward Supplies)</span>
+                                                            </div>
+                                                        </td>
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr2bRow.cgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr2bRow.cgst === 0 ? '' : gstr2bRow.cgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr2b', 'cgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr2bRow.sgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr2bRow.sgst === 0 ? '' : gstr2bRow.sgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr2b', 'sgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr2bRow.igst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr2bRow.igst === 0 ? '' : gstr2bRow.igst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr2b', 'igst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr2bRow.cess.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr2bRow.cess === 0 ? '' : gstr2bRow.cess}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr2b', 'cess', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr2bRow.nilRated.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr2bRow.nilRated === 0 ? '' : gstr2bRow.nilRated}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr2b', 'nilRated', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-900 bg-indigo-50/40">
+                                                            ₹{gstr2bRow.totalTax.toLocaleString('en-IN')}
+                                                        </td>
+                                                    </tr>
+                                                )}
+
+                                                {/* Row 3: As Per GSTR-3B (ITC Availed) */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b' || purchaseMatrixViewMode === 'drc01c') && (
+                                                    <tr className="hover:bg-purple-50/20 transition divide-x divide-slate-100">
+                                                        <td className="p-3 font-bold text-purple-950 bg-purple-50/30">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
+                                                                <span className="font-bold">4. As Per GSTR-3B (ITC Availed)</span>
+                                                            </div>
+                                                        </td>
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.cgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr3bRow.cgst === 0 ? '' : gstr3bRow.cgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr3b', 'cgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.sgst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr3bRow.sgst === 0 ? '' : gstr3bRow.sgst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr3b', 'sgst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.igst.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr3bRow.igst === 0 ? '' : gstr3bRow.igst}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr3b', 'igst', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[115px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.cess.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr3bRow.cess === 0 ? '' : gstr3bRow.cess}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr3b', 'cess', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {isFullFy ? (
+                                                            <td className="p-3 text-right font-mono font-bold text-slate-800">₹{gstr3bRow.nilRated.toLocaleString('en-IN')}</td>
+                                                        ) : (
+                                                            <td className="p-2 text-right">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gstr3bRow.nilRated === 0 ? '' : gstr3bRow.nilRated}
+                                                                    placeholder="0"
+                                                                    onChange={(e) => handleUpdatePurchaseMatrixCell(safeMonthIdx, 'gstr3b', 'nilRated', e.target.value)}
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    className="w-full max-w-[100px] px-2.5 py-1.5 text-right text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:bg-slate-50"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-900 bg-purple-50/40">
+                                                            ₹{gstr3bRow.totalTax.toLocaleString('en-IN')}
+                                                        </td>
+                                                    </tr>
+                                                )}
+
+                                                {/* Row 4: Diff Books vs GSTR-2B */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_2b') && (
+                                                    <tr className="bg-amber-50/20 hover:bg-amber-50/40 transition font-bold divide-x divide-slate-100 border-t-2 border-slate-200">
+                                                        <td className="p-3 text-amber-950 bg-amber-50/40">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                                                                <span className="font-bold">3. Comparison: Books vs GSTR-2B (Books - 2B)</span>
+                                                            </div>
+                                                        </td>
+                                                        {renderDiffCell(diff2b.cgst)}
+                                                        {renderDiffCell(diff2b.sgst)}
+                                                        {renderDiffCell(diff2b.igst)}
+                                                        {renderDiffCell(diff2b.cess)}
+                                                        {renderDiffCell(diff2b.nilRated)}
+                                                        {renderDiffCell(diff2b.totalTax)}
+                                                    </tr>
+                                                )}
+
+                                                {/* Row 5: Diff Books vs GSTR-3B */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'books_3b') && (
+                                                    <tr className="bg-rose-50/20 hover:bg-rose-50/40 transition font-bold divide-x divide-slate-100">
+                                                        <td className="p-3 text-rose-950 bg-rose-50/40">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                                                                <span className="font-bold">5. Comparison: Books vs GSTR-3B (Books - 3B)</span>
+                                                            </div>
+                                                        </td>
+                                                        {renderDiffCell(diff3b.cgst)}
+                                                        {renderDiffCell(diff3b.sgst)}
+                                                        {renderDiffCell(diff3b.igst)}
+                                                        {renderDiffCell(diff3b.cess)}
+                                                        {renderDiffCell(diff3b.nilRated)}
+                                                        {renderDiffCell(diff3b.totalTax)}
+                                                    </tr>
+                                                )}
+
+                                                {/* Row 6: Rule 88D / DRC-01C Diff: GSTR-3B vs GSTR-2B */}
+                                                {(purchaseMatrixViewMode === 'all' || purchaseMatrixViewMode === 'drc01c') && (
+                                                    <tr className="bg-red-50/30 hover:bg-red-50/50 transition font-bold divide-x divide-slate-100 border-b">
+                                                        <td className="p-3 text-red-950 bg-red-50/50">
+                                                            <div className="flex items-center gap-2">
+                                                                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                                                <span className="font-bold">Rule 88D / DRC-01C Diff: GSTR-3B vs GSTR-2B (3B - 2B)</span>
+                                                            </div>
+                                                        </td>
+                                                        {renderDiffCell(diffDrc.cgst)}
+                                                        {renderDiffCell(diffDrc.sgst)}
+                                                        {renderDiffCell(diffDrc.igst)}
+                                                        {renderDiffCell(diffDrc.cess)}
+                                                        {renderDiffCell(diffDrc.nilRated)}
+                                                        {renderDiffCell(diffDrc.totalTax)}
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                        {/* Inward Reconciliation Metadata & Field Markers: CGST | SGST | IGST | Cess | Nil/Exempt | Total ITC | Diff CGST | Diff SGST | Diff IGST | Diff Cess | Diff Nil | Diff Total */}
+                                    </div>
                                     {/* Statutory Thresholds & Auditor Remarks */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                                         <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3">
@@ -7141,30 +8780,662 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 </div>
                             );
                         })()}
+                    </div>
+                )}
 
-                        {/* 3.3 Journal & TDS View */}
+                        {/* 3.3 TDS Working View (Section-Wise Reconciliation & Statutory Discrepancy Matrix) */}
                         {verificationSubTab === 'journal' && (
-                            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-4">
-                                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                                    3.3 Journal Vouchers &amp; TDS Statutory Deductions (194C, 194Q, 194J)
-                                </h3>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                                        <span className="text-slate-500 font-bold uppercase tracking-wider block mb-1">Suspense Accounts Detected</span>
-                                        <span className="text-lg font-bold font-mono text-amber-700">
-                                            {verification?.journal?.suspenseEntriesCount ?? 0} (₹{(verification?.journal?.suspenseAmount ?? 0).toLocaleString('en-IN')})
+                            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3">
+                                {/* Top Header & Action Controls */}
+                                <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="w-2 h-2 rounded-full bg-purple-600 inline-block" />
+                                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                                            3.3 TDS Working &amp; Statutory Section Matrix
+                                        </h3>
+                                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                            Books vs Actual vs 26Q/24Q
                                         </span>
                                     </div>
-                                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                                        <span className="text-slate-500 font-bold uppercase tracking-wider block mb-1">Transporter 194C(6) Missing PAN</span>
-                                        <span className="text-lg font-bold font-mono text-rose-700">{verification?.journal?.tds194C_MissingPanCount ?? 0} Vouchers</span>
-                                    </div>
-                                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                                        <span className="text-slate-500 font-bold uppercase tracking-wider block mb-1">194Q High Volume (&gt; ₹50L)</span>
-                                        <span className="text-lg font-bold font-mono text-blue-700">{verification?.journal?.tds194Q_HighVolumeCount ?? 0} Vendors</span>
+
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => tdsFileInputRef.current?.click()}
+                                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                                                verification?.journal?.excelAttachment
+                                                    ? 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
+                                                    : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+                                            }`}
+                                            title={verification?.journal?.excelAttachment ? `Working attached: ${verification.journal.excelAttachment.fileName}` : 'Attach TDS working excel or computation sheet'}
+                                        >
+                                            <Paperclip className="w-3 h-3 text-purple-600" />
+                                            <span>{verification?.journal?.excelAttachment ? 'Working Attached' : 'Attach Working'}</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAddTdsSection('194C', 'Contractors / Transporters', 2)}
+                                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                        >
+                                            <Plus className="w-3 h-3" />
+                                            <span>Add Row</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleResetTdsMatrix}
+                                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer border border-slate-200"
+                                            title="Reset to standard default statutory sections"
+                                        >
+                                            <RotateCcw className="w-3 h-3" />
+                                            <span>Reset</span>
+                                        </button>
                                     </div>
                                 </div>
+
+                                {/* 5 Executive KPI Summary Cards - Ultra Compact */}
+                                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+                                    {/* Card 1: Books TDS */}
+                                    <div className="bg-slate-50/80 border border-slate-200/90 rounded-lg p-2 flex flex-col justify-between">
+                                        <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Books TDS Deducted</span>
+                                        <span className="text-sm font-bold font-mono text-slate-900 mt-0.5">
+                                            ₹{tdsMatrixTotals.totalBooksTds.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-[9.5px] text-slate-400">
+                                            Taxable: ₹{tdsMatrixTotals.totalBooksTaxable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                        </span>
+                                    </div>
+
+                                    {/* Card 2: Actual TDS Liable */}
+                                    <div className="bg-purple-50/60 border border-purple-200/90 rounded-lg p-2 flex flex-col justify-between">
+                                        <span className="text-purple-700 text-[10px] font-bold uppercase tracking-wider">Actual TDS Liable</span>
+                                        <span className="text-sm font-bold font-mono text-purple-900 mt-0.5">
+                                            ₹{tdsMatrixTotals.totalActualTds.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-[9.5px] text-purple-600">
+                                            Taxable: ₹{tdsMatrixTotals.totalActualTaxable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                        </span>
+                                    </div>
+
+                                    {/* Card 3: Return TDS Paid */}
+                                    <div className="bg-blue-50/60 border border-blue-200/90 rounded-lg p-2 flex flex-col justify-between">
+                                        <span className="text-blue-700 text-[10px] font-bold uppercase tracking-wider">Return TDS Paid</span>
+                                        <span className="text-sm font-bold font-mono text-blue-900 mt-0.5">
+                                            ₹{tdsMatrixTotals.totalReturnTds.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-[9.5px] text-blue-600">
+                                            26Q / 24Q Deposited
+                                        </span>
+                                    </div>
+
+                                    {/* Card 4: Booking Pending in Books */}
+                                    <div className={`rounded-lg p-2 flex flex-col justify-between border ${
+                                        tdsMatrixTotals.totalBookingPending > 0
+                                            ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs'
+                                            : 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                                    }`}>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center justify-between">
+                                            <span>Booking Pending</span>
+                                            {tdsMatrixTotals.totalBookingPending > 0 && (
+                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                            )}
+                                        </span>
+                                        <span className="text-sm font-bold font-mono mt-0.5">
+                                            ₹{tdsMatrixTotals.totalBookingPending.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-[9.5px] opacity-80">
+                                            {tdsMatrixTotals.totalBookingPending > 0 ? `${tdsMatrixTotals.bookingPendingCount} Sec Unbooked Base` : 'Expenses Fully Booked'}
+                                        </span>
+                                    </div>
+
+                                    {/* Card 5: Net TDS Payable / Short Deduction */}
+                                    <div className={`rounded-lg p-2 flex flex-col justify-between border ${
+                                        tdsMatrixTotals.totalTdsPayable > 0
+                                            ? 'bg-rose-50/90 border-rose-300 text-rose-950 shadow-2xs'
+                                            : 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                                    }`}>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center justify-between">
+                                            <span>TDS Payable</span>
+                                            {tdsMatrixTotals.totalTdsPayable > 0 && (
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                            )}
+                                        </span>
+                                        <span className="text-sm font-bold font-mono mt-0.5">
+                                            ₹{tdsMatrixTotals.totalTdsPayable.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-[9.5px] opacity-80">
+                                            {tdsMatrixTotals.totalTdsPayable > 0 ? `${tdsMatrixTotals.payableCount} Sec Under-Deposited` : 'Zero TDS Due'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Section 40(a)(ia) / 201(1A) Alert Banner - Slim Strip */}
+                                {tdsMatrixTotals.totalTdsPayable > 0 && (
+                                    <div className="bg-rose-50/90 border border-rose-200 rounded-lg p-2 flex items-center justify-between gap-2 text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                                            <span className="font-bold text-rose-900 text-xs">
+                                                Sec 40(a)(ia) 30% Disallowance Exposure: ₹{tdsMatrixTotals.sec40aDisallowance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                            </span>
+                                            <span className="text-[11px] text-rose-700 hidden md:inline">
+                                                (Tax Audit Clause 21(b) add-back if not deposited before Sec 139(1) due date)
+                                            </span>
+                                        </div>
+                                        <span className="px-1.5 py-0.5 bg-rose-200/80 text-rose-800 text-[10px] font-bold rounded-sm shrink-0">
+                                            + Sec 201(1A) Interest
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Filter Navigation Pills & Quick Add */}
+                                <div className="flex items-center justify-between flex-wrap gap-1.5 py-0.5">
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                                            <Filter className="w-3 h-3 text-slate-400" />
+                                            Filter:
+                                        </span>
+                                        {[
+                                            { id: 'all', label: 'All', count: tdsSectionMatrixData.length },
+                                            { id: 'payable', label: 'Payable', count: tdsMatrixTotals.payableCount },
+                                            { id: 'pending_booking', label: 'Unbooked', count: tdsMatrixTotals.bookingPendingCount },
+                                            { id: 'matched', label: 'Matched', count: tdsMatrixTotals.matchedCount }
+                                        ].map(p => {
+                                            const isActive = tdsMatrixFilter === p.id;
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => setTdsMatrixFilter(p.id as any)}
+                                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                                                        isActive
+                                                            ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                                                            : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'
+                                                    }`}
+                                                >
+                                                    <span>{p.label}</span>
+                                                    <span className={`px-1 py-0.1 rounded-full text-[9.5px] font-mono ${
+                                                        isActive ? 'bg-purple-800 text-purple-100' : 'bg-slate-100 text-slate-600'
+                                                    }`}>
+                                                        {p.count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Quick Presets for Adding Specific Sections */}
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[10px] text-slate-400 font-semibold">Quick Add:</span>
+                                        {[
+                                            { sec: '194C', nat: 'Contractors & Transporters', rate: 2 },
+                                            { sec: '194J', nat: 'Professional & Tech Fees', rate: 10 },
+                                            { sec: '194I', nat: 'Rent (Land/Bldg/Mach)', rate: 10 },
+                                            { sec: '194H', nat: 'Commission & Brokerage', rate: 2 },
+                                            { sec: '194Q', nat: 'Purchase of Goods > 50L', rate: 0.1 },
+                                            { sec: '194A', nat: 'Interest on Loans', rate: 10 },
+                                            { sec: '194R', nat: 'Perquisites & Benefits', rate: 10 }
+                                        ].map(item => (
+                                            <button
+                                                key={item.sec}
+                                                type="button"
+                                                onClick={() => handleAddTdsSection(item.sec, item.nat, item.rate)}
+                                                className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-slate-200 text-slate-600 transition cursor-pointer"
+                                                title={`Add ${item.sec} (${item.nat})`}
+                                            >
+                                                +{item.sec}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* High-Density, Space-Efficient Matrix Table */}
+                                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-2xs">
+                                    <table className="w-full text-[11px] text-left border-collapse">
+                                        <thead>
+                                            {/* Header Group Row */}
+                                            <tr className="bg-slate-100 text-slate-700 font-bold text-[10px] border-b border-slate-200 text-center uppercase tracking-wider">
+                                                <th colSpan={3} className="py-1 px-1.5 border-r border-slate-200 bg-slate-100/90 text-left">
+                                                    1. Statutory Section &amp; Nature
+                                                </th>
+                                                <th colSpan={2} className="py-1 px-1.5 border-r border-slate-200 bg-slate-200/60 text-slate-800">
+                                                    2. As Per Books (Tally Accounts)
+                                                </th>
+                                                <th colSpan={2} className="py-1 px-1.5 border-r border-slate-200 bg-purple-100/60 text-purple-900">
+                                                    3. Actual / Liable (Audit Scrutiny)
+                                                </th>
+                                                <th colSpan={2} className="py-1 px-1.5 border-r border-slate-200 bg-blue-100/60 text-blue-900">
+                                                    4. As Per Return (26Q / 24Q)
+                                                </th>
+                                                <th colSpan={3} className="py-1 px-1.5 border-r border-slate-200 bg-amber-100/50 text-amber-950">
+                                                    5. Audit Reconciliations &amp; Variances
+                                                </th>
+                                                <th className="py-1 px-1 bg-slate-100/90 text-center w-6">
+                                                    Act
+                                                </th>
+                                            </tr>
+                                            {/* Sub-Header Column Titles */}
+                                            <tr className="bg-slate-50 text-slate-600 font-bold text-[10px] uppercase border-b border-slate-200">
+                                                <th className="py-1 px-1.5 w-14">Section</th>
+                                                <th className="py-1 px-1.5 min-w-[130px]">Nature of Payment</th>
+                                                <th className="py-1 px-1 w-11 text-right border-r border-slate-200">Rate%</th>
+
+                                                <th className="py-1 px-1.5 min-w-[85px] text-right bg-slate-100/40">Taxable (₹)</th>
+                                                <th className="py-1 px-1.5 min-w-[75px] text-right border-r border-slate-200 bg-slate-100/40">TDS (₹)</th>
+
+                                                <th className="py-1 px-1.5 min-w-[85px] text-right bg-purple-50/40 text-purple-950">Actual Taxable (₹)</th>
+                                                <th className="py-1 px-1.5 min-w-[75px] text-right border-r border-slate-200 bg-purple-50/40 text-purple-950">Actual TDS (₹)</th>
+
+                                                <th className="py-1 px-1.5 min-w-[85px] text-right bg-blue-50/40 text-blue-950">Return Taxable (₹)</th>
+                                                <th className="py-1 px-1.5 min-w-[75px] text-right border-r border-slate-200 bg-blue-50/40 text-blue-950">Return TDS (₹)</th>
+
+                                                <th className="py-1 px-1.5 min-w-[85px] text-right bg-amber-50/50 text-amber-900 font-bold">Unbooked (₹)</th>
+                                                <th className="py-1 px-1.5 min-w-[85px] text-right bg-rose-50/50 text-rose-900 font-bold">Payable (₹)</th>
+                                                <th className="py-1 px-1.5 min-w-[150px] border-r border-slate-200">Status &amp; Notes</th>
+                                                <th className="py-1 px-1 w-6 text-center"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {filteredTdsRows.map(row => {
+                                                const bookingPending = Math.max(0, Number(row.actualTaxable || 0) - Number(row.booksTaxable || 0));
+                                                const tdsPayable = Math.max(0, Number(row.actualTds || 0) - Number(row.returnTds || 0));
+                                                const challanPending = Math.max(0, Number(row.booksTds || 0) - Number(row.returnTds || 0));
+                                                const isMatched = bookingPending === 0 && tdsPayable === 0 && challanPending === 0;
+
+                                                return (
+                                                    <tr key={row.id} className="hover:bg-purple-50/20 transition-colors group">
+                                                        {/* Section Code */}
+                                                        <td className="py-0.5 px-1">
+                                                            <input
+                                                                type="text"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.section}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'section', e.target.value)}
+                                                                className="w-full font-mono font-bold text-purple-950 bg-purple-50/60 border border-purple-200 rounded px-1 py-0.5 text-[11px] focus:ring-1 focus:ring-purple-400 focus:outline-hidden"
+                                                            />
+                                                        </td>
+
+                                                        {/* Nature of Payment */}
+                                                        <td className="py-0.5 px-1">
+                                                            <input
+                                                                type="text"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.natureOfPayment}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'natureOfPayment', e.target.value)}
+                                                                className="w-full text-slate-800 bg-transparent border border-transparent hover:border-slate-200 focus:border-purple-400 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden"
+                                                            />
+                                                        </td>
+
+                                                        {/* Rate % */}
+                                                        <td className="py-0.5 px-0.5 text-right border-r border-slate-200">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.rate || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'rate', e.target.value)}
+                                                                className="w-10 text-right font-mono text-slate-800 bg-transparent border border-transparent hover:border-slate-200 focus:border-purple-400 focus:bg-white rounded px-0.5 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Books Taxable */}
+                                                        <td className="py-0.5 px-1 text-right bg-slate-50/40 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.booksTaxable || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'booksTaxable', e.target.value)}
+                                                                className="w-full text-right font-mono text-slate-900 bg-transparent border border-transparent hover:border-slate-200 focus:border-purple-400 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Books TDS */}
+                                                        <td className="py-0.5 px-1 text-right border-r border-slate-200 bg-slate-50/40 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.booksTds || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'booksTds', e.target.value)}
+                                                                className="w-full text-right font-mono text-slate-900 bg-transparent border border-transparent hover:border-slate-200 focus:border-purple-400 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Actual Taxable */}
+                                                        <td className="py-0.5 px-1 text-right bg-purple-50/20 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.actualTaxable || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'actualTaxable', e.target.value)}
+                                                                className="w-full text-right font-mono text-purple-950 font-semibold bg-transparent border border-transparent hover:border-purple-200 focus:border-purple-500 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Actual TDS */}
+                                                        <td className="py-0.5 px-1 text-right border-r border-slate-200 bg-purple-50/20 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.actualTds || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'actualTds', e.target.value)}
+                                                                className="w-full text-right font-mono text-purple-950 font-semibold bg-transparent border border-transparent hover:border-purple-200 focus:border-purple-500 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Return Taxable */}
+                                                        <td className="py-0.5 px-1 text-right bg-blue-50/20 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.returnTaxable || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'returnTaxable', e.target.value)}
+                                                                className="w-full text-right font-mono text-blue-950 bg-transparent border border-transparent hover:border-blue-200 focus:border-blue-500 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Return TDS */}
+                                                        <td className="py-0.5 px-1 text-right border-r border-slate-200 bg-blue-50/20 font-mono">
+                                                            <input
+                                                                type="number"
+                                                                disabled={!isJuniorAllowedToEdit}
+                                                                value={row.returnTds || 0}
+                                                                onChange={e => handleUpdateTdsSectionRow(row.id, 'returnTds', e.target.value)}
+                                                                className="w-full text-right font-mono text-blue-950 bg-transparent border border-transparent hover:border-blue-200 focus:border-blue-500 focus:bg-white rounded px-1 py-0.5 text-[11px] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            />
+                                                        </td>
+
+                                                        {/* Booking Pending in Books */}
+                                                        <td className="py-0.5 px-1.5 text-right bg-amber-50/30 font-mono">
+                                                            {bookingPending > 0 ? (
+                                                                <div className="flex items-center justify-end gap-1 text-amber-900 font-bold">
+                                                                    <span>₹{bookingPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-slate-400 font-normal">₹0</span>
+                                                            )}
+                                                        </td>
+
+                                                        {/* TDS Payable */}
+                                                        <td className="py-0.5 px-1.5 text-right bg-rose-50/30 font-mono">
+                                                            {tdsPayable > 0 ? (
+                                                                <div className="flex items-center justify-end gap-1 text-rose-700 font-bold">
+                                                                    <span>₹{tdsPayable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-emerald-700 font-medium">₹0</span>
+                                                            )}
+                                                        </td>
+
+                                                        {/* Status & Remarks */}
+                                                        <td className="py-0.5 px-1 border-r border-slate-200">
+                                                            <div className="flex items-center gap-1">
+                                                                {isMatched && (
+                                                                    <span className="px-1 py-0.2 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center shrink-0">
+                                                                        Matched
+                                                                    </span>
+                                                                )}
+                                                                {tdsPayable > 0 && (
+                                                                    <span className="px-1 py-0.2 rounded text-[9.5px] font-bold bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center shrink-0">
+                                                                        Payable
+                                                                    </span>
+                                                                )}
+                                                                {bookingPending > 0 && (
+                                                                    <span className="px-1 py-0.2 rounded text-[9.5px] font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center shrink-0">
+                                                                        Unbooked
+                                                                    </span>
+                                                                )}
+                                                                {challanPending > 0 && (
+                                                                    <span className="px-1 py-0.2 rounded text-[9.5px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 inline-flex items-center shrink-0">
+                                                                        Challan
+                                                                    </span>
+                                                                )}
+                                                                <input
+                                                                    type="text"
+                                                                    disabled={!isJuniorAllowedToEdit}
+                                                                    placeholder="Auditor note..."
+                                                                    value={row.remarks || ''}
+                                                                    onChange={e => handleUpdateTdsSectionRow(row.id, 'remarks', e.target.value)}
+                                                                    className="w-full text-[10.5px] text-slate-700 placeholder:text-slate-300 bg-transparent border border-transparent hover:border-slate-200 focus:border-purple-400 focus:bg-white rounded px-1 py-0.5 focus:outline-hidden"
+                                                                />
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Action: Delete */}
+                                                        <td className="py-0.5 px-1 text-center">
+                                                            {isJuniorAllowedToEdit && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteTdsSection(row.id)}
+                                                                    className="p-0.5 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                                                    title="Delete row"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" />
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+
+                                            {filteredTdsRows.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={13} className="py-4 text-center text-slate-400 text-xs">
+                                                        No TDS sections match the selected filter.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+
+                                        {/* Full Grand Total Row */}
+                                        <tfoot>
+                                            <tr className="bg-slate-900 text-white font-bold text-[11px] border-t-2 border-slate-900">
+                                                <td className="py-1.5 px-1.5 uppercase tracking-wider font-mono">
+                                                    TOTAL
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-slate-300">
+                                                    {tdsSectionMatrixData.length} Sections
+                                                </td>
+                                                <td className="py-1.5 px-1 text-right border-r border-slate-700 text-slate-400">
+                                                    -
+                                                </td>
+
+                                                {/* Books Totals */}
+                                                <td className="py-1.5 px-1.5 text-right font-mono bg-slate-800/80">
+                                                    ₹{tdsMatrixTotals.totalBooksTaxable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-right font-mono border-r border-slate-700 bg-slate-800/80 text-amber-300">
+                                                    ₹{tdsMatrixTotals.totalBooksTds.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+
+                                                {/* Actual Totals */}
+                                                <td className="py-1.5 px-1.5 text-right font-mono bg-purple-950/70 text-purple-200">
+                                                    ₹{tdsMatrixTotals.totalActualTaxable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-right font-mono border-r border-slate-700 bg-purple-950/70 text-purple-300 font-bold">
+                                                    ₹{tdsMatrixTotals.totalActualTds.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+
+                                                {/* Return Totals */}
+                                                <td className="py-1.5 px-1.5 text-right font-mono bg-blue-950/70 text-blue-200">
+                                                    ₹{tdsMatrixTotals.totalReturnTaxable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-right font-mono border-r border-slate-700 bg-blue-950/70 text-blue-300 font-bold">
+                                                    ₹{tdsMatrixTotals.totalReturnTds.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+
+                                                {/* Booking Pending Total */}
+                                                <td className="py-1.5 px-1.5 text-right font-mono bg-amber-950/80 text-amber-300 font-bold text-xs">
+                                                    ₹{tdsMatrixTotals.totalBookingPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+
+                                                {/* TDS Payable Total */}
+                                                <td className="py-1.5 px-1.5 text-right font-mono bg-rose-950/80 text-rose-300 font-bold text-xs">
+                                                    ₹{tdsMatrixTotals.totalTdsPayable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </td>
+
+                                                {/* Overall Badge */}
+                                                <td className="py-1.5 px-1.5 border-r border-slate-700">
+                                                    <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold uppercase ${
+                                                        tdsMatrixTotals.totalTdsPayable > 0
+                                                            ? 'bg-rose-900 text-rose-200 border border-rose-700'
+                                                            : 'bg-emerald-900 text-emerald-200 border border-emerald-700'
+                                                    }`}>
+                                                        {tdsMatrixTotals.totalTdsPayable > 0 ? `₹${tdsMatrixTotals.totalTdsPayable.toLocaleString('en-IN')} Due` : 'Deposited'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-1.5 px-1 text-center text-slate-500"></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                {/* Auxiliary Statutory Scrutiny Cards (Transporter 194C & 194Q High Volume) - Compact */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1">
+                                    <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-2 flex items-center justify-between">
+                                        <div>
+                                            <span className="text-slate-600 font-bold uppercase text-[10px] tracking-wider block">Transporter 194C(6) Missing PAN Scrutiny</span>
+                                            <p className="text-[10px] text-slate-400">Without valid PAN subject to 20% TDS u/s 206AA.</p>
+                                        </div>
+                                        <span className="text-xs font-bold font-mono text-rose-700 px-2 py-0.5 bg-white border border-rose-200 rounded-md shrink-0">
+                                            {verification?.journal?.tds194C_MissingPanCount ?? 0} Vouchers
+                                        </span>
+                                    </div>
+                                    <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-2 flex items-center justify-between">
+                                        <div>
+                                            <span className="text-slate-600 font-bold uppercase text-[10px] tracking-wider block">Section 194Q High Volume Purchase (&gt; ₹50L)</span>
+                                            <p className="text-[10px] text-slate-400">Aggregate goods purchase &gt; ₹50L subject to 0.1% TDS.</p>
+                                        </div>
+                                        <span className="text-xs font-bold font-mono text-blue-700 px-2 py-0.5 bg-white border border-blue-200 rounded-md shrink-0">
+                                            {verification?.journal?.tds194Q_HighVolumeCount ?? 0} Vendors
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* ─── TDS Excel Working Paper Attachment (Audit Evidence) ─── */}
+                                <input
+                                    ref={tdsFileInputRef}
+                                    type="file"
+                                    accept=".xlsx,.xls,.csv"
+                                    onChange={handleTdsFileUpload}
+                                    className="hidden"
+                                />
+                                {verification?.journal?.excelAttachment ? (
+                                    <div className="bg-purple-50/70 border border-purple-200/90 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2 shadow-2xs">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-7 h-7 rounded-lg bg-purple-100 border border-purple-200 flex items-center justify-center shrink-0">
+                                                <FileSpreadsheet className="w-4 h-4 text-purple-700" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-xs font-bold text-slate-900 font-mono">
+                                                        {verification.journal.excelAttachment.fileName}
+                                                    </span>
+                                                    <span className="px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-purple-600 text-white uppercase tracking-wider">
+                                                        TDS Working Attached
+                                                    </span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                                                    {verification.journal.excelAttachment.fileSize && (
+                                                        <span>{(verification.journal.excelAttachment.fileSize / 1024).toFixed(1)} KB</span>
+                                                    )}
+                                                    {verification.journal.excelAttachment.uploadedAt && (
+                                                        <span>· Attached on {verification.journal.excelAttachment.uploadedAt}</span>
+                                                    )}
+                                                    {verification.journal.excelAttachment.uploadedBy && (
+                                                        <span>by {verification.journal.excelAttachment.uploadedBy}</span>
+                                                    )}
+                                                    {verification.journal.excelAttachment.filePath && (
+                                                        <span className="font-mono text-slate-600">({verification.journal.excelAttachment.filePath})</span>
+                                                    )}
+                                                </div>
+                                                {verification.journal.excelAttachment.sheetNames && verification.journal.excelAttachment.sheetNames.length > 0 && (
+                                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                                        <span className="text-[9.5px] font-semibold text-slate-500">Sheets ({verification.journal.excelAttachment.sheetNames.length}):</span>
+                                                        {verification.journal.excelAttachment.sheetNames.map((sName, sIdx) => (
+                                                            <span key={sIdx} className="px-1.5 py-0.2 bg-white border border-purple-200 rounded text-[9.5px] font-mono text-purple-800">
+                                                                {sName}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5">
+                                            {verification.journal.excelAttachment.fileData && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleDownloadTdsAttachment}
+                                                    className="px-2.5 py-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                                    title="Download attached TDS Excel file"
+                                                >
+                                                    <Download className="w-3 h-3" />
+                                                    <span>Download</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => tdsFileInputRef.current?.click()}
+                                                className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer border border-slate-200 shadow-2xs"
+                                                title="Replace attached file"
+                                            >
+                                                <UploadCloud className="w-3 h-3 text-slate-500" />
+                                                <span>Replace</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleRemoveTdsAttachment}
+                                                className="p-1 rounded-md bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer border border-slate-200"
+                                                title="Remove attachment"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-slate-50/70 border border-dashed border-slate-300 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-md bg-purple-50 border border-purple-200 flex items-center justify-center shrink-0">
+                                                <Paperclip className="w-3.5 h-3.5 text-purple-600" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[11px] font-bold text-slate-800 block">
+                                                    Attach TDS Working Excel (Audit Evidence)
+                                                </span>
+                                                <span className="text-[10px] text-slate-500">
+                                                    Upload Form 26Q / 24Q computation, TRACES 16A matching sheet, or challan working (.xlsx, .xls, .csv)
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={() => tdsFileInputRef.current?.click()}
+                                                className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                            >
+                                                <UploadCloud className="w-3 h-3" />
+                                                <span>Choose Excel File</span>
+                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="text"
+                                                    placeholder="or link file path (E:\TDS_Working.xlsx)..."
+                                                    value={tdsLocalPathInput}
+                                                    onChange={e => setTdsLocalPathInput(e.target.value)}
+                                                    className="w-48 px-2 py-0.5 text-[10.5px] bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-purple-400"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLinkTdsLocalPath}
+                                                    className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10.5px] border border-slate-200 transition cursor-pointer"
+                                                >
+                                                    Link Path
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -7241,10 +9512,10 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                                                <th className="p-3 w-[22%]">1. Type</th>
-                                                <th className="p-3 w-[26%]">2. Account / Facility Name</th>
-                                                <th className="p-3 w-[18%] text-right">3. Balance (₹)</th>
-                                                <th className="p-3 w-[30%]">4. Status (Match / Not Matched / Self Comment) &amp; Comment</th>
+                                                <th className="p-3 w-[20%]">1. Type</th>
+                                                <th className="p-3 w-[24%] px-4">2. Account / Facility Name</th>
+                                                <th className="p-3 w-[20%] text-right px-4">3. Balance (₹)</th>
+                                                <th className="p-3 w-[32%] text-left px-4">4. Status (Match / Not Matched / Self Comment) &amp; Comment</th>
                                                 <th className="p-3 w-[4%] text-center">Action</th>
                                             </tr>
                                         </thead>
@@ -7284,7 +9555,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                         </td>
 
                                                         {/* Col 3: Balance (₹) Numeric Input */}
-                                                        <td className="p-2.5 align-top text-right">
+                                                        <td className="p-2.5 align-top text-right pr-4">
                                                             <div className="relative">
                                                                 <input
                                                                     type="number"
@@ -7301,7 +9572,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                         </td>
 
                                                         {/* Col 4: Status Dropdown & Comment with Quick-Select Dropdown Button */}
-                                                        <td className="p-2.5 align-top space-y-1.5">
+                                                        <td className="p-2.5 align-top text-left pl-4 space-y-1.5">
                                                             {/* Top row: Status Dropdown */}
                                                             <div className="flex items-center gap-2">
                                                                 <select
@@ -7541,7 +9812,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                             <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
                                                 <th className="p-3 w-[20%]">1. Lender / Facility Name</th>
                                                 <th className="p-3 w-[15%]">2. Category</th>
-                                                <th className="p-3 w-[14%] text-right">3. Loan Amount (₹)</th>
+                                                <th className="p-3 w-[14%] min-w-[120px] text-right">3. Loan Amount (₹)</th>
                                                 <th className="p-3 w-[18%]">4. Charge Created Status (CHG-1 / 4)</th>
                                                 <th className="p-3 w-[11%]">5. MCA SRN / Ref</th>
                                                 <th className="p-3 w-[10%]">6. Sec 269SS</th>
@@ -7582,7 +9853,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                                         </td>
 
                                                         {/* Col 3: Sanctioned Amount */}
-                                                        <td className="p-2.5 align-top text-right">
+                                                        <td className="p-2.5 align-top text-right min-w-[120px]">
                                                             <input
                                                                 type="number"
                                                                 step="any"
@@ -8290,7 +10561,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         <option value="General Scrutiny / Overall Working Paper">General Scrutiny / Overall</option>
                                         <option value="3.1 Sales Reco (Books vs GSTR-1 vs 3B)">3.1 Sales Reco &amp; Turnover</option>
                                         <option value="3.2 Purchase Reco (Books vs GSTR-2B)">3.2 Purchase Reco &amp; 2B ITC</option>
-                                        <option value="3.3 Journal Vouchers & TDS Form 26Q">3.3 Journal Vouchers &amp; TDS</option>
+                                        <option value="3.3 TDS Working & Form 26Q">3.3 TDS Working</option>
                                         <option value="3.4 Bank Statements, BRS & AIS/26AS">3.4 Bank Statements &amp; AIS</option>
                                         <option value="3.5 New Loans & ROC Charges CHG-1/4">3.5 Loans &amp; ROC Charges</option>
                                         <option value="3.6 Cash 40A(3) Compliance & Negative Cash">3.6 Cash 40A(3) Compliance</option>
@@ -8702,7 +10973,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 >
                                     <option value="sales">3.1 Sales (Reco R1)</option>
                                     <option value="purchase">3.2 Purchase (Reco 2B)</option>
-                                    <option value="journal">3.3 Journal &amp; TDS</option>
+                                    <option value="journal">3.3 TDS Working</option>
                                     <option value="bank">3.4 Bank &amp; Loans</option>
                                     <option value="roc">3.5 ROC Charges</option>
                                     <option value="cash">3.6 Cash &amp; Fixed Assets</option>
@@ -8863,8 +11134,8 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                     <Building2 className="w-4 h-4" />
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-bold text-slate-900">Add New Audit Client</h3>
-                                    <p className="text-[11px] text-slate-500">Register new business for Monthly Audit Suite</p>
+                                    <h3 className="text-sm font-bold text-slate-900">Add New Monthly Audit Client</h3>
+                                    <p className="text-[11px] text-slate-500">Dedicated Client Master for Statutory &amp; Monthly Audit (Independent from GST)</p>
                                 </div>
                             </div>
                             <button
@@ -8876,51 +11147,86 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                             </button>
                         </div>
 
+                        {/* Tally Live Autofill Banner */}
+                        {isTallyOnline && tallyCompanyName && (
+                            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <span className="text-[10px] font-bold text-emerald-800 uppercase block tracking-wider flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        Live Tally Company Detected
+                                    </span>
+                                    <span className="text-xs font-mono font-bold text-emerald-950 truncate block">{tallyCompanyName}</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setNewClientLegalName(tallyCompanyName);
+                                        setNewClientTradeName(tallyCompanyName);
+                                        if (tallyGstin) setNewClientGstin(tallyGstin);
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition shrink-0 cursor-pointer shadow-2xs"
+                                >
+                                    ⚡ Fill from Tally
+                                </button>
+                            </div>
+                        )}
+
                         <form onSubmit={handleSaveNewClient} className="space-y-3.5 text-xs">
                             <div>
                                 <label className="block text-slate-700 font-bold mb-1">
-                                    Client GSTIN: <span className="text-rose-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newClientGstin}
-                                    maxLength={15}
-                                    onChange={(e) => setNewClientGstin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                                    placeholder="e.g. 27AAGCD4105L1ZO"
-                                    className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                                    required
-                                    autoFocus
-                                />
-                                <span className="text-[10px] text-slate-400 mt-0.5 block">
-                                    Must be 15 characters ({newClientGstin.length}/15)
-                                </span>
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-700 font-bold mb-1">
-                                    Business Legal Name: <span className="text-rose-500">*</span>
+                                    Business / Company Name: <span className="text-rose-500">*</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={newClientLegalName}
                                     onChange={(e) => setNewClientLegalName(e.target.value)}
-                                    placeholder="e.g. Acme Infraprojects Private Limited"
+                                    placeholder="e.g. DYP INFRAPROJECTS PVT.LTD."
                                     className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                                     required
+                                    autoFocus
                                 />
                             </div>
 
                             <div>
                                 <label className="block text-slate-700 font-semibold mb-1">
-                                    Trade Name / Short Name:
+                                    Trade / Tally Company Name:
                                 </label>
                                 <input
                                     type="text"
                                     value={newClientTradeName}
                                     onChange={(e) => setNewClientTradeName(e.target.value)}
-                                    placeholder="e.g. Acme Infra (Optional, defaults to Legal Name)"
+                                    placeholder="e.g. DYP Infra (Defaults to Company Name)"
                                     className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-slate-700 font-semibold mb-1">
+                                        Client GSTIN: <span className="text-slate-400 text-[10px] font-normal">(Optional)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newClientGstin}
+                                        maxLength={15}
+                                        onChange={(e) => setNewClientGstin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                                        placeholder="e.g. 27AAGCD4105L1ZO"
+                                        className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 font-semibold mb-1">
+                                        Client PAN: <span className="text-slate-400 text-[10px] font-normal">(Optional)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newClientPan}
+                                        maxLength={10}
+                                        onChange={(e) => setNewClientPan(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                                        placeholder="e.g. AAGCD4105L"
+                                        className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -8930,7 +11236,7 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         type="email"
                                         value={newClientEmail}
                                         onChange={(e) => setNewClientEmail(e.target.value)}
-                                        placeholder="accounts@acme.com"
+                                        placeholder="accounts@dypinfra.com"
                                         className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
                                     />
                                 </div>
@@ -8944,6 +11250,17 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                         className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-indigo-500"
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 font-semibold mb-1">Address / Registered Office:</label>
+                                <input
+                                    type="text"
+                                    value={newClientAddress}
+                                    onChange={(e) => setNewClientAddress(e.target.value)}
+                                    placeholder="e.g. Navi Mumbai, Maharashtra"
+                                    className="w-full bg-slate-50 focus:bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
+                                />
                             </div>
 
                             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
@@ -8967,12 +11284,128 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                     ) : (
                                         <>
                                             <Check className="w-4 h-4" />
-                                            <span>Save &amp; Start Audit</span>
+                                            <span>Save &amp; Select Client</span>
                                         </>
                                     )}
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Tally Prime Gateway & Client Sync Modal */}
+            {isTallyModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-pop-in">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                                    <Activity className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Tally Prime Live XML Connection</h3>
+                                    <p className="text-[11px] text-slate-500">Port {tallyPort} · Direct Client &amp; Voucher Link</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsTallyModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Connection Status Banner */}
+                        <div className={`p-4 rounded-xl border ${
+                            isTallyOnline 
+                                ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950' 
+                                : 'bg-rose-50/80 border-rose-200 text-rose-950'
+                        }`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="flex items-center gap-2 text-xs font-bold">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${isTallyOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                                    <span>Status: {isTallyOnline ? 'Tally Prime Connected (Online)' : 'Tally Prime Offline'}</span>
+                                </span>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-700">
+                                    Port {tallyPort}
+                                </span>
+                            </div>
+
+                            {isTallyOnline ? (
+                                <div className="space-y-1.5 text-xs">
+                                    <div className="text-slate-600">Active Company in Tally:</div>
+                                    <div className="text-sm font-extrabold text-emerald-900 font-mono tracking-tight bg-white/80 p-2 rounded-lg border border-emerald-200">
+                                        {tallyCompanyName || 'Unknown / No Company Loaded'}
+                                    </div>
+                                    {tallyBooksFrom && (
+                                        <div className="text-[11px] text-emerald-700 font-mono">
+                                            Books Beginning From: <strong>{tallyBooksFrom}</strong>
+                                        </div>
+                                    )}
+                                    {tallyGstin && (
+                                        <div className="text-[11px] text-emerald-700 font-mono">
+                                            Company GSTIN: <strong>{tallyGstin}</strong>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-[11px] text-rose-700 space-y-1">
+                                    <p>Cannot connect to Tally Prime on <strong>127.0.0.1:{tallyPort}</strong>.</p>
+                                    <ul className="list-disc list-inside space-y-0.5 text-[10px] text-rose-600">
+                                        <li>Ensure TallyPrime is open on this computer.</li>
+                                        <li>Enable ODBC/XML Server in Tally: <strong>F1 (Help) &gt; Settings &gt; Connectivity &gt; Port 9000</strong>.</li>
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Port Config */}
+                        <div className="flex items-center gap-2 text-xs">
+                            <label className="text-slate-700 font-bold shrink-0">Tally Port:</label>
+                            <input
+                                type="number"
+                                min={9000}
+                                max={9010}
+                                value={tallyPort}
+                                onChange={(e) => setTallyPort(parseInt(e.target.value, 10) || 9000)}
+                                className="w-24 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-xs font-bold text-slate-800"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => pingTally(tallyPort)}
+                                disabled={isPingingTally}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isPingingTally ? 'animate-spin' : ''}`} />
+                                <span>Re-Scan</span>
+                            </button>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setIsTallyModalOpen(false)}
+                                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition cursor-pointer"
+                            >
+                                Close
+                            </button>
+                            {isTallyOnline && tallyCompanyName && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        await syncActiveTallyCompanyAsClient();
+                                        setIsTallyModalOpen(false);
+                                    }}
+                                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    <span>Set as Client on Report</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

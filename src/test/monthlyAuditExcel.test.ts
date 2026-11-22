@@ -78,12 +78,19 @@ describe('Suite 08: Monthly Audit Excel Working Paper Exporter', () => {
                         fileName: 'Detailed_GSTR2B_Working_Oct25.xlsx',
                         fileSize: 62000
                     }
+                },
+                journal: {
+                    ...autoResult.verification.journalTds!,
+                    excelAttachment: {
+                        fileName: 'TDS_26Q_Working_Oct25.xlsx',
+                        fileSize: 38000
+                    }
                 }
             },
             observations: [
                 {
-                    id: 1,
-                    auditId: 101,
+                    id: '1',
+                    auditId: '101',
                     pointNumber: 'OBS-01',
                     section: 'Sales (Reco R1)',
                     riskSeverity: 'Critical',
@@ -100,8 +107,8 @@ describe('Suite 08: Monthly Audit Excel Working Paper Exporter', () => {
             ],
             pendingPoints: [
                 {
-                    id: 1,
-                    auditId: 101,
+                    id: '1',
+                    auditId: '101',
                     pointNumber: 'PEND-01',
                     originMonth: 'September',
                     originFy: '2025-26',
@@ -125,6 +132,7 @@ describe('Suite 08: Monthly Audit Excel Working Paper Exporter', () => {
             'Verification_Checklist',
             'Sales_&_GST_Reco',
             'Purchase_&_2B_Reco',
+            'TDS_Section_Matrix',
             'Cash_&_Statutory_Check',
             'Current_Year_Observations',
             'Previous_Pending_Points',
@@ -132,6 +140,14 @@ describe('Suite 08: Monthly Audit Excel Working Paper Exporter', () => {
         ];
 
         expect(wb.SheetNames).toEqual(expectedSheets);
+
+        // Verify TDS Section Matrix content
+        const tdsWs = wb.Sheets['TDS_Section_Matrix'];
+        expect(tdsWs['A1'].v).toContain('TDS SECTION-WISE RECONCILIATION');
+        expect(tdsWs['A4'].v).toBe('SECTION');
+        expect(tdsWs['J4'].v).toContain('BOOKING PENDING');
+        expect(tdsWs['K4'].v).toContain('TDS PAYABLE');
+        expect(tdsWs['A5'].v).toBe('194C');
 
         // Assert strictly zero merges across ALL 9 sheets
         for (const sheetName of wb.SheetNames) {
@@ -238,6 +254,13 @@ describe('Suite 08: Monthly Audit Excel Working Paper Exporter', () => {
                     excelAttachment: {
                         fileName: 'Detailed_GSTR2B_Working_Oct25.xlsx',
                         fileSize: 62000
+                    }
+                },
+                journal: {
+                    ...autoResult.verification.journalTds!,
+                    excelAttachment: {
+                        fileName: 'TDS_26Q_Working_Oct25.xlsx',
+                        fileSize: 38000
                     }
                 }
             },

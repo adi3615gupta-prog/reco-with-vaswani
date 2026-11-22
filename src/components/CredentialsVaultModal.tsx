@@ -5,6 +5,7 @@ import {
   ExternalLink, UserCheck, Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getApiBase, safeApiFetch } from '@/lib/api';
 import * as XLSX from 'xlsx';
 import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
@@ -19,6 +20,7 @@ export interface VaultClient {
   address?: string;
   portal_username?: string;
   portal_password?: string;
+  has_password?: boolean;
 }
 
 interface CredentialsVaultModalProps {
@@ -34,6 +36,7 @@ export default function CredentialsVaultModal({
   onSelectClient,
   selectedGstin
 }: CredentialsVaultModalProps) {
+  const confirm = useConfirm();
   const [clients, setClients] = useState<VaultClient[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -42,7 +45,7 @@ export default function CredentialsVaultModal({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [savingGstin, setSavingGstin] = useState<string | null>(null);
   const [deletingGstin, setDeletingGstin] = useState<string | null>(null);
-  const [mirrorMode, setMirrorMode] = useState<boolean>(true);
+  const [mirrorMode, setMirrorMode] = useState<boolean>(false);
   const [isSyncingVault, setIsSyncingVault] = useState<boolean>(false);
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number | null>(null);
   const [dataPath, setDataPath] = useState<string | null>(null);
@@ -115,7 +118,7 @@ export default function CredentialsVaultModal({
     return () => window.removeEventListener('focus', handleFocus);
   }, [isOpen]);
 
-  const configuredCount = clients.filter(c => c.portal_username && c.portal_password).length;
+  const configuredCount = clients.filter(c => c.portal_username && (c.has_password || c.portal_password)).length;
   const missingCount = clients.length - configuredCount;
 
   // Filter clients
@@ -128,7 +131,7 @@ export default function CredentialsVaultModal({
       (c.portal_username || '').toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
-    const isConfigured = Boolean(c.portal_username && c.portal_password);
+    const isConfigured = Boolean(c.portal_username && (c.has_password || c.portal_password));
     if (filter === 'CONFIGURED') return isConfigured;
     if (filter === 'MISSING') return !isConfigured;
     return true;
@@ -147,7 +150,7 @@ export default function CredentialsVaultModal({
         body: JSON.stringify({
           gstin,
           portal_username: update.portal_username,
-          portal_password: update.portal_password,
+          portal_password: update.portal_password === '••••••••' ? undefined : update.portal_password,
           phone: update.phone,
           trade_name: update.trade_name
         })
@@ -186,9 +189,13 @@ export default function CredentialsVaultModal({
 
   // Delete single client
   const handleDeleteClient = async (gstin: string, tradeName: string) => {
-    if (!window.confirm(`Are you sure you want to delete client "${tradeName || gstin}" (${gstin})? This will remove credentials and related IMS data.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete Client Credentials',
+      description: `Are you sure you want to delete client "${tradeName || gstin}" (${gstin})? This will remove credentials and related IMS data.`,
+      confirmText: 'Delete Client',
+      variant: 'destructive',
+    });
+    if (!ok) return;
 
     setDeletingGstin(gstin);
     try {

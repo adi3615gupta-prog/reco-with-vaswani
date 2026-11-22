@@ -18,6 +18,7 @@ describe('Phase 3: Audit Trail Service & Offline Queue (AUDIT-01)', () => {
   beforeEach(() => {
     clearLocalAuditQueue();
     vi.restoreAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Offline')));
   });
 
   it('rejects overrides with justification shorter than 5 characters', async () => {
@@ -258,8 +259,13 @@ describe('Phase 3: Zero-Merge Excel Audit Trail Integration (D-06, CORE-01)', ()
   it('buildPartyWiseWorkbook integrates Audit Trail tab without merged cells when logs exist', () => {
     const dummyParties = [
       {
+        key: '27AAACA1111A1Z1',
         partyName: 'Test Vendor',
+        partyNamePR: 'Test Vendor',
+        partyName2B: 'Test Vendor',
         gstin: '27AAACA1111A1Z1',
+        gstinPR: '27AAACA1111A1Z1',
+        gstin2B: '27AAACA1111A1Z1',
         overall: 'All Matched' as const,
         invoices: [],
         totals: {

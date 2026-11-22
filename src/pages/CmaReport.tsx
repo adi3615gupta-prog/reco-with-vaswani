@@ -6,7 +6,8 @@ import {
   Wifi, WifiOff, Loader2, Database, Server
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
+import { safeApiFetch } from '@/lib/api';
+import { pingTally, fetchCompanyInfo , clearTallyMetadataCache } from '@/lib/tallyApi';
 import { generateTallyGroupRequest, generateTallyLedgerRequest, parseTallyCollectionsToTrialBalance } from '@/lib/tallyParser';
 
 interface Props {
@@ -115,6 +116,15 @@ export default function CmaReport({ onBack }: Props) {
 
   // Tally Sync Connection States
   const [tallyPort, setTallyPort] = useState(9000);
+  // Phase 40: Scoped Tally Session Unmount Teardown
+  useEffect(() => {
+    return () => {
+      setTallyConnectionStatus('disconnected');
+      setTallyCompany('');
+      clearTallyMetadataCache();
+    };
+  }, []);
+
   const [tallyConnectionStatus, setTallyConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [tallyCompany, setTallyCompany] = useState('');
   const [isTallySyncing, setIsTallySyncing] = useState(false);
@@ -125,7 +135,7 @@ export default function CmaReport({ onBack }: Props) {
   const [constitution, setConstitution] = useState('Private Limited Company');
   const [natureOfBusiness, setNatureOfBusiness] = useState('');
   const [purposeOfLoan, setPurposeOfLoan] = useState('');
-  const [firstProjectedYear, setFirstProjectedYear] = useState('2025-26');
+  const [firstProjectedYear, setFirstProjectedYear] = useState('2026-27');
 
   // Term Loan details
   const [termLoanAmount, setTermLoanAmount] = useState('15000000');
@@ -509,14 +519,10 @@ export default function CmaReport({ onBack }: Props) {
         }
       };
 
-      const token = sessionStorage.getItem('np_token');
-      const apiHost = localStorage.getItem('np_app_mode') === 'server' ? 'localhost' : (localStorage.getItem('np_server_ip') || window.location.hostname || '127.0.0.1');
-
-      const response = await fetch(`http://${apiHost}:3001/api/cma/generate`, {
+      const response = await safeApiFetch('/api/cma/generate', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+        headers: {
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });

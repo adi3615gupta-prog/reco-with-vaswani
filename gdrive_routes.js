@@ -90,14 +90,22 @@ async function getOrCreateAppFolder(token) {
 }
 
 export default function setupGDriveRoutes(app, authenticateToken = null) {
-    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    const hasAuth = typeof authenticateToken === 'function';
+    const authMiddleware = hasAuth ? authenticateToken : ((req, res, next) => next());
+    const requireAdmin = (req, res, next) => {
+        if (hasAuth && String(req.user?.role || '').toLowerCase() !== 'admin') {
+            return res.status(403).json({ error: 'Admin role required' });
+        }
+        next();
+    };
+    app.use('/api/gdrive', authMiddleware);
 
     // =========================================================================
     // POST /api/gdrive/admin-setup
     // One-time admin setup: exchange authorization code for refresh token
     // Body: { client_id, client_secret, auth_code, redirect_uri }
     // =========================================================================
-    app.post('/api/gdrive/admin-setup', authMiddleware, async (req, res) => {
+    app.post('/api/gdrive/admin-setup', authMiddleware, requireAdmin, async (req, res) => {
         try {
             const { client_id, client_secret, auth_code, redirect_uri } = req.body;
             if (!client_id || !client_secret || !auth_code) {
@@ -347,7 +355,7 @@ export default function setupGDriveRoutes(app, authenticateToken = null) {
     // POST /api/gdrive/disconnect
     // Remove admin's GDrive config
     // =========================================================================
-    app.post('/api/gdrive/disconnect', authMiddleware, (req, res) => {
+    app.post('/api/gdrive/disconnect', authMiddleware, requireAdmin, (req, res) => {
         try {
             if (fs.existsSync(GDRIVE_CONFIG_FILE)) {
                 fs.unlinkSync(GDRIVE_CONFIG_FILE);

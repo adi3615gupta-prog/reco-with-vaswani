@@ -1,3 +1,13 @@
+function removeAllMergesFromWorkbook(wb) {
+    if (!wb || !wb.Sheets) return;
+    for (const sheetName of Object.keys(wb.Sheets)) {
+        const ws = wb.Sheets[sheetName];
+        if (ws) {
+            ws['!merges'] = [];
+        }
+    }
+}
+
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 
@@ -102,14 +112,14 @@ function applyStandardMetadata(ws, sectionTitle, dealerName, gstin, finYear, tim
  */
 export function generateGstr1FullYearWorkbook({
     clientInfo = {},
-    financialYear = '2025-2026',
+    financialYear = '2026-2027',
     invoices = [],
     summaries = []
 }) {
     const wb = XLSX.utils.book_new();
     const dealerName = clientInfo.trade_name || clientInfo.legal_name || 'DEALER';
     const gstin = (clientInfo.gstin || '').toUpperCase();
-    const cleanFy = financialYear.length === 7 ? financialYear : (financialYear.includes('-') ? financialYear : '2025-2026');
+    const cleanFy = financialYear.length === 7 ? financialYear : (financialYear.includes('-') ? financialYear : '2026-2027');
     const timestampStr = formatGeneratedTimestamp();
 
     // ─── 1. BUCKET INVOICES BY SECTION ──────────────────────────────────────────
@@ -901,5 +911,41 @@ export function generateGstr1FullYearWorkbook({
         XLSX.utils.book_append_sheet(wb, ws, 'DOC');
     }
 
+    removeAllMergesFromWorkbook(wb);
     return wb;
+}
+
+/**
+ * buildGstr1FullYearWorkbookFromDb: Loads a client's FY outward invoices + summaries from SQLite
+ * and returns the 12-sheet SectionWiseSummary workbook with its canonical filename.
+ */
+export async function buildGstr1FullYearWorkbookFromDb(db, gstin, financialYear) {
+    const gstinUpper = String(gstin || '').trim().toUpperCase();
+    const fy = financialYear || '2026-27';
+    const startYr = parseInt(fy.match(/\d{4}/)?.[0] || '2026', 10);
+    const endYr = startYr + 1;
+    const fyMonths = [
+        `April ${startYr}`, `May ${startYr}`, `June ${startYr}`,
+        `July ${startYr}`, `August ${startYr}`, `September ${startYr}`,
+        `October ${startYr}`, `November ${startYr}`, `December ${startYr}`,
+        `January ${endYr}`, `February ${endYr}`, `March ${endYr}`
+    ];
+    const allPeriods = [...fyMonths, ...fyMonths.map(m => m.replace(' ', ', '))];
+    const q = (method, sql, params) => new Promise((resolve, reject) =>
+        db[method](sql, params, (err, out) => (err ? reject(err) : resolve(out))));
+
+    const clientRow = await q('get', `SELECT trade_name, legal_name FROM clients WHERE UPPER(gstin) = ?`, [gstinUpper]).catch(() => null);
+    const invoices = await q('all',
+        `SELECT * FROM gstr1_invoices WHERE UPPER(client_gstin) = ? AND (return_period IN (${allPeriods.map(() => '?').join(',')}) OR return_period LIKE ?) ORDER BY idt DESC`,
+        [gstinUpper, ...allPeriods, `%${startYr}%`]);
+    const summaries = await q('all', `SELECT * FROM gstr1_summaries WHERE UPPER(client_gstin) = ?`, [gstinUpper]).catch(() => []);
+
+    const wb = generateGstr1FullYearWorkbook({
+        clientInfo: { trade_name: clientRow?.trade_name || clientRow?.legal_name || gstinUpper, gstin: gstinUpper },
+        financialYear: fy,
+        invoices: invoices || [],
+        summaries: summaries || []
+    });
+    const filename = `GSTR1_SectionWiseSummary_${gstinUpper}_${fy.replace(/[^0-9]/g, '')}.xlsx`;
+    return { wb, filename, invoiceCount: (invoices || []).length };
 }

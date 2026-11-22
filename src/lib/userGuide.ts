@@ -19,7 +19,7 @@ export function downloadUserGuide() {
     doc.setTextColor(...indigo);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(64);
-    doc.text('VASWANI RETURN', pageW / 2, pageH / 2, {
+    doc.text('FINPULSE CONSULTING', pageW / 2, pageH / 2, {
       align: 'center',
       angle: 30,
     });
@@ -36,7 +36,7 @@ export function downloadUserGuide() {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text('Vaswani Return', margin, 32);
+    doc.text('Finpulse Consulting', margin, 32);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text('GST Reconciliation • User Guide', margin, 52);
@@ -52,7 +52,7 @@ export function downloadUserGuide() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...muted);
-    doc.text('© Vaswani Return — Confidential', margin, pageH - 24);
+    doc.text('© Finpulse Consulting — Confidential', margin, pageH - 24);
     doc.text(`Page ${pageNum}`, pageW - margin, pageH - 24, { align: 'right' });
     doc.setTextColor(...dark);
   };
@@ -136,7 +136,7 @@ export function downloadUserGuide() {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(36);
-  doc.text('Vaswani Return', margin, 200);
+  doc.text('Finpulse Consulting', margin, 200);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(16);
   doc.text('GST Reconciliation Tool', margin, 232);
@@ -164,7 +164,7 @@ export function downloadUserGuide() {
   newPage('Overview');
   h1('1. Overview');
   para(
-    'Vaswani Return reconciles your books (Purchase Register and Journal Registers) against GSTR-2B downloaded from the GST Portal to maximise eligible Input Tax Credit (ITC) and surface mismatches before filing.',
+    'Finpulse Consulting reconciles your books (Purchase Register and Journal Registers) against GSTR-2B downloaded from the GST Portal to maximise eligible Input Tax Credit (ITC) and surface mismatches before filing.',
     'Overview',
   );
   h2('What it does', 'Overview');
@@ -331,9 +331,9 @@ export function downloadUserGuide() {
   );
 
   para(
-    'For any queries or feature requests, contact the Vaswani Return team. This tool runs offline in your browser — your data is never uploaded to any server.',
+    'For any queries or feature requests, contact the Finpulse Consulting team. This tool runs offline in your browser — your data is never uploaded to any server.',
     'Best Practices',
   );
 
-  doc.save('Vaswani-Return-User-Guide.pdf');
+  doc.save('Finpulse-Consulting-User-Guide.pdf');
 }

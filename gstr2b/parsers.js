@@ -4,6 +4,7 @@ import os from 'os';
 import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 import JSZip from 'jszip';
+import { normalizeReturnPeriod, CANONICAL_MONTH_NAMES } from './db.js';
 
 // ─── STRING & NUMBER CLEANING HELPERS ─────────────────────────────────────────
 
@@ -37,6 +38,116 @@ export const parseExcelDate = (val) => {
     return String(val).trim();
 };
 
+// ─── PORTAL SUMMARY & PAYLOAD VERIFICATION HELPERS (D-08, D-12) ─────────────
+
+/**
+ * extractGstr2bPortalSummary: Inspects GSTR-2B JSON payload for live portal summary fields (itcsumm / cpsumm).
+ * Returns { eligibleItcTotal, totalInvoices } or null.
+ */
+export function extractGstr2bPortalSummary(raw) {
+    if (!raw) return null;
+    const itcsumm = raw.data?.itcsumm || raw.itcsumm;
+    const cpsumm = raw.data?.cpsumm || raw.cpsumm;
+
+    if (!itcsumm && !cpsumm) return null;
+
+    let eligibleItcTotal = null;
+    let totalInvoices = null;
+
+    if (itcsumm) {
+        let sum = 0;
+        let hasItc = false;
+        const scanObj = (o) => {
+            if (!o || typeof o !== 'object') return;
+            if (Array.isArray(o)) {
+                o.forEach(scanObj);
+                return;
+            }
+            if (o.iamt !== undefined || o.camt !== undefined || o.samt !== undefined || o.csamt !== undefined || o.igst !== undefined) {
+                const igst = cleanNum(o.iamt ?? o.igst);
+                const cgst = cleanNum(o.camt ?? o.cgst);
+                const sgst = cleanNum(o.samt ?? o.sgst);
+                const cess = cleanNum(o.csamt ?? o.cess);
+                sum += (igst + cgst + sgst + cess);
+                hasItc = true;
+            } else {
+                Object.values(o).forEach(scanObj);
+            }
+        };
+
+        if (itcsumm.itcavl) {
+            scanObj(itcsumm.itcavl);
+        } else {
+            scanObj(itcsumm);
+        }
+
+        if (hasItc) {
+            eligibleItcTotal = Math.round(sum * 100) / 100;
+        }
+    }
+
+    if (cpsumm) {
+        let count = 0;
+        let hasCount = false;
+        const scanCount = (o) => {
+            if (!o || typeof o !== 'object') return;
+            if (Array.isArray(o)) {
+                o.forEach(scanCount);
+                return;
+            }
+            if (o.cnt !== undefined || o.doc_cnt !== undefined || o.inv_cnt !== undefined) {
+                const c = cleanNum(o.cnt ?? o.doc_cnt ?? o.inv_cnt);
+                count += c;
+                hasCount = true;
+            } else {
+                Object.values(o).forEach(scanCount);
+            }
+        };
+        scanCount(cpsumm);
+        if (hasCount) {
+            totalInvoices = Math.round(count);
+        }
+    }
+
+    if (eligibleItcTotal == null && totalInvoices == null) return null;
+    return {
+        eligibleItcTotal,
+        totalInvoices
+    };
+}
+
+/**
+ * verifyParsedGstr2bPayload: Validates that parsed payload matches expected client GSTIN and period.
+ */
+export function verifyParsedGstr2bPayload(parsed, expectedGstin = '', expectedPeriod = '') {
+    if (!parsed || !Array.isArray(parsed.invoices)) {
+        return { valid: false, code: 'INVALID_PAYLOAD', error: 'Parsed payload missing invoices array.' };
+    }
+    const parsedGstin = cleanStr(parsed.gstin).toUpperCase();
+    const targetGstin = cleanStr(expectedGstin).toUpperCase();
+    if (parsedGstin && targetGstin && parsedGstin !== targetGstin) {
+        return {
+            valid: false,
+            code: 'MISMATCH_GSTIN',
+            error: `Payload GSTIN (${parsedGstin}) does not match expected client (${targetGstin}).`
+        };
+    }
+    const parsedPeriod = normalizeReturnPeriod(parsed.period);
+    const targetPeriod = normalizeReturnPeriod(expectedPeriod);
+    if (parsedPeriod && targetPeriod && parsedPeriod !== targetPeriod) {
+        return {
+            valid: false,
+            code: 'MISMATCH_PERIOD',
+            error: `Payload period (${parsedPeriod}) does not match requested period (${targetPeriod}).`
+        };
+    }
+    return {
+        valid: true,
+        normalizedGstin: parsedGstin || targetGstin,
+        normalizedPeriod: parsedPeriod || targetPeriod
+    };
+}
+
 // ─── GSTR-2B EXCEL PARSER ─────────────────────────────────────────────────────
 
 export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPeriod = '') => {
@@ -51,7 +162,23 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
     let dealerName = '';
     let detectedGstin = fallbackGstin;
     let finYear = '';
-    let detectedPeriod = fallbackPeriod;
+    let sheetPeriod = '';
+    
+    // 1. Extract period from filename pattern if present (e.g. "042026_...", "returns_R2B_..._042026.xlsx")
+    let filePeriod = '';
+    try {
+        const baseName = path.basename(filePath);
+        const mNameMatch = baseName.match(/(?:^|[_\-])(\d{2})(\d{4})(?:[_\-]|\.|$)/);
+        if (mNameMatch) {
+            const mm = parseInt(mNameMatch[1], 10);
+            const yyyy = mNameMatch[2];
+            if (mm >= 1 && mm <= 12) {
+                filePeriod = `${CANONICAL_MONTH_NAMES[mm - 1]} ${yyyy}`;
+            }
+        }
+    } catch (e) {}
+
+    let detectedPeriod = filePeriod || fallbackPeriod;
     const allInvoices = [];
 
     for (const sheetName of wb.SheetNames) {
@@ -74,10 +201,26 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
             if (r0.includes('finyear') && !finYear) {
                 finYear = cleanStr(row[2] || row[1]);
             }
-            if (r0.includes('period') && !detectedPeriod) {
-                detectedPeriod = cleanStr(row[2] || row[1]);
+            if (r0.includes('period') && !sheetPeriod) {
+                sheetPeriod = cleanStr(row[2] || row[1]);
             }
         }
+
+        if (!detectedPeriod || detectedPeriod === fallbackPeriod) {
+            if (filePeriod) {
+                detectedPeriod = filePeriod;
+            } else if (sheetPeriod) {
+                if (sheetPeriod.includes(' ')) {
+                    detectedPeriod = normalizeReturnPeriod(sheetPeriod);
+                } else if (finYear) {
+                    const startYear = parseInt(finYear.match(/\d{4}/)?.[0] || '2026', 10);
+                    const mLower = sheetPeriod.toLowerCase();
+                    const year = ['january', 'february', 'march', 'jan', 'feb', 'mar'].some(m => mLower.includes(m)) ? startYear + 1 : startYear;
+                    detectedPeriod = normalizeReturnPeriod(`${sheetPeriod} ${year}`);
+                }
+            }
+        }
+        if (!detectedPeriod) detectedPeriod = fallbackPeriod;
 
         // Identify table header row
         let headerRowIdx = -1;
@@ -106,9 +249,9 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
                     else if (colMap.sgst === undefined && (c === 'sgst' || c.includes('state/ut tax') || c.includes('state tax'))) colMap.sgst = idx;
                     else if (colMap.cess === undefined && c.includes('cess')) colMap.cess = idx;
                     else if (colMap.rate === undefined && (c.includes('tax rate') || /\brate\b/i.test(c) || c.includes('applicable %'))) colMap.rate = idx;
-                    else if (colMap.period === undefined && (c.trim() === 'period' || c.startsWith('period') || c.includes('return period'))) colMap.period = idx;
-                    else if (colMap.source_period === undefined && (c.includes('filling period') || c.includes('filing period'))) colMap.source_period = idx;
-                    else if (colMap.filing_date === undefined && (c.includes('filling date') || c.includes('filing date'))) colMap.filing_date = idx;
+                    else if (colMap.period === undefined && (c.trim() === 'period' || c.startsWith('period') || c.includes('return period')) && !c.includes('gstr-1') && !c.includes('filing') && !c.includes('filling')) colMap.period = idx;
+                    else if (colMap.source_period === undefined && (c.includes('gstr-1/iff/gstr-5 period') || c.includes('gstr-1/iff') || (c.includes('gstr-1') && c.includes('period')) || c.includes('filling period') || c.includes('filing period') || c.includes('source period'))) colMap.source_period = idx;
+                    else if (colMap.filing_date === undefined && (c.includes('filling date') || c.includes('filing date') || c.includes('gstr-1/iff/gstr-5 filing date') || (c.includes('gstr-1') && c.includes('date')))) colMap.filing_date = idx;
                     else if (colMap.itc_eligible === undefined && (c.includes('itc availibility') || c.includes('itc availability') || c.includes('itc eligible'))) colMap.itc_eligible = idx;
                     else if (colMap.reason === undefined && c.includes('reason')) colMap.reason = idx;
                 }
@@ -151,7 +294,8 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
             const filingDate = parseExcelDate(row[colMap.filing_date]);
             const sourcePeriod = cleanStr(row[colMap.source_period]);
             const rawPeriod = colMap.period !== undefined ? cleanStr(row[colMap.period]) : '';
-            const normalizedPeriod = rawPeriod ? rawPeriod.replace(/,/g, '').trim() : (fallbackPeriod || detectedPeriod);
+            const fileStatementPeriod = normalizeReturnPeriod(detectedPeriod || fallbackPeriod) || cleanStr(detectedPeriod || fallbackPeriod);
+            const normalizedPeriod = (rawPeriod ? normalizeReturnPeriod(rawPeriod) : '') || fileStatementPeriod || normalizeReturnPeriod('', idt);
             const itcRaw = cleanStr(row[colMap.itc_eligible]).toLowerCase();
             const itcEligible = isRejected ? 'N' : (itcRaw.startsWith('n') ? 'N' : 'Y');
             const reason = cleanStr(row[colMap.reason]);
@@ -180,12 +324,14 @@ export const parseGstr2bExcelHelper = (filePath, fallbackGstin = '', fallbackPer
         }
     }
 
+    const canonicalPeriod = normalizeReturnPeriod(detectedPeriod || fallbackPeriod) || cleanStr(detectedPeriod || fallbackPeriod);
     return {
         dealerName,
-        gstin: detectedGstin || fallbackGstin,
+        gstin: (detectedGstin || fallbackGstin || '').toUpperCase(),
         finYear,
-        period: detectedPeriod || fallbackPeriod,
-        invoices: allInvoices
+        period: canonicalPeriod,
+        invoices: allInvoices,
+        portalSummary: null
     };
 };
 
@@ -203,7 +349,8 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
         }
     }
     const gstin = raw.gstin || raw.data?.gstin || fallbackGstin;
-    const fp = raw.fp || raw.data?.fp || fallbackPeriod;
+    const rawFp = raw.rtnprd || raw.data?.rtnprd || raw.fp || raw.data?.fp || fallbackPeriod;
+    const normalizedPeriod = normalizeReturnPeriod(rawFp) || cleanStr(rawFp);
     const allInvoices = [];
 
     const docData = raw.data?.docdata || raw.docdata || raw;
@@ -238,12 +385,15 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
             for (const inv of (item.inv || [])) {
                 const { txval, igst, cgst, sgst, cess } = extractAmounts(inv);
                 const itcAvl = (inv.itcavl || 'Y').toUpperCase() === 'Y' ? 'Y' : 'N';
+                const idt = inv.dt || inv.idt || '';
+                const rowPeriod = normalizedPeriod || normalizeReturnPeriod('', idt);
                 allInvoices.push({
                     section: isAmendment ? 'B2BA' : 'B2B',
+                    return_period: rowPeriod,
                     ctin,
                     supplier_name: supplierName,
                     inum: inv.inum || '',
-                    idt: inv.dt || inv.idt || '',
+                    idt,
                     inv_typ: inv.typ || inv.inv_typ || 'Regular',
                     pos: inv.pos || '',
                     rchrg: inv.rev || inv.rchrg || 'N',
@@ -253,8 +403,8 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
                     sgst,
                     cess,
                     total_val: cleanNum(inv.val) || (txval + igst + cgst + sgst + cess),
-                    filing_date: inv.supfildt || inv.srctyp || '',
-                    source_period: inv.supprd || inv.irn || '',
+                    filing_date: inv.supfildt || '',
+                    source_period: inv.supprd || '',
                     itc_available: itcAvl,
                     itc_reason: inv.rsn || ''
                 });
@@ -273,12 +423,15 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
             for (const nt of (item.nt || [])) {
                 const { txval, igst, cgst, sgst, cess } = extractAmounts(nt);
                 const itcAvl = (nt.itcavl || 'Y').toUpperCase() === 'Y' ? 'Y' : 'N';
+                const idt = nt.nt_dt || nt.dt || nt.idt || '';
+                const rowPeriod = normalizedPeriod || normalizeReturnPeriod('', idt);
                 allInvoices.push({
                     section: isAmendment ? 'CDNRA' : 'CDNR',
+                    return_period: rowPeriod,
                     ctin,
                     supplier_name: supplierName,
                     inum: nt.ntnum || nt.nt_num || nt.inum || nt.doc_num || '',
-                    idt: nt.nt_dt || nt.dt || nt.idt || '',
+                    idt,
                     inv_typ: nt.ntty || nt.typ || 'Credit',
                     pos: nt.pos || '',
                     rchrg: nt.rev || nt.rchrg || 'N',
@@ -307,12 +460,15 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
         for (const doc of (item.doclist || [])) {
             const { txval, igst, cgst, sgst, cess } = extractAmounts(doc);
             const itcAvl = (doc.itcavl || 'Y').toUpperCase() === 'Y' ? 'Y' : 'N';
+            const idt = doc.docdt || doc.dt || '';
+            const rowPeriod = normalizedPeriod || normalizeReturnPeriod('', idt);
             allInvoices.push({
                 section: 'ISD',
+                return_period: rowPeriod,
                 ctin,
                 supplier_name: supplierName,
                 inum: doc.docnum || doc.inum || '',
-                idt: doc.docdt || doc.dt || '',
+                idt,
                 inv_typ: doc.doctyp || 'ISD',
                 pos: '',
                 rchrg: 'N',
@@ -331,16 +487,19 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
     }
 
     // 4. Process IMPG
-    for (const doc of [...(docData.impg || []), ...(docData.impgsez || [])]) {
+    for (const doc of (docData.impg || [])) {
         const igst = cleanNum(doc.igst ?? doc.iamt);
         const cess = cleanNum(doc.cess ?? doc.csamt);
         const txval = cleanNum(doc.txval);
+        const idt = doc.boedt || doc.dt || '';
+        const rowPeriod = normalizedPeriod || normalizeReturnPeriod('', idt);
         allInvoices.push({
             section: 'IMPG',
+            return_period: rowPeriod,
             ctin: 'CUSTOMS',
             supplier_name: 'Import of Goods',
             inum: doc.boenum || doc.inum || '',
-            idt: doc.boedt || doc.dt || '',
+            idt,
             inv_typ: 'Import',
             pos: doc.portcode || '',
             rchrg: 'N',
@@ -357,10 +516,41 @@ export const parseGstr2bJsonHelper = (jsonData, fallbackGstin = '', fallbackPeri
         });
     }
 
+    // 4b. Process IMPGSEZ
+    for (const doc of (docData.impgsez || [])) {
+        const igst = cleanNum(doc.igst ?? doc.iamt);
+        const cess = cleanNum(doc.cess ?? doc.csamt);
+        const txval = cleanNum(doc.txval);
+        const idt = doc.boedt || doc.dt || '';
+        const rowPeriod = normalizedPeriod || normalizeReturnPeriod('', idt);
+        allInvoices.push({
+            section: 'IMPGSEZ',
+            return_period: rowPeriod,
+            ctin: (doc.ctin || 'SEZ').toUpperCase(),
+            supplier_name: doc.trdnm || 'Import from SEZ',
+            inum: doc.boenum || doc.inum || '',
+            idt,
+            inv_typ: 'Import SEZ',
+            pos: doc.portcode || '',
+            rchrg: 'N',
+            txval,
+            igst,
+            cgst: 0,
+            sgst: 0,
+            cess,
+            total_val: cleanNum(doc.val) || (txval + igst + cess),
+            filing_date: '',
+            source_period: '',
+            itc_available: 'Y',
+            itc_reason: ''
+        });
+    }
+
     return {
-        gstin,
-        period: fp,
-        invoices: allInvoices
+        gstin: cleanStr(gstin).toUpperCase(),
+        period: normalizedPeriod,
+        invoices: allInvoices,
+        portalSummary: extractGstr2bPortalSummary(raw)
     };
 };
 

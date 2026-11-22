@@ -3,8 +3,9 @@ const XLSX: any = (XLSXStyle as any).default || XLSXStyle;
 
 // Strips all cell merges from an entire workbook to guarantee clean sorting, filtering and formulas
 export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
-  if (!wb || !wb.SheetNames || !wb.Sheets) return wb;
-  for (const name of wb.SheetNames) {
+  if (!wb || !wb.Sheets) return wb;
+  const names = Array.isArray(wb.SheetNames) && wb.SheetNames.length > 0 ? wb.SheetNames : Object.keys(wb.Sheets);
+  for (const name of names) {
     const ws = wb.Sheets[name];
     if (ws) {
       if (ws['!merges']) {

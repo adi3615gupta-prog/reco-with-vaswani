@@ -10,6 +10,7 @@ import ExcelJS from 'exceljs';
 import nodemailer from 'nodemailer';
 import { launchAutopilotBrowser } from './gstr2b/browserLauncher.js';
 import { getActiveDataPathFromDb, syncCredentialsWithCentral, pushSingleClientToVault } from './credentialsVaultSync.js';
+import { encryptSecret, decryptSecret, isEncryptedSecret } from './cryptoVault.js';
 
 /**
  * Standardizes invoice dates (ISO YYYY-MM-DD or DD/MM/YYYY) to standard DD-MM-YYYY
@@ -439,6 +440,20 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
 
                     insertStmt.finalize();
 
+                    // Reconciliation Delete: Purge ghost invoices removed on portal
+                    const incomingKeys = new Set(invoices.map(inv => `${(inv.ctin || '').trim().toUpperCase()}_${(inv.inum || '').trim().toUpperCase()}_${(inv.idt || '').trim()}`));
+                    db.all('SELECT id, ctin, inum, idt FROM ims_invoices WHERE client_gstin = ? AND return_period = ?', [gstin, period], (gErr, rows) => {
+                        if (!gErr && Array.isArray(rows)) {
+                            const toDelete = rows.filter(r => !incomingKeys.has(`${(r.ctin || '').trim().toUpperCase()}_${(r.inum || '').trim().toUpperCase()}_${(r.idt || '').trim()}`));
+                            if (toDelete.length > 0) {
+                                const delStmt = db.prepare('DELETE FROM ims_invoices WHERE id = ?');
+                                toDelete.forEach(d => delStmt.run(d.id));
+                                delStmt.finalize();
+                                console.log(`[IMS Ingestion] Purged ${toDelete.length} ghost invoices removed on portal for ${gstin} (${period})`);
+                            }
+                        }
+                    });
+
                     db.run('COMMIT', async (commitErr) => {
                         if (commitErr) {
                             console.error('Commit error on IMS ingest:', commitErr);
@@ -701,6 +716,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
 
             const { client_gstin, return_period } = tokenRow;
             const now = Date.now();
+            if (tokenRow.expires_at < now) return res.status(410).json({ success: false, error: 'This review link has expired. Please request a new link from your CA.' });
 
             db.serialize(() => {
                 db.run('BEGIN TRANSACTION');
@@ -766,115 +782,20 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         });
     });
 
-    // ─── 10. PUSH APPROVED 2B ITC TO GSTR-3B TABLE 4 ─────────────────────────
+    // ─── 10. PUSH APPROVED 2B ITC TO GSTR-3B TABLE 4 (DECOUPLED SAFE NO-OP) ─────────
     app.post('/api/ims/push-to-3b', (req, res) => {
-        const { gstin, period } = req.body;
-        if (!gstin || !period) {
-            return res.status(400).json({ success: false, error: 'gstin and period are required' });
-        }
-
-        db.get(`SELECT * FROM ims_batches WHERE client_gstin = ? AND return_period = ?`, [gstin, period], (err, batch) => {
-            if (err || !batch) {
-                return res.status(404).json({ success: false, error: 'No IMS batch found for this client and period' });
-            }
-
-            // Query full statutory breakdown across accepted invoices
-            const queryBreakdown = `
-                SELECT 
-                    -- 1. All Other ITC (Table 4A5: B2B, not RCM, not CDNR)
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) != 'Y' AND UPPER(COALESCE(inv_typ, 'R')) NOT IN ('C', 'CR') AND UPPER(COALESCE(source, '')) NOT IN ('CDNR', 'CDNRA', 'IMPG') THEN COALESCE(txval, 0) ELSE 0 END) as itc_txval,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) != 'Y' AND UPPER(COALESCE(inv_typ, 'R')) NOT IN ('C', 'CR') AND UPPER(COALESCE(source, '')) NOT IN ('CDNR', 'CDNRA', 'IMPG') THEN COALESCE(igst, 0) ELSE 0 END) as itc_igst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) != 'Y' AND UPPER(COALESCE(inv_typ, 'R')) NOT IN ('C', 'CR') AND UPPER(COALESCE(source, '')) NOT IN ('CDNR', 'CDNRA', 'IMPG') THEN COALESCE(cgst, 0) ELSE 0 END) as itc_cgst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) != 'Y' AND UPPER(COALESCE(inv_typ, 'R')) NOT IN ('C', 'CR') AND UPPER(COALESCE(source, '')) NOT IN ('CDNR', 'CDNRA', 'IMPG') THEN COALESCE(sgst, 0) ELSE 0 END) as itc_sgst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) != 'Y' AND UPPER(COALESCE(inv_typ, 'R')) NOT IN ('C', 'CR') AND UPPER(COALESCE(source, '')) NOT IN ('CDNR', 'CDNRA', 'IMPG') THEN COALESCE(cess, 0) ELSE 0 END) as itc_cess,
-
-                    -- 2. Inward Reverse Charge (Table 4A3 & Table 3.1d)
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) = 'Y' THEN COALESCE(txval, 0) ELSE 0 END) as rcm_txval,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) = 'Y' THEN COALESCE(igst, 0) ELSE 0 END) as rcm_igst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) = 'Y' THEN COALESCE(cgst, 0) ELSE 0 END) as rcm_cgst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND UPPER(COALESCE(rchrg, 'N')) = 'Y' THEN COALESCE(sgst, 0) ELSE 0 END) as rcm_sgst,
-
-                    -- 3. Inward Credit Notes (Table 4 Row 38 / 4B2)
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND (UPPER(COALESCE(inv_typ, '')) IN ('C', 'CR') OR UPPER(COALESCE(source, '')) IN ('CDNR', 'CDNRA')) THEN COALESCE(txval, 0) ELSE 0 END) as cdnr_txval,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND (UPPER(COALESCE(inv_typ, '')) IN ('C', 'CR') OR UPPER(COALESCE(source, '')) IN ('CDNR', 'CDNRA')) THEN COALESCE(igst, 0) ELSE 0 END) as cdnr_igst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND (UPPER(COALESCE(inv_typ, '')) IN ('C', 'CR') OR UPPER(COALESCE(source, '')) IN ('CDNR', 'CDNRA')) THEN COALESCE(cgst, 0) ELSE 0 END) as cdnr_cgst,
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND (UPPER(COALESCE(inv_typ, '')) IN ('C', 'CR') OR UPPER(COALESCE(source, '')) IN ('CDNR', 'CDNRA')) THEN COALESCE(sgst, 0) ELSE 0 END) as cdnr_sgst,
-
-                    -- 4. Import of Goods (Table 4A1)
-                    SUM(CASE WHEN UPPER(COALESCE(action, 'NO_ACTION')) = 'ACCEPT' AND (UPPER(COALESCE(inv_typ, '')) = 'IMPG' OR UPPER(COALESCE(source, '')) = 'IMPG') THEN COALESCE(igst, 0) ELSE 0 END) as impg_igst
-                FROM ims_invoices
-                WHERE client_gstin = ? AND return_period = ?
-            `;
-
-            db.get(queryBreakdown, [gstin, period], (bdErr, bd) => {
-                // Update batch status to PUSHED_TO_3B
-                db.run(`UPDATE ims_batches SET status = 'PUSHED_TO_3B', updated_at = ? WHERE client_gstin = ? AND return_period = ?`, [Date.now(), gstin, period], (uErr) => {
-                    if (uErr) return res.status(500).json({ success: false, error: 'Failed updating batch status' });
-
-                    const itcIgst = bd ? Math.round((bd.itc_igst || 0) * 100) / 100 : (batch.eligible_itc_igst || 0);
-                    const itcCgst = bd ? Math.round((bd.itc_cgst || 0) * 100) / 100 : (batch.eligible_itc_cgst || 0);
-                    const itcSgst = bd ? Math.round((bd.itc_sgst || 0) * 100) / 100 : (batch.eligible_itc_sgst || 0);
-                    const itcCess = bd ? Math.round((bd.itc_cess || 0) * 100) / 100 : (batch.eligible_itc_cess || 0);
-                    const itcTxval = bd ? Math.round((bd.itc_txval || 0) * 100) / 100 : 0;
-                    const itcTotal = Math.round((itcIgst + itcCgst + itcSgst + itcCess) * 100) / 100;
-
-                    const rcmIgst = bd ? Math.round((bd.rcm_igst || 0) * 100) / 100 : 0;
-                    const rcmCgst = bd ? Math.round((bd.rcm_cgst || 0) * 100) / 100 : 0;
-                    const rcmSgst = bd ? Math.round((bd.rcm_sgst || 0) * 100) / 100 : 0;
-                    const rcmTxval = bd ? Math.round((bd.rcm_txval || 0) * 100) / 100 : 0;
-                    const rcmTotal = Math.round((rcmIgst + rcmCgst + rcmSgst) * 100) / 100;
-
-                    const cdnrIgst = bd ? Math.round((bd.cdnr_igst || 0) * 100) / 100 : 0;
-                    const cdnrCgst = bd ? Math.round((bd.cdnr_cgst || 0) * 100) / 100 : 0;
-                    const cdnrSgst = bd ? Math.round((bd.cdnr_sgst || 0) * 100) / 100 : 0;
-                    const cdnrTxval = bd ? Math.round((bd.cdnr_txval || 0) * 100) / 100 : 0;
-                    const cdnrTotal = Math.round((cdnrIgst + cdnrCgst + cdnrSgst) * 100) / 100;
-
-                    const impgIgst = bd ? Math.round((bd.impg_igst || 0) * 100) / 100 : 0;
-
-                    res.json({
-                        success: true,
-                        message: 'Eligible ITC successfully calculated for GSTR-3B Table 4',
-                        gstin,
-                        period,
-                        itc2b: {
-                            taxable: itcTxval,
-                            igst: itcIgst,
-                            cgst: itcCgst,
-                            sgst: itcSgst,
-                            cess: itcCess,
-                            total: itcTotal
-                        },
-                        rcmInward: {
-                            taxable: rcmTxval,
-                            igst: rcmIgst,
-                            cgst: rcmCgst,
-                            sgst: rcmSgst,
-                            total: rcmTotal
-                        },
-                        creditNotes: {
-                            taxable: cdnrTxval,
-                            igst: cdnrIgst,
-                            cgst: cdnrCgst,
-                            sgst: cdnrSgst,
-                            total: cdnrTotal
-                        },
-                        importGoods: {
-                            taxable: 0,
-                            igst: impgIgst,
-                            cgst: 0,
-                            sgst: 0,
-                            total: impgIgst
-                        },
-                        counts: {
-                            totalInvoices: batch.total_invoices,
-                            accepted: batch.accepted_count,
-                            rejected: batch.rejected_count,
-                            pending: batch.pending_count
-                        }
-                    });
-                });
-            });
+        const { gstin, period } = req.body || {};
+        res.json({
+            success: true,
+            decoupled: true,
+            message: 'IMS and GSTR-3B are decoupled. Upload directly into Table 4.',
+            gstin,
+            period,
+            itc2b: { taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0, total: 0 },
+            rcmInward: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
+            creditNotes: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
+            importGoods: { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 },
+            counts: { totalInvoices: 0, accepted: 0, rejected: 0, pending: 0 }
         });
     });
 
@@ -1137,7 +1058,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
     });
 
     // ─── 12. FETCH CLIENT CREDENTIALS VAULT (MULTI-PC AUTO-SYNC) ──────────────
-    app.get('/api/ims/credentials', async (req, res) => {
+    app.get('/api/ims/credentials', authMiddleware, async (req, res) => {
         try {
             const dataPath = await resolveDataPath();
             // Automatically synchronize with central network vault before returning
@@ -1147,7 +1068,9 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         }
 
         db.all(`
-            SELECT id, gstin, trade_name, legal_name, phone, email, address, portal_username, portal_password, last_updated
+            SELECT id, gstin, trade_name, legal_name, phone, email, address, portal_username,
+                   (CASE WHEN portal_password IS NOT NULL AND LENGTH(portal_password) > 0 THEN 1 ELSE 0 END) AS has_password,
+                   last_updated
             FROM clients
             WHERE is_deleted = 0 OR is_deleted IS NULL
             ORDER BY trade_name COLLATE NOCASE ASC
@@ -1155,14 +1078,27 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             if (err) return res.status(500).json({ success: false, error: 'Database error fetching credentials' });
 
             const safeRows = rows || [];
-            const configured = safeRows.filter(r => r.portal_username && r.portal_password).length;
+            const configured = safeRows.filter(r => r.portal_username && r.has_password).length;
+
+            const sanitizedRows = safeRows.map(r => ({
+                id: r.id,
+                gstin: r.gstin,
+                trade_name: r.trade_name,
+                legal_name: r.legal_name,
+                phone: r.phone,
+                email: r.email,
+                address: r.address,
+                portal_username: r.portal_username,
+                has_password: Boolean(r.has_password),
+                last_updated: r.last_updated
+            }));
 
             res.json({
                 success: true,
-                total: safeRows.length,
+                total: sanitizedRows.length,
                 configured,
-                missing: safeRows.length - configured,
-                clients: safeRows
+                missing: sanitizedRows.length - configured,
+                clients: sanitizedRows
             });
         });
     });
@@ -1176,6 +1112,8 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         const id = randomUUID();
         const cleanUser = portal_username !== undefined ? String(portal_username).trim() : null;
         const cleanPass = portal_password !== undefined ? String(portal_password).trim() : null;
+        const isPassMaskedOrBlank = !cleanPass || cleanPass === '••••••••' || cleanPass.startsWith('•••') || cleanPass === '********';
+        const encryptedPass = isPassMaskedOrBlank ? null : encryptSecret(cleanPass);
         const cleanPhone = phone !== undefined ? String(phone).trim() : null;
         const cleanEmail = email !== undefined ? String(email).trim() : null;
         const cleanAddress = address !== undefined ? String(address).trim() : null;
@@ -1188,7 +1126,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             ON CONFLICT(gstin) DO UPDATE SET
                 portal_username = COALESCE(?, portal_username),
-                portal_password = COALESCE(?, portal_password),
+                portal_password = CASE WHEN ? IS NOT NULL THEN ? ELSE portal_password END,
                 phone = COALESCE(?, phone),
                 email = COALESCE(?, email),
                 address = COALESCE(?, address),
@@ -1205,10 +1143,11 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             cleanEmail,
             cleanAddress,
             cleanUser,
-            cleanPass,
+            encryptedPass || '',
             now,
             cleanUser,
-            cleanPass,
+            encryptedPass,
+            encryptedPass,
             cleanPhone,
             cleanEmail,
             cleanAddress,
@@ -1243,7 +1182,10 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
     });
 
     // ─── 13b. DELETE A CLIENT (SOFT-DELETE SYNC ACROSS LAN) ────────────────────
-    app.delete('/api/ims/clients/:gstin', (req, res) => {
+    app.delete('/api/ims/clients/:gstin', authMiddleware, (req, res) => {
+        if (!req.user || req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Admin privileges required to delete client' });
+        }
         const { gstin } = req.params;
         if (!gstin) return res.status(400).json({ success: false, error: 'gstin is required' });
 
@@ -1276,8 +1218,16 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
     });
 
     // ─── 14. BULK IMPORT CREDENTIALS FROM EXCEL/JSON (MULTI-PC SYNC) ──────────
-    app.post('/api/ims/credentials/bulk-import', async (req, res) => {
-        const { clients, deleteMissing = true } = req.body;
+    app.post('/api/ims/credentials/bulk-import', authMiddleware, async (req, res) => {
+        const { clients, deleteMissing = false, confirmDeleteMissing = false } = req.body;
+        if (deleteMissing) {
+            if (!req.user || req.user.role !== 'admin') {
+                return res.status(403).json({ success: false, error: 'Admin privileges required to delete missing clients' });
+            }
+            if (!confirmDeleteMissing) {
+                return res.status(400).json({ success: false, error: 'Explicit confirmation (confirmDeleteMissing: true) required to delete missing clients' });
+            }
+        }
         if (!Array.isArray(clients) || clients.length === 0) {
             return res.status(400).json({ success: false, error: 'clients array is required' });
         }
@@ -1349,7 +1299,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                         email = excluded.email,
                         address = excluded.address,
                         portal_username = excluded.portal_username,
-                        portal_password = excluded.portal_password,
+                        portal_password = CASE WHEN excluded.portal_password IS NOT NULL AND excluded.portal_password != '' THEN excluded.portal_password ELSE clients.portal_password END,
                         last_updated = excluded.last_updated,
                         is_deleted = 0
                 `);
@@ -1363,6 +1313,8 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                     const cleanAddress = String(c.address || '').trim();
                     const cleanUser = String(c.portal_username || c.portalUsername || '').trim();
                     const cleanPass = String(c.portal_password || c.portalPassword || '').trim();
+                    const isPassMaskedOrBlank = !cleanPass || cleanPass === '••••••••' || cleanPass.startsWith('•••') || cleanPass === '********';
+                    const encPass = isPassMaskedOrBlank ? '' : encryptSecret(cleanPass);
 
                     upsertStmt.run([
                         id,
@@ -1373,7 +1325,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                         cleanEmail,
                         cleanAddress,
                         cleanUser,
-                        cleanPass,
+                        encPass,
                         now
                     ]);
                 }
@@ -1442,6 +1394,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         }
 
         const buffer = Buffer.from(fileBase64, 'base64');
+        const gstinKey = String(gstin || '').trim().toUpperCase();
         const returnPeriod = period || 'November 2025';
 
         // Extract target GSTIN from parameter, or detect from filename (e.g. IMS_27AZNPB4348J1Z4_12102026_1.zip)
@@ -1562,29 +1515,158 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         }
     });
 
+    /**
+     * dismissAllModalsAndPopups — Thorough dismissal of all GST portal popups,
+     * promotional notices (like "Next-Gen GST Process Reforms"), Aadhaar/Bank alerts,
+     * backdrop overlays, and modal blockades.
+     */
+    async function dismissAllModalsAndPopups(page) {
+        if (!page || page.isClosed()) return;
+        try {
+            // 1. Press 'Escape' key (Bootstrap & Angular standard modal close)
+            await page.keyboard.press('Escape').catch(() => {});
+
+            // 2. Click any explicit close buttons / icons via Playwright locators
+            const closeLocators = [
+                '#advNotificationModal .close',
+                '#advNotificationModal button',
+                '#advNotificationModal a',
+                'button.close',
+                'a.close',
+                '.close',
+                '.btn-close',
+                '[aria-label="Close"]',
+                '[aria-label="close"]',
+                '[data-dismiss="modal"]',
+                '.modal-dialog .close',
+                '.modal .close',
+                '.modal-header .close',
+                '.modal button.close',
+                '.modal a.close',
+                'button:has-text("Remind Me Later")',
+                'a:has-text("Remind Me Later")',
+                'button:has-text("Remind me later")',
+                'button:has-text("Close")',
+                'a:has-text("Close")',
+                'button:has-text("MAYBE LATER")',
+                'a:has-text("MAYBE LATER")',
+                '.fa-times',
+                '.fa-times-circle',
+                '.fa-close',
+                'span:has-text("×")',
+                'button:has-text("×")',
+                'a:has-text("×")'
+            ];
+
+            for (const sel of closeLocators) {
+                try {
+                    const el = page.locator(sel).first();
+                    if (await el.isVisible({ timeout: 400 }).catch(() => false)) {
+                        await el.click({ force: true }).catch(() => {});
+                        console.log(`[IMS Automation] Clicked popup close locator: ${sel}`);
+                    }
+                } catch (e) {}
+            }
+
+            // 3. Deep DOM cleanup: Click candidate close icons AND completely obliterate modal backdrops & banners
+            await page.evaluate(() => {
+                const currentHref = window.location.href.toLowerCase();
+                const isOnWelcomeOrDashboard = currentHref.includes('dashboard') || currentHref.includes('fowelcome') || currentHref.includes('quicklinks');
+
+                // A. Click candidate close buttons/spans/icons
+                const allElements = Array.from(document.querySelectorAll('button, a, span, div, i, img, [role="button"]'));
+                for (const el of allElements) {
+                    const txt = (el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+                    const cls = (typeof el.className === 'string' ? el.className : '').toLowerCase();
+                    const isCloseIcon = txt === '×' || txt === 'X' || txt.toUpperCase() === 'CLOSE' ||
+                                       txt.toLowerCase().includes('remind me later') || txt.toLowerCase().includes('maybe later') ||
+                                       cls.includes('close') || cls.includes('btn-close') || cls.includes('fa-times') || cls.includes('fa-close');
+
+                    // Guard: Never click main action buttons
+                    if (isCloseIcon && !txt.toUpperCase().includes('GENERATE') && !txt.toUpperCase().includes('DOWNLOAD') && !txt.toUpperCase().includes('LOGIN')) {
+                        try { el.click(); } catch (err) {}
+                    }
+                }
+
+                // B. Target and remove all intrusive promotional modals, banners, and backdrops
+                const modals = Array.from(document.querySelectorAll('.modal, .modal-backdrop, .overlay, .popup, div[role="dialog"], #advNotificationModal, .modal-dialog'));
+                for (const m of modals) {
+                    const mText = ((m.innerText || '') + ' ' + (m.innerHTML || '')).toUpperCase();
+                    const isPromo = mText.includes('PROCESS REFORMS') || mText.includes('NEXT-GEN') || 
+                                    mText.includes('REMIND ME LATER') || mText.includes('NEWS AND UPDATES') ||
+                                    mText.includes('BE AWARE, STAY COMPLIANT') || mText.includes('ADVNOTIFICATION') ||
+                                    m.id.toLowerCase().includes('adv') || m.id.toLowerCase().includes('notification') ||
+                                    m.classList.contains('modal-backdrop');
+
+                    // On welcome / dashboard / quicklinks pages, ANY modal is an unwanted intrusive popup!
+                    if (isPromo || isOnWelcomeOrDashboard || m.classList.contains('modal-backdrop')) {
+                        m.style.setProperty('display', 'none', 'important');
+                        m.style.setProperty('visibility', 'hidden', 'important');
+                        m.style.setProperty('opacity', '0', 'important');
+                        m.style.setProperty('pointer-events', 'none', 'important');
+                        try { m.remove(); } catch (e) {}
+                    }
+                }
+
+                // C. Unlock page scrolling and pointer events on body and html
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+                document.body.style.pointerEvents = 'auto';
+                document.documentElement.style.removeProperty('overflow');
+                document.documentElement.style.pointerEvents = 'auto';
+            }).catch(() => {});
+        } catch (err) {
+            console.warn('[IMS Automation] Popup dismissal notice:', err.message);
+        }
+    }
+
     app.post('/api/ims/portal-sync-browser', async (req, res) => {
         const { gstin, period, username: customUser, password: customPass, phase, forceFresh } = req.body;
         if (!gstin) {
             return res.status(400).json({ success: false, error: 'gstin is required' });
         }
 
+        const gstinKey = String(gstin || '').trim().toUpperCase();
         const returnPeriod = period || 'November 2025';
+        let browser = null;
+        let capturedJson = null;
 
         // 1. Resolve username & password from DB if not supplied in body
-        let portalUser = customUser;
-        let portalPass = customPass;
+        let portalUser = customUser ? String(customUser).trim() : '';
+        let portalPass = customPass ? String(customPass).trim() : '';
+        const isPassMasked = !portalPass || portalPass === '••••••••' || portalPass.startsWith('•••') || portalPass === '********';
+        if (isPassMasked) {
+            portalPass = '';
+        }
         let tradeName = '';
 
         const clientRow = await new Promise((resolve) => {
-            db.get('SELECT trade_name, portal_username, portal_password FROM clients WHERE gstin = ?', [gstin], (err, row) => {
+            db.get('SELECT trade_name, legal_name, portal_username, portal_password FROM clients WHERE UPPER(TRIM(gstin)) = ? OR UPPER(TRIM(id)) = ?', [gstinKey, gstinKey], (err, row) => {
                 resolve(row || null);
             });
         });
 
         if (clientRow) {
-            tradeName = clientRow.trade_name || '';
-            if (!portalUser) portalUser = clientRow.portal_username || '';
-            if (!portalPass) portalPass = clientRow.portal_password || '';
+            tradeName = clientRow.trade_name || clientRow.legal_name || '';
+            if (!portalUser && clientRow.portal_username) {
+                portalUser = String(clientRow.portal_username).trim();
+            }
+            if (!portalPass && clientRow.portal_password) {
+                portalPass = String(clientRow.portal_password).trim();
+            }
+        }
+
+        // Decrypt password if stored encrypted (enc:v1:...) in SQLite or Vault
+        if (portalPass) {
+            if (isEncryptedSecret(portalPass)) {
+                try {
+                    portalPass = decryptSecret(portalPass);
+                    console.log(`[IMS Automation] Successfully decrypted Vault password for ${gstinKey}`);
+                } catch (e) {
+                    console.error('[IMS Automation] Failed decrypting portal password:', e.message);
+                }
+            }
         }
 
         // Check if generation was already requested for this client & period
@@ -1599,11 +1681,9 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
 
         let isPhase2 = reqPhase === 'PHASE_2';
         if (!isPhase2 && !isForceFresh && batchRow) {
-            if (batchRow.generation_status === 'REQUESTED' || 
-                batchRow.generation_status === 'READY' || 
-                batchRow.status === 'REQUESTED_WAITING') {
+            if (batchRow.generation_status === 'READY') {
                 isPhase2 = true;
-            } else if (batchRow.generation_requested_at && (Date.now() - batchRow.generation_requested_at < 24 * 60 * 60 * 1000)) {
+            } else if (batchRow.status === 'REQUESTED_WAITING' && batchRow.generation_requested_at && (Date.now() - batchRow.generation_requested_at >= 20 * 60 * 1000)) {
                 isPhase2 = true;
             }
         }
@@ -1629,15 +1709,15 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             });
         }
 
-        if (activeBrowserInstance) {
+        const existingBrowser = gstinKey ? activeBrowsers.get(gstinKey) : null;
+        if (existingBrowser) {
             console.log('[IMS Automation] Terminating existing browser session before launching new...');
             try {
-                await activeBrowserInstance.close().catch(() => {});
+                await existingBrowser.close().catch(() => {});
             } catch (e) {}
             if (gstinKey) activeBrowsers.delete(gstinKey);
         }
 
-        let browser;
         try {
             console.log(`[IMS Automation] Launching visible browser for GSTIN ${gstin}...`);
             const browserLaunchOptions = {
@@ -1689,7 +1769,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                 } catch (e) {}
             };
 
-            let capturedJson = null;
+            capturedJson = null;
 
             // Intercept REST responses from the GST Portal for IMS / Inward supplies
             page.on('response', async (response) => {
@@ -1753,21 +1833,115 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             focusDesktopWindow();
 
             // Wait for AngularJS login form to mount & auto-fill Username & Password
-            try {
-                await page.waitForSelector('#username', { timeout: 15000 });
-                if (portalUser) {
-                    await page.fill('#username', portalUser);
+            await page.waitForTimeout(1200);
+
+            // 1. Auto-fill Username
+            if (portalUser) {
+                try {
+                    const uSelector = '#username';
+                    await page.waitForSelector(uSelector, { state: 'visible', timeout: 15000 });
+                    const uInput = page.locator(uSelector).first();
+                    if (await uInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+                        await uInput.click();
+                        await page.waitForTimeout(100);
+                        await uInput.fill('');
+                        await uInput.pressSequentially(portalUser, { delay: 25 });
+                        await uInput.evaluate((el, val) => {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            if (window.angular) {
+                                const ngEl = window.angular.element(el);
+                                const ngModel = ngEl.controller('ngModel');
+                                if (ngModel) {
+                                    ngModel.$setViewValue(val);
+                                    ngModel.$render();
+                                }
+                                const scope = ngEl.scope();
+                                if (scope && scope.lform) {
+                                    scope.lform.username = val;
+                                    scope.$apply();
+                                }
+                            }
+                        }, portalUser);
+                        console.log(`[IMS Automation] Username auto-filled: ${portalUser}`);
+                    }
+                } catch (e) {
+                    console.warn('[IMS Automation] Warning on username auto-fill:', e.message);
                 }
-                if (portalPass) {
-                    await page.waitForSelector('#user_pass', { timeout: 5000 });
-                    await page.fill('#user_pass', portalPass);
-                }
-                // Focus CAPTCHA field so staff can immediately type
-                await page.focus('#captcha').catch(() => {});
-                focusDesktopWindow();
-            } catch (e) {
-                console.log('[IMS Automation] Notice waiting for login inputs:', e.message);
             }
+
+            // Await deliberate delay so Angular validates username and activates password field
+            await page.waitForTimeout(1000);
+
+            // 2. Auto-fill Password
+            if (portalPass) {
+                try {
+                    console.log(`[IMS Automation] Auto-filling password for ${tradeName || gstinKey}...`);
+                    const pInput = page.locator('#user_pass').first();
+                    await pInput.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+                    if (await pInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+                        await pInput.click();
+                        await page.waitForTimeout(100);
+                        await pInput.fill('');
+                        await pInput.pressSequentially(portalPass, { delay: 35 });
+                        await pInput.evaluate((el, val) => {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            if (window.angular) {
+                                const ngEl = window.angular.element(el);
+                                const ngModel = ngEl.controller('ngModel');
+                                if (ngModel) {
+                                    ngModel.$setViewValue(val);
+                                    ngModel.$render();
+                                }
+                                const scope = ngEl.scope();
+                                if (scope && scope.lform) {
+                                    scope.lform.password = val;
+                                    scope.$apply();
+                                }
+                            }
+                        }, portalPass);
+
+                        const pVal = await pInput.inputValue().catch(() => '');
+                        if (pVal !== portalPass) {
+                            await pInput.fill(portalPass);
+                        }
+                        console.log(`[IMS Automation] Password auto-filled successfully (${portalPass.length} chars) for ${tradeName || gstinKey}`);
+                    } else {
+                        // Secondary fallback via visible DOM query
+                        await page.evaluate((passVal) => {
+                            const passInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+                            const visibleInput = passInputs.find(el => {
+                                const rect = el.getBoundingClientRect();
+                                return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+                            }) || document.getElementById('user_pass');
+                            if (visibleInput) {
+                                visibleInput.value = passVal;
+                                visibleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                visibleInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                visibleInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        }, portalPass);
+                        console.log('[IMS Automation] Password auto-filled via visible DOM query fallback');
+                    }
+                } catch (e) {
+                    console.warn('[IMS Automation] Warning on password auto-fill:', e.message);
+                }
+            } else {
+                console.warn(`[IMS Automation] No password configured in vault for client ${gstinKey}`);
+            }
+
+            // 3. Focus CAPTCHA field so staff can immediately type
+            try {
+                const captchaInput = page.locator('#captcha').first();
+                if (await captchaInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+                    await captchaInput.focus();
+                }
+            } catch (e) {}
+
+            focusDesktopWindow();
 
             // Inject assistive guidance overlay banner
             await page.evaluate(({ clientName, clientGstin, hasCreds }) => {
@@ -1825,22 +1999,8 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
 
             await page.waitForTimeout(2000);
 
-            // Auto-dismiss common GST portal popups (Remind Me Later / Close)
-            try {
-                const remindLaterBtn = page.locator('button:has-text("Remind Me Later"), a:has-text("Remind Me Later"), button:has-text("Remind me later")').first();
-                if (await remindLaterBtn.isVisible({ timeout: 2500 })) {
-                    await remindLaterBtn.click();
-                    console.log('[IMS Automation] Dismissed "Remind Me Later" popup');
-                }
-            } catch (e) {}
-
-            try {
-                const closeBtn = page.locator('.modal-header .close, button:has-text("Close"), button[aria-label="Close"]').first();
-                if (await closeBtn.isVisible({ timeout: 2500 })) {
-                    await closeBtn.click();
-                    console.log('[IMS Automation] Dismissed modal popup');
-                }
-            } catch (e) {}
+            // Auto-dismiss common GST portal popups (Next-Gen Process Reforms / Remind Me Later / Close)
+            await dismissAllModalsAndPopups(page);
 
             await page.waitForTimeout(1000);
 
@@ -1973,27 +2133,12 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                         }, { stepText, color }).catch(() => {});
                     };
 
-                    // ─── 0. AUTO-DISMISS BLOCKING POPUPS / MODALS ───
-                    await page.evaluate(() => {
-                        // Dismiss common popups
-                        const btns = Array.from(document.querySelectorAll('button, a, input[type="button"]'));
-                        const dismiss = btns.find(b => {
-                            const t = (b.textContent || b.value || '').toUpperCase();
-                            return t.includes('REMIND ME LATER') || t.includes('MAYBE LATER') || t === 'CLOSE' || (b.className || '').includes('close');
-                        });
-                        if (dismiss) dismiss.click();
+                    // ─── 0. AUTO-DISMISS BLOCKING POPUPS / MODALS (Reforms Banner / Backdrops / Close) ───
+                    await dismissAllModalsAndPopups(page);
 
-                        // Force dismiss backdrop if stuck
-                        const backdrops = document.querySelectorAll('.modal-backdrop');
-                        if (backdrops.length > 0) {
-                            const closeBtn = document.querySelector('.modal.in button.close, .modal.in button');
-                            if (closeBtn) closeBtn.click();
-                        }
-                    }).catch(() => {});
-
-                    // ─── CHECK 1: ARE WE ON THE OFFLINE INWARD DOWNLOAD SCREEN? (Screenshot 2 & 3) ───
-                    // Detect by page text/buttons (regardless of whether URL contains 'inward')
-                    const isOfflineInwardScreen = await page.evaluate(() => {
+                    // ─── STAGE 4: ARE WE ON THE OFFLINE INWARD DOWNLOAD SCREEN? ───
+                    // URL: return.gst.gov.in/imsweb/auth/imsoffline/download
+                    const isOfflineInwardScreen = currentUrl.includes('imsoffline') || await page.evaluate(() => {
                         const bodyText = (document.body.innerText || '').toUpperCase();
                         return bodyText.includes('GENERATE JSON FILE TO DOWNLOAD') ||
                                bodyText.includes('CLICK HERE TO DOWNLOAD') ||
@@ -2007,115 +2152,110 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                         // Allow Angular 2.5 seconds to fetch & populate the generated files table via AJAX
                         await page.waitForTimeout(2500);
 
-                        // ─── CASE A: PHASE 2 (COLLECT READY DOWNLOAD FROM TABLE) ───
-                        // (Strict Rule: NEVER click GENERATE in Phase 2)
-                        if (isPhase2) {
-                            await updateStatusBanner('Phase 2: Locating generated IMS download link on GST Portal...', '#10b981');
+                        // ─── STEP 4A: CHECK TABLE FOR READY DOWNLOAD FILE ───
+                        await updateStatusBanner('Step 4/4: Checking table for ready IMS download file...', '#10b981');
 
-                            let clickedDlLink = false;
-                            const dlLocators = [
-                                'table tr td a:has-text("Click here to download file")',
-                                'table tr td a:has-text("Click here to download")',
-                                'table tr td a:has-text("Click here")',
-                                'table tr td a:has-text("Download file")',
-                                'table tr td a:has-text("Download JSON")',
-                                'table tbody tr td a',
-                                'table tr td a',
-                                'a:has-text("Click here to download file")',
-                                'a:has-text("Click here to download")'
-                            ];
+                        let clickedDlLink = false;
+                        const dlLocators = [
+                            'table tr td a:has-text("Click here to download file")',
+                            'table tr td a:has-text("Click here to download")',
+                            'table tr td a:has-text("Click here")',
+                            'table tr td a:has-text("Download file")',
+                            'table tr td a:has-text("Download JSON")',
+                            'table tbody tr td a',
+                            'table tr td a',
+                            'a:has-text("Click here to download file")',
+                            'a:has-text("Click here to download")'
+                        ];
 
-                            for (const sel of dlLocators) {
-                                try {
-                                    const dlEl = page.locator(sel).first();
-                                    if (await dlEl.isVisible({ timeout: 1000 })) {
-                                        const text = (await dlEl.innerText().catch(() => '')).trim();
-                                        const isNavTab = await dlEl.evaluate(el => Boolean(el.closest('.nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5'))).catch(() => false);
-                                        if (!isNavTab && text.toLowerCase() !== 'download' && text.toLowerCase() !== 'upload' && !text.toLowerCase().includes('download data for ims')) {
-                                            console.log(`[IMS Automation] [Phase 2] Found ready file download link via locator "${sel}" (text: "${text}")! Clicking now...`);
-                                            await updateStatusBanner('Step 4/4: Downloading prepared IMS JSON file...', '#10b981');
-                                            await dlEl.click({ force: true });
-                                            clickedDlLink = true;
-                                            break;
-                                        }
-                                    }
-                                } catch (e) {}
-                            }
-
-                            if (!clickedDlLink) {
-                                clickedDlLink = await page.evaluate(() => {
-                                    const tableLinks = Array.from(document.querySelectorAll('table tbody tr td a, table tr td a'));
-                                    const tblDl = tableLinks.find(el => {
-                                        if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
-                                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                        return t.includes('download') || t.includes('click here');
-                                    });
-                                    if (tblDl) {
-                                        tblDl.click();
-                                        return true;
-                                    }
-
-                                    const allLinks = Array.from(document.querySelectorAll('a'));
-                                    const clickHere = allLinks.find(el => {
-                                        if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
-                                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                        return t.includes('click here to download file') || t.includes('click here to download');
-                                    });
-                                    if (clickHere) {
-                                        clickHere.click();
-                                        return true;
-                                    }
-
-                                    return false;
-                                }).catch(() => false);
-
-                                if (clickedDlLink) {
-                                    console.log('[IMS Automation] [Phase 2] Clicked "Click here to download file" via DOM fallback!');
-                                    await updateStatusBanner('Step 4/4: Downloading prepared IMS JSON file...', '#10b981');
-                                }
-                            }
-
-                            // If download link was triggered, wait for file to download
-                            if (clickedDlLink) {
-                                console.log('[IMS Automation] [Phase 2] Triggered download! Waiting up to 10s for file capture / disk arrival...');
-                                for (let w = 0; w < 10; w++) {
-                                    await page.waitForTimeout(1000);
-                                    if (capturedJson) break;
-                                    const diskInvs = await checkDiskForDownload(true);
-                                    if (diskInvs && Array.isArray(diskInvs)) {
-                                        capturedJson = diskInvs;
+                        for (const sel of dlLocators) {
+                            try {
+                                const dlEl = page.locator(sel).first();
+                                if (await dlEl.isVisible({ timeout: 1000 })) {
+                                    const text = (await dlEl.innerText().catch(() => '')).trim();
+                                    const isNavTab = await dlEl.evaluate(el => Boolean(el.closest('.nav-tabs, .nav, ul.nav, .nav-item, h1, h2, h3, h4, h5'))).catch(() => false);
+                                    if (!isNavTab && text.toLowerCase() !== 'download' && text.toLowerCase() !== 'upload' && !text.toLowerCase().includes('download data for ims')) {
+                                        console.log(`[IMS Automation] Found ready file download link via locator "${sel}" (text: "${text}")! Clicking now...`);
+                                        await updateStatusBanner('Step 4/4: Downloading prepared IMS JSON file...', '#10b981');
+                                        await dlEl.click({ force: true });
+                                        clickedDlLink = true;
                                         break;
                                     }
                                 }
-                                if (capturedJson) {
-                                    console.log('[IMS Automation] [Phase 2] File successfully captured!');
-                                    break;
-                                }
-                                await page.waitForTimeout(2000);
-                                continue;
-                            }
+                            } catch (e) {}
+                        }
 
-                            // Download link not yet visible in Phase 2: Check if still compiling (NEVER CLICK GENERATE IN PHASE 2)
-                            const stillProcessing = await page.evaluate(() => {
-                                const text = (document.body.innerText || '').toUpperCase();
-                                return text.includes('IN PROGRESS') || 
-                                       text.includes('BEING PROCESSED') || 
-                                       text.includes('UNDER PROCESS') ||
-                                       text.includes('REQUEST IS IN PROGRESS');
+                        if (!clickedDlLink) {
+                            clickedDlLink = await page.evaluate(() => {
+                                const tableLinks = Array.from(document.querySelectorAll('table tbody tr td a, table tr td a'));
+                                const tblDl = tableLinks.find(el => {
+                                    if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
+                                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                    return t.includes('download') || t.includes('click here');
+                                });
+                                if (tblDl) {
+                                    tblDl.click();
+                                    return true;
+                                }
+
+                                const allLinks = Array.from(document.querySelectorAll('a'));
+                                const clickHere = allLinks.find(el => {
+                                    if (el.closest('.nav, .nav-tabs, ul, h1, h2, h3, h4')) return false;
+                                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                    return t.includes('click here to download file') || t.includes('click here to download');
+                                });
+                                if (clickHere) {
+                                    clickHere.click();
+                                    return true;
+                                }
+
+                                return false;
                             }).catch(() => false);
 
-                            if (stillProcessing) {
-                                console.log('[IMS Automation] [Phase 2] GST Portal indicates file is still compiling. Waiting 4s before re-checking...');
-                                await updateStatusBanner('⏳ GST Portal is still compiling file. Waiting for download link to appear...', '#f59e0b');
-                                await page.waitForTimeout(4000);
-                                continue;
+                            if (clickedDlLink) {
+                                console.log('[IMS Automation] Clicked "Click here to download file" via DOM fallback!');
+                                await updateStatusBanner('Step 4/4: Downloading prepared IMS JSON file...', '#10b981');
                             }
-
-                            console.log('[IMS Automation] [Phase 2] Waiting for table to render download link...');
-                            await updateStatusBanner('⏳ Phase 2: Waiting for generated download link in table...', '#10b981');
-                            await page.waitForTimeout(3000);
-                            continue;
                         }
+
+                        // If download link was triggered, wait for file to download
+                        if (clickedDlLink) {
+                            console.log('[IMS Automation] Triggered download! Waiting up to 10s for file capture / disk arrival...');
+                            for (let w = 0; w < 10; w++) {
+                                await page.waitForTimeout(1000);
+                                if (capturedJson) break;
+                                const diskInvs = await checkDiskForDownload(true);
+                                if (diskInvs && Array.isArray(diskInvs)) {
+                                    capturedJson = diskInvs;
+                                    break;
+                                }
+                            }
+                            if (capturedJson) {
+                                console.log('[IMS Automation] File successfully captured!');
+                                break;
+                            }
+                        }
+
+                        // Check if file generation is explicitly still processing on portal
+                        const stillProcessing = await page.evaluate(() => {
+                            const text = (document.body.innerText || '').toUpperCase();
+                            return text.includes('IN PROGRESS') || 
+                                   text.includes('BEING PROCESSED') || 
+                                   text.includes('UNDER PROCESS') ||
+                                   text.includes('REQUEST IS IN PROGRESS');
+                        }).catch(() => false);
+
+                        if (stillProcessing) {
+                            console.log('[IMS Automation] GST Portal indicates file is still compiling. Waiting 5s...');
+                            await updateStatusBanner('⏳ GST Portal is still compiling file (~20 mins). Please check back in a few minutes...', '#f59e0b');
+                            await page.waitForTimeout(5000);
+                            isGenerationRequested = true;
+                            generationRequestedTimestamp = batchRow?.generation_requested_at || Date.now();
+                            break;
+                        }
+
+                        // If NO download link exists in table and NOT compiling, PROCEED STRAIGHT TO GENERATE!
+                        console.log('[IMS Automation] No download link in table -> Proceeding to click "GENERATE JSON FILE TO DOWNLOAD"...');
 
                         // ─── ERROR & NO RECORDS DETECTION HELPER ───
                         // ─── ERROR & NO RECORDS DETECTION HELPER ───
@@ -2352,31 +2492,38 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                             return false;
                         };
 
-                        // 1st Click on GENERATE JSON FILE TO DOWNLOAD
+                        // Click "GENERATE JSON FILE TO DOWNLOAD" button (Single authentic click)
                         await clickGenerateBtn(1);
-                        await page.waitForTimeout(1000);
+                        await page.waitForTimeout(1500);
 
-                        // Check if portal returned "no records available in IMS" error after 1st click
+                        // Dismiss confirmation popup if any ("OK" / "Proceed")
+                        await dismissConfirmationModal();
+
+                        // Check if portal returned "no records available in IMS" error immediately
                         if (await checkForNoRecordsError()) {
                             await handleNoRecordsScenario();
                             break;
                         }
 
-                        await dismissConfirmationModal();
-
-                        // 2nd Click (ek bar aur click karna hai taki fresh new request initiate ho)
-                        console.log('[IMS Automation] [Phase 1] Re-clicking "GENERATE JSON FILE TO DOWNLOAD" (2nd click) to register fresh request...');
-                        await updateStatusBanner('Phase 1: Registering new request on GST portal...', '#8b5cf6');
-                        await clickGenerateBtn(2);
-
-                        // Active polling loop for Portal's response (Error VS Accepted)
-                        console.log('[IMS Automation] Waiting up to 8s for GST Portal response after 2nd Generate click...');
+                        // ─── ACTIVE POLLING: CHECK IF DOWNLOAD LINK APPEARED IN TABLE BELOW ───
+                        // (Strict rule: NEVER click Generate a 2nd time! When Generate is clicked, 
+                        // portal renders the table below with "Click here to download file" or "In Progress")
+                        console.log('[IMS Automation] Polling GST Portal after Generate click for download link vs in-progress...');
+                        await updateStatusBanner('Checking table for generated download link...', '#10b981');
                         let responseHandled = false;
 
                         for (let poll = 0; poll < 16; poll++) {
-                            await page.waitForTimeout(500);
+                            await page.waitForTimeout(750);
 
-                            // Check 1: Did "no records available in IMS" error appear?
+                            // Priority 1: Did a download link appear in the table below?
+                            const dlCaptured = await attemptDownloadExistingFile();
+                            if (dlCaptured || capturedJson) {
+                                console.log('[IMS Automation] Download link appeared in table below! Clicked and captured file!');
+                                responseHandled = true;
+                                break;
+                            }
+
+                            // Priority 2: Did "no records available in IMS" error appear?
                             if (await checkForNoRecordsError()) {
                                 console.log('[IMS Automation] Detected "no records available in IMS" error on portal!');
                                 await handleNoRecordsScenario();
@@ -2384,13 +2531,14 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                                 break;
                             }
 
-                            // Check 2: Did portal show explicit acceptance message?
+                            // Priority 3: Did portal confirm request accepted / compilation in progress (~20 mins)?
                             const isAccepted = await page.evaluate(() => {
                                 const text = (document.body.innerText || '').toUpperCase().replace(/\s+/g, ' ');
                                 return text.includes('REQUEST ACCEPTED') ||
                                        text.includes('REQUEST HAS BEEN ACCEPTED') ||
                                        text.includes('IN PROGRESS') ||
                                        text.includes('BEING PROCESSED') ||
+                                       text.includes('UNDER PROCESS') ||
                                        text.includes('CHECK AFTER 20 MINUTES') ||
                                        text.includes('20 MINUTE');
                             }).catch(() => false);
@@ -2411,16 +2559,10 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                             break;
                         }
 
-                        // Check error once more
-                        if (await checkForNoRecordsError()) {
-                            await handleNoRecordsScenario();
-                            break;
-                        }
-
-                        // If table exists with download link, grab it rather than assuming 20m wait
-                        const existingDlCaptured = await attemptDownloadExistingFile();
-                        if (existingDlCaptured) {
-                            console.log('[IMS Automation] Successfully captured existing file from table.');
+                        // Final check for download link in table
+                        const finalDl = await attemptDownloadExistingFile();
+                        if (finalDl || capturedJson) {
+                            console.log('[IMS Automation] Successfully captured download from table on final check.');
                             break;
                         }
 
@@ -2439,160 +2581,124 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
                         break;
                     }
 
-                    // ─── 0B. AUTO-RECOVER FROM WAF REJECTED URL SCREEN ───
-                    const isWafRejected = currentUrl.includes('returns/ims') || await page.evaluate(() => {
-                        const bodyText = (document.body.innerText || '').toUpperCase();
-                        return bodyText.includes('REQUESTED URL WAS REJECTED') || bodyText.includes('CONSULT WITH YOUR ADMINISTRATOR');
-                    }).catch(() => false);
-
-                    if (isWafRejected) {
-                        console.log('[IMS Automation] Detected WAF rejected URL page! Redirecting to official endpoint: https://return.gst.gov.in/imsweb/auth/imsDashboard...');
-                        await updateStatusBanner('Recovering ➔ Navigating to https://return.gst.gov.in/imsweb/auth/imsDashboard...', '#ef4444');
-                        await page.goto('https://return.gst.gov.in/imsweb/auth/imsDashboard', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-                        await page.waitForTimeout(2000);
-                        continue;
-                    }
-
-                    // ─── CHECK 2: ARE WE ON THE IMS DASHBOARD (Card view with Inward / Outward)? (Screenshot 1) ───
-                    const isImsDashboard = currentUrl.includes('imsweb') || 
-                                          currentUrl.includes('imsDashboard') || 
-                                          (currentUrl.includes('/ims') && !currentUrl.includes('returns/ims'));
+                    // ─── STAGE 3: ARE WE ON IMS DASHBOARD (Card view)? ───
+                    const isImsDashboard = currentUrl.includes('imsdashboard') || 
+                                          (currentUrl.includes('imsweb') && !currentUrl.includes('imsoffline'));
 
                     if (isImsDashboard) {
-                        console.log('[IMS Automation] Step 2: On IMS Dashboard -> Clicking "OFFLINE" button on Inward Supplies card...');
-                        await updateStatusBanner('Step 2/4: On IMS Dashboard ➔ Clicking "OFFLINE"...', '#3b82f6');
+                        await dismissAllModalsAndPopups(page);
+                        console.log('[IMS Automation] Step 3/4: On IMS Dashboard ➔ Clicking "OFFLINE" button on Inward Supplies card...');
+                        await updateStatusBanner('Step 3/4: On IMS Dashboard ➔ Clicking "OFFLINE"...', '#3b82f6');
 
                         let clickedOffline = false;
-                        // A. Check for the OFFLINE button directly on the Inward Supplies card (Screenshot 1)
                         try {
-                            const offBtn = page.locator('button:has-text("OFFLINE"), a:has-text("OFFLINE"), text="OFFLINE"').first();
-                            if (await offBtn.isVisible({ timeout: 1500 })) {
+                            const offBtn = page.locator('button:has-text("OFFLINE"), a:has-text("OFFLINE")').first();
+                            if (await offBtn.isVisible({ timeout: 2500 })) {
                                 await offBtn.click();
                                 clickedOffline = true;
-                                console.log('[IMS Automation] Clicked OFFLINE button on IMS Dashboard card!');
+                                console.log('[IMS Automation] Clicked "OFFLINE" button on Inward Supplies card!');
                             }
                         } catch (e) {}
 
-                        // B. Fallback: DOM click on OFFLINE
                         if (!clickedOffline) {
-                            await page.evaluate(() => {
-                                const btn = Array.from(document.querySelectorAll('button, a, div, span')).find(el => {
+                            clickedOffline = await page.evaluate(() => {
+                                const btn = Array.from(document.querySelectorAll('button, a')).find(el => {
                                     const t = (el.innerText || el.textContent || '').trim().toUpperCase();
                                     return t === 'OFFLINE';
                                 });
-                                if (btn) btn.click();
-                            }).catch(() => {});
+                                if (btn) { btn.click(); return true; }
+                                return false;
+                            }).catch(() => false);
                         }
 
                         await page.waitForTimeout(2000);
                         continue;
                     }
 
-                    // ─── CHECK 3: DIRECT NAVIGATION: SERVICES ➔ RETURNS ➔ IMS DASHBOARD ───
-                    // Directly access Services from Home (/auth/home) or any screen. Avoids redundant Dashboard hops!
-                    if (!isImsDashboard && !currentUrl.includes('inward')) {
-                        console.log('[IMS Automation] Step 1: Navigating directly: Services ➔ Returns ➔ Invoice Management System (IMS)...');
-                        await updateStatusBanner('Step 1/4: Opening Services ➔ Returns ➔ Invoice Management System (IMS)...', '#6366f1');
+                    // ─── STAGE 2: ARE WE ON RETURNS QUICKLINKS PAGE? ───
+                    // URL: services.gst.gov.in/services/auth/quicklinks/returns
+                    const isQuicklinksReturns = currentUrl.includes('quicklinks/returns');
+                    if (isQuicklinksReturns) {
+                        await dismissAllModalsAndPopups(page);
+                        console.log('[IMS Automation] Step 2/4: On Returns Quicklinks ➔ Clicking "Invoice Management System (IMS) Dashboard"...');
+                        await updateStatusBanner('Step 2/4: Opening "Invoice Management System (IMS) Dashboard"...', '#6366f1');
 
-                        // 1. Direct IMS tile check (if already on-screen)
-                        let clickedDirectIms = false;
+                        let clickedIms = false;
                         try {
-                            const directTile = page.locator('text="Invoice Management System", a[href*="imsDashboard"], a[href*="imsweb"], a[href*="ims"], button:has-text("IMS")').first();
-                            if (await directTile.isVisible({ timeout: 1000 })) {
-                                await directTile.click();
-                                clickedDirectIms = true;
-                                console.log('[IMS Automation] Clicked direct IMS tile on current screen!');
+                            const imsLink = page.locator('a[href*="imsDashboard"], a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("IMS Dashboard")').first();
+                            if (await imsLink.isVisible({ timeout: 3000 })) {
+                                await imsLink.click();
+                                clickedIms = true;
+                                console.log('[IMS Automation] Clicked IMS Dashboard from Quicklinks page!');
                             }
                         } catch (e) {}
 
-                        if (!clickedDirectIms) {
-                            // 2. Open Services dropdown in navbar (without going to Dashboard!)
-                            await page.evaluate(() => {
-                                const servicesLink = document.querySelector('li.dropdown.drpdwn > a') ||
-                                    Array.from(document.querySelectorAll('a.dropdown-toggle, li.dropdown > a')).find(a => (a.textContent || '').trim().startsWith('Services'));
-                                if (servicesLink) {
-                                    servicesLink.click();
-                                    if (servicesLink.parentElement) {
-                                        servicesLink.parentElement.classList.add('open');
-                                        const menu = servicesLink.parentElement.querySelector('.dropdown-menu');
-                                        if (menu) menu.style.display = 'block';
-                                    }
-                                }
-                            }).catch(() => {});
-
-                            try {
-                                const servicesBtn = page.locator('li.dropdown.drpdwn > a, a.dropdown-toggle:has-text("Services"), a:has-text("Services")').first();
-                                if (await servicesBtn.isVisible({ timeout: 1000 })) {
-                                    await servicesBtn.click();
-                                }
-                            } catch (e) {}
-
-                            await page.waitForTimeout(400);
-
-                            // 3. Hover/click Returns submenu
-                            await page.evaluate(() => {
-                                const retLink = Array.from(document.querySelectorAll('li.has-sub > a, .dropdown-menu > li > a')).find(a => (a.textContent || '').trim().startsWith('Returns'));
-                                if (retLink) {
-                                    retLink.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                                    retLink.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                                    retLink.click();
-                                    if (retLink.parentElement) {
-                                        retLink.parentElement.classList.add('open');
-                                        const subMenu = retLink.parentElement.querySelector('ul, .dropdown-menu, .sub-menu');
-                                        if (subMenu) subMenu.style.display = 'block';
-                                    }
-                                }
-                            }).catch(() => {});
-
-                            try {
-                                const returnsItem = page.locator('.dropdown-menu a:has-text("Returns"), li.has-sub a:has-text("Returns")').first();
-                                if (await returnsItem.isVisible({ timeout: 1000 })) {
-                                    await returnsItem.hover();
-                                    await returnsItem.click().catch(() => {});
-                                }
-                            } catch (e) {}
-
-                            await page.waitForTimeout(400);
-
-                            // 4. Click Invoice Management System (IMS) Dashboard
-                            let clickedIms = false;
-                            try {
-                                const imsItem = page.locator('a:has-text("Invoice Management System (IMS) Dashboard"), a:has-text("Invoice Management System"), a:has-text("IMS Dashboard"), a[href*="imsDashboard"], a[href*="imsweb"]').first();
-                                if (await imsItem.isVisible({ timeout: 1500 })) {
-                                    await imsItem.click();
-                                    clickedIms = true;
-                                    console.log('[IMS Automation] Clicked IMS Dashboard via menu locator!');
-                                }
-                            } catch (e) {}
-
-                            if (!clickedIms) {
-                                clickedIms = await page.evaluate(() => {
-                                    const ims = Array.from(document.querySelectorAll('a, button')).find(a => {
-                                        const t = (a.innerText || a.textContent || '').trim().toUpperCase();
-                                        const h = (a.getAttribute('href') || '').toLowerCase();
-                                        return t.includes('INVOICE MANAGEMENT SYSTEM') || t === 'IMS' || t.includes('IMS DASHBOARD') || h.includes('imsdashboard') || h.includes('imsweb');
-                                    });
-                                    if (ims) {
-                                        ims.click();
-                                        return true;
-                                    }
-                                    return false;
-                                }).catch(() => false);
-                            }
-
-                            // 5. Fallback: If menu interaction was delayed or didn't trigger, navigate directly to official IMS URL
-                            if (!clickedIms) {
-                                const checkUrl = page.url();
-                                if (!checkUrl.includes('imsweb') && !checkUrl.includes('imsDashboard')) {
-                                    console.log('[IMS Automation] Direct URL fallback: Navigating to https://return.gst.gov.in/imsweb/auth/imsDashboard...');
-                                    await page.goto('https://return.gst.gov.in/imsweb/auth/imsDashboard', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-                                }
-                            }
+                        if (!clickedIms) {
+                            clickedIms = await page.evaluate(() => {
+                                const link = Array.from(document.querySelectorAll('a')).find(el => {
+                                    const t = (el.innerText || el.textContent || '').trim().toUpperCase();
+                                    const h = (el.getAttribute('href') || '').toLowerCase();
+                                    return t.includes('INVOICE MANAGEMENT SYSTEM') || h.includes('imsdashboard') || h.includes('imsweb');
+                                });
+                                if (link) { link.click(); return true; }
+                                return false;
+                            }).catch(() => false);
                         }
 
-                        await page.waitForTimeout(2000);
+                        await page.waitForTimeout(2500);
                         continue;
                     }
+
+                    // ─── STAGE 1: ON HOME / WELCOME DASHBOARD (fowelcome / auth / dashboard) ───
+                    // User's exact recorded step: Services (top navbar) ➔ Returns (quicklinks/returns)
+                    await dismissAllModalsAndPopups(page);
+                    console.log('[IMS Automation] Step 1/4: On Welcome Screen ➔ Opening Services ➔ Returns...');
+                    await updateStatusBanner('Step 1/4: Opening Services ➔ Returns...', '#8b5cf6');
+
+                    // 1. Click Services navbar dropdown
+                    let openedServices = false;
+                    try {
+                        const servicesLink = page.locator('a.dropdown-toggle:has-text("Services"), li.dropdown:has-text("Services") > a, a:has-text("Services")').first();
+                        if (await servicesLink.isVisible({ timeout: 2500 })) {
+                            await servicesLink.click();
+                            openedServices = true;
+                            console.log('[IMS Automation] Clicked "Services" in navbar');
+                        }
+                    } catch (e) {}
+
+                    if (!openedServices) {
+                        await page.evaluate(() => {
+                            const a = Array.from(document.querySelectorAll('a')).find(el => (el.innerText || '').trim().toUpperCase() === 'SERVICES');
+                            if (a) a.click();
+                        }).catch(() => {});
+                    }
+
+                    await page.waitForTimeout(800);
+
+                    // 2. Click Returns menu item (which directly navigates to /services/auth/quicklinks/returns)
+                    let clickedReturns = false;
+                    try {
+                        const returnsLink = page.locator('a[href*="quicklinks/returns"], a.dropdown-toggle:has-text("Returns"), a:has-text("Returns")').first();
+                        if (await returnsLink.isVisible({ timeout: 2500 })) {
+                            await returnsLink.click();
+                            clickedReturns = true;
+                            console.log('[IMS Automation] Clicked "Returns" menu link');
+                        }
+                    } catch (e) {}
+
+                    if (!clickedReturns) {
+                        await page.evaluate(() => {
+                            const a = Array.from(document.querySelectorAll('a')).find(el => {
+                                const t = (el.innerText || '').trim().toUpperCase();
+                                const h = (el.getAttribute('href') || '').toLowerCase();
+                                return h.includes('quicklinks/returns') || t === 'RETURNS';
+                            });
+                            if (a) a.click();
+                        }).catch(() => {});
+                    }
+
+                    await page.waitForTimeout(2500);
+                    continue;
                 } catch (e) {
                     console.log('[IMS Automation] Navigation notice:', e.message);
                 }
@@ -2699,6 +2805,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
 
                 await page.waitForTimeout(3000);
                 await browser.close().catch(() => {});
+                if (gstinKey) activeBrowsers.delete(gstinKey);
 
                 return res.json({
                     success: true,
@@ -3048,7 +3155,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
             });
             if (saved) {
                 email = email || saved.sender_email;
-                pass = pass || (saved.app_password || '').replace(/\s+/g, '').trim();
+                pass = pass || (saved.app_password ? decryptSecret(saved.app_password).replace(/\s+/g, '').trim() : '');
                 name = name || saved.sender_name || 'GST Compliance Team';
             }
         }
@@ -3149,7 +3256,7 @@ export default function setupImsRoutes(app, db, defaultUserDataPath = '.', authe
         }
 
         const senderEmail = settings.sender_email.trim();
-        const appPassword = settings.app_password.replace(/\s+/g, '').trim();
+        const appPassword = decryptSecret(settings.app_password).replace(/\s+/g, '').trim();
         const senderName = (settings.sender_name || 'GST Compliance Team').trim();
         const firmName = (settings.firm_name || 'Chartered Accountants').trim();
         const caPhone = (settings.ca_phone || '').trim();

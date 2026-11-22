@@ -31,10 +31,10 @@ const INR = (v: number): string =>
   '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 const grossClosing = (e: FixedAssetEntry) =>
-  e.gross_block_opening + e.additions - e.deductions;
+  e.gross_block_opening + (e.additions ?? (e.additions_more_180_days + e.additions_less_180_days)) - e.deductions;
 
 const totalDepreciation = (e: FixedAssetEntry) =>
-  e.depreciation_opening + e.depreciation_for_year;
+  e.depreciation_opening + (e.depreciation_for_year ?? e.depreciation_for_year_tax);
 
 const netBlock = (e: FixedAssetEntry) =>
   grossClosing(e) - totalDepreciation(e);
@@ -103,15 +103,30 @@ function FixedAssetsRegister({ onDataChanged }: Props) {
       return;
     }
 
+    const additionsVal = parseFloat(newValues.additions) || 0;
+    const depVal = parseFloat(newValues.depreciation_for_year) || 0;
+    const gbOpening = parseFloat(newValues.gross_block_opening) || 0;
+    const ded = parseFloat(newValues.deductions) || 0;
+    const depOpening = parseFloat(newValues.depreciation_opening) || 0;
+
     const entry: FixedAssetEntry = {
       id: uid(),
       client_id: '',
+      asset_name: assetClass,
       asset_class: assetClass,
-      gross_block_opening:   parseFloat(newValues.gross_block_opening)   || 0,
-      additions:             parseFloat(newValues.additions)             || 0,
-      deductions:            parseFloat(newValues.deductions)            || 0,
-      depreciation_opening:  parseFloat(newValues.depreciation_opening)  || 0,
-      depreciation_for_year: parseFloat(newValues.depreciation_for_year) || 0,
+      block_rate_tax: 0,
+      gross_block_opening: gbOpening,
+      additions: additionsVal,
+      additions_more_180_days: additionsVal,
+      additions_less_180_days: 0,
+      deductions: ded,
+      gross_block_closing: gbOpening + additionsVal - ded,
+      depreciation_opening: depOpening,
+      depreciation_for_year: depVal,
+      depreciation_for_year_books: depVal,
+      depreciation_for_year_tax: depVal,
+      accumulated_depreciation_closing: depOpening + depVal,
+      net_block_closing: (gbOpening + additionsVal - ded) - (depOpening + depVal),
     };
 
     addFixedAssetEntry(entry);
@@ -189,11 +204,11 @@ function FixedAssetsRegister({ onDataChanged }: Props) {
   const totals = entries.reduce(
     (acc, e) => ({
       gross_block_opening: acc.gross_block_opening + e.gross_block_opening,
-      additions: acc.additions + e.additions,
+      additions: acc.additions + (e.additions ?? 0),
       deductions: acc.deductions + e.deductions,
       gross_closing: acc.gross_closing + grossClosing(e),
       depreciation_opening: acc.depreciation_opening + e.depreciation_opening,
-      depreciation_for_year: acc.depreciation_for_year + e.depreciation_for_year,
+      depreciation_for_year: acc.depreciation_for_year + (e.depreciation_for_year ?? 0),
       total_depreciation: acc.total_depreciation + totalDepreciation(e),
       net_block: acc.net_block + netBlock(e),
     }),
@@ -444,7 +459,7 @@ function FixedAssetsRegister({ onDataChanged }: Props) {
 
                     {/* Additions */}
                     <td className="px-3 py-2.5 text-right text-slate-300">
-                      {renderCell(entry, 'additions', INR(entry.additions), entry.additions)}
+                      {renderCell(entry, 'additions', INR(entry.additions ?? 0), entry.additions ?? 0)}
                     </td>
 
                     {/* Deductions */}
@@ -464,7 +479,7 @@ function FixedAssetsRegister({ onDataChanged }: Props) {
 
                     {/* Depreciation for Year */}
                     <td className="px-3 py-2.5 text-right text-slate-300">
-                      {renderCell(entry, 'depreciation_for_year', INR(entry.depreciation_for_year), entry.depreciation_for_year)}
+                      {renderCell(entry, 'depreciation_for_year', INR(entry.depreciation_for_year ?? 0), entry.depreciation_for_year ?? 0)}
                     </td>
 
                     {/* Total Depreciation (computed) */}

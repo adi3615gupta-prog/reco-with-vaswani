@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ArrowLeft, Download, Server, Wifi, WifiOff, RefreshCw, 
+  ArrowLeft, Download, Server, Wifi, WifiOff, RefreshCw,
   Calculator, FileSpreadsheet, Plus, Trash2, Building2,
   Calendar, Layers, CheckCircle2, TrendingUp, AlertTriangle,
   CloudDownload, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { safeApiFetch } from '@/lib/api';
 
 import * as XLSX from 'xlsx-js-style';
 import { fetchFixedAssets, type TallyFixedAsset, type TallyConnectionConfig, pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
-import { 
-  calculateCompaniesAct, calculateIncomeTax, exportCompaniesAct, exportIncomeTax, 
+import {
+  calculateCompaniesAct, calculateIncomeTax, exportCompaniesAct, exportIncomeTax,
   exportWorkingTemplate, parseWorkingTemplate, exportComprehensiveReport,
-  type CompaniesActAssetRow, type IncomeTaxBlock, type IncomeTaxAddition 
+  type CompaniesActAssetRow, type IncomeTaxBlock, type IncomeTaxAddition
 } from '@/lib/depreciationEngine';
 
 interface DepreciationModuleProps {
@@ -131,7 +132,7 @@ function getItBlockName(ruleKey: string, rate: number): string {
   const ratePct = `${rate}%`;
   if (rate === 0) return "Goodwill 0%";
   if (rate === 25) return "Intangible Assets 25%";
-  
+
   if (ruleKey.startsWith('building') || ruleKey.startsWith('road')) {
     return `Buildings ${ratePct}`;
   }
@@ -165,8 +166,8 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
   const [tallyAssets, setTallyAssets] = useState<TallyFixedAsset[]>([]);
 
   // --- Configuration State ---
-  const [fyStart, setFyStart] = useState('2024-04-01');
-  const [fyEnd, setFyEnd] = useState('2025-03-31');
+  const [fyStart, setFyStart] = useState('2026-04-01');
+  const [fyEnd, setFyEnd] = useState('2027-03-31');
   const [entityType, setEntityType] = useState<'company' | 'individual'>('company');
   const [activeTab, setActiveTab] = useState<'companies' | 'incometax' | 'variance'>('companies');
 
@@ -204,7 +205,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
     const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
     const fy = `${fyStart.split('-')[0]}-${fyEnd.split('-')[0].slice(-2)}`;
     if (clientGstin) {
-      fetch(`/api/audit-storage/depreciation/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
+      safeApiFetch(`/api/audit-storage/depreciation/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`)
         .then(r => r.json())
         .then(data => {
           if (data.success && data.data && data.data.assets_data) {
@@ -233,7 +234,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
     try {
       const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
       const fy = `${fyStart.split('-')[0]}-${fyEnd.split('-')[0].slice(-2)}`;
-      const res = await fetch('/api/audit-storage/depreciation/save', {
+      const res = await safeApiFetch('/api/audit-storage/depreciation/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -300,16 +301,16 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
       // Separate asset ledgers and accumulated depreciation ledgers
       const assetLedgers: TallyFixedAsset[] = [];
       const depLedgers: TallyFixedAsset[] = [];
-      
+
       assets.forEach(a => {
         const nameUpper = a.ledgerName.toUpperCase();
         // If the name contains keywords of depreciation, or if it has a negative balance
         const isDep = (
-          nameUpper.includes('DEP') || 
-          nameUpper.includes('PROV') || 
+          nameUpper.includes('DEP') ||
+          nameUpper.includes('PROV') ||
           nameUpper.includes('ACCUM')
         ) || a.openingBalance < 0;
-        
+
         if (isDep) {
           depLedgers.push(a);
         } else {
@@ -335,7 +336,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
         // Find best matching asset ledger
         let bestMatch: TallyFixedAsset | null = null;
         let bestMatchLen = 0;
-        
+
         assetLedgers.forEach(a => {
           const cleanA = cleanName(a.ledgerName);
           if (cleanD.includes(cleanA) || cleanA.includes(cleanD)) {
@@ -345,7 +346,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
             }
           }
         });
-        
+
         if (bestMatch) {
           const key = (bestMatch as TallyFixedAsset).ledgerName;
           depMapping[key] = (depMapping[key] || 0) + Math.abs(d.openingBalance);
@@ -358,14 +359,14 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
       // Build Companies Act rows, splitting opening balances and additions
       const compRows: CompaniesActAssetRow[] = [];
       const initialMapping: Record<string, string> = { ...assetBlockMapping };
-      
+
       assetLedgers.forEach(a => {
         const matchedDep = depMapping[a.ledgerName] || 0;
-        
+
         const categoryKey = guessCategoryFromLedgerName(a.ledgerName);
         const rule = ASSET_CATEGORY_RULES.find(r => r.key === categoryKey) || ASSET_CATEGORY_RULES[0];
         const isIntangible = rule.key.startsWith('intangible');
-        
+
         const blockName = getItBlockName(rule.key, rule.itWdvRate);
         initialMapping[a.ledgerName] = blockName;
 
@@ -389,7 +390,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
             openingAccumulatedDep: matchedDep
           });
         }
-        
+
         // 2. Create separate rows for each Addition to capture the EXACT date
         a.additions.forEach(add => {
           compRows.push({
@@ -407,7 +408,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
             openingAccumulatedDep: 0
           });
         });
-        
+
         // 3. Fallback if it has no opening balance and no additions (should not happen, but just in case)
         if (a.openingBalance <= 0 && a.additions.length === 0) {
           compRows.push({
@@ -449,7 +450,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-        
+
         const parsedAssets = parseWorkingTemplate(sheetData);
         if (parsedAssets.length === 0) {
           toast.error("No valid asset records found in the template");
@@ -484,14 +485,14 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
 
   const reconstructTallyAssets = (compRows: CompaniesActAssetRow[]): TallyFixedAsset[] => {
     const map = new Map<string, TallyFixedAsset>();
-    
+
     for (const r of compRows) {
       const baseName = r.name
         .replace(/\s*\(Opening\)$/, '')
         .replace(/\s*\(Addition\s*-\s*[^)]+\)$/, '')
         .trim()
         .toUpperCase();
-      
+
       if (!map.has(baseName)) {
         map.set(baseName, {
           ledgerName: baseName,
@@ -501,9 +502,9 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
           deletions: []
         });
       }
-      
+
       const asset = map.get(baseName)!;
-      
+
       if (r.name.includes('(Addition')) {
         const match = r.name.match(/\(Addition\s*-\s*([^)]+)\)/);
         const vNum = match ? match[1] : 'New';
@@ -523,7 +524,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
         }
       }
     }
-    
+
     return Array.from(map.values());
   };
 
@@ -537,7 +538,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
   const addItBlock = () => {
     setItBlocks([...itBlocks, { blockName: "New Block", rate: 0.10, openingWdv: 0, deletions: 0 }]);
   };
-  
+
   const updateItBlock = (index: number, field: keyof IncomeTaxBlock, value: any) => {
     const newBlocks = [...itBlocks];
     newBlocks[index] = { ...newBlocks[index], [field]: value };
@@ -673,7 +674,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
   return (
     <div className="min-h-screen w-full bg-[#030712] text-slate-200 p-4 sm:p-8 font-sans selection:bg-cyan-500/30">
       <div className="max-w-7xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -748,7 +749,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                 className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
               />
             </div>
-            
+
             <button
               onClick={connectToTally}
               disabled={connectionStatus === 'connecting'}
@@ -764,7 +765,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                 {companyName}
               </div>
             )}
-            
+
             <div className="ml-auto flex gap-4 items-end">
               <div>
                 <label className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1.5 block font-sans">Entity Type</label>
@@ -864,9 +865,9 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                   <motion.div key="companies" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-white font-semibold">Schedule II Working Papers</h3>
-                      <p className="text-sm text-slate-400">Total Calculated Dep: <span className="text-cyan-400 font-bold">₹{totalCompDep.toLocaleString('en-IN', {maximumFractionDigits: 0})}</span></p>
+                      <p className="text-sm text-slate-400">Total Calculated Dep: <span className="text-cyan-400 font-bold">₹{totalCompDep.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></p>
                     </div>
-                    
+
                     <div className="overflow-x-auto rounded-xl border border-white/5">
                       <table className="w-full text-sm text-left">
                         <thead className="bg-slate-950/80 text-xs text-slate-400 uppercase">
@@ -889,7 +890,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                               <td className="px-4 py-2 text-slate-400">
                                 <input type="text" value={asset.category} onChange={(e) => updateCompAsset(i, 'category', e.target.value)} className="w-24 bg-transparent border-b border-transparent focus:border-cyan-500 outline-none text-slate-300" />
                               </td>
-                              <td className="px-4 py-2 text-right">₹{asset.costOfPurchase.toLocaleString('en-IN', {maximumFractionDigits:0})}</td>
+                              <td className="px-4 py-2 text-right">₹{asset.costOfPurchase.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                               <td className="px-4 py-2">
                                 <input type="date" value={asset.datePutInPlace} onChange={(e) => updateCompAsset(i, 'datePutInPlace', e.target.value)} className="bg-transparent border-b border-transparent focus:border-cyan-500 outline-none text-slate-300 [color-scheme:dark]" />
                               </td>
@@ -909,7 +910,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                                 <input type="number" value={asset.openingAccumulatedDep} onChange={(e) => updateCompAsset(i, 'openingAccumulatedDep', Number(e.target.value))} className="w-24 text-right bg-transparent border-b border-transparent focus:border-cyan-500 outline-none text-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                               </td>
                               <td className="px-4 py-2 text-right font-bold text-cyan-400">
-                                ₹{companiesResults[i]?.forPeriodEnded?.toLocaleString('en-IN', {maximumFractionDigits:0}) || 0}
+                                ₹{companiesResults[i]?.forPeriodEnded?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}
                               </td>
                             </tr>
                           ))}
@@ -925,19 +926,19 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                       {/* Left: Block Setup */}
                       <div>
                         <div className="flex justify-between items-center mb-4">
-                          <h3 className="text-white font-semibold flex items-center gap-2"><Layers className="w-4 h-4 text-emerald-400"/> IT Blocks Setup</h3>
-                          <button onClick={addItBlock} className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded hover:bg-emerald-500/30 flex items-center gap-1"><Plus className="w-3 h-3"/> Add Block</button>
+                          <h3 className="text-white font-semibold flex items-center gap-2"><Layers className="w-4 h-4 text-emerald-400" /> IT Blocks Setup</h3>
+                          <button onClick={addItBlock} className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded hover:bg-emerald-500/30 flex items-center gap-1"><Plus className="w-3 h-3" /> Add Block</button>
                         </div>
                         <div className="space-y-3">
                           {itBlocks.map((block, i) => (
                             <div key={i} className="flex gap-2 items-center bg-slate-950/50 p-3 rounded-xl border border-white/5">
                               <input type="text" value={block.blockName} onChange={(e) => updateItBlock(i, 'blockName', e.target.value)} className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-sm outline-none focus:border-emerald-500" placeholder="Block Name" />
                               <div className="relative w-20">
-                                <input type="number" value={block.rate * 100} onChange={(e) => updateItBlock(i, 'rate', Number(e.target.value)/100)} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-sm outline-none focus:border-emerald-500 text-right pr-6" />
+                                <input type="number" value={block.rate * 100} onChange={(e) => updateItBlock(i, 'rate', Number(e.target.value) / 100)} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-sm outline-none focus:border-emerald-500 text-right pr-6" />
                                 <span className="absolute right-2 top-1.5 text-slate-500 text-sm">%</span>
                               </div>
                               <input type="number" value={block.openingWdv} onChange={(e) => updateItBlock(i, 'openingWdv', Number(e.target.value))} className="w-28 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-sm outline-none focus:border-emerald-500 text-right" placeholder="Opening WDV" />
-                              
+
                               <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-[11px] text-slate-400">
                                 <input
                                   type="checkbox"
@@ -949,11 +950,11 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                                 <span className="select-none cursor-pointer" onClick={() => updateItBlock(i, 'isAllAssetsSold', !block.isAllAssetsSold)}>Empty</span>
                               </div>
 
-                              <button onClick={() => removeItBlock(i)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded"><Trash2 className="w-4 h-4"/></button>
+                              <button onClick={() => removeItBlock(i)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded"><Trash2 className="w-4 h-4" /></button>
                             </div>
                           ))}
                         </div>
-                        
+
                         <div className="mt-8 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
                           <h4 className="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2"><Calculator className="w-4 h-4" /> Section 50 Calculated Results</h4>
                           <div className="space-y-3">
@@ -962,47 +963,47 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                                 <div className="flex justify-between text-sm">
                                   <span className="text-slate-300 font-semibold truncate w-48">{r.block}</span>
                                   <span className="text-slate-500">{r.rateStr}</span>
-                                  <span className="font-mono text-emerald-300">₹{r.dep.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                                  <span className="font-mono text-emerald-300">₹{r.dep.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                 </div>
                                 {(r.stcg > 0 || r.stcl > 0) && (
                                   <div className="flex justify-end gap-2 mt-1">
                                     {r.stcg > 0 && (
                                       <span className="text-[10px] font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
-                                        STCG (Gain): ₹{r.stcg.toLocaleString('en-IN', {maximumFractionDigits:0})}
+                                        STCG (Gain): ₹{r.stcg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                       </span>
                                     )}
                                     {r.stcl > 0 && (
                                       <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                                        STCL (Loss): ₹{r.stcl.toLocaleString('en-IN', {maximumFractionDigits:0})}
+                                        STCL (Loss): ₹{r.stcl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                       </span>
                                     )}
                                   </div>
                                 )}
                               </div>
                             ))}
-                            
+
                             <div className="border-t border-emerald-500/20 pt-2 space-y-1">
                               <div className="flex justify-between font-bold text-emerald-400 text-sm">
                                 <span>Total IT Depreciation</span>
-                                <span>₹{totalItDep.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                                <span>₹{totalItDep.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                               </div>
                               {itData.totals.totalStcg > 0 && (
                                 <div className="flex justify-between text-xs text-yellow-500 font-semibold">
                                   <span>Total Short-Term Capital Gains</span>
-                                  <span>₹{itData.totals.totalStcg.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                                  <span>₹{itData.totals.totalStcg.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                 </div>
                               )}
                               {itData.totals.totalStcl > 0 && (
                                 <div className="flex justify-between text-xs text-rose-400 font-semibold">
                                   <span>Total Short-Term Capital Losses</span>
-                                  <span>₹{itData.totals.totalStcl.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                                  <span>₹{itData.totals.totalStcl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Right: Asset Mapping */}
                       <div>
                         <h3 className="text-white font-semibold mb-4 flex items-center gap-2">Asset Mapping <span className="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">{tallyAssets.length} Assets</span></h3>
@@ -1021,7 +1022,7 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                                 >
                                   <option value="">-- Select IT Block --</option>
                                   {itBlocks.map((b, idx) => (
-                                    <option key={idx} value={b.blockName}>{b.blockName} ({b.rate*100}%)</option>
+                                    <option key={idx} value={b.blockName}>{b.blockName} ({b.rate * 100}%)</option>
                                   ))}
                                 </select>
                               </div>
@@ -1039,39 +1040,39 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
                       <div className="bg-slate-950/80 border border-white/5 rounded-3xl p-8 relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 blur-[80px] rounded-full pointer-events-none"></div>
                         <div className="absolute bottom-0 left-0 w-64 h-64 bg-cyan-500/10 blur-[80px] rounded-full pointer-events-none"></div>
-                        
+
                         <h2 className="text-2xl font-black text-center mb-8 bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">Variance Dashboard</h2>
-                        
+
                         <div className="space-y-6 relative z-10">
                           <div className="flex justify-between items-center p-4 bg-slate-900/80 rounded-xl border border-slate-800">
                             <div>
                               <p className="text-slate-400 text-sm font-medium">Companies Act Depreciation</p>
                               <p className="text-xs text-slate-500">As per Schedule II</p>
                             </div>
-                            <span className="text-2xl font-bold text-cyan-400 font-mono">₹{totalCompDep.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                            <span className="text-2xl font-bold text-cyan-400 font-mono">₹{totalCompDep.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                           </div>
-                          
+
                           <div className="flex justify-between items-center p-4 bg-slate-900/80 rounded-xl border border-slate-800">
                             <div>
                               <p className="text-slate-400 text-sm font-medium">Income Tax Depreciation</p>
                               <p className="text-xs text-slate-500">As per Section 32</p>
                             </div>
-                            <span className="text-2xl font-bold text-emerald-400 font-mono">₹{totalItDep.toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                            <span className="text-2xl font-bold text-emerald-400 font-mono">₹{totalItDep.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                           </div>
-                          
+
                           <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-700 to-transparent my-4"></div>
-                          
+
                           <div className={`flex justify-between items-center p-5 rounded-xl border ${dtaDtl > 0 ? 'bg-green-500/10 border-green-500/30' : (dtaDtl < 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-slate-800 border-slate-700')}`}>
                             <div>
                               <p className="text-white font-bold text-lg">{dtaDtlType}</p>
                               <p className="text-xs opacity-70">Impact on Financials</p>
                             </div>
                             <span className={`text-3xl font-black font-mono ${dtaDtl > 0 ? 'text-green-400' : (dtaDtl < 0 ? 'text-red-400' : 'text-slate-400')}`}>
-                              {dtaDtl < 0 ? '-' : ''}₹{Math.abs(dtaDtl).toLocaleString('en-IN', {maximumFractionDigits:0})}
+                              {dtaDtl < 0 ? '-' : ''}₹{Math.abs(dtaDtl).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
-                        
+
                       </div>
                     </div>
                   </motion.div>
@@ -1087,7 +1088,3 @@ export default function DepreciationModule({ onBack }: DepreciationModuleProps) 
     </div>
   );
 }
-
-const CloudDownload = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4 4 4-4"/></svg>
-);

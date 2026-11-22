@@ -45,10 +45,20 @@ Audit-grade, high-precision reconciliation and statutory tax computation that el
 - ✓ Enterprise Unified Database Persistence Suite across all suites (DB-SCHEMA-01 to DB-TESTS-01) — v2.3
 - ✓ Codebase Audit Remediation: Syntax, Transaction Rollback, Credential Privacy & SSRF Prevention — v2.3
 - ✓ Route-Level Code Splitting (`React.lazy`), Zero Circular Dependencies, and UI Review Polish — v2.3
+- ✓ Suite 09 Excel to Tally XML Enterprise Suite & Automation Engine (TXML-01 to TXML-10) — v2.4
+- ✓ GSTR-2B Inward ITC Autopilot Bulletproof Hardening (G2B-BP-01 to G2B-BP-10) — v2.5
+- ✓ Enterprise Deep Audit Remediation: 110 findings resolved (HARD-37) — v2.6
+- ✓ Presentation-Ready Landing Page & Module Presenter (LAND-38) — v2.7
+- ✓ GST & VAT Notices & Orders Enterprise Suite (NOTICE-39) — v2.8
+- ✓ Inter-Module Decoupling & Scoped Tally Session Management (DECOUPLE-40) — v2.9
+- ✓ GSTR-2B Direct Inward Entry to TallyPrime & Audit Ledger (TALLY-2B-41) — v2.9
 
 ### Active
 
-(None currently active — milestone v2.3 complete. Next milestone goals to be defined via `/gsd-new-milestone`.)
+- [ ] **Milestone v2.10: not yet chosen.** Candidates:
+  - Windows Electron packaging & multi-office LAN deployment (`main.cjs`, electron-builder, `build:exe`, `license-gateway`, `admin-web`)
+  - Suite 09 automated voucher expansion reusing the Phase 41 pattern
+  - Bank statement OCR spike via `LevitateExtract` (Monthly Audit §3.4, Suite 07)
 
 ### Out of Scope
 
@@ -58,7 +68,7 @@ Audit-grade, high-precision reconciliation and statutory tax computation that el
 
 ## Context
 
-- **Codebase Health**: 47 test suites, 319 / 319 tests green, clean production build in 46.92s with zero circular dependency warnings.
+- **Codebase Health** (2026-11-17): 63 test files, 484 / 490 tests passing. 6 failures to triage: `tallyXmlSuiteUi.test.tsx` (4), `clientAdditionTemplateAndSettings.test.ts` (1), `souravAiEval.test.ts` latency (1). `tsc --noEmit -p tsconfig.app.json` reports 24 errors, mainly in `TallyDirectImport.tsx`, `monthlyAuditPdf.ts`, `MonthlyAuditSuite.tsx` and `Index.tsx`.
 - **Technical Stack**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI, Express, SQLite3 (WAL mode), Electron, Playwright, Firebase Firestore.
 - **Accounting Invariant**: Every input PR and 2B record must be accounted for exactly once in column sums ($\sum \text{Reconciled} = \sum \text{Raw Input}$).
 - **Spreadsheet Usability**: Strict Zero-Merge rule (`ws['!merges'] = []`) across all exported Excel files to ensure column sorting, filtering, and `XLOOKUP` formulas never fail.
@@ -85,4 +95,4 @@ Audit-grade, high-precision reconciliation and statutory tax computation that el
 | Route-Level Code Splitting (`React.lazy`) | Breaks down monolithic bundle into on-demand route chunks with styled Suspense skeletons | ✓ Good |
 
 ---
-*Last updated: 2026-11-03 after v2.3 milestone completion*
+*Last updated: 2026-11-17 after v2.9 milestone completion*

@@ -37,8 +37,8 @@ export type ImsAction = 'ACCEPT' | 'REJECT' | 'PENDING' | 'NO_ACTION';
 export interface ImsInvoice {
   id: string;
   batch_id?: string;
-  client_gstin: string;
-  return_period: string;
+  client_gstin?: string;
+  return_period?: string;
   ctin: string;           // Supplier GSTIN
   supplier_name: string;  // Trade/Legal name
   inum: string;           // Invoice No
@@ -51,7 +51,10 @@ export interface ImsInvoice {
   cgst: number;
   sgst: number;
   cess: number;
-  total_val: number;
+  total_val?: number;
+  val?: number;
+  itc_eligibility?: string;
+  isEdit?: boolean | string;
   source?: string;        // 'GSTR-1' | 'IFF' | 'GSTR-1A'
   source_period?: string;
   action: ImsAction;
@@ -79,6 +82,7 @@ export interface ImsBatchSummary {
   eligible_itc_sgst: number;
   eligible_itc_cess: number;
   eligible_itc_total: number;
+  eligible_itc?: number;
   updated_at?: number;
   generation_status?: 'NOT_REQUESTED' | 'REQUESTED' | 'READY' | 'DOWNLOADED';
   generation_requested_at?: number;
@@ -712,6 +716,7 @@ export interface ClientCredentialRecord {
   email?: string;
   portal_username?: string;
   portal_password?: string;
+  has_password?: boolean;
 }
 
 /**
@@ -799,7 +804,7 @@ export function buildCredentialsTemplateWorkbook(
     row.getCell(2).value = c.gstin;
     row.getCell(3).value = c.trade_name;
     row.getCell(4).value = c.portal_username || '';
-    row.getCell(5).value = c.portal_password || '';
+    row.getCell(5).value = ''; // Passwords are never exported to Excel for security at rest
     row.getCell(6).value = c.phone || '';
     row.getCell(7).value = c.email || '';
 

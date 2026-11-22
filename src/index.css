@@ -10,27 +10,27 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
+    --primary: 238 84% 59%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
+    --secondary: 214 32% 91%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
+    --muted: 214 32% 91%;
     --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
+    --accent: 214 32% 91%;
     --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    --ring: 238 84% 59%;
     --radius: 0.75rem;
 
-    /* Novapay / Luminous Fluid Corporate Light Tokens */
+    /* Cool Slate Enterprise Light Tokens */
     --np-bg: #F8FAFC;
     --np-bg2: #FFFFFF;
     --np-bg3: #F1F5F9;
-    --np-sky: #2563EB;
-    --np-sky2: #3B82F6;
+    --np-sky: #4F46E5;
+    --np-sky2: #6366F1;
     --np-text: #0F172A;
     --np-text2: #334155;
     --np-text3: #64748B;
@@ -38,42 +38,45 @@
     --np-border2: #CBD5E1;
     --np-green: #059669;
     --np-red: #DC2626;
+    --np-amber: #D97706;
     --np-silk: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark {
-    --background: 214 26% 8%;
+    --background: 222 47% 6%;
     --foreground: 210 40% 98%;
-    --card: 215 25% 10%;
+    --card: 222 47% 10%;
     --card-foreground: 210 40% 98%;
-    --popover: 214 26% 8%;
+    --popover: 222 47% 10%;
     --popover-foreground: 210 40% 98%;
-    --primary: 208 81% 60%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 215 25% 15%;
+    --primary: 238 84% 67%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 215 25% 15%;
+    --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-    --accent: 215 25% 15%;
+    --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 208 81% 60%;
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 238 84% 67%;
 
-    --np-bg: #0F1319;
-    --np-bg2: #141920;
-    --np-bg3: #1A2130;
-    --np-sky: #4A9EE8;
-    --np-sky2: #7EC8F0;
-    --np-text: #E4EEF8;
-    --np-text2: #8AAEC8;
-    --np-text3: #4A5F7A;
-    --np-border: #1E3050;
-    --np-border2: #2A3F60;
-    --np-green: #3DCC8E;
-    --np-red: #E85A5A;
+    /* Cool Slate Enterprise Dark Tokens */
+    --np-bg: #0B0F17;
+    --np-bg2: #111827;
+    --np-bg3: #1E293B;
+    --np-sky: #6366F1;
+    --np-sky2: #818CF8;
+    --np-text: #F8FAFC;
+    --np-text2: #94A3B8;
+    --np-text3: #64748B;
+    --np-border: #1E293B;
+    --np-border2: #334155;
+    --np-green: #10B981;
+    --np-red: #EF4444;
+    --np-amber: #F59E0B;
   }
 }
 
@@ -126,12 +129,14 @@
 /* Custom sidebar hover-expansion styles */
 .sidebar-rail {
   width: 4.75rem; /* ~76px collapsed */
-  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.32s ease;
+  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.32s ease, background-color 0.2s ease, border-color 0.2s ease;
   will-change: width;
+  background-color: var(--np-bg2);
+  border-color: var(--np-border);
 }
 .sidebar-rail:hover {
   width: 17rem; /* ~272px expanded */
-  box-shadow: 0 20px 35px -5px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 20px 35px -5px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--np-border);
 }
 .sidebar-rail .expanded-content {
   opacity: 0;
@@ -147,6 +152,93 @@
   max-width: 220px;
   transform: translateX(0);
   pointer-events: auto;
+}
+
+/* ==========================================================================
+   AUDIT DESIGN SYSTEM UTILITIES (Finpulse Enterprise Suite v4.8)
+   ========================================================================== */
+
+.audit-card {
+  background-color: var(--np-bg2);
+  border: 1px solid var(--np-border);
+  border-radius: 1rem;
+  color: var(--np-text);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.audit-card:hover {
+  border-color: var(--np-border2);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+}
+
+.audit-stat-card {
+  background-color: var(--np-bg2);
+  border: 1px solid var(--np-border);
+  border-radius: 0.875rem;
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--np-text);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.audit-stat-card:hover {
+  border-color: var(--np-border2);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.audit-topbar {
+  background-color: var(--np-bg2);
+  border-bottom: 1px solid var(--np-border);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.75rem;
+}
+.audit-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--np-text3);
+  background-color: var(--np-bg3);
+  border-bottom: 1px solid var(--np-border);
+  white-space: nowrap;
+}
+.audit-table td {
+  padding: 0.45rem 0.75rem;
+  color: var(--np-text);
+  border-bottom: 1px solid var(--np-border);
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.audit-table tr:hover td {
+  background-color: rgba(99, 102, 241, 0.04);
+}
+.dark .audit-table tr:hover td {
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+.audit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 /* Novapay Dashboard Styles */
@@ -241,6 +333,19 @@
 
 .silk-reveal {
   animation: silk-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.8s infinite;
 }
 
 /* Ticker Styles */
@@ -491,3 +596,33 @@
   animation: cascadeGlow 4s ease-in-out infinite;
 }
 
+
+/* ── Sonner Toast Close Button — Always Visible ── */
+[data-sonner-toaster] [data-close-button] {
+  opacity: 1 !important;
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+  left: unset !important;
+  background: rgba(100, 116, 139, 0.15) !important;
+  border: 1px solid rgba(100, 116, 139, 0.25) !important;
+  border-radius: 50% !important;
+  width: 20px !important;
+  height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background 0.15s, transform 0.15s !important;
+  color: inherit !important;
+}
+[data-sonner-toaster] [data-close-button]:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: rgb(239, 68, 68) !important;
+  transform: scale(1.15) !important;
+}
+[data-sonner-toaster] [data-close-button] svg {
+  width: 12px !important;
+  height: 12px !important;
+}

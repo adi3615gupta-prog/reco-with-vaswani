@@ -1,10 +1,12 @@
-const { app, BrowserWindow, dialog, ipcMain, Tray, Menu, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Tray, Menu, screen, globalShortcut, safeStorage, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
-const { fork } = require('child_process');
+const crypto = require('crypto');
+const { fork, execFileSync } = require('child_process');
 const os = require('os');
 const dns = require('dns');
+const { verifyIntegrityManifest } = require('./integrityGuard.cjs');
 
 // Prioritize IPv4 for DNS resolution to avoid localhost lookup issues on Windows
 dns.setDefaultResultOrder('ipv4first');
@@ -122,6 +124,41 @@ function getAppIconPath() {
   return null;
 }
 
+function getOrCreateDpapiVaultMasterKey() {
+  if (process.env.VAULT_MASTER_KEY) return process.env.VAULT_MASTER_KEY;
+  try {
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) return null;
+    const userDataDir = app.getPath('userData');
+    const dpapiPath = path.join(userDataDir, '.vault_key.dpapi');
+    const legacyKeyPath = path.join(userDataDir, '.vault_key');
+
+    if (fs.existsSync(dpapiPath)) {
+      const encBuf = fs.readFileSync(dpapiPath);
+      const decHex = safeStorage.decryptString(encBuf);
+      if (/^[0-9a-fA-F]{64}$/.test(decHex)) return decHex;
+    }
+
+    // Migrate legacy raw .vault_key if present, otherwise generate a fresh 32-byte key protected by DPAPI
+    let rawHex = null;
+    if (fs.existsSync(legacyKeyPath)) {
+      const legacyBuf = fs.readFileSync(legacyKeyPath);
+      if (legacyBuf.length === 32) rawHex = legacyBuf.toString('hex');
+      else if (legacyBuf.length === 64 && /^[0-9a-fA-F]{64}$/.test(legacyBuf.toString('utf8').trim())) {
+        rawHex = legacyBuf.toString('utf8').trim();
+      }
+    }
+    if (!rawHex) {
+      rawHex = crypto.randomBytes(32).toString('hex');
+    }
+    const encryptedBuf = safeStorage.encryptString(rawHex);
+    fs.writeFileSync(dpapiPath, encryptedBuf, { mode: 0o600 });
+    return rawHex;
+  } catch (err) {
+    logMain(`DPAPI vault master key warning: ${err.message}`);
+    return null;
+  }
+}
+
 function startBackendServer(serverJsPath) {
   try {
     logMain(`startBackendServer called with path: ${serverJsPath}`);
@@ -134,9 +171,15 @@ function startBackendServer(serverJsPath) {
     logStream.write(`Node execPath: ${process.execPath}\n`);
     logStream.write(`Process env keys count: ${Object.keys(process.env).length}\n`);
 
+    const dpapiVaultMasterKey = getOrCreateDpapiVaultMasterKey();
+    const childEnv = { ...process.env, USER_DATA_PATH: app.getPath('userData') };
+    if (dpapiVaultMasterKey) {
+      childEnv.VAULT_MASTER_KEY = dpapiVaultMasterKey;
+    }
+
     logMain('Forking backend process...');
     backendProcess = fork(serverJsPath, [], {
-      env: { ...process.env, USER_DATA_PATH: app.getPath('userData') },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     });
     logMain(`Backend process spawned with PID: ${backendProcess.pid}`);
@@ -271,11 +314,46 @@ async function createWindow(appMode = currentAppMode) {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true, // Re-enabled for security (was dangerously set to false)
+      devTools: !app.isPackaged,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: iconPath,
     backgroundColor: '#090d18'
   });
+
+  // Restrict external navigation and popup windows inside Electron renderer
+  const isAllowedAppUrl = (targetUrl) => {
+    try {
+      const u = new URL(targetUrl);
+      if (u.protocol === 'file:') return true;
+      return (u.hostname === 'localhost' || u.hostname === '127.0.0.1') && ['3001', '8080'].includes(u.port);
+    } catch {
+      return false;
+    }
+  };
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && url.startsWith('https://')) {
+      shell.openExternal(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (!isAllowedAppUrl(navigationUrl)) {
+      event.preventDefault();
+      logMain(`Blocked external navigation attempt to: ${navigationUrl}`);
+    }
+  });
+
+  if (app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      const key = String(input.key || '').toUpperCase();
+      if (key === 'F12' || ((input.control || input.meta) && input.shift && (key === 'I' || key === 'J' || key === 'C'))) {
+        event.preventDefault();
+      }
+    });
+  }
 
   // Intercept window close to minimize to tray instead of killing the background server
   mainWindow.on('close', (event) => {
@@ -416,14 +494,97 @@ function createTray() {
   }
 }
 
+let cachedHardwareDeviceId = null;
+
+function getPrimaryMacAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
+        return iface.mac;
+      }
+    }
+  }
+  return 'NO-MAC';
+}
+
+function getWindowsMachineGuid() {
+  if (process.platform !== 'win32') return '';
+  try {
+    const out = execFileSync(
+      'reg',
+      ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'],
+      { encoding: 'utf8', timeout: 1500, windowsHide: true }
+    );
+    const match = out.match(/MachineGuid\s+REG_SZ\s+([^\r\n]+)/i);
+    return match ? match[1].trim() : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function getHardwareDeviceId() {
+  if (cachedHardwareDeviceId) return cachedHardwareDeviceId;
+  const machineGuid = getWindowsMachineGuid();
+  const cpuModel = (os.cpus() && os.cpus()[0] && os.cpus()[0].model) || '';
+  const components = [
+    machineGuid,
+    os.hostname(),
+    os.platform(),
+    os.arch(),
+    cpuModel,
+    String(os.totalmem()),
+    getPrimaryMacAddress()
+  ].join('|');
+  const digest = crypto.createHash('sha256').update(components).digest('hex');
+  cachedHardwareDeviceId = `hw_${digest.slice(0, 24)}`;
+  return cachedHardwareDeviceId;
+}
+
+function runStartupIntegrityCheck() {
+  const shouldVerify = app.isPackaged || process.env.VERIFY_INTEGRITY === '1';
+  if (!shouldVerify) return true;
+
+  try {
+    const publicKeyPem = require('./integrityPublicKey.cjs');
+    const result = verifyIntegrityManifest({
+      baseDir: __dirname,
+      manifestPath: path.join(__dirname, 'integrity.manifest.json'),
+      publicKeyPem
+    });
+    if (!result.ok) {
+      logMain(`SECURITY INTEGRITY FAILURE: ${result.reason}`);
+      dialog.showErrorBox(
+        'Security Integrity Check Failed',
+        `Application files failed cryptographic verification (${result.reason}). Please reinstall an official copy.`
+      );
+      return false;
+    }
+    logMain(`Integrity check passed (${result.verifiedFiles.length} protected files verified).`);
+    return true;
+  } catch (err) {
+    logMain(`SECURITY INTEGRITY ERROR: ${err.message}`);
+    dialog.showErrorBox(
+      'Security Integrity Check Failed',
+      `Could not verify application integrity (${err.message}). Please reinstall an official copy.`
+    );
+    return false;
+  }
+}
+
 app.whenReady().then(async () => {
   logMain('app.whenReady triggered');
+
+  if (!runStartupIntegrityCheck()) {
+    app.quit();
+    return;
+  }
   
   let serverJsPath = path.join(__dirname, 'server.obfuscated.cjs');
   logMain(`Checking for server.obfuscated.cjs at: ${serverJsPath}`);
   let exists = fs.existsSync(serverJsPath);
   logMain(`server.obfuscated.cjs exists: ${exists}`);
-  if (!exists) {
+  if (!exists && !app.isPackaged) {
     serverJsPath = path.join(__dirname, 'server.js');
     logMain(`Checking for server.js at: ${serverJsPath}`);
     exists = fs.existsSync(serverJsPath);
@@ -537,7 +698,7 @@ ipcMain.handle('set_app_mode', (event, mode) => {
   // Start backend if switching to server and it's not running
   if (mode === 'server' && !backendProcess) {
     let serverJsPath = path.join(__dirname, 'server.obfuscated.cjs');
-    if (!fs.existsSync(serverJsPath)) {
+    if (!fs.existsSync(serverJsPath) && !app.isPackaged) {
       serverJsPath = path.join(__dirname, 'server.js');
     }
     if (fs.existsSync(serverJsPath)) {
@@ -547,6 +708,28 @@ ipcMain.handle('set_app_mode', (event, mode) => {
   }
   
   return true;
+});
+
+ipcMain.handle('get_device_id', () => {
+  return getHardwareDeviceId();
+});
+
+ipcMain.handle('get_system_info', () => {
+  try {
+    return {
+      hostname: os.hostname(),
+      username: os.userInfo().username,
+      platform: os.platform(),
+      deviceId: getHardwareDeviceId()
+    };
+  } catch (e) {
+    return {
+      hostname: os.hostname() || 'PC',
+      username: 'User',
+      platform: process.platform,
+      deviceId: getHardwareDeviceId()
+    };
+  }
 });
 
 ipcMain.handle('save_activation_info', (event, info) => {
@@ -682,13 +865,17 @@ ipcMain.handle('scan_network', async () => {
 // --- Tally Integration ---
 ipcMain.handle('fetch_tally_data', async (event, params) => {
   const { port = 9000, xmlPayload } = params || {};
+  const p = parseInt(port, 10);
+  if (isNaN(p) || p < 9000 || p > 9010) {
+    throw new Error('Invalid Tally port');
+  }
   if (!xmlPayload || typeof xmlPayload !== 'string') {
     return Promise.reject('Invalid or missing xmlPayload string');
   }
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
-      port: port,
+      port: p,
       path: '/',
       method: 'POST',
       headers: {

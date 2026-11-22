@@ -144,7 +144,7 @@ interface SouravChatbotProps {
 export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   clientName = '',
   gstin = '',
-  financialYear = '2024-25',
+  financialYear = '2026-27',
   activeModule = 'General Dashboard',
   userName,
   loginUser,
@@ -168,6 +168,25 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   // Hover expand & auto-shrink timer
   const shrinkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isMouseOverRef = useRef(false);
+  const [isCompact, setIsCompact] = useState(() => {
+    try {
+      return localStorage.getItem('np_sourav_compact') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Listen for global toggle / open events (e.g. from top header)
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    const handleToggle = () => setIsOpen(prev => !prev);
+    window.addEventListener('open-sourav-ai', handleOpen);
+    window.addEventListener('toggle-sourav-ai', handleToggle);
+    return () => {
+      window.removeEventListener('open-sourav-ai', handleOpen);
+      window.removeEventListener('toggle-sourav-ai', handleToggle);
+    };
+  }, []);
 
   const handleMouseEnter = () => {
     isMouseOverRef.current = true;
@@ -175,7 +194,6 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       clearTimeout(shrinkTimerRef.current);
       shrinkTimerRef.current = null;
     }
-    setIsOpen(true);
   };
 
   const handleMouseLeave = () => {
@@ -290,9 +308,9 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
       if (err.unconfigured || err.message?.includes('not configured')) {
         setIsConfigured(false);
         setShowKeyInput(true);
-        errorResponse = '⚠️ **Google Gemini API Key is required.** Please enter your free API key below or in Settings → AI Assistant.';
+        errorResponse = '⚠️ **AI Assistant Key is required.** Please enter your key below or in Settings → AI Assistant.';
       } else if (err.message?.includes('quota') || err.status === 429) {
-        errorResponse = '⏳ **Quota Reached:** Google Gemini free tier rate limit reached. Please wait a moment and try again.';
+        errorResponse = '⏳ **Quota Reached:** Cloud AI service rate limit reached. Please wait a moment and try again.';
       } else if (err.message) {
         errorResponse = `⚠️ ${err.message}`;
       }
@@ -321,11 +339,13 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
         ...prev,
         {
           role: 'model',
-          text: '✨ **Gemini API Key activated successfully!** I am ready. How can I assist you with your GST compliance or audit today?',
+          text: '✨ **AI Key activated successfully!** I am ready. How can I assist you with your GST compliance or audit today?',
         },
       ]);
     } catch (err: any) {
-      alert(`Failed to save API key: ${err.message || err}`);
+      toast.error('Failed to save API key', {
+        description: err.message || String(err),
+      });
     } finally {
       setIsSavingKey(false);
     }
@@ -341,15 +361,15 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
         ...prev,
         {
           role: 'model',
-          text: `✨ **Gemini API Key synced from ${res.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'}!** ${aiName} AI is now active and ready to assist you.`,
+          text: `✨ **AI Key synced from ${res.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'}!** ${aiName} AI is now active and ready to assist you.`,
         },
       ]);
       toast.success('Synced from Cloud License', {
-        description: res.message || 'Gemini API key configured successfully.',
+        description: res.message || 'AI activation key configured successfully.',
       });
     } catch (err: any) {
       toast.error('Cloud Sync Failed', {
-        description: err.message || 'No Gemini key found in cloud license. Please paste your key below.',
+        description: err.message || 'No AI key found in cloud license. Please paste your key below.',
       });
     } finally {
       setIsSyncingCloud(false);
@@ -460,7 +480,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
 
   return (
     <div
-      className={`fixed bottom-6 right-6 z-50 flex flex-col items-end transition-all duration-300 ${
+      className={`fixed bottom-20 right-6 z-50 flex flex-col items-end transition-all duration-300 ${
         isOpen ? 'w-[410px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-5rem)]' : 'w-auto h-auto'
       }`}
       onMouseEnter={handleMouseEnter}
@@ -575,7 +595,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-semibold flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5 text-amber-400" />
-                  Google Gemini API Key Required
+                  AI Assistant Key Required
                 </span>
                 <a
                   href="https://aistudio.google.com/app/apikey"
@@ -593,7 +613,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                 onClick={handleSyncFromOfficeLicense}
                 disabled={isSyncingCloud}
                 className="w-full py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                title="Automatically fetch the Gemini API key configured in your office license"
+                title="Automatically fetch the AI activation key configured in your office license"
               >
                 <Sparkles className={`w-3.5 h-3.5 fill-slate-950 ${isSyncingCloud ? 'animate-spin' : ''}`} />
                 <span>{isSyncingCloud ? 'Syncing with Office License...' : '⚡ 1-Click Sync from Office License'}</span>
@@ -604,7 +624,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
                   type="password"
                   value={quickApiKey}
                   onChange={(e) => setQuickApiKey(e.target.value)}
-                  placeholder="Or paste API key manually (AIzaSy...)"
+                  placeholder="Or paste AI key manually..."
                   className="flex-1 bg-slate-900 border border-amber-500/40 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                 />
                 <button
@@ -787,7 +807,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
           </form>
       </div>
 
-      {/* 2. Floating Action Launcher Button (Smooth scale in/out) */}
+      {/* 2. Floating Action Launcher Button (Smooth scale in/out, with Compact Mode support) */}
       <div
         className={`transition-all duration-300 ease-out origin-bottom-right ${
           !isOpen
@@ -795,20 +815,56 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
             : 'opacity-0 scale-50 translate-y-2 pointer-events-none select-none absolute bottom-0 right-0'
         }`}
       >
-        <button
-          onClick={handleClickIcon}
-          aria-label={`Open ${aiName} AI Assistant`}
-          className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 font-semibold shadow-xl shadow-amber-500/25 border border-amber-300/70 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
-        >
-          {/* Ambient Pulsing Radar Ring */}
-          <span className="absolute -inset-1 rounded-full bg-amber-400/30 animate-ping opacity-35" />
-          
-          <div className="relative">
-            <Sparkles className="w-5 h-5 text-slate-950 animate-spin-slow" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-2 ring-white animate-pulse" />
+        {isCompact ? (
+          <div className="relative group/compact">
+            <button
+              onClick={handleClickIcon}
+              aria-label={`Open ${aiName} AI Assistant`}
+              className="w-11 h-11 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-500/30 border border-amber-300/80 hover:scale-110 active:scale-95 transition-all cursor-pointer"
+              title={`Open ${aiName} AI (Right click or hover to expand)`}
+            >
+              <Sparkles className="w-5 h-5 text-slate-950 animate-spin-slow" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-2 ring-white animate-pulse" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCompact(false);
+                try { localStorage.setItem('np_sourav_compact', 'false'); } catch {}
+              }}
+              className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[9px] opacity-0 group-hover/compact:opacity-100 transition-opacity shadow-xs cursor-pointer border border-slate-700"
+              title="Expand label"
+            >
+              +
+            </button>
           </div>
-          <span className="text-sm tracking-tight font-bold">✨ {aiName} AI</span>
-        </button>
+        ) : (
+          <div className="relative group/pill flex items-center gap-1">
+            <button
+              onClick={handleClickIcon}
+              aria-label={`Open ${aiName} AI Assistant`}
+              className="group relative flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 font-semibold shadow-lg shadow-amber-500/25 border border-amber-300/70 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+            >
+              <span className="absolute -inset-1 rounded-full bg-amber-400/25 animate-ping opacity-35" />
+              <div className="relative">
+                <Sparkles className="w-4 h-4 text-slate-950 animate-spin-slow" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-600 ring-2 ring-white animate-pulse" />
+              </div>
+              <span className="text-xs tracking-tight font-bold">✨ {aiName} AI</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCompact(true);
+                try { localStorage.setItem('np_sourav_compact', 'true'); } catch {}
+              }}
+              className="w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-900 text-slate-400 hover:text-white flex items-center justify-center text-[10px] transition-all opacity-0 group-hover/pill:opacity-100 shadow-xs cursor-pointer border border-slate-700"
+              title="Minimize to small icon (so buttons behind are clear)"
+            >
+              —
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

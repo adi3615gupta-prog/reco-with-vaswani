@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
 import { normalizePartyName, type MatchStatus, type ReconciliationResult } from './reconciliation.ts';
-import { gtcBenchmarkData } from './gtcBenchmarkData';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types & Schema (27-Column Audit Standard matching GTC Benchmark)
@@ -259,12 +258,14 @@ export function buildTwoBSupplierIndex(twoBRecords: any[]): Map<string, string> 
 export function resolveEffectiveGstin(
   rawGstin: any,
   rawSupplierName: any,
-  supplierIndex?: Map<string, string>
+  supplierIndex?: Map<string, string>,
+  options?: { customGstinAliases?: Record<string, string> }
 ): string {
   const g = String(rawGstin ?? '').trim().toUpperCase();
+  if (options?.customGstinAliases && options.customGstinAliases[g]) {
+    return options.customGstinAliases[g];
+  }
   if (isValidGstin(g)) {
-    // Biostadt cross-state alias rule
-    if (g === '24AACCB1830G1Z9') return '27AACCB1830G1Z3';
     return g;
   }
 
@@ -272,13 +273,17 @@ export function resolveEffectiveGstin(
     const norm1 = normalizeSupplierName(rawSupplierName);
     if (norm1 && supplierIndex.has(norm1)) {
       const resolved = supplierIndex.get(norm1)!;
-      if (resolved === '24AACCB1830G1Z9') return '27AACCB1830G1Z3';
+      if (options?.customGstinAliases && options.customGstinAliases[resolved]) {
+        return options.customGstinAliases[resolved];
+      }
       return resolved;
     }
     const norm2 = normalizePartyName(rawSupplierName);
     if (norm2 && supplierIndex.has(norm2)) {
       const resolved = supplierIndex.get(norm2)!;
-      if (resolved === '24AACCB1830G1Z9') return '27AACCB1830G1Z3';
+      if (options?.customGstinAliases && options.customGstinAliases[resolved]) {
+        return options.customGstinAliases[resolved];
+      }
       return resolved;
     }
   }
@@ -292,157 +297,11 @@ export function resolveEffectiveGstin(
 
 export function reconcileDebitNotes(
   prRecords: any[],
-  twoBRecords: any[]
+  twoBRecords: any[],
+  options?: { customGstinAliases?: Record<string, string> }
 ): DebitNoteEngineResult {
-  // Check if this matches the GTC benchmark dataset (508 PR rows, 835/955 2B notes, or GTC suppliers)
-  const isGtcPr = prRecords.length === 508 || prRecords.length === 434 ||
-    prRecords.some(r => {
-      const g = String(r?.gstin || r?.['GSTIN'] || r?.['GST No.'] || '').trim();
-      const n = String(r?.supplierName || r?.['Party Name'] || '').toUpperCase();
-      return g.includes('27AABCM8797N1ZI') || n.includes('ADAMA INDIA') || n.includes('CHAMBAL FERTILISERS') || n.includes('GOYAL TRADING');
-    });
-
-  const isGtc2b = twoBRecords.length === 835 || twoBRecords.length === 955 || twoBRecords.length === 120 ||
-    twoBRecords.some(r => {
-      const g = String(r?.gstin || r?.['GSTIN of supplier'] || '').trim();
-      const n = String(r?.supplierName || r?.['Trade/Legal name'] || '').toUpperCase();
-      return g.includes('27AABCM8797N1ZI') || n.includes('ADAMA INDIA') || n.includes('CHAMBAL FERTILISERS');
-    });
-
-  if ((isGtcPr || isGtc2b) && gtcBenchmarkData && gtcBenchmarkData['Reconciled Register']) {
-    return buildGtcBenchmarkResult();
-  }
-
-  // Fallback to dynamic 7-pass waterfall reconciliation engine
-  return runDynamicSevenPassReconciliation(prRecords, twoBRecords);
-}
-
-function buildGtcBenchmarkResult(): DebitNoteEngineResult {
-  const regSheet = gtcBenchmarkData['Reconciled Register'];
-  const batchSheet = gtcBenchmarkData['Consolidated Batches (41)'];
-  const suppSheet = gtcBenchmarkData['Supplier Summary'];
-
-  const reconciledRows: ReconciledDebitNoteRow[] = [];
-  if (regSheet && regSheet.rows) {
-    // Header is row 5 (index 4), data starts at row 6 (index 5)
-    for (let i = 5; i < regSheet.rows.length; i++) {
-      const r = regSheet.rows[i];
-      if (!r || !r[0]) continue;
-
-      const matchStatus = r[0] as MatchStatus;
-      const isSub = String(r[8] || '').includes('(Grouped)') || String(r[2] || '').includes('(Grouped)');
-      
-      reconciledRows.push({
-        matchStatus,
-        prSource: String(r[1] || ''),
-        voucherNoPR: String(r[2] || ''),
-        noteTypeAndPeriod2B: String(r[3] || ''),
-        gstinPR: String(r[4] || ''),
-        gstin2B: String(r[5] || ''),
-        supplierNamePR: String(r[6] || ''),
-        supplierName2B: String(r[7] || ''),
-        invoiceNoPR: String(r[8] || ''),
-        invoiceNo2B: String(r[9] || ''),
-        invoiceDatePR: String(r[10] || ''),
-        invoiceDate2B: String(r[11] || ''),
-        baseDiff: parseAccountingFloat(r[12]),
-        taxableValuePR: parseAccountingFloat(r[13]),
-        nilRatedSeedValuePR: parseAccountingFloat(r[14]),
-        totalBaseValuePR: parseAccountingFloat(r[15]),
-        taxableValue2B: parseAccountingFloat(r[16]),
-        cgstPR: parseAccountingFloat(r[17]),
-        cgst2B: parseAccountingFloat(r[18]),
-        sgstPR: parseAccountingFloat(r[19]),
-        sgst2B: parseAccountingFloat(r[20]),
-        igstPR: parseAccountingFloat(r[21]),
-        igst2B: parseAccountingFloat(r[22]),
-        invoiceValuePR: parseAccountingFloat(r[23]),
-        invoiceValue2B: parseAccountingFloat(r[24]),
-        netTaxDiff: parseAccountingFloat(r[25]),
-        auditRemarks: String(r[26] || ''),
-        sortOrder: i - 4,
-        isSubRow: isSub,
-        batchLabel: isSub ? 'Consolidated Batch' : undefined,
-      });
-    }
-  }
-
-  const batchRows: ConsolidatedBatchRecord[] = [];
-  if (batchSheet && batchSheet.rows) {
-    for (let i = 4; i < batchSheet.rows.length; i++) {
-      const r = batchSheet.rows[i];
-      if (!r || !r[0] || String(r[0]).startsWith('TOTAL')) continue;
-      batchRows.push({
-        batchNum: String(r[0] || ''),
-        prRowSource: String(r[1] || ''),
-        prVoucher: String(r[2] || ''),
-        gstin: String(r[3] || ''),
-        supplierName: String(r[4] || ''),
-        booksDatePR: String(r[5] || ''),
-        twoBPeriod: String(r[6] || ''),
-        notesCount: parseInt(String(r[7] || '0'), 10),
-        noteNumbersRange: String(r[8] || ''),
-        taxableBasePR: parseAccountingFloat(r[9]),
-        sumTaxableValue2B: parseAccountingFloat(r[10]),
-        baseDiff: parseAccountingFloat(r[11]),
-        totalTaxPR: parseAccountingFloat(r[12]),
-        sumTotalTax2B: parseAccountingFloat(r[13]),
-        netTaxDiff: parseAccountingFloat(r[14]),
-        batchStatus: String(r[15] || ''),
-      });
-    }
-  }
-
-  const supplierRows: DebitNoteSupplierRecord[] = [];
-  if (suppSheet && suppSheet.rows) {
-    for (let i = 4; i < suppSheet.rows.length; i++) {
-      const r = suppSheet.rows[i];
-      if (!r || !r[0]) continue;
-      supplierRows.push({
-        gstin: String(r[0] || ''),
-        supplierName: String(r[1] || ''),
-        prRows: parseInt(String(r[2] || '0'), 10),
-        twoBCreditNotes: parseInt(String(r[3] || '0'), 10),
-        twoBDebitNotes: parseInt(String(r[4] || '0'), 10),
-        pureTaxablePR: parseAccountingFloat(r[5]),
-        nilRatedSeedPR: parseAccountingFloat(r[6]),
-        totalTaxPR: parseAccountingFloat(r[7]),
-        taxable2BCredit: parseAccountingFloat(r[8]),
-        totalTax2BCredit: parseAccountingFloat(r[9]),
-        taxDiffVs2BCredit: parseAccountingFloat(r[10]),
-        taxable2BDebit: parseAccountingFloat(r[11]),
-        totalTax2BDebit: parseAccountingFloat(r[12]),
-        reconciliationStatus: String(r[13] || ''),
-      });
-    }
-  }
-
-  return {
-    reconciledRows,
-    batchRows,
-    supplierRows,
-    summary: {
-      totalPR: 508,
-      total2B: 955,
-      matchedPR: 244,
-      matched2B: 772,
-      exactMatches: 128,
-      batchCount: 41,
-      batchNotesMatched: 569,
-      valSumPR: 240568481.04,
-      valSum2B: 106391234.56,
-      taxableSumPR: 70158257.50,
-      taxableSum2B: 93661392.31,
-      cgstSumPR: 5883315.79,
-      cgstSum2B: 6360189.75,
-      sgstSumPR: 5883315.79,
-      sgstSum2B: 6360189.75,
-      igstSumPR: 0.00,
-      igstSum2B: 10536.89,
-      netTaxDiff: -964284.81,
-    },
-    isGtcBenchmark: true,
-  };
+  // Always run dynamic 7-pass waterfall reconciliation engine for real client data
+  return runDynamicSevenPassReconciliation(prRecords, twoBRecords, options);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -529,7 +388,7 @@ export function findSubsetSumMatch(
   const boundedPool = pool.slice(0, 30);
   const startTime = Date.now();
 
-  // Search combination sizes 2 to 15
+  // Search combination sizes 2 to 15 with fast early exit and timeout guards
   for (let size = 2; size <= Math.min(15, boundedPool.length); size++) {
     const res = searchCombinations(
       boundedPool,
@@ -614,7 +473,8 @@ function searchCombinations(
 
 function runDynamicSevenPassReconciliation(
   rawPR: any[],
-  raw2B: any[]
+  raw2B: any[],
+  options?: { customGstinAliases?: Record<string, string> }
 ): DebitNoteEngineResult {
   const prItems: InternalItem[] = rawPR.map((r, i) => {
     const val = parseAccountingFloat(r.invoiceValue ?? r['Invoice Value'] ?? r['Total Purchase/Taxable Value']);
@@ -685,10 +545,10 @@ function runDynamicSevenPassReconciliation(
   const suppToGstin = buildTwoBSupplierIndex(twoBItems);
 
   for (const p of prItems) {
-    p.effGstin = resolveEffectiveGstin(p.gstin, p.suppName, suppToGstin);
+    p.effGstin = resolveEffectiveGstin(p.gstin, p.suppName, suppToGstin, options);
   }
   for (const b of twoBItems) {
-    b.effGstin = resolveEffectiveGstin(b.gstin, b.suppName, suppToGstin);
+    b.effGstin = resolveEffectiveGstin(b.gstin, b.suppName, suppToGstin, options);
   }
 
   const usedPR = new Set<number>();
@@ -1106,103 +966,12 @@ export function debitNoteRowsToReconciliationResults(
 export function appendDebitNoteSheetsToWorkbook(
   wb: XLSX.WorkBook,
   result: DebitNoteEngineResult,
-  companyName: string = 'M/S GOYAL TRADING COMPANY',
+  companyName: string = 'TAX PAYER',
   isIntegrated: boolean = false
 ): string[] {
   const addedSheets: string[] = [];
 
-  // If GTC benchmark data is available, write the 100% exact benchmark sheets
-  if ((result.isGtcBenchmark || companyName.toUpperCase().includes('GOYAL') || companyName.toUpperCase().includes('GTC')) && gtcBenchmarkData) {
-    if (isIntegrated) {
-      // In integrated Monthly Comparison mode: append only the 3 debit note reconciliation sheets
-      const sheetsToInclude = [
-        { key: 'Reconciled Register', title: 'Reconciled Register (DN)' },
-        { key: 'Consolidated Batches (41)', title: 'Consolidated Batches' },
-        { key: 'Supplier Summary', title: 'DN Supplier Summary' }
-      ];
-
-      for (const item of sheetsToInclude) {
-        const sinfo = gtcBenchmarkData[item.key];
-        if (!sinfo) continue;
-        const ws = XLSX.utils.aoa_to_sheet(sinfo.rows);
-
-        // Convert string formulas (starting with '=') to real Excel formulas & set accounting format
-        const ACC_FMT = '#,##0.00;(#,##0.00);"-"';
-        const INT_FMT = '#,##0';
-        for (const cellAddr in ws) {
-          if (cellAddr.startsWith('!')) continue;
-          const cell = ws[cellAddr];
-          if (!cell) continue;
-          if (typeof cell.v === 'string' && cell.v.startsWith('=')) {
-            const formula = cell.v.substring(1);
-            cell.f = formula;
-            delete cell.v;
-            cell.t = 'n';
-            cell.z = formula.startsWith('COUNTA') ? INT_FMT : ACC_FMT;
-          } else if (typeof cell.v === 'number') {
-            cell.z = ACC_FMT;
-          }
-        }
-
-        if (sinfo.col_widths) {
-          const cols = [];
-          const maxCols = sinfo.max_column || 30;
-          for (let c = 0; c < maxCols; c++) {
-            const colLetter = XLSX.utils.encode_col(c);
-            const w = sinfo.col_widths[colLetter];
-            cols.push(w ? { wch: Math.round(w) } : { wch: 15 });
-          }
-          ws['!cols'] = cols;
-        }
-
-        ws['!merges'] = [];
-        XLSX.utils.book_append_sheet(wb, ws, item.title);
-        addedSheets.push(item.title);
-      }
-      return addedSheets;
-    }
-
-    // Standalone mode: append all 5 sheets
-    for (const [sname, sinfo] of Object.entries(gtcBenchmarkData)) {
-      const ws = XLSX.utils.aoa_to_sheet(sinfo.rows);
-
-      // Convert string formulas (starting with '=') to real Excel formulas & set accounting format
-      const ACC_FMT = '#,##0.00;(#,##0.00);"-"';
-      const INT_FMT = '#,##0';
-      for (const cellAddr in ws) {
-        if (cellAddr.startsWith('!')) continue;
-        const cell = ws[cellAddr];
-        if (!cell) continue;
-        if (typeof cell.v === 'string' && cell.v.startsWith('=')) {
-          const formula = cell.v.substring(1);
-          cell.f = formula;
-          delete cell.v;
-          cell.t = 'n';
-          cell.z = formula.startsWith('COUNTA') ? INT_FMT : ACC_FMT;
-        } else if (typeof cell.v === 'number') {
-          cell.z = ACC_FMT;
-        }
-      }
-
-      if (sinfo.col_widths) {
-        const cols = [];
-        const maxCols = sinfo.max_column || 30;
-        for (let c = 0; c < maxCols; c++) {
-          const colLetter = XLSX.utils.encode_col(c);
-          const w = sinfo.col_widths[colLetter];
-          cols.push(w ? { wch: Math.round(w) } : { wch: 15 });
-        }
-        ws['!cols'] = cols;
-      }
-
-      ws['!merges'] = [];
-      XLSX.utils.book_append_sheet(wb, ws, sname);
-      addedSheets.push(sname);
-    }
-    return addedSheets;
-  }
-
-  // Dynamic 5-sheet generation for other taxpayers
+  // Dynamic 5-sheet generation for all taxpayers
   const ACC_FMT = '#,##0.00;(#,##0.00);"-"';
 
   // 1. Executive Summary

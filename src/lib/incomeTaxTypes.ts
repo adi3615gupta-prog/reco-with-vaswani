@@ -44,7 +44,7 @@ export const AgeCategory = {
 export type AgeCategory = typeof AgeCategory[keyof typeof AgeCategory];
 
 /** Supported financial years */
-export type FinancialYear = 'FY2025-26' | 'FY2026-27';
+export type FinancialYear = 'FY2023-24' | 'FY2024-25' | 'FY2025-26' | 'FY2026-27';
 
 // ═══════════════════════════════════════════════════════════════════
 // DATABASE MODEL INTERFACES

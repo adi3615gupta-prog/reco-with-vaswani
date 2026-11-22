@@ -11,7 +11,7 @@
  */
 
 export interface SensitiveMatch {
-    type: 'GSTIN' | 'PAN' | 'ARN' | 'DIN' | 'ENTITY_NAME' | 'OFFICER_NAME' | 'PHONE' | 'EMAIL';
+    type: 'GSTIN' | 'PAN' | 'ARN' | 'DIN' | 'TIN' | 'BANK_AC' | 'ENTITY_NAME' | 'OFFICER_NAME' | 'PHONE' | 'EMAIL';
     raw: string;
     token: string;
     index: number;
@@ -70,10 +70,14 @@ const PATTERNS = {
     GSTIN: /\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b/g,
     // 10-character Permanent Account Number
     PAN: /\b[A-Z]{5}\d{4}[A-Z]{1}\b/g,
-    // Acknowledgement Reference Number (e.g. AA2704240123456)
-    ARN: /\b[A-Z]{2}\d{13,15}\b/g,
+    // Portal ARN / Case ID / Demand ID (e.g. AA2704240123456, AD27..., ZD27..., ZA27..., ONLZD...)
+    ARN: /\b(?:ONL)?(?:ZD|AD|AA|ZA|IP)[A-Z0-9]{11,16}\b/g,
     // CBIC Document Identification Number (DIN / RFN)
     DIN: /\b(?:DIN|RFN|CBIC)[\s:-]*([0-9A-Z]{15,25})\b/gi,
+    // Pre-GST MVAT TIN (11 digits ending in V/C)
+    TIN: /\b\d{11}[VC]\b/g,
+    // Bank Account Numbers / Challan CIN
+    BANK_AC: /\b(?:A\/C\s*(?:No\.?|Number)?|Account\s*(?:No\.?|Number)?|CIN)[\s.:#-]*([0-9A-Z]{9,20})\b/gi,
     // Indian 10-digit Mobile Number with optional +91 prefix
     PHONE: /(?:\+91[\-\s]?)?[6-9]\d{9}\b/g,
     // Standard Email Address
@@ -81,7 +85,7 @@ const PATTERNS = {
 };
 
 /**
- * Sanitizes raw notice text before sending to Gemini API.
+ * Sanitizes raw notice text before sending to AI engine.
  * Replaces sensitive identifiers with structured tokens.
  */
 export function sanitizePayload(rawText: string, metadata?: ClientMetadata): SanitizationResult {
@@ -102,14 +106,14 @@ export function sanitizePayload(rawText: string, metadata?: ClientMetadata): San
 
     // Helper to register and replace token
     const replaceAndTrack = (
-        rawVal: string, 
-        token: string, 
-        type: SensitiveMatch['type'], 
+        rawVal: string,
+        token: string,
+        type: SensitiveMatch['type'],
         targetText: string
     ): string => {
         if (!rawVal || rawVal.trim().length === 0) return targetText;
         const trimmed = rawVal.trim();
-        
+
         let existingToken = realToToken.get(trimmed);
         if (!existingToken) {
             existingToken = token;
@@ -133,6 +137,12 @@ export function sanitizePayload(rawText: string, metadata?: ClientMetadata): San
     if (metadata) {
         if (metadata.gstin) {
             workingText = replaceAndTrack(metadata.gstin, `{{GSTIN_TOKEN_${gstinCounter++}}}`, 'GSTIN', workingText);
+            const derivedPan = metadata.gstin.trim().length >= 12 ? metadata.gstin.trim().slice(2, 12) : '';
+            if (!metadata.pan && derivedPan && !realToToken.has(derivedPan)) {
+                const panToken = `{{PAN_TOKEN_${panCounter++}}}`;
+                realToToken.set(derivedPan, panToken);
+                tokenToReal.set(panToken, derivedPan);
+            }
         }
         if (metadata.pan) {
             workingText = replaceAndTrack(metadata.pan, `{{PAN_TOKEN_${panCounter++}}}`, 'PAN', workingText);
@@ -161,6 +171,12 @@ export function sanitizePayload(rawText: string, metadata?: ClientMetadata): San
             const token = `{{GSTIN_TOKEN_${gstinCounter++}}}`;
             workingText = replaceAndTrack(g, token, 'GSTIN', workingText);
         }
+        const gPan = g.slice(2, 12);
+        if (!realToToken.has(gPan) && !tokenToReal.has('{{PAN_TOKEN_1}}')) {
+            const panTok = `{{PAN_TOKEN_${panCounter++}}}`;
+            realToToken.set(gPan, panTok);
+            tokenToReal.set(panTok, gPan);
+        }
     }
 
     // 3. Automated Regex Scrubbing: PANs (Derived from GSTIN chars 3-12 or standalone)
@@ -174,12 +190,37 @@ export function sanitizePayload(rawText: string, metadata?: ClientMetadata): San
         }
     }
 
-    // 4. Automated Regex Scrubbing: ARNs / Reference Numbers
+    // 4. Automated Regex Scrubbing: ARNs / Case IDs / Demand IDs
     const arnMatches = rawText.match(PATTERNS.ARN) || [];
     for (const a of arnMatches) {
         if (!realToToken.has(a)) {
             const token = `{{ARN_TOKEN_${arnCounter++}}}`;
             workingText = replaceAndTrack(a, token, 'ARN', workingText);
+        }
+    }
+
+    // 4B. CBIC DIN / RFN, MVAT TIN, Bank Account / Challan CIN
+    let bankCounter = 1;
+    let tinCounter = 1;
+    let dinM;
+    const dinRx = new RegExp(PATTERNS.DIN.source, 'gi');
+    while ((dinM = dinRx.exec(rawText)) !== null) {
+        const val = dinM[1];
+        if (val && !realToToken.has(val)) {
+            workingText = replaceAndTrack(val, `{{DIN_TOKEN_${dinCounter++}}}`, 'DIN', workingText);
+        }
+    }
+    for (const t of rawText.match(PATTERNS.TIN) || []) {
+        if (!realToToken.has(t)) {
+            workingText = replaceAndTrack(t, `{{TIN_TOKEN_${tinCounter++}}}`, 'TIN', workingText);
+        }
+    }
+    let bM;
+    const bankRx = new RegExp(PATTERNS.BANK_AC.source, 'gi');
+    while ((bM = bankRx.exec(rawText)) !== null) {
+        const val = bM[1];
+        if (val && !realToToken.has(val)) {
+            workingText = replaceAndTrack(val, `{{BANK_TOKEN_${bankCounter++}}}`, 'BANK_AC', workingText);
         }
     }
 
@@ -232,7 +273,7 @@ export function sanitizePayload(rawText: string, metadata?: ClientMetadata): San
 }
 
 /**
- * Re-hydrates Gemini output locally by swapping all token placeholders back to actual client details.
+ * Re-hydrates AI output locally by swapping all token placeholders back to actual client details.
  * Also handles alternate brackets formats that LLMs occasionally emit:
  * {{GSTIN_TOKEN_1}}, [GSTIN_TOKEN_1], [[GSTIN_TOKEN_1]], {GSTIN_TOKEN_1}.
  */
@@ -250,6 +291,18 @@ export function rehydrateDraft(aiOutput: string, sessionId: string, fallbackMap?
     }
 
     let hydratedText = aiOutput;
+
+    // Default statutory tokens if unmapped
+    if (!tokenToReal.has('{{CURRENT_DATE}}')) {
+        const today = new Date();
+        const dd = String(today.getDate()).padStart(2, '0');
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const yyyy = today.getFullYear();
+        hydratedText = hydratedText.split('{{CURRENT_DATE}}').join(`${dd}/${mm}/${yyyy}`);
+    }
+    if (!tokenToReal.has('{{JURISDICTION_TOKEN}}')) {
+        hydratedText = hydratedText.split('{{JURISDICTION_TOKEN}}').join('Yerawada / Pune Jurisdictional GST Office');
+    }
 
     tokenToReal.forEach((realVal, token) => {
         // Strip braces to generate variants: e.g. GSTIN_TOKEN_1

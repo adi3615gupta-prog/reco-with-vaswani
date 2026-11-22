@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { encryptSecret, decryptSecret } from './cryptoVault.js';
 
 /**
  * Search the SQLite clients table for clients matching keywords in the user query.
@@ -92,7 +93,7 @@ export function tryFastPathNavigation(message, matchedClients = []) {
   if (!message || typeof message !== 'string') return null;
   const lowerMsg = message.toLowerCase().trim();
 
-  // If message asks an advisory or explanatory question, let cloud Gemini answer
+  // If message asks an advisory or explanatory question, let AI Assistant answer
   const isQuestion = /\b(kya hai|what is|how to|why|rules?|explain|difference|calculate|penalty|interest|kaise|meaning|provision)\b/i.test(lowerMsg);
   if (isQuestion) return null;
 
@@ -277,6 +278,25 @@ export function sanitizeGeminiHistory(rawHistory) {
  * @returns {Promise<{ apiKey: string|null, origin: 'cloud_office'|'cloud_global'|null }>}
  */
 export async function fetchCloudGeminiKey(firestore, officeId) {
+  const licenseApiUrl = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
+  if (licenseApiUrl) {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (process.env.LICENSE_GATEWAY_TOKEN) headers['x-license-token'] = process.env.LICENSE_GATEWAY_TOKEN;
+      const res = await fetch(`${licenseApiUrl}/geminiKeySync`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'fetch', officeId: officeId ? officeId.trim() : null })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.apiKey) return { apiKey: data.apiKey, origin: data.origin || 'cloud_office' };
+      }
+    } catch (e) {
+      console.warn('[AI Cloud Sync] Gateway fetch warning:', e.message);
+    }
+  }
+
   if (!firestore) return { apiKey: null, origin: null };
 
   // Level 1: Check Office-Specific Server Key Document
@@ -297,7 +317,7 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
         }
       }
     } catch (e) {
-      console.warn('[Gemini Cloud Sync] Level 1 office fetch warning:', e.message);
+      console.warn('[AI Cloud Sync] Level 1 office fetch warning:', e.message);
     }
   }
 
@@ -327,7 +347,7 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
       }
     }
   } catch (e) {
-    console.warn('[Gemini Cloud Sync] Level 2 global master fetch warning:', e.message);
+    console.warn('[AI Cloud Sync] Level 2 global master fetch warning:', e.message);
   }
 
   return { apiKey: null, origin: null };
@@ -344,10 +364,11 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
 export async function syncCloudGeminiKey(firestore, db, officeId) {
   const { apiKey, origin } = await fetchCloudGeminiKey(firestore, officeId);
   if (apiKey && origin) {
+    const encryptedApiKey = encryptSecret(apiKey.trim());
     await new Promise((resolve, reject) => {
       db.run(
         "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [apiKey],
+        [encryptedApiKey],
         (err) => (err ? reject(err) : resolve())
       );
     });
@@ -364,7 +385,7 @@ export async function syncCloudGeminiKey(firestore, db, officeId) {
 }
 
 /**
- * Setup Google Gemini AI routes for the "Sourav" AI Assistant.
+ * Setup AI Assistant routes for the "Sourav" AI Assistant.
  * 
  * @param {import('express').Express} app 
  * @param {import('sqlite3').Database} db 
@@ -372,6 +393,15 @@ export async function syncCloudGeminiKey(firestore, db, officeId) {
  */
 export default function setupGeminiRoutes(app, db, firestore = null, authenticateToken = null) {
   const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+  app.use('/api/gemini', authMiddleware);
+
+  const requireAdminIfAuthenticated = (req, res, next) => {
+    if (req.user && String(req.user.role || '').toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Admin privileges required for AI configuration' });
+    }
+    next();
+  };
+
   // Helper to read office_id from SQLite app_config
   const getOfficeId = () => new Promise((resolve) => {
     db.get("SELECT value FROM app_config WHERE key = 'office_id'", [], (err, row) => {
@@ -393,7 +423,14 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
         if (err || !rows || rows.length === 0) return resolve({ apiKey: null, origin: null });
         const map = {};
         rows.forEach(r => { map[r.key] = r.value; });
-        const key = map['gemini_api_key'] ? map['gemini_api_key'].trim() : null;
+        let key = null;
+        if (map['gemini_api_key']) {
+          try {
+            key = decryptSecret(map['gemini_api_key']).trim() || null;
+          } catch {
+            key = null;
+          }
+        }
         const origin = map['gemini_key_origin'] ? map['gemini_key_origin'].trim() : (key ? 'local_manual' : null);
         resolve({ apiKey: key, origin });
       }
@@ -402,10 +439,11 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
 
   // Helper to save key & origin to sqlite3 app_config
   const setApiKey = (key, origin = 'local_manual') => new Promise((resolve, reject) => {
+    const encryptedKey = encryptSecret(key.trim());
     db.serialize(() => {
       db.run(
         "INSERT INTO app_config (key, value) VALUES ('gemini_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [key.trim()],
+        [encryptedKey],
         (err) => {
           if (err) return reject(err);
         }
@@ -421,7 +459,7 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
     });
   });
 
-  // GET /api/gemini/status — Check if Gemini API key is configured & return origin
+  // GET /api/gemini/status — Check if AI API key is configured & return origin
   app.get('/api/gemini/status', async (req, res) => {
     try {
       const { apiKey, origin } = await getApiKeyAndOrigin();
@@ -430,38 +468,38 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
         origin: apiKey ? origin : null,
       });
     } catch (err) {
-      console.error('[Gemini /status Error]:', err);
+      console.error('[AI /status Error]:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // POST /api/gemini/config — Save Gemini API key locally (marked as local_manual)
-  app.post('/api/gemini/config', authMiddleware, async (req, res) => {
+  // POST /api/gemini/config — Save AI API key locally (marked as local_manual)
+  app.post('/api/gemini/config', authMiddleware, requireAdminIfAuthenticated, async (req, res) => {
     try {
       const { apiKey } = req.body;
       if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
         return res.status(400).json({ error: 'Valid apiKey string is required' });
       }
       await setApiKey(apiKey, 'local_manual');
-      console.log('[Gemini] API key updated manually in app_config (origin: local_manual)');
-      res.json({ ok: true, message: 'Gemini API key saved successfully', origin: 'local_manual' });
+      console.log('[AI Engine] API key updated manually in app_config (origin: local_manual)');
+      res.json({ ok: true, message: 'AI activation key saved successfully', origin: 'local_manual' });
     } catch (err) {
-      console.error('[Gemini /config Error]:', err);
+      console.error('[AI /config Error]:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // POST /api/gemini/sync-cloud — On-demand cloud sync from Firebase Firestore
+  // POST /api/gemini/sync-cloud — On-demand cloud sync from Firebase Firestore / Cloud Gateway
   app.post('/api/gemini/sync-cloud', async (req, res) => {
     try {
-      if (!firestore) {
+      if (!firestore && !process.env.LICENSE_API_URL) {
         return res.status(503).json({ ok: false, configured: false, error: 'Firebase Firestore is not initialized on this server' });
       }
 
       const officeId = (req.body && req.body.officeId && typeof req.body.officeId === 'string' && req.body.officeId.trim())
         ? req.body.officeId.trim()
         : await getOfficeId();
-      console.log(`[Gemini Cloud Sync] Manual sync requested for office: ${officeId || 'unassigned'}`);
+      console.log(`[AI Cloud Sync] Manual sync requested for office: ${officeId || 'unassigned'}`);
 
       const result = await syncCloudGeminiKey(firestore, db, officeId);
       if (result.synced) {
@@ -469,7 +507,7 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
           ok: true,
           configured: true,
           origin: result.origin,
-          message: `Gemini API key successfully synchronized from ${
+          message: `AI activation key successfully synchronized from ${
             result.origin === 'cloud_office' ? 'Office Cloud License' : 'Global Master Settings'
           }.`,
         });
@@ -478,18 +516,19 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
       return res.status(404).json({
         ok: false,
         configured: false,
-        error: 'No Gemini API key was found in either your Office Cloud License or Global Master settings.',
+        error: 'No AI activation key was found in either your Office Cloud License or Global Master settings.',
       });
     } catch (err) {
-      console.error('[Gemini /sync-cloud Error]:', err);
+      console.error('[AI /sync-cloud Error]:', err);
       res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // POST /api/gemini/push-cloud — Admin push of Gemini key to Firebase Firestore
-  app.post('/api/gemini/push-cloud', authMiddleware, async (req, res) => {
+  // POST /api/gemini/push-cloud — Admin push of AI key to Firebase Firestore
+  app.post('/api/gemini/push-cloud', authMiddleware, requireAdminIfAuthenticated, async (req, res) => {
     try {
-      if (!firestore) {
+      const licenseApiUrl = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
+      if (!firestore && !licenseApiUrl) {
         return res.status(503).json({ ok: false, error: 'Firebase Firestore is not initialized on this server' });
       }
 
@@ -499,6 +538,35 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
       }
 
       const trimmedKey = apiKey.trim();
+
+      if (licenseApiUrl) {
+        const officeId = scope === 'office'
+          ? ((req.body && req.body.officeId && typeof req.body.officeId === 'string' && req.body.officeId.trim()) ? req.body.officeId.trim() : await getOfficeId())
+          : null;
+        if (scope === 'office' && !officeId) {
+          return res.status(400).json({ error: 'This installation does not have an active office_id assigned.' });
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (process.env.LICENSE_GATEWAY_TOKEN) headers['x-license-token'] = process.env.LICENSE_GATEWAY_TOKEN;
+        const gwRes = await fetch(`${licenseApiUrl}/geminiKeySync`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'push', officeId, apiKey: trimmedKey, scope, updatedBy: req.user?.username || 'admin' })
+        });
+        const gwData = await gwRes.json().catch(() => ({}));
+        if (!gwRes.ok) {
+          return res.status(gwRes.status).json({ error: gwData.error || 'Cloud gateway push failed' });
+        }
+        const origin = scope === 'office' ? 'cloud_office' : 'cloud_global';
+        await setApiKey(trimmedKey, origin);
+        return res.json({
+          ok: true,
+          origin,
+          message: scope === 'office'
+            ? `AI activation key successfully pushed to Office (${officeId}) Cloud License.`
+            : 'AI activation key successfully pushed to Global Cloud Master.'
+        });
+      }
 
       if (scope === 'office') {
         const officeId = (req.body && req.body.officeId && typeof req.body.officeId === 'string' && req.body.officeId.trim())
@@ -527,11 +595,11 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
         // Also save locally with cloud_office origin
         await setApiKey(trimmedKey, 'cloud_office');
 
-        console.log(`[Gemini Cloud Push] Key successfully pushed to office ${officeId}`);
+        console.log(`[AI Cloud Push] Key successfully pushed to office ${officeId}`);
         return res.json({
           ok: true,
           origin: 'cloud_office',
-          message: `Gemini API key successfully pushed to Office (${officeId}) Cloud License. All workstations in this office will sync automatically.`,
+          message: `AI activation key successfully pushed to Office (${officeId}) Cloud License. All workstations in this office will sync automatically.`,
         });
       } else if (scope === 'global') {
         const globalRef = doc(firestore, 'system_config', 'ai_settings');
@@ -547,22 +615,68 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
         // Also save locally with cloud_global origin
         await setApiKey(trimmedKey, 'cloud_global');
 
-        console.log('[Gemini Cloud Push] Key successfully pushed to global system_config/ai_settings');
+        console.log('[AI Cloud Push] Key successfully pushed to global system_config/ai_settings');
         return res.json({
           ok: true,
           origin: 'cloud_global',
-          message: 'Gemini API key successfully pushed to Global Master settings. All client offices without overrides will inherit this key.',
+          message: 'AI activation key successfully pushed to Global Master settings. All client offices without overrides will inherit this key.',
         });
       } else {
         return res.status(400).json({ error: "Invalid scope parameter. Must be 'office' or 'global'." });
       }
     } catch (err) {
-      console.error('[Gemini /push-cloud Error]:', err);
+      console.error('[AI /push-cloud Error]:', err);
       res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // POST /api/gemini/chat — Send user prompt + context to Gemini
+  // POST /api/gemini/analyze-notice — Server-side secure notice legal reasoning
+  app.post('/api/gemini/analyze-notice', authMiddleware, async (req, res) => {
+    const { sanitizedText, systemInstruction } = req.body;
+    if (!sanitizedText || typeof sanitizedText !== 'string' || sanitizedText.trim().length === 0) {
+      return res.status(400).json({ error: 'sanitizedText string is required' });
+    }
+
+    const { apiKey } = await getApiKeyAndOrigin();
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'AI activation key is not configured on this server.',
+        offline: true,
+      });
+    }
+
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        systemInstruction: systemInstruction || undefined,
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const prompt = `Analyze this sanitized GST notice text and provide complete legal reasoning, issue breakdown, and courtroom written reply draft:\n\n${sanitizedText}`;
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+
+      try {
+        const parsed = JSON.parse(text);
+        return res.json({
+          ...parsed,
+          analyzedAt: new Date().toISOString(),
+          isAiGenerated: true
+        });
+      } catch (parseErr) {
+        return res.status(500).json({ error: 'Failed to parse AI response as JSON', raw: text });
+      }
+    } catch (err) {
+      console.error('[AI /analyze-notice Error]:', err.message);
+      return res.status(500).json({ error: err.message, offline: true });
+    }
+  });
+
+  // POST /api/gemini/chat — Send user prompt + context to AI Assistant
   app.post('/api/gemini/chat', async (req, res) => {
     const { message, context = {}, history = [] } = req.body;
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -572,7 +686,7 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
     const { apiKey } = await getApiKeyAndOrigin();
     if (!apiKey) {
       return res.status(403).json({
-        error: 'Gemini API key is not configured. Please enter your API key in Settings → AI Assistant or sync from Office Cloud License.',
+        error: 'AI activation key is not configured. Please enter your API key in Settings → AI Assistant or sync from Office Cloud License.',
         unconfigured: true,
       });
     }
@@ -653,34 +767,34 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
           if (responseText) break;
         } catch (modelErr) {
           lastError = modelErr;
-          console.warn(`[Gemini] Candidate ${candidateModel} failed:`, modelErr.message);
+          console.warn(`[AI Engine] Candidate ${candidateModel} failed:`, modelErr.message);
           // If invalid key, fail fast because all models will fail
           if (modelErr.message?.includes('API_KEY_INVALID') || modelErr.message?.includes('API key not valid')) {
             throw modelErr;
           }
           // If 429 quota reached on this specific model, cascade to next available model instead of aborting
           if (modelErr.message?.includes('429') || modelErr.message?.includes('RESOURCE_EXHAUSTED')) {
-            console.warn(`[Gemini] Candidate ${candidateModel} quota reached (429). Cascading to next candidate in pool...`);
+            console.warn(`[AI Engine] Candidate ${candidateModel} quota reached (429). Cascading to next candidate in pool...`);
             continue;
           }
         }
       }
 
       if (!responseText) {
-        throw lastError || new Error('No response from Gemini API models');
+        throw lastError || new Error('No response from AI Assistant models');
       }
 
       res.json({ reply: responseText, matchedClients });
     } catch (err) {
-      console.error('[Gemini Route Error]:', err);
+      console.error('[AI Route Error]:', err);
       const msg = err.message || '';
       if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
-        return res.status(403).json({ error: 'Invalid Gemini API key. Please check and re-enter in Settings → AI Assistant or re-sync from Cloud.' });
+        return res.status(403).json({ error: 'Invalid AI activation key. Please check and re-enter in Settings → AI Assistant or re-sync from Cloud.' });
       }
       if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
-        return res.status(429).json({ error: 'Gemini API quota reached. Please wait a moment or upgrade your Google AI Studio plan.' });
+        return res.status(429).json({ error: 'Cloud AI service rate limit reached. Please wait a moment or try again later.' });
       }
-      res.status(500).json({ error: 'Gemini error: ' + msg });
+      res.status(500).json({ error: 'AI service error: ' + msg });
     }
   });
 }
@@ -773,7 +887,7 @@ ${matchedClientsBlock}
 ### Pillar 1: Master GST Statutory Law & ITC Framework
 - **Section 16(2) CGST Act — 4 Non-Negotiable Conditions for Claiming ITC:**
   - **Clause (a):** Possession of Tax Invoice, Debit Note, or Bill of Entry.
-  - **Clause (aa) (w.e.f. 01-01-2022):** Invoice/DN must be reported by supplier in GSTR-1/IFF and reflected in recipient's GSTR-2B u/s 38(1).
+  - **Clause (aa) / Section 16(2)(aa) (w.e.f. 01-01-2022):** Invoice/DN must be reported by supplier in GSTR-1/IFF and reflected in recipient's GSTR-2B u/s 38(1). ITC cannot be claimed if invoice does not reflect in 2B.
   - **Clause (b):** Actual receipt of goods or services (Explanation: "Bill-to-Ship-to" qualifies as deemed receipt).
   - **Clause (ba) (Finance Act 2022):** Credit must not be restricted in GSTR-2B u/s 38(2).
   - **Clause (c):** Tax charged on the supply actually paid to Government by supplier u/s 41 (in cash or valid ITC).
@@ -782,6 +896,10 @@ ${matchedClientsBlock}
   - Recipient must pay supplier consideration + tax within 180 days from invoice date.
   - If unpaid within 180 days: Reverse proportionate ITC in Table 4(B)(2) of GSTR-3B along with 18% p.a. interest u/s 50(1) computed from date of availing credit till date of reversal.
   - **Re-availment (3rd Proviso to Sec 16(2)):** Once payment is made to supplier, full ITC can be reclaimed in Table 4(A)(5) without ANY time limitation (Sec 16(4) does NOT apply to re-availment).
+- **Supplier Non-Filing Reversal (Rule 37A):**
+  - If supplier files GSTR-1 but fails to file GSTR-3B by 30th November of subsequent FY, recipient must reverse ITC on or before 30th November under Rule 37A in Table 4(B)(2); re-creditable upon subsequent 3B filing by supplier.
+- **Reverse Charge Mechanism & Payment Rules (Section 49(4) & Section 9(3)/(4)):**
+  - Reverse Charge Mechanism (RCM) tax liability cannot be discharged using ITC; tax must be paid in cash via Electronic Cash Ledger under Section 49(4). Recipient can claim ITC on RCM tax paid in the same or subsequent month subject to Section 16.
 - **Time Limit for Availing ITC (Section 16(4)):**
   - Earlier of: 30th November following the end of Financial Year (amended by Finance Act 2022 from previous Sep return date), OR the date of furnishing Annual Return (GSTR-9).
 - **Blocked Credits (Section 17(5)):**

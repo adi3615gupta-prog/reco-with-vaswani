@@ -10,6 +10,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme="dark"
       className="toaster group"
+      closeButton
       toastOptions={{
         classNames: {
           toast:
@@ -17,6 +18,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           description: "group-[.toast]:text-slate-500 dark:group-[.toast]:text-slate-400 text-sm",
           actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          closeButton: "group-[.toast]:!bg-slate-200 dark:group-[.toast]:!bg-slate-700 group-[.toast]:!text-slate-900 dark:group-[.toast]:!text-white group-[.toast]:!border-slate-300 dark:group-[.toast]:!border-slate-600 !opacity-100",
         },
       }}
       {...props}
@@ -24,4 +26,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   );
 };
 
-export { Toaster, toast };
+/** Dismiss all active toasts at once */
+const dismissAllToasts = () => toast.dismiss();
+
+export { Toaster, toast, dismissAllToasts };

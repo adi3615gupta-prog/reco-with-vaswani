@@ -674,7 +674,8 @@ export function classifyOutwardInvoices(
       supplierGstin
     });
 
-    const isInterState = pos !== supplierState;
+    const isSezSupply = ['SEWP', 'SEWOP'].includes(rec.invoiceType || '');
+    const isInterState = pos !== supplierState || isSezSupply;
     const invDate = formatGstDate(rec.invoiceDate);
     const txval = Math.round((rec.taxableValue || 0) * 100) / 100;
     const rt = rec.taxRate || 0;
@@ -753,16 +754,25 @@ export function classifyOutwardInvoices(
       if (isValidGstin) {
         // Table 9B CDNR
         if (!cdnrMap.has(rawGstin)) cdnrMap.set(rawGstin, []);
-        cdnrMap.get(rawGstin)!.push({
-          ntty,
-          nt_num: rec.invoiceNo,
-          nt_dt: invDate,
-          val: invVal,
-          pos,
-          rchrg: rec.reverseCharge === 'Y' || rec.reverseCharge === true ? 'Y' : 'N',
-          itms: [itemDetail],
-          buyerName: rec.buyerName
-        });
+        const gstinNotes = cdnrMap.get(rawGstin)!;
+        const existingNote = gstinNotes.find(n => n.nt_num === rec.invoiceNo);
+        if (existingNote) {
+          existingNote.val = Math.round((existingNote.val + invVal) * 100) / 100;
+          itemDetail.num = existingNote.itms.length + 1;
+          existingNote.itms.push(itemDetail);
+        } else {
+          itemDetail.num = 1;
+          gstinNotes.push({
+            ntty,
+            nt_num: rec.invoiceNo,
+            nt_dt: invDate,
+            val: invVal,
+            pos,
+            rchrg: rec.reverseCharge === 'Y' || rec.reverseCharge === true ? 'Y' : 'N',
+            itms: [itemDetail],
+            buyerName: rec.buyerName
+          });
+        }
       } else {
         // Table 9B CDNUR
         cdnurList.push({
@@ -783,32 +793,50 @@ export function classifyOutwardInvoices(
     if (rec.isExport) {
       const expType = rec.exportType || (iamt > 0 ? 'WPAY' : 'WOPAY');
       if (!expMap.has(expType)) expMap.set(expType, []);
-      expMap.get(expType)!.push({
-        inum: rec.invoiceNo,
-        idt: invDate,
-        val: invVal,
-        sbnum: rec.shippingBillNo,
-        sbdt: formatGstDate(rec.shippingBillDate),
-        sbpcode: rec.portCode,
-        itms: [itemDetail]
-      });
+      const expInvoices = expMap.get(expType)!;
+      const existingExp = expInvoices.find(e => e.inum === rec.invoiceNo);
+      if (existingExp) {
+        existingExp.val = Math.round((existingExp.val + invVal) * 100) / 100;
+        itemDetail.num = existingExp.itms.length + 1;
+        existingExp.itms.push(itemDetail);
+      } else {
+        itemDetail.num = 1;
+        expInvoices.push({
+          inum: rec.invoiceNo,
+          idt: invDate,
+          val: invVal,
+          sbnum: rec.shippingBillNo,
+          sbdt: formatGstDate(rec.shippingBillDate),
+          sbpcode: rec.portCode,
+          itms: [itemDetail]
+        });
+      }
       continue;
     }
 
-    // ── Table 4 B2B Routing ──
+    // ── Table 4 B2B Routing (Grouped by inum) ──
     if (isValidGstin) {
       if (!b2bMap.has(rawGstin)) b2bMap.set(rawGstin, []);
-      b2bMap.get(rawGstin)!.push({
-        inum: rec.invoiceNo,
-        idt: invDate,
-        val: invVal,
-        pos,
-        rchrg: rec.reverseCharge === 'Y' || rec.reverseCharge === true ? 'Y' : 'N',
-        inv_typ: rec.invoiceType || 'R',
-        itms: [itemDetail],
-        buyerName: rec.buyerName,
-        rawGstin
-      });
+      const gstinInvoices = b2bMap.get(rawGstin)!;
+      const existingInv = gstinInvoices.find(i => i.inum === rec.invoiceNo);
+      if (existingInv) {
+        existingInv.val = Math.round((existingInv.val + invVal) * 100) / 100;
+        itemDetail.num = existingInv.itms.length + 1;
+        existingInv.itms.push(itemDetail);
+      } else {
+        itemDetail.num = 1;
+        gstinInvoices.push({
+          inum: rec.invoiceNo,
+          idt: invDate,
+          val: invVal,
+          pos,
+          rchrg: rec.reverseCharge === 'Y' || rec.reverseCharge === true ? 'Y' : 'N',
+          inv_typ: rec.invoiceType || 'R',
+          itms: [itemDetail],
+          buyerName: rec.buyerName,
+          rawGstin
+        });
+      }
       continue;
     }
 

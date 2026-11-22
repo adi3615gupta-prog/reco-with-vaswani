@@ -173,11 +173,11 @@ export async function parseGstr1PdfBuffer(pdfBuffer, originalFileName = 'GSTR-1.
   const deMatch = text.match(/6C - Deemed Exports[\s\S]*?Total\s+([\d]+)\s+Invoice\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i);
   const deemedExports = {
     count: deMatch ? parseInt(deMatch[1], 10) : 0,
-    taxable: deMatch ? cleanNum(deMatch[1]) : 0,
-    igst: deMatch ? cleanNum(deMatch[2]) : 0,
-    cgst: deMatch ? cleanNum(deMatch[3]) : 0,
-    sgst: deMatch ? cleanNum(deMatch[4]) : 0,
-    cess: deMatch ? cleanNum(deMatch[5]) : 0
+    taxable: deMatch ? cleanNum(deMatch[2]) : 0,
+    igst: deMatch ? cleanNum(deMatch[3]) : 0,
+    cgst: deMatch ? cleanNum(deMatch[4]) : 0,
+    sgst: deMatch ? cleanNum(deMatch[5]) : 0,
+    cess: deMatch ? cleanNum(deMatch[6]) : 0
   };
   deemedExports.total = deemedExports.igst + deemedExports.cgst + deemedExports.sgst + deemedExports.cess;
 

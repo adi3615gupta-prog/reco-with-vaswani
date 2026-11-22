@@ -105,7 +105,9 @@ export function initAuditStorageDatabase(db) {
 /**
  * Setup Express REST routes for unified audit persistence
  */
-export function setupAuditStorageRoutes(app, db, defaultUserDataPath = '.') {
+export function setupAuditStorageRoutes(app, db, defaultUserDataPath = '.', authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/audit-storage', authMiddleware);
     let activeDb = db;
     if (!activeDb) {
         const dbPath = path.join(defaultUserDataPath || process.cwd(), 'network_data.db');

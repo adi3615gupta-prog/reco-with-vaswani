@@ -34,6 +34,7 @@ export interface CloudAuditRecord {
     preparedBy: string;
     preparedAt?: number;
     reviewedBy: string; // Designated Senior CA Partner
+    reviewedByUsername?: string;
     reviewedAt?: number;
     seniorReviewNotes?: string;
     releasedBy?: string;

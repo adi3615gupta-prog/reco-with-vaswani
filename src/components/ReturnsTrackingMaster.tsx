@@ -71,13 +71,13 @@ interface ReturnsTrackingMasterProps {
     clientGstin: string,
     clientName: string,
     month: GSTR3BMonthKey,
-    targetTab: 'working3b' | 'gstr2b_downloader' | 'gstr1_downloader'
+    targetTab: 'working3b' | 'gstr2b_downloader' | 'gstr1_working'
   ) => void;
 }
 
 export default function ReturnsTrackingMaster({
   currentGstin = '',
-  financialYear = '2025-26',
+  financialYear = '2026-27',
   onJumpToWorking
 }: ReturnsTrackingMasterProps) {
   // Step state: Step 1 (Client Directory Gateway) or Step 2 (Compliance Dashboard)
@@ -89,7 +89,7 @@ export default function ReturnsTrackingMaster({
 
   // Navigation & View State (Step 2 Dashboard)
   const [viewMode, setViewMode] = useState<'cockpit' | 'timeline'>('cockpit');
-  const [selectedFy, setSelectedFy] = useState<string>(financialYear || '2025-26');
+  const [selectedFy, setSelectedFy] = useState<string>(financialYear || '2026-27');
   const [selectedPeriodFilter, setSelectedPeriodFilter] = useState<string>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'PENDING' | 'OVERDUE' | 'FILED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -926,55 +926,50 @@ export default function ReturnsTrackingMaster({
                 <button
                   type="button"
                   onClick={() => setDirectoryFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    directoryFilter === 'ALL'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${directoryFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
                   All Clients ({uniqueClients.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setDirectoryFilter('SELECTED')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
-                    directoryFilter === 'SELECTED'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${directoryFilter === 'SELECTED'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
                   <span>Selected ({checkedGstins.size})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setDirectoryFilter('PENDING')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    directoryFilter === 'PENDING'
-                      ? 'bg-amber-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${directoryFilter === 'PENDING'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
                   Pending ({uniqueClients.filter(c => c.pendingCount > 0 || c.overdueCount > 0).length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setDirectoryFilter('MONTHLY')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    directoryFilter === 'MONTHLY'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${directoryFilter === 'MONTHLY'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
                   Monthly ({uniqueClients.filter(c => c.frequency === 'Monthly').length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setDirectoryFilter('QRMP')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    directoryFilter === 'QRMP'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${directoryFilter === 'QRMP'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
                   QRMP ({uniqueClients.filter(c => c.frequency === 'QRMP').length})
                 </button>
@@ -1093,11 +1088,10 @@ export default function ReturnsTrackingMaster({
                             else next.add(g);
                             setCheckedGstins(next);
                           }}
-                          className={`transition-colors cursor-pointer group ${
-                            isChecked
-                              ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600'
-                              : 'hover:bg-slate-50/80'
-                          }`}
+                          className={`transition-colors cursor-pointer group ${isChecked
+                            ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600'
+                            : 'hover:bg-slate-50/80'
+                            }`}
                         >
                           <td
                             className="py-3 px-3 text-center bg-purple-50/20 border-r border-slate-200/60"
@@ -1142,11 +1136,10 @@ export default function ReturnsTrackingMaster({
                             </div>
                           </td>
                           <td className="py-3 px-2 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              c.frequency === 'QRMP'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border border-slate-200'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.frequency === 'QRMP'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}>
                               {c.frequency}
                             </span>
                           </td>
@@ -1158,11 +1151,10 @@ export default function ReturnsTrackingMaster({
                                   {c.filedCount} / {c.totalDue} Filed
                                 </span>
                                 {(c.pendingCount > 0 || c.overdueCount > 0) && (
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    c.overdueCount > 0
-                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                  }`}>
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${c.overdueCount > 0
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    }`}>
                                     {c.overdueCount > 0 ? `${c.overdueCount} Overdue` : `${c.pendingCount} Pending`}
                                   </span>
                                 )}
@@ -1254,803 +1246,795 @@ export default function ReturnsTrackingMaster({
       {trackingStep === 'dashboard' && (
         <div className="space-y-5 animate-fade-in">
 
-      {/* ─── OBSIDIAN GLASS CORPORATE COMMAND HEADER (NO SLIDER - 2-TIER AESTHETIC) ─── */}
-      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white rounded-2xl p-4 md:p-5 border border-slate-800/90 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-16 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+          {/* ─── OBSIDIAN GLASS CORPORATE COMMAND HEADER (NO SLIDER - 2-TIER AESTHETIC) ─── */}
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white rounded-2xl p-4 md:p-5 border border-slate-800/90 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-1/3 -mb-16 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 space-y-3.5">
-          {/* Top Row: Suite Identity & Primary Action Buttons */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            {/* Left: Suite Brand Pill */}
-            <div className="flex items-center gap-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/20 border border-purple-400/30 text-purple-200 text-xs font-black uppercase tracking-wider shadow-xs">
-                <CalendarClock className="w-3.5 h-3.5 text-purple-400" />
-                <span>Suite 04 • Returns Tracker</span>
-              </div>
-            </div>
-
-            {/* Right: Primary Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickPortalLogin()}
-                disabled={isSyncingPortal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                title="Launch visible Chrome & auto-fill GST Portal login credentials"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Login in Portal</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSyncPortal()}
-                disabled={isSyncingPortal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                title="Launch Chrome, solve CAPTCHA -> Autopilot will navigate to Services > Returns > Track Return Status and scrape all ARNs"
-              >
-                <CloudDownload className={`w-3.5 h-3.5 ${isSyncingPortal ? 'animate-spin' : ''}`} />
-                <span>{isSyncingPortal ? 'Syncing...' : 'Sync Portal Status'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleExportComplianceExcel}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-xs cursor-pointer"
-                title="Export compliance data to Excel"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Export Excel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={fetchTrackingData}
-                disabled={isLoading}
-                title="Refresh compliance database"
-                className="p-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/80 cursor-pointer shadow-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-purple-400' : ''}`} />
-              </button>
-            </div>
-          </div>
-
-          {/* Bottom Row: Scope Selectors & Mode A / Mode B Tabs */}
-          <div className="pt-2.5 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            {/* Left: Client Scope & FY Filter */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTrackingStep('client_selection')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-400/30 text-purple-200 hover:text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
-                title="Return to Step 1: Client Selection Directory"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 text-purple-300" />
-                <span>Select Clients</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-purple-500/40 text-white text-[10px] font-mono">
-                  {checkedGstins.size > 0 ? `${checkedGstins.size}` : 'All'}
-                </span>
-              </button>
-
-              <select
-                value={selectedFy}
-                onChange={(e) => setSelectedFy(e.target.value)}
-                className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
-              >
-                {AVAILABLE_FINANCIAL_YEARS.map(fy => (
-                  <option key={fy} value={fy}>FY {fy}</option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedClientFilter === 'CUSTOM_SELECTION') {
-                    setSelectedClientFilter('ALL');
-                  } else {
-                    if (checkedGstins.size === 0) {
-                      toast.info('No clients selected yet. Opening client selection directory...');
-                      setTrackingStep('client_selection');
-                      return;
-                    }
-                    setSelectedClientFilter('CUSTOM_SELECTION');
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer border ${
-                  selectedClientFilter === 'CUSTOM_SELECTION'
-                    ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/50 shadow-purple-500/20'
-                    : 'bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 border-slate-700/80 hover:text-white'
-                }`}
-                title={
-                  selectedClientFilter === 'CUSTOM_SELECTION'
-                    ? `Filtering by ${checkedGstins.size} checked clients. Click to toggle to All Clients (${uniqueClients.length})`
-                    : `Showing All Clients (${uniqueClients.length}). Click to toggle to Checked Clients (${checkedGstins.size})`
-                }
-              >
-                {selectedClientFilter === 'CUSTOM_SELECTION' ? (
-                  <>
-                    <CheckSquare className="w-3.5 h-3.5 text-purple-200" />
-                    <span>Checked Clients ({checkedGstins.size})</span>
-                  </>
-                ) : (
-                  <>
-                    <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>All Clients ({uniqueClients.length})</span>
-                    {checkedGstins.size > 0 && (
-                      <span className="text-[10px] font-mono bg-purple-600/30 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded">
-                        {checkedGstins.size} checked
-                      </span>
-                    )}
-                  </>
-                )}
-              </button>
-
-              {/* Month Dropdown Menu */}
-              <select
-                value={selectedPeriodFilter}
-                onChange={(e) => setSelectedPeriodFilter(e.target.value as GSTR3BMonthKey | 'ALL')}
-                className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
-                title="Filter by Return Period / Month"
-              >
-                <option value="ALL">📅 Full FY (12 Months)</option>
-                {GSTR3B_MONTHS.map(m => (
-                  <option key={m} value={m}>
-                    🗓️ {m}
-                  </option>
-                ))}
-              </select>
-
-              {/* Status Dropdown Menu */}
-              <select
-                value={selectedStatusFilter}
-                onChange={(e) => setSelectedStatusFilter(e.target.value as 'ALL' | 'PENDING' | 'OVERDUE' | 'FILED')}
-                className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
-                title="Filter by Filing Status"
-              >
-                <option value="ALL">⚡ All Status</option>
-                <option value="PENDING">⏳ Pending</option>
-                <option value="OVERDUE">⚠️ Overdue</option>
-                <option value="FILED">✅ Filed</option>
-              </select>
-            </div>
-
-            {/* Right: View Mode Toggle Tabs */}
-            <div className="flex items-center bg-slate-800/90 p-0.5 rounded-xl border border-slate-700/80 shadow-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('cockpit')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'cockpit'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Mode A: All Clients</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('timeline')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'timeline'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Mode B: 12M Matrix</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── 4 HIGH-DENSITY KPI CARDS ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Returns Due */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Returns Due</div>
-            <div className="text-2xl font-black text-slate-900 mt-1">{kpiMetrics.totalDue}</div>
-            <div className="text-[11px] text-blue-600 font-semibold mt-0.5 truncate max-w-[220px]" title={kpiScopeLabel}>
-              {kpiScopeLabel}
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-            <Calculator className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 2: Successfully Filed */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Successfully Filed</div>
-            <div className="text-2xl font-black text-emerald-600 mt-1">{kpiMetrics.filedCount}</div>
-            <div className="text-[11px] text-emerald-700 font-semibold mt-0.5 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {kpiMetrics.complianceRate}% Compliance Rate
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 3: Pending / Overdue */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pending / Overdue</div>
-            <div className="text-2xl font-black text-rose-600 mt-1">
-              {kpiMetrics.overdueCount} <span className="text-sm font-semibold text-slate-400">/ {kpiMetrics.pendingCount} pend</span>
-            </div>
-            <div className="text-[11px] text-rose-600 font-semibold mt-0.5">
-              Accrued Fee: ₹{kpiMetrics.totalLateFees.toLocaleString('en-IN')}
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 4: Next Statutory Deadline */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Next Deadline</div>
-            <div className="text-base font-black text-purple-700 mt-1 truncate max-w-[160px]" title={nextStatutoryDeadline.title}>
-              {nextStatutoryDeadline.title}
-            </div>
-            <div className="text-[11px] text-slate-600 font-semibold mt-0.5 flex items-center gap-1.5">
-              <span>{nextStatutoryDeadline.dueDateStr}</span>
-              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                nextStatutoryDeadline.diffDays <= 3 ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700'
-              }`}>
-                {nextStatutoryDeadline.diffDays >= 0 ? `${nextStatutoryDeadline.diffDays}d left` : 'Passed'}
-              </span>
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
-            <Clock className="w-6 h-6" />
-          </div>
-        </div>
-      </div>
-
-      {/* ─── MODE A: ALL-CLIENTS MASTER COMPLIANCE COCKPIT ─── */}
-      {viewMode === 'cockpit' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          {/* Cockpit Table Top Bar */}
-          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
-              <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                Returns Registry
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 font-mono">
-                {filteredCockpitRecords.length} records
-              </span>
-              {selectedPeriodFilter !== 'ALL' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                  {selectedPeriodFilter}
-                </span>
-              )}
-              {selectedStatusFilter !== 'ALL' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                  {selectedStatusFilter}
-                </span>
-              )}
-            </div>
-
-            {/* Search Box */}
-            <div className="relative w-full sm:w-72">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search client or GSTIN..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium placeholder-slate-400 focus:outline-none focus:border-purple-500 shadow-2xs"
-              />
-            </div>
-          </div>
-
-          {/* Checked Clients Active Notification Bar */}
-          {checkedGstins.size > 0 && (
-            <div className="mx-4 my-3 p-3 bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 text-white rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg border border-purple-500/30">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-purple-300">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div>
-                  <div className="text-xs font-black text-white flex items-center gap-2">
-                    <span>{checkedGstins.size} Clients Active</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      {filteredCockpitRecords.length} Return Rows Scoped
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-purple-200/80">
-                    KPIs, overdue calculations, and return status are filtered strictly to these {checkedGstins.size} clients.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 self-end md:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setTrackingStep('client_selection')}
-                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  Modify in Step 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCheckedGstins(new Set());
-                    setSelectedClientFilter('ALL');
-                  }}
-                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
-                >
-                  Clear (Show All {uniqueClients.length})
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Master Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-2 w-16 text-center bg-slate-200/70 border-r border-slate-300">
-                    <div className="flex flex-col items-center justify-center gap-0.5">
-                      <input
-                        type="checkbox"
-                        id="cockpit-table-select-all"
-                        checked={
-                          filteredCockpitRecords.length > 0 &&
-                          filteredCockpitRecords.every(r => checkedGstins.has(r.clientGstin.toUpperCase()))
-                        }
-                        onChange={(e) => {
-                          const next = new Set(checkedGstins);
-                          if (e.target.checked) {
-                            filteredCockpitRecords.forEach(r => next.add(r.clientGstin.toUpperCase()));
-                            setCheckedGstins(next);
-                            setSelectedClientFilter('CUSTOM_SELECTION');
-                          } else {
-                            filteredCockpitRecords.forEach(r => next.delete(r.clientGstin.toUpperCase()));
-                            setCheckedGstins(next);
-                            if (next.size === 0) setSelectedClientFilter('ALL');
-                          }
-                        }}
-                        className="w-4 h-4 rounded border-slate-400 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shadow-sm"
-                        title="Select all visible clients"
-                      />
-                      <label htmlFor="cockpit-table-select-all" className="text-[8px] font-black text-purple-900 tracking-tighter cursor-pointer">
-                        SELECT
-                      </label>
-                    </div>
-                  </th>
-                  <th className="py-3 px-2 w-8 text-center">#</th>
-                  <th className="py-3 px-3 min-w-[200px]">Client / Firm Details</th>
-                  <th className="py-3 px-2 w-20 text-center">Period</th>
-                  <th className="py-3 px-2 w-16 text-center">Freq</th>
-                  <th className="py-3 px-3 min-w-[160px]">GSTR-1 Status</th>
-                  <th className="py-3 px-3 min-w-[140px]">GSTR-2B Availability</th>
-                  <th className="py-3 px-3 min-w-[170px]">GSTR-3B Status</th>
-                  <th className="py-3 px-3 min-w-[100px] text-right">Cash Paid (₹)</th>
-                  <th className="py-3 px-3 min-w-[110px] text-center">Office Stage</th>
-                  <th className="py-3 px-3 min-w-[170px] text-right">Quick Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredCockpitRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="py-12 text-center text-slate-400">
-                      <div className="max-w-sm mx-auto space-y-2">
-                        <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-                        <div className="font-bold text-slate-700">No Compliance Records Found</div>
-                        <p className="text-xs text-slate-400">
-                          No returns matching current filters. Click "Sync Portal" or select another period.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCockpitRecords.map((r, idx) => {
-                    const isChecked = checkedGstins.has(r.clientGstin.toUpperCase());
-                    return (
-                    <tr
-                      key={r.id}
-                      className={`transition-colors group ${
-                        isChecked
-                          ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600'
-                          : 'hover:bg-slate-50/80'
-                      }`}
-                    >
-                      <td className="py-3 px-2 text-center bg-purple-50/20 border-r border-slate-200/50">
-                        <div className="flex items-center justify-center">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              const next = new Set(checkedGstins);
-                              const g = r.clientGstin.toUpperCase();
-                              if (e.target.checked) {
-                                next.add(g);
-                                setCheckedGstins(next);
-                                setSelectedClientFilter('CUSTOM_SELECTION');
-                              } else {
-                                next.delete(g);
-                                setCheckedGstins(next);
-                                if (next.size === 0 && selectedClientFilter === 'CUSTOM_SELECTION') {
-                                  setSelectedClientFilter('ALL');
-                                }
-                              }
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
-                            title={`Select ${r.clientName}`}
-                          />
-                        </div>
-                      </td>
-                      <td className="py-3 px-2 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate max-w-[220px]" title={r.clientName}>
-                          {r.clientName}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5">
-                          <span>{r.clientGstin}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyGstin(r.clientGstin)}
-                            className="text-slate-400 hover:text-slate-700 transition-colors"
-                            title="Copy GSTIN"
-                          >
-                            {copiedGstin === r.clientGstin ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="py-3 px-2 text-center font-bold text-slate-700">
-                        {r.month.slice(0, 3)}
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          r.frequency === 'QRMP' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {r.frequency === 'QRMP' ? 'QRMP' : 'Mth'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="space-y-1">
-                          <div>{renderStatusBadge(r.gstr1)}</div>
-                          {r.gstr1.filingDate && (
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              Filed: {r.gstr1.filingDate}
-                            </div>
-                          )}
-                          {r.gstr1.arn && (
-                            <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr1.arn}>
-                              ARN: {r.gstr1.arn}
-                            </div>
-                          )}
-                          {r.gstr1.lateFee > 0 && (
-                            <div className="text-[10px] text-rose-600 font-bold">
-                              Late Fee: ₹{r.gstr1.lateFee}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="space-y-1">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            r.gstr2b.status === 'AVAILABLE'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {r.gstr2b.status === 'AVAILABLE' ? 'Available' : 'Pending'}
-                          </span>
-                          <div className="text-[10px] text-slate-600 font-semibold">
-                            Eligible ITC: <span className="font-bold text-slate-900">₹{(r.gstr2b.eligibleItc || 0).toLocaleString('en-IN')}</span>
-                          </div>
-                          {r.gstr2b.invoiceCount > 0 && (
-                            <div className="text-[10px] text-slate-400">
-                              {r.gstr2b.invoiceCount} Inward Records
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="space-y-1">
-                          <div>{renderStatusBadge(r.gstr3b)}</div>
-                          {r.gstr3b.filingDate && (
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              Filed: {r.gstr3b.filingDate}
-                            </div>
-                          )}
-                          {r.gstr3b.arn && (
-                            <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr3b.arn}>
-                              ARN: {r.gstr3b.arn}
-                            </div>
-                          )}
-                          {r.gstr3b.lateFee > 0 && (
-                            <div className="text-[10px] text-rose-600 font-bold">
-                              Late Fee: ₹{r.gstr3b.lateFee}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="font-bold text-slate-900">
-                          ₹{(r.gstr3b.cashPaid || 0).toLocaleString('en-IN')}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          Liab: ₹{(r.gstr3b.taxLiability || 0).toLocaleString('en-IN')}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        {renderOfficeStageBadge(r.officeStage)}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* 1-Click Direct Jump into 3B Working Sheet */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onJumpToWorking) {
-                                onJumpToWorking(r.clientGstin, r.clientName, r.month, 'working3b');
-                              }
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all border border-blue-200 cursor-pointer shadow-sm"
-                            title="Jump directly to GSTR-3B Working Sheet"
-                          >
-                            <Calculator className="w-3 h-3" />
-                            Working
-                          </button>
-
-                          {/* Jump to 2B Autopilot */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onJumpToWorking) {
-                                onJumpToWorking(r.clientGstin, r.clientName, r.month, 'gstr2b_downloader');
-                              }
-                            }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer"
-                            title="Jump to Inward 2B Autopilot"
-                          >
-                            <CloudDownload className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Jump to GSTR-1 */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onJumpToWorking) {
-                                onJumpToWorking(r.clientGstin, r.clientName, r.month, 'gstr1_downloader');
-                              }
-                            }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 transition-all cursor-pointer"
-                            title="Jump to Outward GSTR-1"
-                          >
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Edit / Override */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(r)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
-                            title="Record ARN / Manual Status Override"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Launch Chrome Portal for this Client */}
-                          <button
-                            type="button"
-                            onClick={() => handleSyncPortal(r.clientGstin)}
-                            disabled={isSyncingPortal}
-                            className="p-1 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 transition-all cursor-pointer disabled:opacity-40"
-                            title={`Launch Chrome & auto-fill GST Portal login for ${r.clientName}`}
-                          >
-                            <Globe className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODE B: SINGLE-CLIENT 12-MONTH TIMELINE MATRIX ─── */}
-      {viewMode === 'timeline' && (
-        <div className="space-y-4">
-          {/* Client Selector & Overview Banner */}
-          <div className="bg-white rounded-3xl p-5 md:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 font-bold shadow-sm">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Select Taxpayer / Firm
-                </label>
+            <div className="relative z-10 space-y-3.5">
+              {/* Top Row: Suite Identity & Primary Action Buttons */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Left: Suite Brand Pill */}
                 <div className="flex items-center gap-2">
-                  <select
-                    value={selectedClientGstin}
-                    onChange={(e) => setSelectedClientGstin(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-purple-500 cursor-pointer min-w-[240px]"
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/20 border border-purple-400/30 text-purple-200 text-xs font-black uppercase tracking-wider shadow-xs">
+                    <CalendarClock className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Suite 04 • Returns Tracker</span>
+                  </div>
+                </div>
+
+                {/* Right: Primary Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPortalLogin()}
+                    disabled={isSyncingPortal}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                    title="Launch visible Chrome & auto-fill GST Portal login credentials"
                   >
-                    {uniqueClients.map(c => (
-                      <option key={c.gstin} value={c.gstin}>
-                        {c.name} ({c.gstin})
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Login in Portal</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSyncPortal()}
+                    disabled={isSyncingPortal}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                    title="Launch Chrome, solve CAPTCHA -> Autopilot will navigate to Services > Returns > Track Return Status and scrape all ARNs"
+                  >
+                    <CloudDownload className={`w-3.5 h-3.5 ${isSyncingPortal ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingPortal ? 'Syncing...' : 'Sync Portal Status'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportComplianceExcel}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-xs cursor-pointer"
+                    title="Export compliance data to Excel"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Export Excel</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={fetchTrackingData}
+                    disabled={isLoading}
+                    title="Refresh compliance database"
+                    className="p-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/80 cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-purple-400' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Row: Scope Selectors & Mode A / Mode B Tabs */}
+              <div className="pt-2.5 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Left: Client Scope & FY Filter */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTrackingStep('client_selection')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-400/30 text-purple-200 hover:text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                    title="Return to Step 1: Client Selection Directory"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 text-purple-300" />
+                    <span>Select Clients</span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-purple-500/40 text-white text-[10px] font-mono">
+                      {checkedGstins.size > 0 ? `${checkedGstins.size}` : 'All'}
+                    </span>
+                  </button>
+
+                  <select
+                    value={selectedFy}
+                    onChange={(e) => setSelectedFy(e.target.value)}
+                    className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
+                  >
+                    {AVAILABLE_FINANCIAL_YEARS.map(fy => (
+                      <option key={fy} value={fy}>FY {fy}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedClientFilter === 'CUSTOM_SELECTION') {
+                        setSelectedClientFilter('ALL');
+                      } else {
+                        if (checkedGstins.size === 0) {
+                          toast.info('No clients selected yet. Opening client selection directory...');
+                          setTrackingStep('client_selection');
+                          return;
+                        }
+                        setSelectedClientFilter('CUSTOM_SELECTION');
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer border ${selectedClientFilter === 'CUSTOM_SELECTION'
+                      ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/50 shadow-purple-500/20'
+                      : 'bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 border-slate-700/80 hover:text-white'
+                      }`}
+                    title={
+                      selectedClientFilter === 'CUSTOM_SELECTION'
+                        ? `Filtering by ${checkedGstins.size} checked clients. Click to toggle to All Clients (${uniqueClients.length})`
+                        : `Showing All Clients (${uniqueClients.length}). Click to toggle to Checked Clients (${checkedGstins.size})`
+                    }
+                  >
+                    {selectedClientFilter === 'CUSTOM_SELECTION' ? (
+                      <>
+                        <CheckSquare className="w-3.5 h-3.5 text-purple-200" />
+                        <span>Checked Clients ({checkedGstins.size})</span>
+                      </>
+                    ) : (
+                      <>
+                        <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                        <span>All Clients ({uniqueClients.length})</span>
+                        {checkedGstins.size > 0 && (
+                          <span className="text-[10px] font-mono bg-purple-600/30 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded">
+                            {checkedGstins.size} checked
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </button>
+
+                  {/* Month Dropdown Menu */}
+                  <select
+                    value={selectedPeriodFilter}
+                    onChange={(e) => setSelectedPeriodFilter(e.target.value as GSTR3BMonthKey | 'ALL')}
+                    className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
+                    title="Filter by Return Period / Month"
+                  >
+                    <option value="ALL">📅 Full FY (12 Months)</option>
+                    {GSTR3B_MONTHS.map(m => (
+                      <option key={m} value={m}>
+                        🗓️ {m}
                       </option>
                     ))}
                   </select>
+
+                  {/* Status Dropdown Menu */}
+                  <select
+                    value={selectedStatusFilter}
+                    onChange={(e) => setSelectedStatusFilter(e.target.value as 'ALL' | 'PENDING' | 'OVERDUE' | 'FILED')}
+                    className="bg-slate-800/90 border border-slate-700/80 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none hover:bg-slate-750 cursor-pointer shadow-xs"
+                    title="Filter by Filing Status"
+                  >
+                    <option value="ALL">⚡ All Status</option>
+                    <option value="PENDING">⏳ Pending</option>
+                    <option value="OVERDUE">⚠️ Overdue</option>
+                    <option value="FILED">✅ Filed</option>
+                  </select>
+                </div>
+
+                {/* Right: View Mode Toggle Tabs */}
+                <div className="flex items-center bg-slate-800/90 p-0.5 rounded-xl border border-slate-700/80 shadow-xs">
                   <button
                     type="button"
-                    onClick={() => handleSyncPortal(selectedClientGstin)}
-                    disabled={isSyncingPortal}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-all cursor-pointer disabled:opacity-50"
-                    title="Launch visible Chrome & auto-fill credentials for this client"
+                    onClick={() => setViewMode('cockpit')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${viewMode === 'cockpit'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                      }`}
                   >
-                    <Globe className={`w-3.5 h-3.5 text-sky-600 ${isSyncingPortal ? 'animate-spin' : ''}`} />
-                    <span>Launch Portal</span>
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Mode A: All Clients</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('timeline')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${viewMode === 'timeline'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                      }`}
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Mode B: 12M Matrix</span>
                   </button>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Client 12M Financial Stats */}
-            {activeTimelineClient && (
-              <div className="flex flex-wrap items-center gap-5 text-xs">
-                <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">12M Net Cash Paid</div>
-                  <div className="text-sm font-black text-slate-900 mt-0.5">
-                    ₹{activeTimelineClient.totalCashPaid.toLocaleString('en-IN')}
-                  </div>
-                </div>
-                <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">12M Outward Tax</div>
-                  <div className="text-sm font-black text-slate-900 mt-0.5">
-                    ₹{activeTimelineClient.totalOutwardTax.toLocaleString('en-IN')}
-                  </div>
-                </div>
-                <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">12M ITC Claimed</div>
-                  <div className="text-sm font-black text-emerald-600 mt-0.5">
-                    ₹{activeTimelineClient.totalItcClaimed.toLocaleString('en-IN')}
-                  </div>
-                </div>
-                <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">Late Fees Accrued</div>
-                  <div className="text-sm font-black text-rose-600 mt-0.5">
-                    ₹{activeTimelineClient.totalLateFees.toLocaleString('en-IN')}
-                  </div>
+          {/* ─── 4 HIGH-DENSITY KPI CARDS ─── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Total Returns Due */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Returns Due</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">{kpiMetrics.totalDue}</div>
+                <div className="text-[11px] text-blue-600 font-semibold mt-0.5 truncate max-w-[220px]" title={kpiScopeLabel}>
+                  {kpiScopeLabel}
                 </div>
               </div>
-            )}
-          </div>
+              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                <Calculator className="w-6 h-6" />
+              </div>
+            </div>
 
-          {/* 12-Month Matrix Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4 min-w-[110px]">Month</th>
-                    <th className="py-3 px-3 min-w-[130px]">GSTR-1 Due</th>
-                    <th className="py-3 px-3 min-w-[150px]">GSTR-1 Filing</th>
-                    <th className="py-3 px-3 min-w-[150px]">GSTR-2B Inward</th>
-                    <th className="py-3 px-3 min-w-[130px]">GSTR-3B Due</th>
-                    <th className="py-3 px-3 min-w-[170px]">GSTR-3B Filing &amp; ARN</th>
-                    <th className="py-3 px-3 min-w-[110px] text-right">Cash Paid (₹)</th>
-                    <th className="py-3 px-3 min-w-[100px] text-right">Late Fee (₹)</th>
-                    <th className="py-3 px-3 min-w-[110px] text-center">Stage</th>
-                    <th className="py-3 px-4 min-w-[140px] text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {clientTimelineRecords.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-purple-600" />
-                        {r.month}
-                      </td>
-                      <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
-                        {r.gstr1.dueDate}
-                      </td>
-                      <td className="py-3.5 px-3">
-                        <div className="space-y-1">
-                          {renderStatusBadge(r.gstr1)}
-                          {r.gstr1.filingDate && (
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              Date: {r.gstr1.filingDate}
-                            </div>
-                          )}
-                          {r.gstr1.arn && (
-                            <div className="text-[9px] text-slate-400 font-mono truncate max-w-[120px]" title={r.gstr1.arn}>
-                              ARN: {r.gstr1.arn}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-3">
-                        <div className="space-y-0.5">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            r.gstr2b.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {r.gstr2b.status}
-                          </span>
-                          <div className="text-[10px] text-slate-700 font-bold">
-                            ₹{(r.gstr2b.eligibleItc || 0).toLocaleString('en-IN')}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
-                        {r.gstr3b.dueDate}
-                      </td>
-                      <td className="py-3.5 px-3">
-                        <div className="space-y-1">
-                          {renderStatusBadge(r.gstr3b)}
-                          {r.gstr3b.filingDate && (
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              Date: {r.gstr3b.filingDate}
-                            </div>
-                          )}
-                          {r.gstr3b.arn && (
-                            <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr3b.arn}>
-                              ARN: {r.gstr3b.arn}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-3 text-right font-bold text-slate-900">
-                        ₹{(r.gstr3b.cashPaid || 0).toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-3.5 px-3 text-right font-bold text-rose-600">
-                        ₹{((r.gstr1.lateFee || 0) + (r.gstr3b.lateFee || 0)).toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
-                        {renderOfficeStageBadge(r.officeStage)}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onJumpToWorking) {
-                                onJumpToWorking(r.clientGstin, r.clientName, r.month, 'working3b');
-                              }
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all border border-blue-200 cursor-pointer shadow-sm"
-                          >
-                            <Calculator className="w-3 h-3" />
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(r)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
-                            title="Edit / Record ARN"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Card 2: Successfully Filed */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Successfully Filed</div>
+                <div className="text-2xl font-black text-emerald-600 mt-1">{kpiMetrics.filedCount}</div>
+                <div className="text-[11px] text-emerald-700 font-semibold mt-0.5 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  {kpiMetrics.complianceRate}% Compliance Rate
+                </div>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+            </div>
+
+            {/* Card 3: Pending / Overdue */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pending / Overdue</div>
+                <div className="text-2xl font-black text-rose-600 mt-1">
+                  {kpiMetrics.overdueCount} <span className="text-sm font-semibold text-slate-400">/ {kpiMetrics.pendingCount} pend</span>
+                </div>
+                <div className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                  Accrued Fee: ₹{kpiMetrics.totalLateFees.toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+            </div>
+
+            {/* Card 4: Next Statutory Deadline */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Next Deadline</div>
+                <div className="text-base font-black text-purple-700 mt-1 truncate max-w-[160px]" title={nextStatutoryDeadline.title}>
+                  {nextStatutoryDeadline.title}
+                </div>
+                <div className="text-[11px] text-slate-600 font-semibold mt-0.5 flex items-center gap-1.5">
+                  <span>{nextStatutoryDeadline.dueDateStr}</span>
+                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${nextStatutoryDeadline.diffDays <= 3 ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700'
+                    }`}>
+                    {nextStatutoryDeadline.diffDays >= 0 ? `${nextStatutoryDeadline.diffDays}d left` : 'Passed'}
+                  </span>
+                </div>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
+                <Clock className="w-6 h-6" />
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      </div>
+          {/* ─── MODE A: ALL-CLIENTS MASTER COMPLIANCE COCKPIT ─── */}
+          {viewMode === 'cockpit' && (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              {/* Cockpit Table Top Bar */}
+              <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Returns Registry
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 font-mono">
+                    {filteredCockpitRecords.length} records
+                  </span>
+                  {selectedPeriodFilter !== 'ALL' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                      {selectedPeriodFilter}
+                    </span>
+                  )}
+                  {selectedStatusFilter !== 'ALL' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                      {selectedStatusFilter}
+                    </span>
+                  )}
+                </div>
+
+                {/* Search Box */}
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search client or GSTIN..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium placeholder-slate-400 focus:outline-none focus:border-purple-500 shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Checked Clients Active Notification Bar */}
+              {checkedGstins.size > 0 && (
+                <div className="mx-4 my-3 p-3 bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 text-white rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg border border-purple-500/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-purple-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-white flex items-center gap-2">
+                        <span>{checkedGstins.size} Clients Active</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {filteredCockpitRecords.length} Return Rows Scoped
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-purple-200/80">
+                        KPIs, overdue calculations, and return status are filtered strictly to these {checkedGstins.size} clients.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end md:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setTrackingStep('client_selection')}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      Modify in Step 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCheckedGstins(new Set());
+                        setSelectedClientFilter('ALL');
+                      }}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      Clear (Show All {uniqueClients.length})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Master Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="py-3 px-2 w-16 text-center bg-slate-200/70 border-r border-slate-300">
+                        <div className="flex flex-col items-center justify-center gap-0.5">
+                          <input
+                            type="checkbox"
+                            id="cockpit-table-select-all"
+                            checked={
+                              filteredCockpitRecords.length > 0 &&
+                              filteredCockpitRecords.every(r => checkedGstins.has(r.clientGstin.toUpperCase()))
+                            }
+                            onChange={(e) => {
+                              const next = new Set(checkedGstins);
+                              if (e.target.checked) {
+                                filteredCockpitRecords.forEach(r => next.add(r.clientGstin.toUpperCase()));
+                                setCheckedGstins(next);
+                                setSelectedClientFilter('CUSTOM_SELECTION');
+                              } else {
+                                filteredCockpitRecords.forEach(r => next.delete(r.clientGstin.toUpperCase()));
+                                setCheckedGstins(next);
+                                if (next.size === 0) setSelectedClientFilter('ALL');
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-slate-400 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600 shadow-sm"
+                            title="Select all visible clients"
+                          />
+                          <label htmlFor="cockpit-table-select-all" className="text-[8px] font-black text-purple-900 tracking-tighter cursor-pointer">
+                            SELECT
+                          </label>
+                        </div>
+                      </th>
+                      <th className="py-3 px-2 w-8 text-center">#</th>
+                      <th className="py-3 px-3 min-w-[200px]">Client / Firm Details</th>
+                      <th className="py-3 px-2 w-20 text-center">Period</th>
+                      <th className="py-3 px-2 w-16 text-center">Freq</th>
+                      <th className="py-3 px-3 min-w-[160px]">GSTR-1 Status</th>
+                      <th className="py-3 px-3 min-w-[140px]">GSTR-2B Availability</th>
+                      <th className="py-3 px-3 min-w-[170px]">GSTR-3B Status</th>
+                      <th className="py-3 px-3 min-w-[100px] text-right">Cash Paid (₹)</th>
+                      <th className="py-3 px-3 min-w-[110px] text-center">Office Stage</th>
+                      <th className="py-3 px-3 min-w-[170px] text-right">Quick Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {filteredCockpitRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-12 text-center text-slate-400">
+                          <div className="max-w-sm mx-auto space-y-2">
+                            <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
+                            <div className="font-bold text-slate-700">No Compliance Records Found</div>
+                            <p className="text-xs text-slate-400">
+                              No returns matching current filters. Click "Sync Portal" or select another period.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCockpitRecords.map((r, idx) => {
+                        const isChecked = checkedGstins.has(r.clientGstin.toUpperCase());
+                        return (
+                          <tr
+                            key={r.id}
+                            className={`transition-colors group ${isChecked
+                              ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600'
+                              : 'hover:bg-slate-50/80'
+                              }`}
+                          >
+                            <td className="py-3 px-2 text-center bg-purple-50/20 border-r border-slate-200/50">
+                              <div className="flex items-center justify-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const next = new Set(checkedGstins);
+                                    const g = r.clientGstin.toUpperCase();
+                                    if (e.target.checked) {
+                                      next.add(g);
+                                      setCheckedGstins(next);
+                                      setSelectedClientFilter('CUSTOM_SELECTION');
+                                    } else {
+                                      next.delete(g);
+                                      setCheckedGstins(next);
+                                      if (next.size === 0 && selectedClientFilter === 'CUSTOM_SELECTION') {
+                                        setSelectedClientFilter('ALL');
+                                      }
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                                  title={`Select ${r.clientName}`}
+                                />
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate max-w-[220px]" title={r.clientName}>
+                                {r.clientName}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5">
+                                <span>{r.clientGstin}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyGstin(r.clientGstin)}
+                                  className="text-slate-400 hover:text-slate-700 transition-colors"
+                                  title="Copy GSTIN"
+                                >
+                                  {copiedGstin === r.clientGstin ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 text-center font-bold text-slate-700">
+                              {r.month.slice(0, 3)}
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.frequency === 'QRMP' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                                }`}>
+                                {r.frequency === 'QRMP' ? 'QRMP' : 'Mth'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="space-y-1">
+                                <div>{renderStatusBadge(r.gstr1)}</div>
+                                {r.gstr1.filingDate && (
+                                  <div className="text-[10px] text-slate-500 font-mono">
+                                    Filed: {r.gstr1.filingDate}
+                                  </div>
+                                )}
+                                {r.gstr1.arn && (
+                                  <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr1.arn}>
+                                    ARN: {r.gstr1.arn}
+                                  </div>
+                                )}
+                                {r.gstr1.lateFee > 0 && (
+                                  <div className="text-[10px] text-rose-600 font-bold">
+                                    Late Fee: ₹{r.gstr1.lateFee}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="space-y-1">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.gstr2b.status === 'AVAILABLE'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {r.gstr2b.status === 'AVAILABLE' ? 'Available' : 'Pending'}
+                                </span>
+                                <div className="text-[10px] text-slate-600 font-semibold">
+                                  Eligible ITC: <span className="font-bold text-slate-900">₹{(r.gstr2b.eligibleItc || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                                {r.gstr2b.invoiceCount > 0 && (
+                                  <div className="text-[10px] text-slate-400">
+                                    {r.gstr2b.invoiceCount} Inward Records
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="space-y-1">
+                                <div>{renderStatusBadge(r.gstr3b)}</div>
+                                {r.gstr3b.filingDate && (
+                                  <div className="text-[10px] text-slate-500 font-mono">
+                                    Filed: {r.gstr3b.filingDate}
+                                  </div>
+                                )}
+                                {r.gstr3b.arn && (
+                                  <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr3b.arn}>
+                                    ARN: {r.gstr3b.arn}
+                                  </div>
+                                )}
+                                {r.gstr3b.lateFee > 0 && (
+                                  <div className="text-[10px] text-rose-600 font-bold">
+                                    Late Fee: ₹{r.gstr3b.lateFee}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <div className="font-bold text-slate-900">
+                                ₹{(r.gstr3b.cashPaid || 0).toLocaleString('en-IN')}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                Liab: ₹{(r.gstr3b.taxLiability || 0).toLocaleString('en-IN')}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {renderOfficeStageBadge(r.officeStage)}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* 1-Click Direct Jump into 3B Working Sheet */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onJumpToWorking) {
+                                      onJumpToWorking(r.clientGstin, r.clientName, r.month, 'working3b');
+                                    }
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all border border-blue-200 cursor-pointer shadow-sm"
+                                  title="Jump directly to GSTR-3B Working Sheet"
+                                >
+                                  <Calculator className="w-3 h-3" />
+                                  Working
+                                </button>
+
+                                {/* Jump to 2B Autopilot */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onJumpToWorking) {
+                                      onJumpToWorking(r.clientGstin, r.clientName, r.month, 'gstr2b_downloader');
+                                    }
+                                  }}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer"
+                                  title="Jump to Inward 2B Autopilot"
+                                >
+                                  <CloudDownload className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Jump to GSTR-1 */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onJumpToWorking) {
+                                      onJumpToWorking(r.clientGstin, r.clientName, r.month, 'gstr1_working');
+                                    }
+                                  }}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 transition-all cursor-pointer"
+                                  title="Jump to GSTR-1 Working"
+                                >
+                                  <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Edit / Override */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(r)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
+                                  title="Record ARN / Manual Status Override"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Launch Chrome Portal for this Client */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSyncPortal(r.clientGstin)}
+                                  disabled={isSyncingPortal}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 transition-all cursor-pointer disabled:opacity-40"
+                                  title={`Launch Chrome & auto-fill GST Portal login for ${r.clientName}`}
+                                >
+                                  <Globe className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ─── MODE B: SINGLE-CLIENT 12-MONTH TIMELINE MATRIX ─── */}
+          {viewMode === 'timeline' && (
+            <div className="space-y-4">
+              {/* Client Selector & Overview Banner */}
+              <div className="bg-white rounded-3xl p-5 md:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 font-bold shadow-sm">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Select Taxpayer / Firm
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedClientGstin}
+                        onChange={(e) => setSelectedClientGstin(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-purple-500 cursor-pointer min-w-[240px]"
+                      >
+                        {uniqueClients.map(c => (
+                          <option key={c.gstin} value={c.gstin}>
+                            {c.name} ({c.gstin})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleSyncPortal(selectedClientGstin)}
+                        disabled={isSyncingPortal}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-all cursor-pointer disabled:opacity-50"
+                        title="Launch visible Chrome & auto-fill credentials for this client"
+                      >
+                        <Globe className={`w-3.5 h-3.5 text-sky-600 ${isSyncingPortal ? 'animate-spin' : ''}`} />
+                        <span>Launch Portal</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Client 12M Financial Stats */}
+                {activeTimelineClient && (
+                  <div className="flex flex-wrap items-center gap-5 text-xs">
+                    <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">12M Net Cash Paid</div>
+                      <div className="text-sm font-black text-slate-900 mt-0.5">
+                        ₹{activeTimelineClient.totalCashPaid.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">12M Outward Tax</div>
+                      <div className="text-sm font-black text-slate-900 mt-0.5">
+                        ₹{activeTimelineClient.totalOutwardTax.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">12M ITC Claimed</div>
+                      <div className="text-sm font-black text-emerald-600 mt-0.5">
+                        ₹{activeTimelineClient.totalItcClaimed.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">Late Fees Accrued</div>
+                      <div className="text-sm font-black text-rose-600 mt-0.5">
+                        ₹{activeTimelineClient.totalLateFees.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 12-Month Matrix Table */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-4 min-w-[110px]">Month</th>
+                        <th className="py-3 px-3 min-w-[130px]">GSTR-1 Due</th>
+                        <th className="py-3 px-3 min-w-[150px]">GSTR-1 Filing</th>
+                        <th className="py-3 px-3 min-w-[150px]">GSTR-2B Inward</th>
+                        <th className="py-3 px-3 min-w-[130px]">GSTR-3B Due</th>
+                        <th className="py-3 px-3 min-w-[170px]">GSTR-3B Filing &amp; ARN</th>
+                        <th className="py-3 px-3 min-w-[110px] text-right">Cash Paid (₹)</th>
+                        <th className="py-3 px-3 min-w-[100px] text-right">Late Fee (₹)</th>
+                        <th className="py-3 px-3 min-w-[110px] text-center">Stage</th>
+                        <th className="py-3 px-4 min-w-[140px] text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {clientTimelineRecords.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-purple-600" />
+                            {r.month}
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                            {r.gstr1.dueDate}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="space-y-1">
+                              {renderStatusBadge(r.gstr1)}
+                              {r.gstr1.filingDate && (
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Date: {r.gstr1.filingDate}
+                                </div>
+                              )}
+                              {r.gstr1.arn && (
+                                <div className="text-[9px] text-slate-400 font-mono truncate max-w-[120px]" title={r.gstr1.arn}>
+                                  ARN: {r.gstr1.arn}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="space-y-0.5">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${r.gstr2b.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                {r.gstr2b.status}
+                              </span>
+                              <div className="text-[10px] text-slate-700 font-bold">
+                                ₹{(r.gstr2b.eligibleItc || 0).toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                            {r.gstr3b.dueDate}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="space-y-1">
+                              {renderStatusBadge(r.gstr3b)}
+                              {r.gstr3b.filingDate && (
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Date: {r.gstr3b.filingDate}
+                                </div>
+                              )}
+                              {r.gstr3b.arn && (
+                                <div className="text-[9px] text-slate-400 font-mono truncate max-w-[130px]" title={r.gstr3b.arn}>
+                                  ARN: {r.gstr3b.arn}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-bold text-slate-900">
+                            ₹{(r.gstr3b.cashPaid || 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-bold text-rose-600">
+                            ₹{((r.gstr1.lateFee || 0) + (r.gstr3b.lateFee || 0)).toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-3.5 px-3 text-center">
+                            {renderOfficeStageBadge(r.officeStage)}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onJumpToWorking) {
+                                    onJumpToWorking(r.clientGstin, r.clientName, r.month, 'working3b');
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all border border-blue-200 cursor-pointer shadow-sm"
+                              >
+                                <Calculator className="w-3 h-3" />
+                                Open
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(r)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
+                                title="Edit / Record ARN"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
 
       {/* ─── MANUAL EDIT / OVERRIDE FILING MODAL ─── */}
@@ -2088,11 +2072,10 @@ export default function ReturnsTrackingMaster({
                       key={rt}
                       type="button"
                       onClick={() => setFormReturnType(rt)}
-                      className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                        formReturnType === rt
-                          ? 'bg-purple-50 border-purple-500 text-purple-700 shadow-sm'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${formReturnType === rt
+                        ? 'bg-purple-50 border-purple-500 text-purple-700 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
                     >
                       {rt === 'GSTR-3B' ? 'GSTR-3B (Tax Return)' : 'GSTR-1 (Outward Sales)'}
                     </button>

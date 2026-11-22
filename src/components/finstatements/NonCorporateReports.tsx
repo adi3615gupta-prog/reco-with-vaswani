@@ -185,11 +185,10 @@ export default function NonCorporateReports() {
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
         <button
           onClick={() => setActiveTab('partners')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'partners'
-              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'partners'
+            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
         >
           <Users className="w-3.5 h-3.5" />
           Partner Capital Schedule ({partners.length})
@@ -197,11 +196,10 @@ export default function NonCorporateReports() {
 
         <button
           onClick={() => setActiveTab('bsh')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'bsh'
-              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'bsh'
+            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
         >
           <Columns className="w-3.5 h-3.5" />
           Horizontal Balance Sheet [BS(H)]
@@ -209,11 +207,10 @@ export default function NonCorporateReports() {
 
         <button
           onClick={() => setActiveTab('plh')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'plh'
-              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'plh'
+            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
         >
           <Scale className="w-3.5 h-3.5" />
           Horizontal Profit &amp; Loss [P&amp;L(H)]
@@ -221,11 +218,10 @@ export default function NonCorporateReports() {
 
         <button
           onClick={() => setActiveTab('as_matrix')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'as_matrix'
-              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'as_matrix'
+            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
         >
           <Award className="w-3.5 h-3.5" />
           ICAI AS Applicability Matrix
@@ -409,7 +405,7 @@ export default function NonCorporateReports() {
               ) : (
                 <span className="text-red-400 font-bold flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  Diff: ₹{Math.abs(bs.difference).toLocaleString()}
+                  Diff: ₹{Math.abs(bs.difference.cy).toLocaleString()}
                 </span>
               )}
             </div>
@@ -653,13 +649,12 @@ export default function NonCorporateReports() {
                       <td className="py-2.5 px-3 font-bold text-white">{s.as_title}</td>
                       <td className="py-2.5 px-3 text-center">
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            s.applicability === 'Applicable'
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : s.applicability === 'Applicable with Exemptions'
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.applicability === 'Applicable'
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            : s.applicability === 'Applicable with Exemptions'
                               ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                               : 'bg-slate-800 text-slate-400'
-                          }`}
+                            }`}
                         >
                           {s.applicability}
                         </span>

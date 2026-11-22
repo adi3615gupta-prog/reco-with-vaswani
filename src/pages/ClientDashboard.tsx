@@ -6,14 +6,16 @@ import {
   Download, Upload, Award, TrendingUp, Calculator, Percent, Activity, TrendingDown, Lightbulb
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { parseFile, exportToXlsx, exportClientTemplate } from '@/lib/fileParser';
-import { getApiBase, getAuthToken } from '@/lib/api';
+import { getApiBase, getAuthToken, safeApiFetch } from '@/lib/api';
 
 interface ClientDashboardProps {
   onBack: () => void;
 }
 
 export default function ClientDashboard({ onBack }: ClientDashboardProps) {
+  const confirm = useConfirm();
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [activeTab, setActiveTab] = useState<'analytics' | 'tasks' | 'clients' | 'pan'>('analytics');
   const [clients, setClients] = useState<any[]>([]);
@@ -57,11 +59,17 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   const fetchDashboardData = async () => {
     try {
       const [cliRes, tskRes] = await Promise.all([
-        fetch(`${getApiBase()}/api/clients`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } }),
-        fetch(`${getApiBase()}/api/tasks`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
+        safeApiFetch('/api/clients'),
+        safeApiFetch('/api/tasks')
       ]);
-      if (cliRes.ok) setClients(await cliRes.json());
-      if (tskRes.ok) setTasks(await tskRes.json());
+      if (cliRes.ok) {
+        const cliData = await cliRes.json();
+        if (Array.isArray(cliData)) setClients(cliData);
+      }
+      if (tskRes.ok) {
+        const tskData = await tskRes.json();
+        if (Array.isArray(tskData)) setTasks(tskData);
+      }
     } catch (e) { 
       toast.error("Failed to load dashboard database tables."); 
     }
@@ -69,6 +77,15 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
   useEffect(() => {
     fetchDashboardData();
+    const handleSync = () => fetchDashboardData();
+    window.addEventListener('clients-updated', handleSync);
+    window.addEventListener('storage-config-updated', handleSync);
+    window.addEventListener('credentials-updated', handleSync);
+    return () => {
+      window.removeEventListener('clients-updated', handleSync);
+      window.removeEventListener('storage-config-updated', handleSync);
+      window.removeEventListener('credentials-updated', handleSync);
+    };
   }, []);
 
   // Helper to extract PAN from GSTIN (GSTIN format: 27 AADCB 2230 M 1 Z 4)
@@ -85,9 +102,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     setIsBackingUp(true);
     const loadingId = toast.loading("Syncing SQLite database tables to Google Drive...");
     try {
-      const res = await fetch(`${getApiBase()}/api/backup/drive`, {
-        method: 'POST', 
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      const res = await safeApiFetch('/api/backup/drive', {
+        method: 'POST'
       });
       if (res.ok) {
         toast.success("Google Drive Backup Successful", { 
@@ -110,23 +126,24 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     setIsSyncing(true);
     const loadingId = toast.loading(`Browser opened! Please solve the CAPTCHA for ${gstin.toUpperCase()}...`);
     try {
-      const res = await fetch(`${getApiBase()}/api/portal/import-client`, {
+      const res = await safeApiFetch('/api/portal/import-client', {
         method: 'POST', 
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gstin: gstin.toUpperCase().trim() })
       });
       const data = await res.json();
       if (data.success) {
         // Save to DB
-        await fetch(`${getApiBase()}/api/clients`, {
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
-            body: JSON.stringify({ id: `cli_${Date.now()}`, ...data.data })
+        await safeApiFetch('/api/clients', {
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: `cli_${Date.now()}`, ...data.data })
         });
         toast.success("Portal Fetch Complete", { 
           id: loadingId, 
           description: `Successfully imported "${data.data.trade_name}" trade registry.` 
         });
+        window.dispatchEvent(new CustomEvent('clients-updated'));
         fetchDashboardData();
       }
     } catch (e) { 
@@ -143,9 +160,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
     const loadingId = toast.loading("Saving client master records...");
     try {
-      const res = await fetch(`${getApiBase()}/api/clients`, {
+      const res = await safeApiFetch('/api/clients', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: `cli_${Date.now()}`,
           gstin: cliGstin.toUpperCase().trim(),
@@ -163,6 +180,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         setCliGstin('');
         setCliEmail('');
         setCliPhone('');
+        window.dispatchEvent(new CustomEvent('clients-updated'));
         fetchDashboardData();
       }
     } catch (e) {
@@ -177,9 +195,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
     const loadingId = toast.loading("Updating client registry...");
     try {
-      const res = await fetch(`${getApiBase()}/api/clients`, {
+      const res = await safeApiFetch('/api/clients', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editingClient.id,
           gstin: editingClient.gstin,
@@ -193,6 +211,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         toast.success("Client updated successfully", { id: loadingId });
         setShowEditClient(false);
         setEditingClient(null);
+        window.dispatchEvent(new CustomEvent('clients-updated'));
         fetchDashboardData();
       }
     } catch (e) {
@@ -202,16 +221,22 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
   // Delete Client
   const handleDeleteClient = async (id: string, tradeName: string) => {
-    if (!window.confirm(`Are you absolutely sure you want to delete client "${tradeName}"?\nThis will clear their master profile from SQLite.`)) return;
+    const ok = await confirm({
+      title: 'Delete Client Profile',
+      description: `Are you absolutely sure you want to delete client "${tradeName}"?\nThis will permanently clear their master profile from SQLite.`,
+      confirmText: 'Delete Client',
+      variant: 'destructive',
+    });
+    if (!ok) return;
 
     const loadingId = toast.loading("Deleting client profile...");
     try {
-      const res = await fetch(`${getApiBase()}/api/clients/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      const res = await safeApiFetch(`/api/clients/${id}`, {
+        method: 'DELETE'
       });
       if (res.ok) {
         toast.success("Client deleted successfully", { id: loadingId });
+        window.dispatchEvent(new CustomEvent('clients-updated'));
         fetchDashboardData();
       }
     } catch (e) {
@@ -228,9 +253,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
       let created = 0;
       for (const client of clients) {
         const taskId = `tsk_${client.gstin}_${genReturnType}_${genPeriod.replace(/\s+/g, '_')}`;
-        await fetch(`${getApiBase()}/api/tasks`, {
+        await safeApiFetch('/api/tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: taskId,
             client_gstin: client.gstin,
@@ -257,9 +282,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
   // Update GSTR filing status
   const handleUpdateTaskStatus = async (task: any, newStatus: string) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/tasks`, {
+      const res = await safeApiFetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...task,
           status: newStatus
@@ -276,9 +301,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
 
   // Delete individual task row
   const handleDeleteTask = async (id: string) => {
-    const res = await fetch(`${getApiBase()}/api/tasks/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+    const res = await safeApiFetch(`/api/tasks/${id}`, {
+      method: 'DELETE'
     });
     if (res.ok) {
       toast.success("Filing record cleared.");
@@ -294,9 +318,8 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     const loadingId = toast.loading(`Broadcasting compliance notifications to ${pendingTasks.length} pending clients...`);
     try {
       // Dispatch alert request
-      await fetch(`${getApiBase()}/api/alerts/send`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      await safeApiFetch('/api/alerts/send', {
+        method: 'POST'
       });
       toast.success("Bulk Alerts Dispatched", { 
         id: loadingId, 
@@ -313,9 +336,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
     const displayName = client ? client.trade_name : clientGstin;
     const loadingId = toast.loading(`Sending filing reminder ${type} to ${displayName}...`);
     try {
-      const res = await fetch(`${getApiBase()}/api/alerts/send`, {
+      const res = await safeApiFetch('/api/alerts/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type,
           clientGstin,
@@ -387,9 +410,9 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
         }
 
         try {
-          const res = await fetch(`${getApiBase()}/api/clients`, {
+          const res = await safeApiFetch('/api/clients', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
               gstin: rowGstin,
@@ -416,6 +439,7 @@ export default function ClientDashboard({ onBack }: ClientDashboardProps) {
       });
 
       e.target.value = '';
+      window.dispatchEvent(new CustomEvent('clients-updated'));
       fetchDashboardData();
     } catch (e) {
       toast.error("Failed to parse file. Make sure it is a valid Excel spreadsheet.", { id: loadingId });

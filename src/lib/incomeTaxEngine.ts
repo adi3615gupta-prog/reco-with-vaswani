@@ -30,6 +30,7 @@ import {
   type CessAudit,
   type RegimeCalculationSheet,
   type ComputationNote,
+  type FinancialYear,
   IncomeType,
   RegimeType,
   AgeCategory,
@@ -45,6 +46,7 @@ import {
   SPECIAL_INCOME_SURCHARGE_CAP,
   REBATE_87A_NEW,
   REBATE_87A_OLD,
+  getRebate87AConfig,
   SPECIAL_RATES,
   HEC_RATE,
   type SurchargeBracket,
@@ -548,13 +550,14 @@ function applyRebate87A(
   netTaxableNormalIncome: Decimal,
   totalSpecialIncome: Decimal,
   regime: RegimeType,
+  fy?: FinancialYear,
 ): RebateResult {
   const warnings: string[] = [];
 
   // Total net taxable income = normal + special (for rebate eligibility)
   const totalNetTaxableIncome = netTaxableNormalIncome.add(totalSpecialIncome);
 
-  const config = regime === RegimeType.NEW ? REBATE_87A_NEW : REBATE_87A_OLD;
+  const config = getRebate87AConfig(fy, regime);
   const threshold = D(config.incomeThreshold);
   const maxRebate = D(config.maxRebate);
 
@@ -1181,7 +1184,8 @@ export function calculateTaxLiability(
     step1.incomeBreakdown.ltcg112A.toNumber() + 
     step1.incomeBreakdown.ltcg112.toNumber() + 
     step1.incomeBreakdown.casualIncome.toNumber() + 
-    (step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0);
+    (step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0) +
+    (step1.incomeBreakdown.deemedIncome115BBE ? step1.incomeBreakdown.deemedIncome115BBE.toNumber() : 0);
 
   // 1. Initialize Special Income accumulators
   let specialIncomeTotal = 0;
@@ -1194,26 +1198,7 @@ export function calculateTaxLiability(
   const crypto_vda_amount = step1.incomeBreakdown.cryptoVda ? step1.incomeBreakdown.cryptoVda.toNumber() : 0;
   const agricultural_income_amount = step1.incomeBreakdown.agriculturalIncome ? step1.incomeBreakdown.agriculturalIncome.toNumber() : 0;
   const deemed_income_115bbe_amount = step1.incomeBreakdown.deemedIncome115BBE ? step1.incomeBreakdown.deemedIncome115BBE.toNumber() : 0;
-
-  // 1. Calculate the gross amount first
-  const ltcg112a_amount = incomes.filter(i => i.income_type === 'LTCG_112A').reduce((sum, i) => sum + (i.net_amount || 0), 0);
-
-  // 2. Define the taxable amount with the ₹1.25L exemption applied
-  const taxableLtcg112a = Math.max(0, ltcg112a_amount - 125000);
-
-  // 3. Add ONLY the taxable portion to the tax total
-  taxOnSpecialIncome += (taxableLtcg112a * 0.125);
-
-  // b) LTCG 112 (Property/Unlisted): Flat 12.5%
-  taxOnSpecialIncome += (ltcg112_amount * 0.125);
-  // c) STCG 111A: Flat 20%
-  taxOnSpecialIncome += (stcg111a_amount * 0.20);
-  // d) Casual Income (Lottery/Crypto 115BB/115BBH): Flat 30%
-  taxOnSpecialIncome += (casual_income_amount * 0.30);
-  // e) Crypto VDA u/s 115BBH: Flat 30%
-  taxOnSpecialIncome += (crypto_vda_amount * 0.30);
-  // f) Deemed Income u/s 115BBE: Flat 60%
-  taxOnSpecialIncome += (deemed_income_115bbe_amount * 0.60);
+  const ltcg112a_amount = step1.incomeBreakdown.ltcg112A.toNumber();
 
   // 4. Aggregate total special income to deduct from Gross Total Income
   specialIncomeTotal = ltcg112a_amount + ltcg112_amount + stcg111a_amount + casual_income_amount + crypto_vda_amount + deemed_income_115bbe_amount;
@@ -1245,14 +1230,51 @@ export function calculateTaxLiability(
   
   const taxOnNormalIncome = taxOnNormalIncomeDecimal.toNumber();
 
+  // Statutory provisos to Sec 111A, 112, 112A for Resident Individuals/HUFs:
+  // Where normal income < basic exemption, unexhausted basic exemption is offset against special rate capital gains
+  const resStatus = String(profile.residential_status || 'ROR');
+  const isResident = resStatus !== 'NR' && resStatus !== 'NON_RESIDENT';
+  let exemptionShortfall = isResident ? Math.max(0, basicExemption - normalIncomeBase) : 0;
+
+  // Offset 1: LTCG 112
+  let taxableLtcg112 = ltcg112_amount;
+  if (exemptionShortfall > 0 && taxableLtcg112 > 0) {
+    const offset112 = Math.min(exemptionShortfall, taxableLtcg112);
+    taxableLtcg112 -= offset112;
+    exemptionShortfall -= offset112;
+  }
+
+  // Offset 2: LTCG 112A (taxable portion exceeding ₹1.25L exemption)
+  let taxableLtcg112a = Math.max(0, ltcg112a_amount - 125000);
+  if (exemptionShortfall > 0 && taxableLtcg112a > 0) {
+    const offset112a = Math.min(exemptionShortfall, taxableLtcg112a);
+    taxableLtcg112a -= offset112a;
+    exemptionShortfall -= offset112a;
+  }
+
+  // Offset 3: STCG 111A
+  let taxableStcg111a = stcg111a_amount;
+  if (exemptionShortfall > 0 && taxableStcg111a > 0) {
+    const offset111a = Math.min(exemptionShortfall, taxableStcg111a);
+    taxableStcg111a -= offset111a;
+    exemptionShortfall -= offset111a;
+  }
+
+  taxOnSpecialIncome += (taxableLtcg112a * 0.125);
+  taxOnSpecialIncome += (taxableLtcg112 * 0.125);
+  taxOnSpecialIncome += (taxableStcg111a * 0.20);
+  taxOnSpecialIncome += (casual_income_amount * 0.30);
+  taxOnSpecialIncome += (crypto_vda_amount * 0.30);
+  taxOnSpecialIncome += (deemed_income_115bbe_amount * 0.60);
+
   const totalComputedTax = D(taxOnNormalIncome).add(D(taxOnSpecialIncome));
 
   const step3: TaxComputationResult = {
     slabDetails,
     taxOnNormalIncome: D(taxOnNormalIncome),
-    taxOnSTCG111A: D(stcg111a_amount * 0.20),
+    taxOnSTCG111A: D(taxableStcg111a * 0.20),
     taxOnLTCG112A: D(taxableLtcg112a * 0.125),
-    taxOnLTCG112: D(ltcg112_amount * 0.125),
+    taxOnLTCG112: D(taxableLtcg112 * 0.125),
     taxOnCasualIncome: D(casual_income_amount * 0.30),
     taxOnCryptoVda: D(crypto_vda_amount * 0.30),
     taxOnDeemedIncome115BBE: D(deemed_income_115bbe_amount * 0.60),
@@ -1269,6 +1291,7 @@ export function calculateTaxLiability(
     step2.netTaxableNormalIncome,
     step1.totalSpecialIncome,
     regime,
+    profile.financial_year,
   );
   allWarnings.push(...step4.warnings);
 
@@ -1296,7 +1319,9 @@ export function calculateTaxLiability(
   // ═════════════════════════════════════════════════════════════
   // STEP 7: Assemble Final TaxAssessment
   // ═════════════════════════════════════════════════════════════
-  const totalTaxLiability = step5.taxAfterSurcharge.add(step6.cessAmount).roundToInt();
+  // Section 288B: Round final tax payable / refund to nearest ₹10
+  const rawTaxLiability = step5.taxAfterSurcharge.add(step6.cessAmount).toNumber();
+  const totalTaxLiability = D(Math.round(rawTaxLiability / 10) * 10);
 
   // Effective tax rate = (Total Tax / Gross Total Income) × 100
   const effectiveTaxRate = step1.grossTotalIncome.isZero()
@@ -1577,6 +1602,7 @@ export function calculateTaxLiability(
     taxOnLTCG112: step3.taxOnLTCG112,
     taxOnCasualIncome: step3.taxOnCasualIncome,
     taxOnCryptoVda: step3.taxOnCryptoVda,
+    taxOnDeemedIncome115BBE: step3.taxOnDeemedIncome115BBE,
     totalTaxOnSpecialIncome: step3.totalTaxOnSpecialIncome,
     totalComputedTax: step3.totalComputedTax,
 

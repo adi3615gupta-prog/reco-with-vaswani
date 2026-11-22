@@ -73,8 +73,10 @@ export function ColumnMapper({ title, headers, mapping, onChange, labelOverrides
                 </SelectTrigger>
                 <SelectContent className="bg-white border-slate-200 text-slate-900 shadow-xl rounded-xl">
                   <SelectItem value="__none__" className="focus:bg-indigo-50 focus:text-indigo-900 cursor-pointer font-medium text-slate-500">— None —</SelectItem>
-                  {(headers || []).map((h) => (
-                    <SelectItem key={h} value={h} className="focus:bg-indigo-50 focus:text-indigo-900 cursor-pointer font-medium">{h}</SelectItem>
+                  {(headers || []).map((h, idx) => (
+                    <SelectItem key={`${h || 'col'}_${idx}`} value={h || `__col_${idx}__`} className="focus:bg-indigo-50 focus:text-indigo-900 cursor-pointer font-medium">
+                      {h || `(Column ${idx + 1})`}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

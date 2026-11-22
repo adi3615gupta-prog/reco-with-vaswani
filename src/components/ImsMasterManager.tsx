@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2, Calendar, CheckCircle2, Clock, Download, ExternalLink,
   FileSpreadsheet, FileText, Filter, MessageSquare, RefreshCw,
-  Search, Send, ShieldCheck, Sparkles, UploadCloud, Users, X,
+  Search, Send, ShieldCheck, Sparkles, UploadCloud, Users, X, Inbox,
   Check, AlertTriangle, ArrowUpDown, Eye, ArrowRight, Smartphone,
   Laptop, Globe, CheckCheck, FileJson, Key, EyeOff,
   Zap, Play, Pause, SkipForward, Square, FolderSearch, Loader2, Mail,
@@ -118,89 +118,6 @@ const getInvoiceTypeDetails = (typ?: string) => {
 };
 
 
-const DEMO_INVOICES: ImsInvoice[] = [
-  {
-    id: 'demo-1',
-    inum: 'INV-2024-902',
-    idt: '14 Oct 2024',
-    ctin: '27AABCV1234F1Z5',
-    supplier_name: 'Apex Logistics Corp',
-    inv_typ: 'R',
-    val: 171100,
-    txval: 145000,
-    igst: 26100,
-    cgst: 0,
-    sgst: 0,
-    cess: 0,
-    action: 'NO_ACTION',
-    itc_eligibility: 'Y'
-  },
-  {
-    id: 'demo-2',
-    inum: 'ZSI/24-25/441',
-    idt: '18 Oct 2024',
-    ctin: '08AAACV9876K1ZU',
-    supplier_name: 'Zenith Steel Industries',
-    inv_typ: 'R',
-    val: 1050200,
-    txval: 890000,
-    igst: 160200,
-    cgst: 0,
-    sgst: 0,
-    cess: 0,
-    action: 'ACCEPT',
-    itc_eligibility: 'Y'
-  },
-  {
-    id: 'demo-3',
-    inum: 'TPT/1109',
-    idt: '22 Oct 2024',
-    ctin: '33AABTZ4432H1ZV',
-    supplier_name: 'Tamilnadu Power Tech',
-    inv_typ: 'R',
-    val: 377600,
-    txval: 320000,
-    igst: 0,
-    cgst: 28800,
-    sgst: 28800,
-    cess: 0,
-    action: 'REJECT',
-    itc_eligibility: 'Y',
-    client_remarks: 'Supplier Inv Mismatch'
-  },
-  {
-    id: 'demo-4',
-    inum: 'CEW/882',
-    idt: '25 Oct 2024',
-    ctin: '19AADCS5541L1Z8',
-    supplier_name: 'Calcutta Engineering Works',
-    inv_typ: 'C',
-    val: -89007,
-    txval: -75430,
-    igst: -13577,
-    cgst: 0,
-    sgst: 0,
-    cess: 0,
-    action: 'ACCEPT',
-    itc_eligibility: 'Y'
-  },
-  {
-    id: 'demo-5',
-    inum: 'BPR/Oct/5501',
-    idt: '28 Oct 2024',
-    ctin: '27AAACB0000A1Z1',
-    supplier_name: 'Bharat Petroleum Refineries',
-    inv_typ: 'R',
-    val: 1475000,
-    txval: 1250000,
-    igst: 0,
-    cgst: 112500,
-    sgst: 112500,
-    cess: 0,
-    action: 'NO_ACTION',
-    itc_eligibility: 'Y'
-  }
-];
 
 const formatSourcePeriod = (period?: string) => {
   if (!period) return '';
@@ -224,19 +141,24 @@ const formatSourcePeriod = (period?: string) => {
 interface ImsMasterManagerProps {
   selectedMonth: GSTR3BMonthKey;
   financialYear: string;
-  onApplyTo3B?: (itc2b: { igst: number; cgst: number; sgst: number; cess: number; total: number }) => void;
+  onApplyTo3B?: (itc2b: { igst: number; cgst: number; sgst: number; cess: number; total: number }, rcmInward?: any, creditNotes?: any, importGoods?: any) => void;
   currentGstin?: string;
+  currentFirmName?: string;
 }
 
 export default function ImsMasterManager({
   selectedMonth,
   financialYear,
   onApplyTo3B,
-  currentGstin
+  currentGstin,
+  currentFirmName
 }: ImsMasterManagerProps) {
-  // Return Period Format - Extract 4-digit start year regardless of hyphen/space in FY (e.g. 2025-26 or 2025 26)
-  const startYear = (financialYear || '2025-26').match(/\d{4}/)?.[0] || '2025';
-  const activePeriod = `${selectedMonth} ${startYear}`;
+  // Return Period Format - Extract 4-digit start year and handle Q4 fiscal shift (Jan/Feb/Mar of next calendar year)
+  const fyYears = (financialYear || '2026-27').match(/\d{4}/g);
+  const startYear = parseInt(fyYears?.[0] || '2026', 10);
+  const isQ4 = ['January', 'February', 'March'].includes(selectedMonth);
+  const effectiveYear = isQ4 ? startYear + 1 : startYear;
+  const activePeriod = `${selectedMonth} ${effectiveYear}`;
 
   // State
   const [loading, setLoading] = useState(false);
@@ -256,6 +178,10 @@ export default function ImsMasterManager({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'REVIEWED' | 'PUSHED' | 'NOT_SYNCED'>('ALL');
   const [selectedGstins, setSelectedGstins] = useState<Set<string>>(new Set());
 
+  // 3 Party Categories State (Synced, Waiting, Not Synced)
+  const [partyTab, setPartyTab] = useState<'INVOICES' | 'SYNCED' | 'WAITING' | 'NOT_SYNCED'>('INVOICES');
+  const [partySearch, setPartySearch] = useState('');
+
   // Detail Modal State
   const [activeClientDetail, setActiveClientDetail] = useState<ImsBatchSummary | null>(null);
   const [detailInvoices, setDetailInvoices] = useState<ImsInvoice[]>([]);
@@ -266,9 +192,8 @@ export default function ImsMasterManager({
   const [editingRemarkId, setEditingRemarkId] = useState<string | null>(null);
   const [remarkInput, setRemarkInput] = useState('');
 
-  // File Dropzone & Portal Modals
+  // File Dropzone & Portal State
   const [showDropzoneModal, setShowDropzoneModal] = useState(false);
-  const [showPortalModal, setShowPortalModal] = useState(false);
   const [portalGstin, setPortalGstin] = useState(currentGstin || '');
   const [portalUsername, setPortalUsername] = useState('');
   const [portalPassword, setPortalPassword] = useState('');
@@ -287,6 +212,22 @@ export default function ImsMasterManager({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [editedCredentials, setEditedCredentials] = useState<Record<string, { portal_username: string; portal_password: string; phone?: string; trade_name?: string }>>({});
   const credentialsExcelInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredCredentials = useMemo(() => {
+    return credentialsList.filter(c => {
+      const q = credentialsSearch.toLowerCase().trim();
+      const matchSearch = !q ||
+        c.trade_name?.toLowerCase().includes(q) ||
+        c.legal_name?.toLowerCase().includes(q) ||
+        c.gstin.toLowerCase().includes(q) ||
+        c.portal_username?.toLowerCase().includes(q);
+      if (!matchSearch) return false;
+      const hasPass = Boolean(c.portal_password || editedCredentials[c.gstin]?.portal_password);
+      if (credentialsFilter === 'CONFIGURED') return hasPass;
+      if (credentialsFilter === 'MISSING') return !hasPass;
+      return true;
+    });
+  }, [credentialsList, credentialsSearch, credentialsFilter, editedCredentials]);
 
   // Sync portalGstin & credentials when currentGstin changes from parent
   useEffect(() => {
@@ -406,6 +347,56 @@ export default function ImsMasterManager({
     return activeWaitingClients.filter(c => !c.isReady).length;
   }, [activeWaitingClients]);
 
+  // ─── 3 PARTY CATEGORIES (Synced Parties, Waiting for Generation, Not Synced) ─────
+  const waitingClientsList = useMemo(() => {
+    return clients.filter(c => 
+      c.status === 'REQUESTED_WAITING' || 
+      c.generation_status === 'REQUESTED' ||
+      (c.generation_requested_at && (currentTime - c.generation_requested_at < 20 * 60 * 1000) && c.status !== 'SYNCED')
+    );
+  }, [clients, currentTime]);
+
+  const syncedClientsList = useMemo(() => {
+    const waitingGstins = new Set(waitingClientsList.map(w => (w.gstin || '').toUpperCase()));
+    return clients.filter(c => {
+      if (waitingGstins.has((c.gstin || '').toUpperCase())) return false;
+      return (
+        c.status === 'SYNCED' ||
+        c.status === 'REVIEWED' ||
+        c.status === 'PARTIALLY_REVIEWED' ||
+        c.status === 'PUSHED_TO_3B' ||
+        c.status === 'DISPATCHED' ||
+        (c.total_invoices && c.total_invoices > 0) ||
+        c.generation_status === 'READY'
+      );
+    });
+  }, [clients, waitingClientsList]);
+
+  const notSyncedClientsList = useMemo(() => {
+    const waitingGstins = new Set(waitingClientsList.map(w => (w.gstin || '').toUpperCase()));
+    const syncedGstins = new Set(syncedClientsList.map(s => (s.gstin || '').toUpperCase()));
+    return clients.filter(c => {
+      const g = (c.gstin || '').toUpperCase();
+      return !waitingGstins.has(g) && !syncedGstins.has(g);
+    });
+  }, [clients, waitingClientsList, syncedClientsList]);
+
+  const displayedPartyList = useMemo(() => {
+    let source: ImsBatchSummary[] = [];
+    if (partyTab === 'SYNCED') source = syncedClientsList;
+    else if (partyTab === 'WAITING') source = waitingClientsList;
+    else if (partyTab === 'NOT_SYNCED') source = notSyncedClientsList;
+    else return [];
+
+    if (!partySearch.trim()) return source;
+    const q = partySearch.trim().toLowerCase();
+    return source.filter(c =>
+      (c.trade_name || '').toLowerCase().includes(q) ||
+      (c.legal_name || '').toLowerCase().includes(q) ||
+      (c.gstin || '').toLowerCase().includes(q)
+    );
+  }, [partyTab, syncedClientsList, waitingClientsList, notSyncedClientsList, partySearch]);
+
   // localStorage Queue Persistence Helpers
   const getStorageKey = (key: string) => `ims_${key}_${activePeriod.replace(/\s+/g, '_')}`;
 
@@ -441,7 +432,13 @@ export default function ImsMasterManager({
     try {
       setLoading(true);
       const res = await safeApiFetch(`/api/ims/summary?period=${encodeURIComponent(activePeriod)}`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
 
       if (res.ok && data.success) {
         const fetchedClients: ImsBatchSummary[] = data.clients || [];
@@ -496,7 +493,13 @@ export default function ImsMasterManager({
   const fetchCredentials = async () => {
     try {
       const res = await safeApiFetch('/api/ims/credentials');
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         setCredentialsList(data.clients || []);
         setCredentialsStats({
@@ -546,7 +549,13 @@ export default function ImsMasterManager({
         body: JSON.stringify({ clients: records, deleteMissing: true })
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         if (data.deletedCount > 0) {
           toast.success(`Synchronized ${data.importedCount} clients (${data.deletedCount} deleted, ${data.addedCount || 0} added, ${data.updatedCount || 0} updated)!`, { id: toastId });
@@ -582,7 +591,13 @@ export default function ImsMasterManager({
           trade_name: edited.trade_name
         })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(`Saved credentials for ${gstin}`);
         setEditedCredentials(prev => {
@@ -633,7 +648,13 @@ export default function ImsMasterManager({
     setLoadingDetail(true);
     try {
       const res = await safeApiFetch(`${getApiBase()}/api/ims/invoices/${client.gstin}?period=${encodeURIComponent(activePeriod)}`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         setDetailInvoices(data.invoices || []);
       }
@@ -745,7 +766,13 @@ export default function ImsMasterManager({
     setLoadingDetail(true);
     try {
       const res = await safeApiFetch(`${getApiBase()}/api/ims/invoices/${gstin}?period=${encodeURIComponent(activePeriod)}`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         setDetailInvoices(data.invoices || []);
         const matched = clients.find(c => c.gstin.toUpperCase() === gstin.toUpperCase());
@@ -769,6 +796,16 @@ export default function ImsMasterManager({
       setLoadingDetail(false);
     }
   };
+
+  // Automatically fetch real IMS invoices whenever the active client or return period changes
+  useEffect(() => {
+    if (currentGstin) {
+      loadClientDetailByGstin(currentGstin);
+    } else {
+      setDetailInvoices([]);
+      setActiveClientDetail(null);
+    }
+  }, [currentGstin, activePeriod]);
 
   // Compute breakdown stats for active client modal with full gross invoice values
   const modalStats = useMemo(() => {
@@ -881,7 +918,13 @@ export default function ImsMasterManager({
         })
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(`Generated ${data.count} secure review links!`, { id: toastId });
         fetchSummary();
@@ -920,7 +963,13 @@ export default function ImsMasterManager({
   const fetchEmailSettings = async () => {
     try {
       const res = await safeApiFetch(`${getApiBase()}/api/ims/email-settings`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         setEmailSettings({
           ...data.settings,
@@ -950,7 +999,13 @@ export default function ImsMasterManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailSettings)
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success('Gmail SMTP settings saved successfully!');
         setEmailSettings(prev => ({ ...prev, isConfigured: true }));
@@ -983,7 +1038,13 @@ export default function ImsMasterManager({
           test_recipient: testEmailRecipient || emailSettings.sender_email
         })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(data.message || 'Gmail SMTP connected & test email delivered!', { id: toastId });
         setEmailSettings(prev => ({ ...prev, isConfigured: true }));
@@ -1008,7 +1069,13 @@ export default function ImsMasterManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gstin, email: newEmail })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(`Updated email for ${gstin}`);
         setClients(prev => prev.map(c => c.gstin === gstin ? { ...c, email: newEmail } : c));
@@ -1059,7 +1126,13 @@ export default function ImsMasterManager({
           customNote: broadcastNote || undefined
         })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(data.message || `Broadcast completed! Sent ${data.sent} email(s).`, { id: toastId });
         setBroadcastProgress(data);
@@ -1083,7 +1156,13 @@ export default function ImsMasterManager({
     try {
       const toastId = toast.loading(`Generating Excel Review Sheet for ${client.trade_name}...`);
       const res = await safeApiFetch(`${getApiBase()}/api/ims/invoices/${client.gstin}?period=${encodeURIComponent(activePeriod)}`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
 
       if (!res.ok || !data.success || !data.invoices || data.invoices.length === 0) {
         toast.error('No invoice records found for this client to export.', { id: toastId });
@@ -1214,7 +1293,13 @@ export default function ImsMasterManager({
             })
           });
 
-          const data = await res.json();
+          let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
           if (res.ok && data.success) {
             successCount++;
             if (data.gstin && !uploadedGstins.includes(data.gstin)) uploadedGstins.push(data.gstin);
@@ -1243,7 +1328,13 @@ export default function ImsMasterManager({
           })
         });
 
-        const data = await res.json();
+        let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
         if (res.ok && data.success) {
           successCount += clientsData.length;
         } else {
@@ -1281,7 +1372,13 @@ export default function ImsMasterManager({
         })
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         toast.success(`Pushed ₹${data.itc2b.total.toLocaleString('en-IN')} net ITC to 3B Table 4!`, { id: toastId });
         if (onApplyTo3B) {
@@ -1301,7 +1398,13 @@ export default function ImsMasterManager({
     try {
       const toastId = toast.loading('Generating GSTN IMS Action payload...');
       const res = await safeApiFetch(`/api/ims/portal-action-payload/${client.gstin}?period=${encodeURIComponent(activePeriod)}`);
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
 
       let payload = data.payload;
       if (!payload || !payload.invdata) {
@@ -1393,7 +1496,13 @@ export default function ImsMasterManager({
         })
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         if (data.phaseResult === 'REQUESTED') {
           const reqTime = data.requestedAt || Date.now();
@@ -1410,7 +1519,6 @@ export default function ImsMasterManager({
         } else {
           toast.success(data.message || `Successfully synced ${data.invoiceCount} invoices for ${portalGstin}!`, { id: toastId });
         }
-        setShowPortalModal(false);
         fetchSummary();
         if (portalGstin) {
           loadClientDetailByGstin(portalGstin);
@@ -1434,7 +1542,7 @@ export default function ImsMasterManager({
     const client = clients.find(c => c.gstin.toUpperCase() === gstin.toUpperCase());
     const cred = credentialsList.find(c => c.gstin.toUpperCase() === gstin.toUpperCase());
     const username = cred?.portal_username || '';
-    const password = cred?.portal_password || '';
+    const password = editedCredentials[gstin.toUpperCase()]?.portal_password || cred?.portal_password || '';
     const isPhase2 = forcePhase === 'PHASE_2' || (!forcePhase && !forceFresh && (client?.status === 'REQUESTED_WAITING' || client?.generation_status === 'REQUESTED'));
 
     const controller = new AbortController();
@@ -1464,7 +1572,13 @@ export default function ImsMasterManager({
         })
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         if (data.phaseResult === 'REQUESTED') {
           const reqTime = data.requestedAt || Date.now();
@@ -1506,6 +1620,17 @@ export default function ImsMasterManager({
     setPortalConnecting(false);
   };
 
+  const handleDirectLaunchPortal = () => {
+    const targetGstin = currentGstin || activeClientOrFallback?.gstin;
+    if (!targetGstin) {
+      toast.error('No Active Client GSTIN', {
+        description: 'Please select a client from the top client selector first.'
+      });
+      return;
+    }
+    handleOpenPortalSync(targetGstin);
+  };
+
   // ─── 11. 1-CLICK MULTI-SYNC QUEUE RUNNER ──────────────────────────────────
   const handleOpenBatchSync = (targetGstins?: string[]) => {
     let listToQueue: ImsBatchSummary[] = [];
@@ -1535,7 +1660,7 @@ export default function ImsMasterManager({
     } else {
       // Prioritize clients with credentials configured, or all clients
       const configuredGstins = new Set(
-        credentialsList.filter(c => c.portal_username && c.portal_password).map(c => c.gstin.toUpperCase())
+        credentialsList.filter(c => c.portal_username && (c.has_password || c.portal_password)).map(c => c.gstin.toUpperCase())
       );
       listToQueue = clients.filter(c => configuredGstins.has(c.gstin.toUpperCase()));
       if (listToQueue.length === 0) {
@@ -1544,7 +1669,7 @@ export default function ImsMasterManager({
     }
 
     const configuredSet = new Set(
-      credentialsList.filter(c => c.portal_username && c.portal_password).map(c => c.gstin.toUpperCase())
+      credentialsList.filter(c => c.portal_username && (c.has_password || c.portal_password)).map(c => c.gstin.toUpperCase())
     );
 
     // Non-destructive hydration: check saved queue from localStorage or state
@@ -1639,7 +1764,7 @@ export default function ImsMasterManager({
       try {
         const cred = credentialsList.find(c => c.gstin.toUpperCase() === item.gstin.toUpperCase());
         const username = cred?.portal_username || '';
-        const password = cred?.portal_password || '';
+        const password = editedCredentials[item.gstin.toUpperCase()]?.portal_password || cred?.portal_password || '';
 
         const res = await safeApiFetch(`${getApiBase()}/api/ims/portal-sync-browser`, {
           method: 'POST',
@@ -1656,7 +1781,13 @@ export default function ImsMasterManager({
           })
         });
 
-        const data = await res.json();
+        let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
         if (res.ok && data.success) {
           if (data.phaseResult === 'REQUESTED') {
             const reqTime = data.requestedAt || Date.now();
@@ -1742,7 +1873,7 @@ export default function ImsMasterManager({
           gstin: c.gstin,
           trade_name: c.trade_name || c.legal_name || c.gstin,
           legal_name: c.legal_name,
-          hasCreds: Boolean(credentialsList.find(cr => cr.gstin.toUpperCase() === c.gstin.toUpperCase())?.portal_password),
+          hasCreds: Boolean(credentialsList.find(cr => cr.gstin.toUpperCase() === c.gstin.toUpperCase())?.has_password || credentialsList.find(cr => cr.gstin.toUpperCase() === c.gstin.toUpperCase())?.portal_password),
           status: 'REQUESTED' as const,
           requestedAt: c.generation_requested_at || Date.now()
         }));
@@ -1780,7 +1911,7 @@ export default function ImsMasterManager({
       try {
         const cred = credentialsList.find(c => c.gstin.toUpperCase() === item.gstin.toUpperCase());
         const username = cred?.portal_username || '';
-        const password = cred?.portal_password || '';
+        const password = editedCredentials[item.gstin.toUpperCase()]?.portal_password || cred?.portal_password || '';
 
         const res = await safeApiFetch(`${getApiBase()}/api/ims/portal-sync-browser`, {
           method: 'POST',
@@ -1796,7 +1927,13 @@ export default function ImsMasterManager({
           })
         });
 
-        const data = await res.json();
+        let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
         if (res.ok && data.success && (data.phaseResult === 'DOWNLOADED' || data.phaseResult === 'NO_RECORDS' || data.invoiceCount >= 0)) {
           setBatchQueue(prev => prev.map((q, i) => i === idx ? {
             ...q,
@@ -1874,7 +2011,13 @@ export default function ImsMasterManager({
           all: !targetGstin
         })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         try {
           localStorage.removeItem(getStorageKey('queue'));
@@ -1918,7 +2061,13 @@ export default function ImsMasterManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period: activePeriod })
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        throw new Error(text ? `Server response error (${res.status}): ${text.slice(0, 150)}` : `Server returned status ${res.status}`);
+      }
       if (res.ok && data.success) {
         if (data.results && data.results.length > 0) {
           toast.success(`🎉 1-Click Ingest Complete: Ingested ${data.clientsCount} clients (${data.totalInvoices} total invoices)!`, { id: toastId });
@@ -1971,16 +2120,24 @@ export default function ImsMasterManager({
     clients.length > 0
       ? (currentGstin ? clients.find(c => c.gstin?.toUpperCase() === currentGstin.toUpperCase()) || clients[0] : clients[0])
       : {
-          gstin: currentGstin || '27AABCS1234D1Z2',
-          trade_name: 'Siddha Edibles Pvt Ltd',
-          legal_name: 'Siddha Edibles Private Limited',
-          total_invoices: 142,
-          eligible_itc: 12400000,
-          status: 'PENDING'
+          gstin: currentGstin || '',
+          trade_name: currentFirmName || currentGstin || 'No Client Selected',
+          legal_name: currentFirmName || currentGstin || 'No Client Selected',
+          total_invoices: 0,
+          accepted_count: 0,
+          rejected_count: 0,
+          pending_count: 0,
+          no_action_count: 0,
+          eligible_itc_igst: 0,
+          eligible_itc_cgst: 0,
+          eligible_itc_sgst: 0,
+          eligible_itc_cess: 0,
+          eligible_itc_total: 0,
+          status: 'NOT_SYNCED'
         }
   );
 
-  const currentInvoicesList = detailInvoices.length > 0 ? detailInvoices : DEMO_INVOICES;
+  const currentInvoicesList = detailInvoices;
 
   // Active statistics for 4-Card KPI Bar
   const activeStats = useMemo(() => {
@@ -2016,15 +2173,15 @@ export default function ImsMasterManager({
 
     const totalCount = currentInvoicesList.length;
     return {
-      totalCount: totalCount > 0 ? totalCount : 142,
-      totalTaxable: totalCount > 0 ? totalTaxable : 14820000,
-      totalInvoiceVal: totalCount > 0 ? totalInvoiceVal : 17200000,
-      acceptedCount: totalCount > 0 ? acceptedCount : 120,
-      acceptedGst: totalCount > 0 ? acceptedGst : 12400000,
-      rejectedCount: totalCount > 0 ? rejectedCount : 4,
-      rejectedGst: totalCount > 0 ? rejectedGst : 380000,
-      pendingCount: totalCount > 0 ? pendingCount : 18,
-      pendingGst: totalCount > 0 ? pendingGst : 2040000
+      totalCount,
+      totalTaxable,
+      totalInvoiceVal,
+      acceptedCount,
+      acceptedGst,
+      rejectedCount,
+      rejectedGst,
+      pendingCount,
+      pendingGst
     };
   }, [currentInvoicesList]);
 
@@ -2068,14 +2225,7 @@ export default function ImsMasterManager({
       ? selectedInvoiceIds 
       : new Set(filteredHubInvoices.map(i => i.id));
     
-    if (idsToUpdate.size === 0) return;
-
-    if (detailInvoices.length === 0) {
-      setDetailInvoices(DEMO_INVOICES.map(inv => idsToUpdate.has(inv.id) ? { ...inv, action: newAction } : inv));
-      toast.success(`Marked ${idsToUpdate.size} invoice(s) as ${newAction}!`);
-      setSelectedInvoiceIds(new Set());
-      return;
-    }
+    if (idsToUpdate.size === 0 || detailInvoices.length === 0) return;
 
     setDetailInvoices(prev => prev.map(inv => {
       if (idsToUpdate.has(inv.id)) {
@@ -2084,7 +2234,7 @@ export default function ImsMasterManager({
       return inv;
     }));
 
-    if (activeClientOrFallback) {
+    if (activeClientOrFallback && activeClientOrFallback.gstin) {
       try {
         await safeApiFetch(`${getApiBase()}/api/ims/update-actions`, {
           method: 'POST',
@@ -2105,11 +2255,7 @@ export default function ImsMasterManager({
   };
 
   const handleHubSingleAction = (id: string, newAction: 'ACCEPT' | 'REJECT' | 'NO_ACTION') => {
-    if (detailInvoices.length === 0) {
-      setDetailInvoices(DEMO_INVOICES.map(inv => inv.id === id ? { ...inv, action: newAction } : inv));
-      toast.success(`Invoice updated to ${newAction}`);
-      return;
-    }
+    if (detailInvoices.length === 0) return;
     handleSetInvoiceAction(id, newAction as any);
   };
 
@@ -2135,58 +2281,21 @@ export default function ImsMasterManager({
           </div>
         </div>
 
-        {/* Client Switcher & Live 20-Minute Circular Countdown */}
+        {/* Actions: Live 20-Minute Circular Countdown & 300+ Control Tower */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Active Client Selector Dropdown */}
-          <div className="flex items-center gap-2.5 bg-white shadow-xs hover:shadow-sm border border-slate-200/90 rounded-xl px-3.5 py-2 transition-all">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 shrink-0">
-              <Building2 className="w-4 h-4 text-indigo-600" />
-            </div>
-            <div className="flex flex-col pr-1">
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={activeClientOrFallback.gstin}
-                  onChange={(e) => {
-                    const chosen = clients.find(c => c.gstin === e.target.value);
-                    if (chosen) handleOpenDetail(chosen);
-                  }}
-                  className="font-body-md text-xs font-semibold text-slate-900 leading-tight bg-transparent border-0 focus:ring-0 cursor-pointer pr-4 py-0"
-                >
-                  {clients.length > 0 ? (
-                    clients.map(c => (
-                      <option key={c.gstin} value={c.gstin}>
-                        {c.trade_name || c.legal_name || c.gstin}
-                      </option>
-                    ))
-                  ) : (
-                    <option value={activeClientOrFallback.gstin}>
-                      {activeClientOrFallback.trade_name}
-                    </option>
-                  )}
-                </select>
-                <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200 uppercase tracking-wide">
-                  ACTIVE
-                </span>
-              </div>
-              <span className="font-mono text-[11px] text-slate-500">
-                {activeClientOrFallback.gstin} • {activePeriod}
-              </span>
-            </div>
-          </div>
-
-          {/* Live 20-min Countdown Timer with Animated Circular Ring Indicator */}
-          {(() => {
+          {/* Live 20-min Countdown Timer (Only shows if generation waiting window is active) */}
+          {batchSecondsLeft > 0 ? (() => {
             const totalSeconds = 1200; // 20 min
-            const currentSeconds = batchSecondsLeft || 0;
+            const currentSeconds = batchSecondsLeft;
             const progressFraction = Math.min(1, Math.max(0, currentSeconds / totalSeconds));
             const strokeOffset = 88 - (88 * progressFraction);
             return (
-              <div className="flex items-center gap-3 bg-white border border-slate-200/90 shadow-xs hover:shadow-sm rounded-xl px-3.5 py-2 relative overflow-hidden transition-all group">
+              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200/90 shadow-xs hover:shadow-sm rounded-xl px-3.5 py-2 relative overflow-hidden transition-all group">
                 <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
                   <svg className="w-8 h-8 -rotate-90 transform" viewBox="0 0 36 36">
-                    <circle className="text-slate-100" cx="18" cy="18" fill="none" r="14" stroke="currentColor" strokeWidth="3" />
+                    <circle className="text-amber-100" cx="18" cy="18" fill="none" r="14" stroke="currentColor" strokeWidth="3" />
                     <circle
-                      className="text-emerald-600 transition-all duration-1000 ease-linear"
+                      className="text-amber-600 transition-all duration-1000 ease-linear"
                       cx="18"
                       cy="18"
                       fill="none"
@@ -2198,32 +2307,82 @@ export default function ImsMasterManager({
                       strokeWidth="3"
                     />
                   </svg>
-                  <Clock className="w-3.5 h-3.5 absolute text-emerald-600 animate-pulse" />
+                  <Clock className="w-3.5 h-3.5 absolute text-amber-600 animate-pulse" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Portal Session</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Waiting Window</span>
                   <div className="flex items-center gap-1">
-                    <span className="font-mono text-xs font-bold text-slate-900">
-                      {formatCountdown(currentSeconds || 1200)}
+                    <span className="font-mono text-xs font-bold text-amber-900">
+                      {formatCountdown(batchSecondsLeft)}
                     </span>
-                    <span className="text-[11px] text-slate-400">remaining</span>
+                    <span className="text-[11px] text-amber-600">remaining</span>
                   </div>
                 </div>
                 <button
                   onClick={() => fetchSummary()}
-                  className="ml-1 w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                  className="ml-1 w-7 h-7 rounded-lg bg-white hover:bg-amber-100 flex items-center justify-center text-amber-700 transition-colors"
                   title="Force Refresh Session"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             );
-          })()}
+          })() : (
+            <div className="flex items-center gap-2 bg-white border border-slate-200/90 shadow-xs rounded-xl px-3 py-2 text-xs">
+              <div className={`w-2 h-2 rounded-full ${detailInvoices.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              <span className="text-[11px] font-medium text-slate-500">
+                IMS Status: <strong className="text-slate-800 font-semibold">{detailInvoices.length > 0 ? `${detailInvoices.length} Inward Loaded` : 'Ready to Sync'}</strong>
+              </span>
+              <button
+                onClick={() => fetchSummary()}
+                className="ml-1 w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                title="Refresh Data"
+              >
+                <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          )}
+
+          {/* Direct Launch IMS Portal Sync Button (1-Click Direct Launch, No Popup Window) */}
+          <button
+            onClick={handleDirectLaunchPortal}
+            disabled={portalConnecting}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+            title="Directly launch visible Chrome browser and sync IMS inward records"
+          >
+            {portalConnecting ? (
+              <RefreshCw className="w-3.5 h-3.5 text-white animate-spin" />
+            ) : (
+              <Globe className="w-3.5 h-3.5 text-indigo-200" />
+            )}
+            <span>{portalConnecting ? 'Opening Chrome...' : 'Launch Portal Sync'}</span>
+          </button>
+
+          {portalConnecting && (
+            <button
+              onClick={handleCancelPortalLogin}
+              className="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all animate-pulse"
+              title="Cancel running browser session"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Cancel</span>
+            </button>
+          )}
+
+          {/* Import IMS JSON / Excel Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer"
+            title="Import IMS Inward Supplies from official GSTN JSON or Excel"
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-slate-600" />
+            <span>Import JSON / XLSX</span>
+          </button>
 
           {/* Toggle between Decision Hub and 300+ Clients Tower */}
           <button
             onClick={() => setViewMode(viewMode === 'DECISION_HUB' ? 'CLIENTS_TOWER' : 'DECISION_HUB')}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5"
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             title="Switch between single client decision hub and 300+ clients overview"
           >
             <Users className="w-3.5 h-3.5 text-amber-300" />
@@ -2234,107 +2393,195 @@ export default function ImsMasterManager({
 
       {viewMode === 'DECISION_HUB' ? (
         <>
-          {/* ─── BENTO STAT CARDS GRID (1:1 STITCH BLUEPRINT) ─── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Stat 1: Total */}
-            <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200/80 hover:border-slate-300 hover:shadow-sm transition-all group flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Total Inward Invoices</span>
-                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800">
-                  <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+          {/* ─── ULTRA-COMPACT BENTO STAT TILES (MINIMAL VERTICAL HEIGHT) ─── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {/* Stat 1: Total Inward */}
+            <div className="bg-white rounded-xl px-3 py-1.5 shadow-2xs border border-slate-200/90 hover:border-slate-300 transition-all flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                  <Receipt className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block truncate">Total Inward</span>
+                  <span className="font-mono text-sm font-bold text-slate-900 tracking-tight block truncate">
+                    ₹ {activeStats.totalTaxable.toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
-              <div className="mt-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="font-mono text-2xl font-bold text-slate-900 tracking-tight">₹ {activeStats.totalTaxable.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-700 font-medium">{activeStats.totalCount} Docs</span>
-                </div>
-                <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2.5 overflow-hidden flex">
-                  <div className="bg-emerald-500 h-full" style={{ width: `${activeStats.totalCount > 0 ? (activeStats.acceptedCount / activeStats.totalCount) * 100 : 0}%` }}></div>
-                  <div className="bg-amber-500 h-full" style={{ width: `${activeStats.totalCount > 0 ? (activeStats.pendingCount / activeStats.totalCount) * 100 : 0}%` }}></div>
-                  <div className="bg-rose-500 h-full" style={{ width: `${activeStats.totalCount > 0 ? (activeStats.rejectedCount / activeStats.totalCount) * 100 : 0}%` }}></div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between mt-3 pt-2.5 text-xs text-slate-500 border-t border-slate-100">
-                <span>GSTR-1 Recipient Feed</span>
-                <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Synced
+              <div className="text-right shrink-0">
+                <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded-full font-bold block">
+                  {activeStats.totalCount} Docs
+                </span>
+                <span className={`text-[9px] font-semibold block mt-0.5 ${activeStats.totalCount > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                  {activeStats.totalCount > 0 ? '✓ Synced' : 'Pending'}
                 </span>
               </div>
             </div>
 
             {/* Stat 2: Accepted */}
-            <div className="bg-white rounded-xl p-4 shadow-xs border border-emerald-200 hover:border-emerald-300 hover:shadow-sm transition-all group flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Accepted</span>
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700">
-                  <span className="material-symbols-outlined text-[18px]">verified</span>
+            <div className="bg-white rounded-xl px-3 py-1.5 shadow-2xs border border-emerald-200/90 hover:border-emerald-300 transition-all flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 block truncate">Accepted</span>
+                  <span className="font-mono text-sm font-bold text-emerald-700 tracking-tight block truncate">
+                    ₹ {activeStats.acceptedGst.toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
-              <div className="mt-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="font-mono text-2xl font-bold text-emerald-700 tracking-tight">₹ {activeStats.acceptedGst.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{activeStats.acceptedCount} Docs</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1.5">
-                  <span className="text-emerald-700 font-bold">{activeStats.totalCount > 0 ? Math.round((activeStats.acceptedCount / activeStats.totalCount) * 100) : 0}%</span> of total inward ITC credit
-                </p>
-              </div>
-              <div className="flex items-center justify-between mt-3 pt-2.5 text-xs text-slate-500 border-t border-slate-100">
-                <span>GSTR-2B Inclusion</span>
-                <span className="text-emerald-700 font-semibold">100% Eligible</span>
+              <div className="text-right shrink-0">
+                <span className="font-mono text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded-full font-bold block">
+                  {activeStats.acceptedCount} Docs
+                </span>
+                <span className="text-[9px] text-emerald-700 font-bold block mt-0.5">
+                  {activeStats.totalCount > 0 ? Math.round((activeStats.acceptedCount / activeStats.totalCount) * 100) : 0}% 2B ITC
+                </span>
               </div>
             </div>
 
             {/* Stat 3: Rejected */}
-            <div className="bg-white rounded-xl p-4 shadow-xs border border-rose-200 hover:border-rose-300 hover:shadow-sm transition-all group flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Rejected</span>
-                <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-700">
-                  <span className="material-symbols-outlined text-[18px]">cancel</span>
+            <div className="bg-white rounded-xl px-3 py-1.5 shadow-2xs border border-rose-200/90 hover:border-rose-300 transition-all flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
+                  <X className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 block truncate">Rejected</span>
+                  <span className="font-mono text-sm font-bold text-rose-600 tracking-tight block truncate">
+                    ₹ {activeStats.rejectedGst.toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
-              <div className="mt-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="font-mono text-2xl font-bold text-rose-600 tracking-tight">₹ {activeStats.rejectedGst.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full font-bold">{activeStats.rejectedCount} Docs</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1.5">
-                  <span className="text-rose-600 font-bold">{activeStats.totalCount > 0 ? ((activeStats.rejectedCount / activeStats.totalCount) * 100).toFixed(1) : '0.0'}%</span> ineligible tax blocked
-                </p>
-              </div>
-              <div className="flex items-center justify-between mt-3 pt-2.5 text-xs text-slate-500 border-t border-slate-100">
-                <span>Liability Spillover</span>
-                <span className="text-rose-600 font-semibold">Zero ITC</span>
+              <div className="text-right shrink-0">
+                <span className="font-mono text-[10px] bg-rose-50 text-rose-700 px-1.5 py-0.2 rounded-full font-bold block">
+                  {activeStats.rejectedCount} Docs
+                </span>
+                <span className="text-[9px] text-rose-600 font-bold block mt-0.5">
+                  {activeStats.totalCount > 0 ? ((activeStats.rejectedCount / activeStats.totalCount) * 100).toFixed(1) : '0.0'}% Blocked
+                </span>
               </div>
             </div>
 
             {/* Stat 4: Pending Action */}
-            <div className="bg-white rounded-xl p-4 shadow-xs border border-amber-200 hover:border-amber-300 hover:shadow-sm transition-all group flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Pending Action</span>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700">
-                  <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+            <div className="bg-white rounded-xl px-3 py-1.5 shadow-2xs border border-amber-200/90 hover:border-amber-300 transition-all flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                  <Clock className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 block truncate">Pending Action</span>
+                  <span className="font-mono text-sm font-bold text-amber-600 tracking-tight block truncate">
+                    ₹ {activeStats.pendingGst.toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
-              <div className="mt-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="font-mono text-2xl font-bold text-amber-600 tracking-tight">₹ {activeStats.pendingGst.toLocaleString('en-IN')}</span>
-                  <span className="font-mono text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">{activeStats.pendingCount} Docs</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1.5">
-                  Action window closes <span className="font-semibold text-slate-800">14th 23:59 IST</span>
-                </p>
-              </div>
-              <div className="flex items-center justify-between mt-3 pt-2.5 text-xs text-slate-500 border-t border-slate-100">
-                <span>Default Status</span>
-                <span className="text-amber-700 font-semibold">Deemed Accepted</span>
+              <div className="text-right shrink-0">
+                <span className="font-mono text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.2 rounded-full font-bold block">
+                  {activeStats.pendingCount} Docs
+                </span>
+                <span className="text-[9px] text-amber-700 font-semibold block mt-0.5">
+                  {activeStats.pendingCount > 0 ? 'Deemed Acc.' : 'All Actioned'}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* ─── TIGHTENED FILTER & FAST BATCH ACTIONS BAR (1:1 STITCH BLUEPRINT) ─── */}
-          <div className="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 shadow-xs space-y-2.5">
+          {/* ─── PARTY CATEGORY TABS & INVOICE HUB SWITCHER ─── */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-0.5">
+            <div className="flex items-center flex-wrap gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+              {/* Tab 1: Synced Parties */}
+              <button
+                onClick={() => setPartyTab('SYNCED')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  partyTab === 'SYNCED'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-emerald-800 hover:text-emerald-950 hover:bg-emerald-50'
+                }`}
+                title="View parties with successfully synced IMS inward data"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Synced Parties</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  partyTab === 'SYNCED' ? 'bg-emerald-800 text-white' : 'bg-emerald-200 text-emerald-900'
+                }`}>
+                  {syncedClientsList.length}
+                </span>
+              </button>
+
+              {/* Tab 2: Waiting for Generation Parties */}
+              <button
+                onClick={() => setPartyTab('WAITING')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  partyTab === 'WAITING'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-amber-800 hover:text-amber-950 hover:bg-amber-50'
+                }`}
+                title="View parties currently in 20-min portal generation window"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
+                <span>Waiting for Generation</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  partyTab === 'WAITING' ? 'bg-amber-700 text-white' : 'bg-amber-200 text-amber-900'
+                }`}>
+                  {waitingClientsList.length}
+                </span>
+              </button>
+
+              {/* Tab 3: Not Synced Parties */}
+              <button
+                onClick={() => setPartyTab('NOT_SYNCED')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  partyTab === 'NOT_SYNCED'
+                    ? 'bg-slate-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+                title="View parties that have not yet been synced"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />
+                <span>Not Synced</span>
+                <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  partyTab === 'NOT_SYNCED' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-800'
+                }`}>
+                  {notSyncedClientsList.length}
+                </span>
+              </button>
+
+              <div className="h-4 w-px bg-slate-300 mx-1 hidden sm:block" />
+
+              {/* Tab 4: Active Invoices Decision Hub */}
+              <button
+                onClick={() => setPartyTab('INVOICES')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  partyTab === 'INVOICES'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50'
+                }`}
+                title="View invoices for active client"
+              >
+                <Receipt className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Active Invoices</span>
+                <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-700 text-white">
+                  {activeStats.totalCount} Docs
+                </span>
+              </button>
+            </div>
+
+            {/* Active party indicator */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium px-2.5 py-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+              <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="text-slate-400 text-[11px]">Active Party:</span>
+              <span className="font-bold text-slate-800 truncate max-w-[220px]" title={activeClientOrFallback.trade_name}>
+                {activeClientOrFallback.trade_name}
+              </span>
+            </div>
+          </div>
+
+          {partyTab === 'INVOICES' ? (
+            <>
+              {/* ─── TIGHTENED FILTER & FAST BATCH ACTIONS BAR (1:1 STITCH BLUEPRINT) ─── */}
+              <div className="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 shadow-xs space-y-2.5">
             {/* Row 1: Segmented Filter Tabs & Search Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
               <div className="flex items-center flex-wrap gap-1 bg-slate-100 p-1 rounded-xl text-xs font-medium">
@@ -2459,8 +2706,40 @@ export default function ImsMasterManager({
                   {filteredHubInvoices.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
-                        <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                        <p className="font-semibold text-slate-700">No invoices found for this filter.</p>
+                        <Inbox className="w-9 h-9 mx-auto mb-2 text-slate-300" />
+                        <p className="font-semibold text-slate-700 text-sm">
+                          {detailInvoices.length === 0
+                            ? `No IMS Inward Invoices for ${activePeriod}`
+                            : 'No invoices match the selected filter'}
+                        </p>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                          {detailInvoices.length === 0
+                            ? 'Sync directly from GST Portal or upload JSON/Excel to ingest inward supplies.'
+                            : 'Try resetting the search or filter to view all invoices.'}
+                        </p>
+                        {detailInvoices.length === 0 && (
+                          <div className="flex items-center justify-center gap-2.5 mt-3.5">
+                            <button
+                              onClick={handleDirectLaunchPortal}
+                              disabled={portalConnecting}
+                              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              {portalConnecting ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Globe className="w-3.5 h-3.5" />
+                              )}
+                              <span>{portalConnecting ? 'Opening Chrome...' : 'Launch Portal Login'}</span>
+                            </button>
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 transition-all cursor-pointer"
+                            >
+                              <UploadCloud className="w-3.5 h-3.5" />
+                              <span>Import JSON / Excel</span>
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -2593,7 +2872,7 @@ export default function ImsMasterManager({
 
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
               <button
-                onClick={() => handleExportClientReview(activeClientOrFallback)}
+                onClick={() => handleExportClientExcel(activeClientOrFallback)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition-all active:scale-95 shadow-xs border border-slate-200"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
@@ -2608,17 +2887,284 @@ export default function ImsMasterManager({
                 <span>Export IMS JSON</span>
               </button>
 
-              <button
-                onClick={() => handlePushTo3B(activeClientOrFallback)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm active:scale-95 transition-all"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                <span>Apply to 3B (Table 4)</span>
-              </button>
+              
             </div>
           </footer>
         </>
       ) : (
+        /* ─── 3 PARTY CATEGORIES VIEW (SYNCED / WAITING / NOT SYNCED) ─── */
+        <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/90 shadow-xs space-y-3">
+          {/* Header & Search */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-slate-800">
+                {partyTab === 'SYNCED' && `Synced Parties (${syncedClientsList.length})`}
+                {partyTab === 'WAITING' && `Parties Waiting for Portal Generation (~20 min) (${waitingClientsList.length})`}
+                {partyTab === 'NOT_SYNCED' && `Parties Not Synced (${notSyncedClientsList.length})`}
+              </span>
+              <span className="text-xs text-slate-400">
+                Showing {displayedPartyList.length} of {partyTab === 'SYNCED' ? syncedClientsList.length : partyTab === 'WAITING' ? waitingClientsList.length : notSyncedClientsList.length}
+              </span>
+            </div>
+
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search Party Name, GSTIN..."
+                value={partySearch}
+                onChange={e => setPartySearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-indigo-400 border border-slate-200 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Party List Content */}
+          {displayedPartyList.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">
+              <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+              <p className="font-semibold text-slate-600">No parties found in this category.</p>
+              {partySearch && <p className="text-slate-400 mt-1">Try adjusting your search query.</p>}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] font-bold tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Party / Trade Name &amp; GSTIN</th>
+                    {partyTab === 'SYNCED' && (
+                      <>
+                        <th className="p-3 text-center">Invoices</th>
+                        <th className="p-3">Review Breakdown</th>
+                        <th className="p-3 text-right">Eligible 2B ITC</th>
+                      </>
+                    )}
+                    {partyTab === 'WAITING' && (
+                      <>
+                        <th className="p-3">20-Min Countdown</th>
+                        <th className="p-3">Portal Status</th>
+                        <th className="p-3 text-right">Requested At</th>
+                      </>
+                    )}
+                    {partyTab === 'NOT_SYNCED' && (
+                      <>
+                        <th className="p-3">Contact</th>
+                        <th className="p-3 text-center">Credentials Vault</th>
+                        <th className="p-3 text-center">Batch Status</th>
+                      </>
+                    )}
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {displayedPartyList.map((client, idx) => {
+                    const secLeft = getClientWaitSecondsLeft(client.generation_requested_at);
+                    const isReady = secLeft <= 0;
+                    const isCurrentActive = (currentGstin || '').toUpperCase() === (client.gstin || '').toUpperCase();
+
+                    return (
+                      <tr
+                        key={client.gstin || idx}
+                        className={`hover:bg-slate-50/80 transition-colors ${
+                          isCurrentActive ? 'bg-indigo-50/40' : ''
+                        }`}
+                      >
+                        {/* Party Name & GSTIN */}
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
+                              {(client.trade_name || client.legal_name || 'P')[0]?.toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                <span className="truncate max-w-[240px] sm:max-w-[320px]">
+                                  {client.trade_name || client.legal_name || 'Unnamed Client'}
+                                </span>
+                                {isCurrentActive && (
+                                  <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.2 rounded">
+                                    ACTIVE
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-mono text-[11px] text-slate-500 flex items-center gap-1">
+                                <span>{client.gstin}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(client.gstin);
+                                    toast.success(`Copied ${client.gstin}`);
+                                  }}
+                                  className="hover:text-slate-800"
+                                  title="Copy GSTIN"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* SYNCED SPECIFIC COLS */}
+                        {partyTab === 'SYNCED' && (
+                          <>
+                            <td className="p-3 text-center">
+                              <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-full">
+                                {client.total_invoices || 0} Docs
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5 text-[10px]">
+                                <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">
+                                  ✓ {client.accepted_count || 0}
+                                </span>
+                                <span className="bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold">
+                                  ✕ {client.rejected_count || 0}
+                                </span>
+                                <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-bold">
+                                  ⏳ {client.pending_count || 0}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right">
+                              <span className="font-mono font-bold text-emerald-700">
+                                ₹ {(client.eligible_itc_total || 0).toLocaleString('en-IN')}
+                              </span>
+                            </td>
+                          </>
+                        )}
+
+                        {/* WAITING SPECIFIC COLS */}
+                        {partyTab === 'WAITING' && (
+                          <>
+                            <td className="p-3">
+                              {isReady ? (
+                                <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Ready to Download
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                                  <span className="font-mono text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                    {formatCountdown(secLeft)} remaining
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="text-[11px] text-slate-600 font-medium">
+                                {isReady ? '20-min window completed' : 'GST Portal compiling JSON (~20 min)'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right text-slate-500 font-mono text-[11px]">
+                              {client.generation_requested_at ? new Date(client.generation_requested_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </td>
+                          </>
+                        )}
+
+                        {/* NOT SYNCED SPECIFIC COLS */}
+                        {partyTab === 'NOT_SYNCED' && (
+                          <>
+                            <td className="p-3 text-slate-500">
+                              {client.phone || client.email || '—'}
+                            </td>
+                            <td className="p-3 text-center">
+                              {(() => {
+                                const cred = credentialsList.find(cr => (cr.gstin || '').toUpperCase() === (client.gstin || '').toUpperCase());
+                                const hasCred = cred && cred.portal_username && cred.portal_password;
+                                return hasCred ? (
+                                  <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
+                                    ✓ Saved
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                    Missing
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full">
+                                Not Synced
+                              </span>
+                            </td>
+                          </>
+                        )}
+
+                        {/* ACTIONS */}
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {partyTab === 'SYNCED' && (
+                              <button
+                                onClick={() => {
+                                  handleOpenDetail(client);
+                                  setPartyTab('INVOICES');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                                title="View invoices in Decision Hub"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Open Invoices</span>
+                              </button>
+                            )}
+
+                            {partyTab === 'WAITING' && (
+                              isReady ? (
+                                <button
+                                  onClick={() => handleOpenPortalSync(client.gstin)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-all animate-bounce cursor-pointer"
+                                  title="Collect ready IMS file from portal"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>Download Ready File</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleOpenPortalSync(client.gstin)}
+                                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium flex items-center gap-1 transition-all cursor-pointer"
+                                  title="Check portal status"
+                                >
+                                  <RefreshCw className="w-2.5 h-2.5" />
+                                  <span>Check</span>
+                                </button>
+                              )
+                            )}
+
+                            {partyTab === 'NOT_SYNCED' && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenPortalSync(client.gstin)}
+                                  className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                                  title="Directly launch portal sync for this party"
+                                >
+                                  <Globe className="w-3 h-3 text-indigo-200" />
+                                  <span>Launch Sync</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleOpenDetail(client);
+                                    setPartyTab('INVOICES');
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition-all cursor-pointer"
+                                  title="Select as active party"
+                                >
+                                  Select
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  ) : (
         /* ─── 300+ CLIENTS MASTER CONTROL TOWER (OPTIONAL POWER VIEW) ─────── */
         <div className="space-y-4">
           <div className="bg-white border border-slate-200/80 p-3 sm:p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
@@ -2725,7 +3271,7 @@ export default function ImsMasterManager({
                         </span>
                       </td>
                       <td className="p-4 text-right font-mono font-bold text-emerald-700">
-                        {fmt(client.eligible_itc || 0)}
+                        {fmt(client.eligible_itc_total ?? client.eligible_itc ?? 0)}
                       </td>
                       <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <button
@@ -2749,25 +3295,25 @@ export default function ImsMasterManager({
 
       {/* ─── OFFLINE DROPZONE MODAL ───────────────────────────────────────── */}
       {showDropzoneModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-5 shadow-2xl text-center">
-            <div className="w-16 h-16 mx-auto rounded-3xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-5 text-center overflow-hidden">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
               <UploadCloud className="w-8 h-8" />
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white">Drop Official GST Portal IMS Files</h3>
-              <p className="text-xs text-slate-400">
+              <h3 className="text-lg font-bold text-slate-900">Drop Official GST Portal IMS Files</h3>
+              <p className="text-xs text-slate-500">
                 Upload single or multiple GSTN IMS Inward JSON/Excel files downloaded for your 300+ clients.
               </p>
             </div>
 
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-200 hover:border-indigo-500/60 rounded-2xl p-8 cursor-pointer transition-all bg-slate-50 hover:bg-indigo-950/10 space-y-2"
+              className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl p-8 cursor-pointer transition-all bg-indigo-50/30 hover:bg-indigo-50/60 space-y-2"
             >
-              <FileJson className="w-8 h-8 text-indigo-400 mx-auto" />
-              <p className="text-xs font-bold text-slate-300">Click to Browse or Drag Files Here</p>
+              <FileJson className="w-8 h-8 text-indigo-600 mx-auto" />
+              <p className="text-xs font-bold text-slate-800">Click to Browse or Drag Files Here</p>
               <p className="text-[10px] text-slate-500">Supports official GST Portal .zip, .xlsx, .json files</p>
             </div>
             <input
@@ -2781,7 +3327,7 @@ export default function ImsMasterManager({
 
             <button
               onClick={() => setShowDropzoneModal(false)}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -2789,230 +3335,49 @@ export default function ImsMasterManager({
         </div>
       )}
 
-      {/* ─── ASSISTED GST PORTAL LOGIN MODAL ──────────────────────────────── */}
-      {/* ─── ASSISTED GST PORTAL LOGIN MODAL ──────────────────────────────── */}
-      {showPortalModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-5 shadow-2xl">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <Globe className="w-7 h-7" />
-            </div>
 
-            <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold text-white">Assisted GST Portal IMS Sync</h3>
-              <p className="text-xs text-slate-400">
-                Launches a Chromium window to log in to <strong>services.gst.gov.in</strong> and download inward IMS records automatically.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Target GSTIN</label>
-                  {credentialsStats.configured > 0 && (
-                    <span className="text-[10px] text-amber-400 font-semibold">
-                      {credentialsStats.configured} saved in Vault
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    placeholder="Enter or select GSTIN (e.g. 27AAACS1234A1Z1)"
-                    value={portalGstin}
-                    onChange={e => handleSelectPortalGstin(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
-                  />
-                  {clients.length > 0 && (
-                    <select
-                      value={portalGstin}
-                      onChange={e => handleSelectPortalGstin(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-200 rounded-xl text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                    >
-                      <option value="">-- Or Choose From Client List ({clients.length}) --</option>
-                      {clients.map(c => {
-                        const cred = credentialsList.find(x => x.gstin.toUpperCase() === c.gstin.toUpperCase());
-                        const hasCred = Boolean(cred?.portal_username && cred?.portal_password);
-                        return (
-                          <option key={c.gstin} value={c.gstin}>
-                            {hasCred ? '🔑 ' : '○ '}{c.trade_name} ({c.gstin})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              {/* Status banner for credentials found / missing */}
-              {(() => {
-                const cred = credentialsList.find(c => c.gstin.toUpperCase() === portalGstin.toUpperCase());
-                if (cred && cred.portal_username && cred.portal_password) {
-                  return (
-                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-center justify-between gap-1.5">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                        Credentials loaded from Vault ({cred.portal_username})
-                      </span>
-                      <button
-                        onClick={() => {
-                          setShowPortalModal(false);
-                          setShowCredentialsModal(true);
-                        }}
-                        className="text-[10px] text-emerald-300 underline font-semibold hover:text-white"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  );
-                } else if (portalGstin) {
-                  return (
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400 flex items-center justify-between gap-1.5">
-                      <span className="flex items-center gap-1 font-medium">
-                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                        No credentials saved in Vault for this GSTIN
-                      </span>
-                      <button
-                        onClick={() => {
-                          setShowPortalModal(false);
-                          setShowCredentialsModal(true);
-                        }}
-                        className="text-[10px] text-amber-300 underline font-bold hover:text-white"
-                      >
-                        Open Vault
-                      </button>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">GST Portal Username (Auto-filled / Editable)</label>
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={portalUsername}
-                  onChange={e => setPortalUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">GST Portal Password (Auto-filled / Editable)</label>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={portalPassword}
-                  onChange={e => setPortalPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {portalConnecting ? (
-              <div className="p-4 rounded-2xl bg-indigo-950/50 border border-indigo-500/40 text-[12px] space-y-3 shadow-lg">
-                <div className="flex items-center gap-2.5 text-indigo-300 font-bold">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                  </span>
-                  <span>Browser Launched & Active!</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold text-amber-300 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    Action Required on Desktop:
-                  </p>
-                  <p>
-                    1. Check your Windows taskbar for <strong>Google Chrome / Chromium</strong> window.
-                  </p>
-                  <p>
-                    2. Username &amp; Password have been <strong>auto-filled</strong>. Enter the <strong>6-character CAPTCHA</strong> and click <strong>Login</strong>.
-                  </p>
-                  <p className="text-emerald-400 font-medium">
-                    ⚡ Antigravity will auto-detect your login and sync IMS Inward supplies automatically!
-                  </p>
-                </div>
-                <button
-                  onClick={handleCancelPortalLogin}
-                  className="w-full py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Cancel / Close Browser
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-400 leading-relaxed space-y-1">
-                  <span className="text-amber-400 font-bold block flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                    Browser CAPTCHA Prompt
-                  </span>
-                  <span>A visible browser will open. Complete the visual 6-character CAPTCHA and OTP. The tool will auto-navigate to IMS and download the inward payload.</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowPortalModal(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleLaunchPortalLogin}
-                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5"
-                  >
-                    Launch Portal Login
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ─── CLIENT CREDENTIALS VAULT MODAL (300+ CLIENTS) ─────────────────── */}
       {showCredentialsModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 animate-fade-in">
-          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50/80">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-inner">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-xs">
                   <Key className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                  <h3 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2">
                     Client Credentials Vault
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                       300+ Scale
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Store official GST Portal Usernames & Passwords for automated IMS fetching.
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Store official GST Portal Usernames &amp; Passwords for automated IMS fetching.
                   </p>
                 </div>
               </div>
 
               {/* KPI Badges */}
               <div className="hidden sm:flex items-center gap-2">
-                <div className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-200 text-center">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Total</span>
-                  <span className="text-xs font-bold text-white">{credentialsStats.total}</span>
+                <div className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-center">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Total</span>
+                  <span className="text-xs font-bold text-slate-900">{credentialsStats.total}</span>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                  <span className="text-[10px] text-emerald-400 block font-semibold">Configured</span>
-                  <span className="text-xs font-bold text-emerald-300">{credentialsStats.configured}</span>
+                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+                  <span className="text-[10px] text-emerald-700 block font-semibold">Configured</span>
+                  <span className="text-xs font-bold text-emerald-800">{credentialsStats.configured}</span>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
-                  <span className="text-[10px] text-amber-400 block font-semibold">Missing</span>
-                  <span className="text-xs font-bold text-amber-300">{credentialsStats.missing}</span>
+                <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-center">
+                  <span className="text-[10px] text-amber-700 block font-semibold">Missing</span>
+                  <span className="text-xs font-bold text-amber-800">{credentialsStats.missing}</span>
                 </div>
                 <button
                   onClick={() => setShowCredentialsModal(false)}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors ml-2"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ml-2 cursor-pointer"
+                  title="Close Vault"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -3021,14 +3386,14 @@ export default function ImsMasterManager({
               {/* Mobile Close Button */}
               <button
                 onClick={() => setShowCredentialsModal(false)}
-                className="sm:hidden p-2 rounded-xl bg-slate-800 text-slate-400"
+                className="sm:hidden p-2 rounded-xl text-slate-400 hover:text-slate-700"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Action & Filter Toolbar */}
-            <div className="p-4 border-b border-slate-200 bg-slate-900 flex flex-wrap items-center justify-between gap-3">
+            <div className="p-4 border-b border-slate-200 bg-slate-50/60 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 flex-1 max-w-lg">
                 {/* Search */}
                 <div className="relative flex-1 min-w-[200px]">
@@ -3038,12 +3403,12 @@ export default function ImsMasterManager({
                     placeholder="Search by Client Name, GSTIN, Username..."
                     value={credentialsSearch}
                     onChange={e => setCredentialsSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 shadow-2xs"
                   />
                   {credentialsSearch && (
                     <button
                       onClick={() => setCredentialsSearch('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -3051,27 +3416,27 @@ export default function ImsMasterManager({
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
                   <button
                     onClick={() => setCredentialsFilter('ALL')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                      credentialsFilter === 'ALL' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      credentialsFilter === 'ALL' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     All ({credentialsStats.total})
                   </button>
                   <button
                     onClick={() => setCredentialsFilter('CONFIGURED')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                      credentialsFilter === 'CONFIGURED' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      credentialsFilter === 'CONFIGURED' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     Configured ({credentialsStats.configured})
                   </button>
                   <button
                     onClick={() => setCredentialsFilter('MISSING')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                      credentialsFilter === 'MISSING' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      credentialsFilter === 'MISSING' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     Missing ({credentialsStats.missing})
@@ -3083,16 +3448,16 @@ export default function ImsMasterManager({
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleDownloadCredentialsTemplate}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition-all hover:border-amber-500/50"
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition-all shadow-2xs cursor-pointer"
                   title="Download Excel with all clients pre-populated to fill passwords in bulk"
                 >
-                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <Download className="w-3.5 h-3.5 text-amber-600" />
                   Download 300+ Template
                 </button>
 
                 <button
                   onClick={() => credentialsExcelInputRef.current?.click()}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all hover:scale-[1.02]"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95"
                   title="Upload completed Excel sheet with usernames & passwords"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -3109,27 +3474,27 @@ export default function ImsMasterManager({
             </div>
 
             {/* Quick Instruction Banner */}
-            <div className="px-5 py-2.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-between text-[11px] text-amber-300">
+            <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between text-[11px] text-amber-900">
               <span className="flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-amber-600" />
                 <strong>Bulk Tip for 300+ Clients:</strong> Click &quot;Download 300+ Template&quot;, copy-paste your Portal Usernames and Passwords into the Excel sheet, and click &quot;Import Credentials Excel&quot; to configure all clients in seconds.
               </span>
-              <span className="font-mono text-[10px] text-slate-400 hidden md:inline">
+              <span className="font-mono text-[10px] text-slate-500 hidden md:inline">
                 Showing {filteredCredentials.length} of {credentialsList.length} clients
               </span>
             </div>
 
             {/* Credentials Table */}
-            <div className="flex-1 overflow-y-auto max-h-[50vh] p-4">
+            <div className="flex-1 overflow-y-auto max-h-[50vh] p-4 bg-white">
               {filteredCredentials.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 space-y-2">
-                  <Key className="w-10 h-10 mx-auto text-slate-600" />
-                  <p className="text-sm font-semibold">No clients match the current search or filter.</p>
+                  <Key className="w-10 h-10 mx-auto text-slate-400" />
+                  <p className="text-sm font-semibold text-slate-700">No clients match the current search or filter.</p>
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-inner">
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-400 sticky top-0 z-10">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-700 sticky top-0 z-10">
                       <tr>
                         <th className="py-2.5 px-3 w-10 text-center">#</th>
                         <th className="py-2.5 px-3 min-w-[180px]">Client / Trade Name</th>
@@ -3140,7 +3505,7 @@ export default function ImsMasterManager({
                         <th className="py-2.5 px-3 text-center w-28">Status / Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/60">
+                    <tbody className="divide-y divide-slate-100">
                       {filteredCredentials.map((c, i) => {
                         const edited = editedCredentials[c.gstin];
                         const currentUsername = edited?.portal_username !== undefined ? edited.portal_username : (c.portal_username || '');
@@ -3151,15 +3516,15 @@ export default function ImsMasterManager({
                         const isPasswordVisible = Boolean(showPasswords[c.gstin]);
 
                         return (
-                          <tr key={c.gstin} className="hover:bg-slate-50 transition-colors">
+                          <tr key={c.gstin} className="hover:bg-slate-50/80 transition-colors">
                             <td className="py-2.5 px-3 text-center text-slate-500 font-mono text-[11px]">{i + 1}</td>
-                            <td className="py-2.5 px-3 font-semibold text-slate-200">
+                            <td className="py-2.5 px-3 font-bold text-slate-900">
                               <div className="flex items-center gap-1.5">
-                                <Building2 className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                                <Building2 className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
                                 <span className="truncate max-w-[180px]" title={c.trade_name}>{c.trade_name}</span>
                               </div>
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-slate-400 text-[11px] font-bold">
+                            <td className="py-2.5 px-3 font-mono text-slate-600 text-[11px] font-bold">
                               {c.gstin}
                             </td>
                             <td className="py-2.5 px-3">
@@ -3179,7 +3544,7 @@ export default function ImsMasterManager({
                                     }
                                   }));
                                 }}
-                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                                className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 shadow-2xs"
                               />
                             </td>
                             <td className="py-2.5 px-3">
@@ -3200,12 +3565,12 @@ export default function ImsMasterManager({
                                       }
                                     }));
                                   }}
-                                  className="w-full pl-2.5 pr-8 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-500"
+                                  className="w-full pl-2.5 pr-8 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 font-mono focus:outline-none focus:border-amber-500 shadow-2xs"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => setShowPasswords(prev => ({ ...prev, [c.gstin]: !prev[c.gstin] }))}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                                   title={isPasswordVisible ? 'Hide password' : 'Show password'}
                                 >
                                   {isPasswordVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -3229,25 +3594,25 @@ export default function ImsMasterManager({
                                     }
                                   }));
                                 }}
-                                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-200/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
+                                className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 font-mono text-[11px] shadow-2xs"
                               />
                             </td>
                             <td className="py-2.5 px-3 text-center">
                               {isEdited ? (
                                 <button
                                   onClick={() => handleSaveClientCredential(c.gstin)}
-                                  className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold shadow-md shadow-amber-950 transition-all hover:scale-[1.03]"
+                                  className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shadow-xs transition-all hover:scale-[1.03] cursor-pointer"
                                 >
                                   Save
                                 </button>
                               ) : isConfigured ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                   Configured
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
-                                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
                                   Missing
                                 </span>
                               )}
@@ -3262,16 +3627,16 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-400 text-[11px]">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <div className="p-4 border-t border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-500 text-[11px]">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                 <span>
                   <strong>Strict Local Storage:</strong> All credentials are saved strictly in your local SQLite database on this machine. They are never transmitted to external cloud servers.
                 </span>
               </div>
               <button
                 onClick={() => setShowCredentialsModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all ml-auto"
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 transition-all ml-auto cursor-pointer"
               >
                 Close Vault
               </button>
@@ -3317,20 +3682,20 @@ export default function ImsMasterManager({
 
       {/* ─── BATCH MULTI-SYNC RUNNER MODAL ─────────────────────────────────── */}
       {showBatchModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-4xl w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-6 shadow-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-4xl w-full bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 p-6 space-y-6 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
             {/* Header */}
             <div className="flex items-start justify-between border-b border-slate-200 pb-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <Zap className="w-5 h-5 text-indigo-400" />
+                  <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-2xs">
+                    <Zap className="w-5 h-5 text-indigo-600" />
                   </span>
                   <div>
-                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
                       1-Click Multi-Client IMS Auto-Sync
                     </h3>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-500">
                       Automated sequential sync across {batchQueue.length} clients with pre-filled Vault credentials
                     </p>
                   </div>
@@ -3346,7 +3711,7 @@ export default function ImsMasterManager({
                     });
                   }
                 }}
-                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                className="p-2 rounded-xl bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
                 title="Close modal (timers continue in background)"
               >
                 <X className="w-5 h-5" />
@@ -3355,25 +3720,25 @@ export default function ImsMasterManager({
 
             {/* Top Stats Banner */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="p-3 rounded-xl bg-white border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Total in Queue</span>
-                <p className="text-xl font-black text-white">{batchQueue.length}</p>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Total in Queue</span>
+                <p className="text-xl font-black text-slate-900">{batchQueue.length}</p>
               </div>
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                <span className="text-[10px] uppercase font-bold text-amber-400">Vault Configured</span>
-                <p className="text-xl font-black text-amber-300">
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-amber-700">Vault Configured</span>
+                <p className="text-xl font-black text-amber-800">
                   {batchQueue.filter(q => q.hasCreds).length} / {batchQueue.length}
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
-                <span className="text-[10px] uppercase font-bold text-purple-400">Requested (20m Wait)</span>
-                <p className="text-xl font-black text-purple-300">
+              <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                <span className="text-[10px] uppercase font-bold text-purple-700">Requested (20m Wait)</span>
+                <p className="text-xl font-black text-purple-800">
                   {batchQueue.filter(q => q.status === 'REQUESTED').length}
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-[10px] uppercase font-bold text-emerald-400">Synced Successfully</span>
-                <p className="text-xl font-black text-emerald-300">
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold text-emerald-700">Synced Successfully</span>
+                <p className="text-xl font-black text-emerald-800">
                   {batchQueue.filter(q => q.status === 'SUCCESS').length}
                 </p>
               </div>
@@ -3381,34 +3746,34 @@ export default function ImsMasterManager({
 
             {/* Active Status & Instructions Callout */}
             {batchPhase === 'WAITING_20_MIN' ? (
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-indigo-950/40 to-slate-900 border border-amber-500/40 space-y-3 shadow-xl">
+              <div className="p-5 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3 shadow-xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-wider">
                         Phase 1 Complete
                       </span>
-                      <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-amber-600" />
                         GST Portal Preparing Files (~20 min processing)
                       </h4>
                     </div>
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs text-slate-600">
                       Requests submitted for {batchQueue.filter(q => q.status === 'REQUESTED').length} client{batchQueue.filter(q => q.status === 'REQUESTED').length > 1 ? 's' : ''}. Phase 2 auto-starts when timer expires.
                     </p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="px-4 py-2 rounded-xl bg-white border border-amber-500/50 text-center shadow-md">
-                      <span className="text-[10px] text-amber-400/80 font-bold block uppercase">Phase 2 Starts In</span>
-                      <span className="text-2xl font-black font-mono text-amber-300">
+                    <div className="px-4 py-2 rounded-xl bg-white border border-amber-300 text-center shadow-xs">
+                      <span className="text-[10px] text-amber-700 font-bold block uppercase">Phase 2 Starts In</span>
+                      <span className="text-2xl font-black font-mono text-amber-800">
                         {formatCountdown(batchSecondsLeft)}
                       </span>
                     </div>
 
                     <button
                       onClick={handleRunPhase2Queue}
-                      className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-950 hover:scale-[1.02] transition-all whitespace-nowrap"
+                      className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-md hover:scale-[1.02] transition-all whitespace-nowrap cursor-pointer"
                     >
                       <Zap className="w-4 h-4 fill-current text-amber-300" />
                       ⚡ Collect Ready Downloads Now (Skip Wait)
@@ -3417,34 +3782,34 @@ export default function ImsMasterManager({
                 </div>
               </div>
             ) : isBatchRunning ? (
-              <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 space-y-2 animate-pulse">
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2 animate-pulse">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                    <span className="text-xs font-bold text-indigo-200">
+                    <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                    <span className="text-xs font-bold text-indigo-900">
                       {batchPhase === 'PHASE_2' ? 'Phase 2: Grabbing Download for ' : 'Phase 1: Processing Client '}
                       {currentBatchIndex + 1} of {batchQueue.length}:{' '}
-                      <strong className="text-white">{batchQueue[currentBatchIndex]?.trade_name}</strong>
+                      <strong className="text-indigo-950 font-black">{batchQueue[currentBatchIndex]?.trade_name}</strong>
                     </span>
                   </div>
                   {batchCountdown !== null && (
-                    <span className="text-xs font-mono text-amber-400 font-bold">
+                    <span className="text-xs font-mono text-amber-700 font-bold">
                       Next client in {batchCountdown}s...
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-indigo-300/80">
+                <p className="text-[11px] text-indigo-700">
                   Chrome is active with auto-filled credentials. Please type the 6-character visual CAPTCHA &amp; click Login. Autopilot will take care of the rest!
                 </p>
               </div>
             ) : (
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                     Smart 2-Phase Multi-Sync:
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-600">
                     <strong>Phase 1:</strong> Auto-submits file generation requests for all clients without waiting 20 minutes between each.
                     <br />
                     <strong>Phase 2:</strong> Re-opens portal after 20 minutes to download all prepared files in one go!
@@ -3453,7 +3818,7 @@ export default function ImsMasterManager({
                 <button
                   onClick={handleScanDownloadsFolder}
                   disabled={batchScanningDownloads}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-500/30 text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all shadow-md"
+                  className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all shadow-2xs cursor-pointer"
                 >
                   <FolderSearch className={`w-4 h-4 ${batchScanningDownloads ? 'animate-spin' : ''}`} />
                   ⚡ 1-Click Scan Downloads
@@ -3470,33 +3835,33 @@ export default function ImsMasterManager({
                     key={item.gstin}
                     className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                       isCurrent
-                        ? 'bg-indigo-950/30 border-indigo-500 shadow-md shadow-indigo-950'
+                        ? 'bg-indigo-50/60 border-indigo-300 shadow-xs'
                         : item.status === 'SUCCESS'
-                        ? 'bg-emerald-950/10 border-emerald-500/30'
+                        ? 'bg-emerald-50/50 border-emerald-200'
                         : item.status === 'REQUESTED'
-                        ? 'bg-amber-950/10 border-amber-500/30'
+                        ? 'bg-amber-50/50 border-amber-200'
                         : item.status === 'FAILED'
-                        ? 'bg-rose-950/10 border-rose-500/30'
-                        : 'bg-slate-50 border-slate-200'
+                        ? 'bg-rose-50/50 border-rose-200'
+                        : 'bg-slate-50/80 border-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold font-mono ${
                         item.status === 'SUCCESS'
-                          ? 'bg-emerald-500 text-white'
+                          ? 'bg-emerald-600 text-white'
                           : item.status === 'REQUESTED'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
                           : isCurrent
                           ? 'bg-indigo-600 text-white animate-bounce'
-                          : 'bg-slate-800 text-slate-400'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
                       }`}>
                         {item.status === 'SUCCESS' ? '✓' : idx + 1}
                       </span>
                       <div>
-                        <div className="font-bold text-white text-xs flex items-center gap-2">
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
                           {item.trade_name}
                           {item.hasCreds ? (
-                            <span className="text-[10px] text-emerald-400 font-normal">
+                            <span className="text-[10px] text-emerald-700 font-medium">
                               ✓ Credentials Ready
                             </span>
                           ) : (
@@ -3512,7 +3877,7 @@ export default function ImsMasterManager({
                     <div className="flex items-center gap-2">
                       {item.status === 'SUCCESS' ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold flex items-center gap-1">
+                          <span className="px-3 py-1 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold flex items-center gap-1">
                             <Check className="w-3 h-3" />
                             Synced ({item.invoiceCount || 0} Invoices)
                           </span>
@@ -3522,7 +3887,7 @@ export default function ImsMasterManager({
                               handleOpenPortalSync(item.gstin, 'PHASE_1', true);
                             }}
                             disabled={isBatchRunning}
-                            className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm"
+                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
                             title="Clear old IMS data and request fresh JSON generation from GST Portal"
                           >
                             <RefreshCw className="w-2.5 h-2.5" /> Fresh Download
@@ -3531,35 +3896,35 @@ export default function ImsMasterManager({
                       ) : item.status === 'REQUESTED' ? (() => {
                         const secLeft = getClientWaitSecondsLeft(item.requestedAt);
                         return secLeft > 0 ? (
-                          <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1 font-mono">
-                            <Clock className="w-3 h-3 text-amber-400" />
+                          <span className="px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-[10px] font-bold flex items-center gap-1 font-mono">
+                            <Clock className="w-3 h-3 text-amber-600" />
                             Generating ({formatCountdown(secLeft)} left)
                           </span>
                         ) : (
-                          <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1 font-mono">
-                            <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3 text-emerald-600" />
                             Download Ready
                           </span>
                         );
                       })() : isCurrent ? (
-                        <span className="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold flex items-center gap-1 animate-pulse">
-                          <Loader2 className="w-3 h-3 animate-spin" />
+                        <span className="px-3 py-1 rounded-full bg-indigo-100 border border-indigo-300 text-indigo-800 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                          <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
                           {batchPhase === 'PHASE_2' ? 'Downloading...' : 'Requesting...'}
                         </span>
                       ) : item.status === 'DOWNLOADING' ? (
-                        <span className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[10px] font-bold flex items-center gap-1 animate-pulse">
-                          <Download className="w-3 h-3 animate-bounce" />
+                        <span className="px-3 py-1 rounded-full bg-blue-100 border border-blue-300 text-blue-800 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                          <Download className="w-3 h-3 animate-bounce text-blue-600" />
                           Grabbing File...
                         </span>
                       ) : item.status === 'FAILED' ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] font-bold flex items-center gap-1" title={item.error}>
+                          <span className="px-3 py-1 rounded-full bg-rose-100 border border-rose-300 text-rose-800 text-[10px] font-bold flex items-center gap-1" title={item.error}>
                             <AlertTriangle className="w-3 h-3" />
                             Failed
                           </span>
                           <button
                             onClick={() => handleOpenPortalSync(item.gstin)}
-                            className="px-2 py-0.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                            className="px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                             title="Retry sync for this client"
                           >
                             <Play className="w-2.5 h-2.5 fill-current" /> Retry
@@ -3567,19 +3932,19 @@ export default function ImsMasterManager({
                         </div>
                       ) : item.status === 'SKIPPED' ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="px-3 py-1 rounded-full bg-slate-800 border border-slate-200 text-slate-400 text-[10px] font-semibold">
+                          <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold">
                             Skipped
                           </span>
                           <button
                             onClick={() => handleOpenPortalSync(item.gstin)}
-                            className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                            className="px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                             title="Start sync for this client"
                           >
-                            <Play className="w-2.5 h-2.5 fill-current text-emerald-400" /> Run Now
+                            <Play className="w-2.5 h-2.5 fill-current text-emerald-600" /> Run Now
                           </button>
                         </div>
                       ) : (
-                        <span className="px-3 py-1 rounded-full bg-slate-800/60 border border-slate-200/60 text-slate-400 text-[10px] font-semibold">
+                        <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-semibold">
                           Queued
                         </span>
                       )}
@@ -3592,7 +3957,7 @@ export default function ImsMasterManager({
             {/* Modal Footer Controls */}
             <div className="flex items-center justify-between border-t border-slate-200 pt-4 gap-3">
               <div className="text-xs text-slate-500">
-                Period: <strong className="text-slate-300">{activePeriod}</strong>
+                Period: <strong className="text-slate-900 font-bold">{activePeriod}</strong>
               </div>
 
               <div className="flex items-center gap-2">
@@ -3600,14 +3965,14 @@ export default function ImsMasterManager({
                   <>
                     <button
                       onClick={handleSkipCurrentBatchItem}
-                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-amber-800 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <SkipForward className="w-3.5 h-3.5" />
                       Skip Client
                     </button>
                     <button
                       onClick={handleStopBatchQueue}
-                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-rose-950"
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                     >
                       <Square className="w-3.5 h-3.5" />
                       Stop Queue
@@ -3617,13 +3982,13 @@ export default function ImsMasterManager({
                   <>
                     <button
                       onClick={() => setShowBatchModal(false)}
-                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer"
                     >
                       Close (Track on Dashboard)
                     </button>
                     <button
                       onClick={handleRunPhase2Queue}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-950 hover:scale-[1.02] transition-all"
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-md hover:scale-[1.02] transition-all cursor-pointer"
                     >
                       <Zap className="w-4 h-4 fill-current text-amber-300" />
                       ⚡ Collect Ready Downloads ({batchQueue.filter(q => q.status === 'REQUESTED').length} Clients)
@@ -3633,14 +3998,14 @@ export default function ImsMasterManager({
                   <>
                     <button
                       onClick={() => setShowBatchModal(false)}
-                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer"
                     >
                       Close
                     </button>
                     {batchQueue.filter(q => q.status !== 'SUCCESS').length === 0 ? (
                       <button
                         onClick={() => handleRunBatchSync(true)}
-                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-indigo-950 hover:scale-[1.02] transition-all"
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-md hover:scale-[1.02] transition-all cursor-pointer"
                       >
                         <RefreshCw className="w-4 h-4" />
                         🔄 Force Fresh Re-Sync (All {batchQueue.length} Clients)
@@ -3649,7 +4014,7 @@ export default function ImsMasterManager({
                       <>
                         <button
                           onClick={() => handleRunBatchSync(true)}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/20 text-xs font-bold flex items-center gap-1.5 transition-all"
+                          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-amber-800 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                           title="Ignore previous sync and re-run all clients fresh"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
@@ -3658,7 +4023,7 @@ export default function ImsMasterManager({
                         <button
                           onClick={() => handleRunBatchSync(false)}
                           disabled={batchQueue.length === 0}
-                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-950 hover:scale-[1.02] transition-all"
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-black flex items-center gap-2 shadow-md hover:scale-[1.02] transition-all cursor-pointer"
                         >
                           <Play className="w-4 h-4 fill-current" />
                           ▶ Start Sync ({batchQueue.filter(q => q.status !== 'SUCCESS').length} Remaining Client{batchQueue.filter(q => q.status !== 'SUCCESS').length > 1 ? 's' : ''})
@@ -3675,28 +4040,28 @@ export default function ImsMasterManager({
 
       {/* ─── 📧 EMAIL BROADCAST & GMAIL INTEGRATION MODAL ───────────────────────── */}
       {showEmailBroadcastModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
-          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl text-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50/80">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 shadow-md">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 border border-sky-200 flex items-center justify-center text-sky-700 shadow-xs">
                   <Mail className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-white flex items-center gap-2">
-                    IMS Review Broadcast & Gmail Automation
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    IMS Review Broadcast &amp; Gmail Automation
                     {emailSettings.isConfigured ? (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 flex items-center gap-1">
                         ● Gmail Ready
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200 flex items-center gap-1">
                         ⚠ Setup Required
                       </span>
                     )}
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Auto-deliver personalized itemized Excel sheets (.xlsx) + 1-Click mobile review portals to client inboxes
                   </p>
                 </div>
@@ -3704,78 +4069,79 @@ export default function ImsMasterManager({
 
               <button
                 onClick={() => setShowEmailBroadcastModal(false)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Close Modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Tab Switcher */}
-            <div className="flex border-b border-slate-200 bg-slate-50 px-5 pt-2 gap-2">
+            <div className="flex border-b border-slate-200 bg-slate-50/60 px-5 pt-2 gap-2">
               <button
                 onClick={() => setEmailModalTab('BROADCAST')}
-                className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 ${
+                className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
                   emailModalTab === 'BROADCAST'
-                    ? 'border-sky-500 text-sky-400 bg-slate-900/80 shadow-sm'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-indigo-600 text-indigo-700 bg-white shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/60'
                 }`}
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>📧 Broadcast & Dispatch ({broadcastTargetGstins.length > 0 ? broadcastTargetGstins.length : clients.filter(c => (c.total_invoices || 0) > 0).length || clients.length} Clients)</span>
+                <span>📧 Broadcast &amp; Dispatch ({broadcastTargetGstins.length > 0 ? broadcastTargetGstins.length : clients.filter(c => (c.total_invoices || 0) > 0).length || clients.length} Clients)</span>
               </button>
 
               <button
                 onClick={() => setEmailModalTab('GMAIL_CONFIG')}
-                className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 ${
+                className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
                   emailModalTab === 'GMAIL_CONFIG'
-                    ? 'border-indigo-500 text-indigo-400 bg-slate-900/80 shadow-sm'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-indigo-600 text-indigo-700 bg-white shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/60'
                 }`}
               >
                 <Key className="w-3.5 h-3.5" />
                 <span>⚙️ Gmail SMTP Settings</span>
                 {emailSettings.isConfigured ? (
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 ) : (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
                 )}
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-white">
               {emailModalTab === 'BROADCAST' ? (
                 <>
                   {/* Status Banner */}
                   {!emailSettings.isConfigured ? (
-                    <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-4">
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                         <div>
-                          <p className="text-xs font-bold text-amber-200">Gmail SMTP Not Configured</p>
-                          <p className="text-[11px] text-amber-300/80">
+                          <p className="text-xs font-bold text-amber-900">Gmail SMTP Not Configured</p>
+                          <p className="text-[11px] text-amber-700 mt-0.5">
                             Configure your firm's Gmail and 16-character Google App Password to enable automated email dispatch.
                           </p>
                         </div>
                       </div>
                       <button
                         onClick={() => setEmailModalTab('GMAIL_CONFIG')}
-                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shrink-0 transition-colors"
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 transition-colors shadow-xs cursor-pointer"
                       >
                         Setup in 1 Min →
                       </button>
                     </div>
                   ) : (
                     <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 text-xs text-slate-300">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div className="flex items-center gap-2.5 text-xs text-slate-600">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>
-                          Sender: <strong className="text-white">{emailSettings.sender_name || 'GST Team'}</strong> &lt;<strong className="text-sky-300">{emailSettings.sender_email}</strong>&gt;
+                          Sender: <strong className="text-slate-900 font-bold">{emailSettings.sender_name || 'GST Team'}</strong> &lt;<strong className="text-indigo-600 font-mono">{emailSettings.sender_email}</strong>&gt;
                         </span>
                       </div>
                       <button
                         onClick={() => setEmailModalTab('GMAIL_CONFIG')}
-                        className="text-[11px] font-bold text-slate-400 hover:text-indigo-400 transition-colors"
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors cursor-pointer"
                       >
                         Edit Settings ⚙️
                       </button>
@@ -3786,53 +4152,53 @@ export default function ImsMasterManager({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Subject Line */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
                         <span>Email Subject</span>
-                        <span className="text-[10px] text-slate-500">Variables: {'{period}'}, {'{client_name}'}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Variables: {'{period}'}, {'{client_name}'}</span>
                       </label>
                       <input
                         type="text"
                         value={broadcastSubject}
                         onChange={(e) => setBroadcastSubject(e.target.value)}
                         placeholder="Action Required: GST IMS Inward Invoices Review..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-2xs"
                       />
                     </div>
 
                     {/* CA Note / Instructions */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
                         <span>Notice from CA Office (Optional)</span>
-                        <span className="text-[10px] text-slate-500">Appears highlighted in email</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Appears highlighted in email</span>
                       </label>
                       <input
                         type="text"
                         value={broadcastNote}
                         onChange={(e) => setBroadcastNote(e.target.value)}
                         placeholder="e.g. Kindly review all invoices before 11th 5:00 PM..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-sky-500"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-2xs"
                       />
                     </div>
                   </div>
 
                   {/* Attachment Callout */}
-                  <div className="p-3.5 rounded-2xl bg-sky-950/20 border border-sky-500/30 flex items-center gap-3">
-                    <FileSpreadsheet className="w-5 h-5 text-sky-400 shrink-0" />
-                    <div className="text-xs text-slate-300">
-                      <strong className="text-sky-300">Automatic Excel Attachment (.xlsx):</strong> Every client email automatically attaches an itemized Excel workbook with formula sums and interactive status dropdowns (<code className="text-sky-200 font-mono">ACCEPT, REJECT, PENDING</code>) for that specific client!
+                  <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 flex items-center gap-3">
+                    <FileSpreadsheet className="w-5 h-5 text-sky-600 shrink-0" />
+                    <div className="text-xs text-slate-700 leading-relaxed">
+                      <strong className="text-sky-900 font-bold">Automatic Excel Attachment (.xlsx):</strong> Every client email automatically attaches an itemized Excel workbook with formula sums and interactive status dropdowns (<code className="bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-mono font-semibold">ACCEPT, REJECT, PENDING</code>) for that specific client!
                     </div>
                   </div>
 
                   {/* Client List Preview & Inline Email Editor */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700">
                       <span>Target Clients ({broadcastTargetGstins.length > 0 ? broadcastTargetGstins.length : clients.filter(c => (c.total_invoices || 0) > 0).length || clients.length})</span>
-                      <span className="text-[11px] text-slate-500">Verify email addresses before dispatching</span>
+                      <span className="text-[11px] text-slate-500 font-normal">Verify email addresses before dispatching</span>
                     </div>
 
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 max-h-64 overflow-y-auto">
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white max-h-64 overflow-y-auto shadow-2xs">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-900/90 text-slate-400 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
+                        <thead className="bg-slate-50 text-slate-700 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
                           <tr>
                             <th className="p-3">Client</th>
                             <th className="p-3">GSTIN</th>
@@ -3840,7 +4206,7 @@ export default function ImsMasterManager({
                             <th className="p-3">Email Address</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
                           {(broadcastTargetGstins.length > 0
                             ? clients.filter(c => broadcastTargetGstins.includes(c.gstin))
                             : (clients.filter(c => (c.total_invoices || 0) > 0).length > 0 ? clients.filter(c => (c.total_invoices || 0) > 0) : clients)
@@ -3850,12 +4216,12 @@ export default function ImsMasterManager({
                             const emailValue = isEditing ? inlineEmailEdits[c.gstin] : currentEmail;
 
                             return (
-                              <tr key={c.gstin} className="hover:bg-slate-50">
-                                <td className="p-3 font-semibold text-white max-w-[180px] truncate">
+                              <tr key={c.gstin} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-3 font-bold text-slate-900 max-w-[180px] truncate">
                                   {c.trade_name || c.legal_name || c.gstin}
                                 </td>
-                                <td className="p-3 font-mono text-[11px] text-slate-400">{c.gstin}</td>
-                                <td className="p-3 text-center font-bold text-sky-400">{c.total_invoices || 0}</td>
+                                <td className="p-3 font-mono text-[11px] text-slate-500">{c.gstin}</td>
+                                <td className="p-3 text-center font-bold font-mono text-indigo-600">{c.total_invoices || 0}</td>
                                 <td className="p-3">
                                   {isEditing ? (
                                     <div className="flex items-center gap-1.5">
@@ -3864,12 +4230,12 @@ export default function ImsMasterManager({
                                         value={emailValue}
                                         onChange={(e) => setInlineEmailEdits(prev => ({ ...prev, [c.gstin]: e.target.value }))}
                                         placeholder="client@example.com"
-                                        className="px-2 py-1 rounded-lg bg-slate-900 border border-indigo-500 text-white text-xs w-56 focus:outline-none"
+                                        className="px-2.5 py-1 rounded-lg bg-white border border-indigo-400 text-slate-900 text-xs w-56 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                         autoFocus
                                       />
                                       <button
                                         onClick={() => handleQuickUpdateClientEmail(c.gstin, emailValue)}
-                                        className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-colors"
+                                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
                                       >
                                         Save
                                       </button>
@@ -3879,31 +4245,31 @@ export default function ImsMasterManager({
                                           delete next[c.gstin];
                                           return next;
                                         })}
-                                        className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                                        className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
                                       >
-                                        <X className="w-3 h-3" />
+                                        <X className="w-3.5 h-3.5" />
                                       </button>
                                     </div>
                                   ) : currentEmail ? (
                                     <div className="flex items-center justify-between gap-2">
-                                      <span className="text-cyan-300 font-mono text-[11px] truncate max-w-[220px]">
+                                      <span className="text-slate-800 font-mono text-[11px] truncate max-w-[220px]">
                                         {currentEmail}
                                       </span>
                                       <button
                                         onClick={() => setInlineEmailEdits(prev => ({ ...prev, [c.gstin]: currentEmail }))}
-                                        className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+                                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
                                       >
                                         Edit
                                       </button>
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-2">
-                                      <span className="text-amber-400 text-[11px] font-medium flex items-center gap-1">
-                                        <AlertTriangle className="w-3 h-3" /> No email
+                                      <span className="text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3 text-amber-600" /> No email
                                       </span>
                                       <button
                                         onClick={() => setInlineEmailEdits(prev => ({ ...prev, [c.gstin]: '' }))}
-                                        className="px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 text-[10px] font-bold transition-colors"
+                                        className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] font-bold transition-colors border border-indigo-200 cursor-pointer"
                                       >
                                         + Add Email
                                       </button>
@@ -3922,18 +4288,18 @@ export default function ImsMasterManager({
                   {broadcastProgress && (
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           Broadcast Results
                         </span>
                         <div className="flex items-center gap-2 text-[11px]">
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
                             Sent: {broadcastProgress.sent}
                           </span>
-                          <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-200">
                             Failed: {broadcastProgress.failed}
                           </span>
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
                             Missing Email: {broadcastProgress.missingEmail}
                           </span>
                         </div>
@@ -3943,16 +4309,16 @@ export default function ImsMasterManager({
                         {broadcastProgress.results?.map(r => (
                           <div
                             key={r.gstin}
-                            className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 ${
+                            className={`p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 ${
                               r.status === 'SENT'
-                                ? 'bg-emerald-950/20 text-emerald-300 border border-emerald-500/20'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                                 : r.status === 'MISSING_EMAIL'
-                                ? 'bg-amber-950/20 text-amber-300 border border-amber-500/20'
-                                : 'bg-rose-950/20 text-rose-300 border border-rose-500/20'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-rose-50 text-rose-800 border border-rose-200'
                             }`}
                           >
                             <span className="font-bold truncate max-w-[200px]">{r.tradeName || r.gstin}</span>
-                            <span className="font-mono text-[11px] text-slate-400 truncate max-w-[180px]">{r.email || 'No Email'}</span>
+                            <span className="font-mono text-[11px] text-slate-600 truncate max-w-[180px]">{r.email || 'No Email'}</span>
                             <span className="font-bold text-[10px] uppercase">
                               {r.status === 'SENT' ? '✓ Delivered' : r.status === 'MISSING_EMAIL' ? '⚠ No Email' : `✗ ${r.error || 'Failed'}`}
                             </span>
@@ -3965,50 +4331,50 @@ export default function ImsMasterManager({
               ) : (
                 /* ─── TAB 2: GMAIL CONFIGURATION ─── */
                 <div className="space-y-5">
-                  <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-1">
-                    <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                      <Key className="w-4 h-4" />
+                  <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-1">
+                    <h4 className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      <Key className="w-4 h-4 text-indigo-600" />
                       Connect Firm Gmail or Google Workspace Account
                     </h4>
-                    <p className="text-[11px] text-slate-300">
-                      Emails are dispatched securely using Google's official SMTP servers (<code className="text-indigo-200">smtp.gmail.com</code>). Sent emails will appear directly in your firm's Gmail "Sent" folder, and client replies route to your inbox.
+                    <p className="text-[11px] text-indigo-700 leading-relaxed">
+                      Emails are dispatched securely using Google's official SMTP servers (<code className="bg-indigo-100 text-indigo-900 px-1 rounded font-mono">smtp.gmail.com</code>). Sent emails will appear directly in your firm's Gmail "Sent" folder, and client replies route to your inbox.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Firm / Sender Name */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300">CA Firm / Sender Name</label>
+                      <label className="text-xs font-bold text-slate-700">CA Firm / Sender Name</label>
                       <input
                         type="text"
                         value={emailSettings.sender_name}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sender_name: e.target.value }))}
                         placeholder="e.g. Sourav Vaswani & Co."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                       />
                     </div>
 
                     {/* Sender Gmail Address */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300">Sender Gmail Address</label>
+                      <label className="text-xs font-bold text-slate-700">Sender Gmail Address</label>
                       <input
                         type="email"
                         value={emailSettings.sender_email}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sender_email: e.target.value }))}
                         placeholder="yourname@gmail.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                       />
                     </div>
 
                     {/* 16-Character App Password */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
                         <span>16-Character Google App Password</span>
                         <a
                           href="https://myaccount.google.com/apppasswords"
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
+                          className="text-[10px] text-indigo-600 font-bold hover:underline flex items-center gap-0.5"
                         >
                           Generate on Google <ExternalLink className="w-2.5 h-2.5" />
                         </a>
@@ -4019,12 +4385,12 @@ export default function ImsMasterManager({
                           value={emailSettings.app_password}
                           onChange={(e) => setEmailSettings(prev => ({ ...prev, app_password: e.target.value }))}
                           placeholder="abcd efgh ijkl mnop"
-                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs font-mono tracking-wider focus:outline-none focus:border-indigo-500"
+                          className="w-full px-3.5 py-2 pr-10 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                         />
                         <button
                           type="button"
                           onClick={() => setShowAppPassword(!showAppPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                         >
                           {showAppPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
@@ -4036,48 +4402,48 @@ export default function ImsMasterManager({
 
                     {/* CA Helpdesk Phone */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300">CA Office Contact / Phone</label>
+                      <label className="text-xs font-bold text-slate-700">CA Office Contact / Phone</label>
                       <input
                         type="text"
                         value={emailSettings.ca_phone}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, ca_phone: e.target.value }))}
                         placeholder="+91 98765 43210"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                       />
                     </div>
                   </div>
 
                   {/* Public URL field */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
                       <span>Public Base URL for 1-Click Review Links (Optional)</span>
-                      <span className="text-[10px] text-slate-500">Defaults to localtunnel or current server host</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Defaults to localtunnel or current server host</span>
                     </label>
                     <input
                       type="text"
                       value={emailSettings.public_base_url}
                       onChange={(e) => setEmailSettings(prev => ({ ...prev, public_base_url: e.target.value }))}
                       placeholder="https://reco-vaswani-server.loca.lt"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-200 text-xs font-mono focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-2xs"
                     />
                   </div>
 
                   {/* Connection Test Strip */}
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <div className="space-y-1">
-                      <span className="text-xs font-bold text-slate-200 block">Verify Gmail Connection</span>
+                      <span className="text-xs font-bold text-slate-800 block">Verify Gmail Connection</span>
                       <div className="flex items-center gap-2">
                         <input
                           type="email"
                           value={testEmailRecipient}
                           onChange={(e) => setTestEmailRecipient(e.target.value)}
                           placeholder="test.recipient@gmail.com"
-                          className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-200 text-slate-200 text-xs w-60 focus:outline-none focus:border-indigo-500"
+                          className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 text-xs w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         />
                         <button
                           onClick={handleTestEmailConnection}
                           disabled={isTestingEmail}
-                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-950"
+                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                         >
                           {isTestingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-300" />}
                           Send Test Email
@@ -4088,7 +4454,7 @@ export default function ImsMasterManager({
                     <button
                       onClick={handleSaveEmailSettings}
                       disabled={savingEmailSettings}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-950"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
                     >
                       {savingEmailSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                       Save Gmail Settings
@@ -4096,16 +4462,16 @@ export default function ImsMasterManager({
                   </div>
 
                   {/* 60-Second Setup Guide */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
-                    <h5 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <h5 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                       How to get your 16-Character Google App Password in 60 seconds:
                     </h5>
-                    <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside leading-relaxed">
-                      <li>Log in to your Google Account and visit <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">myaccount.google.com/security</a>.</li>
-                      <li>Make sure <strong className="text-slate-200">2-Step Verification</strong> is switched <strong className="text-emerald-400">ON</strong>.</li>
-                      <li>Go directly to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">myaccount.google.com/apppasswords</a>.</li>
-                      <li>Enter App Name as <strong className="text-slate-200">GST IMS Hub</strong>, click <strong className="text-slate-200">Create</strong>, copy the yellow 16-character code, and paste it in the box above!</li>
+                    <ol className="text-xs text-slate-600 space-y-1.5 list-decimal list-inside leading-relaxed">
+                      <li>Log in to your Google Account and visit <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold">myaccount.google.com/security</a>.</li>
+                      <li>Make sure <strong className="text-slate-900 font-bold">2-Step Verification</strong> is switched <strong className="text-emerald-700 font-bold">ON</strong>.</li>
+                      <li>Go directly to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold">myaccount.google.com/apppasswords</a>.</li>
+                      <li>Enter App Name as <strong className="text-slate-900 font-bold">GST IMS Hub</strong>, click <strong className="text-slate-900 font-bold">Create</strong>, copy the yellow 16-character code, and paste it in the box above!</li>
                     </ol>
                   </div>
                 </div>
@@ -4113,15 +4479,15 @@ export default function ImsMasterManager({
             </div>
 
             {/* Modal Footer Controls */}
-            <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+            <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50/80">
               <div className="text-xs text-slate-500">
-                Period: <strong className="text-slate-300">{activePeriod}</strong>
+                Period: <strong className="text-slate-800 font-bold">{activePeriod}</strong>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowEmailBroadcastModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
                 >
                   Close
                 </button>
@@ -4130,7 +4496,7 @@ export default function ImsMasterManager({
                   <button
                     onClick={handleRunEmailBroadcast}
                     disabled={broadcastRunning}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-sky-950 hover:scale-[1.02] transition-all"
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer active:scale-95"
                   >
                     {broadcastRunning ? (
                       <>

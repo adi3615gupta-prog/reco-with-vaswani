@@ -1,9 +1,40 @@
+function extractNoticeFinancialYear(description, refNo, issueDate) {
+    const combined = `${description || ''} ${refNo || ''}`;
+    const fyMatch = combined.match(/\b(20\d{2}[-/]\d{2,4})\b/);
+    if (fyMatch) {
+        let matched = fyMatch[1].replace('/', '-');
+        if (matched.length === 9) {
+            matched = `${matched.substring(0, 4)}-${matched.substring(7, 9)}`;
+        }
+        return matched;
+    }
+    if (issueDate) {
+        let dt = null;
+        if (issueDate.includes('/')) {
+            const parts = issueDate.split('/');
+            if (parts.length === 3) dt = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        } else {
+            dt = new Date(issueDate);
+        }
+        if (dt && !isNaN(dt.getTime())) {
+            const y = dt.getFullYear();
+            const m = dt.getMonth() + 1;
+            return m >= 4 ? `${y}-${String((y + 1) % 100).padStart(2, '0')}` : `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+        }
+    }
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+    return currentMonth >= 4 ? `${currentYear}-${String((currentYear + 1) % 100).padStart(2, '0')}` : `${currentYear - 1}-${String(currentYear % 100).padStart(2, '0')}`;
+}
+
+import { decryptSecret } from '../cryptoVault.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 import { launchAutopilotBrowser } from '../gstr2b/browserLauncher.js';
 import { upsertNotice, saveAttachment, computeLimitationDueDate } from './db.js';
+import { classifyNoticeDocument } from './classifier.js';
 
 export async function runNoticesAutopilot({ db, gstin, portal_username, portal_password, req, res, browserState }) {
     const gstinUpper = (gstin || '').trim().toUpperCase();
@@ -20,7 +51,7 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
         });
         if (clientRow) {
             portalUser = clientRow.portal_username || portalUser;
-            portalPass = clientRow.portal_password || portalPass;
+            portalPass = decryptSecret(clientRow.portal_password || portalPass);
         }
     } catch (e) {
         console.error('[Notices Autopilot] Vault lookup error:', e);
@@ -284,12 +315,14 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
             console.log(`[Notices Autopilot] View Notices rows found: ${rows.length}`);
 
             for (const row of rows) {
-                const noticeType = row[1] || 'ORDER';
+                const rawType = row[1] || 'ORDER';
                 const description = row[2] || '';
                 const refNo = row[3] || `REF-${Date.now()}`;
                 const issueDate = row[4] || '';
                 const amountStr = row[5] || '0';
                 const taxDemanded = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+                const cls = classifyNoticeDocument(`${rawType} ${description}`, description);
+                const noticeType = cls.formCode !== 'OTHER' ? cls.formCode : rawType;
 
                 const saved = await upsertNotice(db, {
                     client_gstin: gstinUpper,
@@ -297,9 +330,11 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
                     notice_type: noticeType,
                     form_description: description,
                     reference_no: refNo,
-                    financial_year: new Date().getFullYear().toString(),
+                    financial_year: cls.financialYear || extractNoticeFinancialYear(description, refNo, issueDate),
                     issue_date: issueDate,
+                    section_cited: cls.sectionCited || '',
                     tax_demanded: taxDemanded,
+                    param_codes_json: JSON.stringify(cls.paramCodes),
                     status: 'PENDING_REPLY'
                 });
                 noticesFound++;
@@ -347,12 +382,14 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
             console.log(`[Notices Autopilot] Additional Notices rows found: ${addRows.length}`);
 
             for (const row of addRows) {
-                const noticeType = row[1] || 'ASMT-10';
+                const rawType = row[1] || 'ASMT-10';
                 const description = row[2] || '';
                 const refNo = row[3] || `REF-${Date.now()}`;
                 const issueDate = row[4] || '';
                 const amountStr = row[5] || '0';
                 const taxDemanded = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+                const cls = classifyNoticeDocument(`${rawType} ${description}`, description);
+                const noticeType = cls.formCode !== 'OTHER' ? cls.formCode : rawType;
 
                 const saved = await upsertNotice(db, {
                     client_gstin: gstinUpper,
@@ -360,9 +397,11 @@ export async function runNoticesAutopilot({ db, gstin, portal_username, portal_p
                     notice_type: noticeType,
                     form_description: description,
                     reference_no: refNo,
-                    financial_year: new Date().getFullYear().toString(),
+                    financial_year: cls.financialYear || extractNoticeFinancialYear(description, refNo, issueDate),
                     issue_date: issueDate,
+                    section_cited: cls.sectionCited || '',
                     tax_demanded: taxDemanded,
+                    param_codes_json: JSON.stringify(cls.paramCodes),
                     status: 'PENDING_REPLY'
                 });
                 noticesFound++;

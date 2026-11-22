@@ -4,15 +4,15 @@ import {
   X, CheckCircle2, AlertTriangle, HardDrive, Laptop, Sparkles, Sliders,
   Key, Mail, ShieldAlert, Send, Eye, EyeOff, Building2, Search, Download,
   FileSpreadsheet, ExternalLink, Trash2, ShieldCheck, CheckCheck, SlidersHorizontal,
-  RotateCcw, Bot, CloudDownload, CloudUpload, Globe, LogOut, Plus, Edit2, Phone, Users,
-  ClipboardCheck, ArrowRight
+  RotateCcw, Globe, LogOut, Plus, Edit2, Phone, Users,
+  ClipboardCheck, ArrowRight, FolderTree, Folder, FileText, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { pingTally, fetchCompanyInfo } from '@/lib/tallyApi';
 import { safeApiFetch } from '@/lib/api';
 import { parseCredentialsImportExcel, generateCredentialsTemplateExcel } from '@/lib/imsEngine';
 import { exportClientAdditionTemplate } from '@/lib/excel';
-import { getGeminiStatus, saveGeminiApiKey, sendChatMessage, syncGeminiFromCloud, pushGeminiToCloud } from '@/lib/geminiApi';
 import { Switch } from '@/components/ui/switch';
 
 export interface VaultClient {
@@ -25,9 +25,10 @@ export interface VaultClient {
   address?: string;
   portal_username?: string;
   portal_password?: string;
+  has_password?: boolean;
 }
 
-export type SettingsTabKey = 'clients' | 'storage' | 'tally' | 'credentials' | 'reco' | 'gateway' | 'appearance' | 'ai' | 'account';
+export type SettingsTabKey = 'clients' | 'storage' | 'tally' | 'credentials' | 'reco' | 'gateway' | 'appearance' | 'account';
 
 
 interface SettingsModalProps {
@@ -39,6 +40,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogout, loginUser }: SettingsModalProps) {
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab);
 
   useEffect(() => {
@@ -48,10 +50,15 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   }, [initialTab, isOpen]);
 
   // ─── 1. STORAGE / DATA PATH STATE ───
+  // Unified Master Data Path (One Central Directory for All Modules)
+  const [masterDataPath, setMasterDataPath] = useState<string>('D:\\New folder');
+  const [newMasterPathInput, setNewMasterPathInput] = useState<string>('D:\\New folder');
+  const [showAdvancedSubfolders, setShowAdvancedSubfolders] = useState<boolean>(false);
+
   // Suite 04: Returns Preparation Storage
   const [currentDataPath, setCurrentDataPath] = useState<string>('');
   const [newPathInput, setNewPathInput] = useState<string>('');
-  const [storageStatus, setStorageStatus] = useState<{ exists?: boolean; isWritable?: boolean; totalClientsWithData?: number; totalFiles?: number }>({});
+  const [storageStatus, setStorageStatus] = useState<{ exists?: boolean; isWritable?: boolean; totalClientsWithData?: number; totalVaultClients?: number; totalFiles?: number }>({});
 
   // Suite 02: GST Reco & TDS Runs History Storage
   const [recoHistoryPath, setRecoHistoryPath] = useState<string>('');
@@ -107,6 +114,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   // ─── CLIENT MASTER & ADDITION STATE ───
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<VaultClient | null>(null);
+  const [showEditClientPassword, setShowEditClientPassword] = useState(false);
   const [newClientGstin, setNewClientGstin] = useState('');
   const [newClientTradeName, setNewClientTradeName] = useState('');
   const [newClientLegalName, setNewClientLegalName] = useState('');
@@ -121,8 +129,8 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   const [activeAuditGstin, setActiveAuditGstin] = useState<string>(() => {
     try {
       return localStorage.getItem('monthly_audit_selected_client') ||
-             localStorage.getItem('last_active_gstin') ||
-             localStorage.getItem('gstr3b_active_client_gstin') || '';
+        localStorage.getItem('last_active_gstin') ||
+        localStorage.getItem('gstr3b_active_client_gstin') || '';
     } catch {
       return '';
     }
@@ -142,10 +150,10 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
     if (isOpen) {
       try {
         const current = localStorage.getItem('monthly_audit_selected_client') ||
-                        localStorage.getItem('last_active_gstin') ||
-                        localStorage.getItem('gstr3b_active_client_gstin') || '';
+          localStorage.getItem('last_active_gstin') ||
+          localStorage.getItem('gstr3b_active_client_gstin') || '';
         setActiveAuditGstin(current);
-      } catch {}
+      } catch { }
     }
   }, [isOpen]);
 
@@ -188,19 +196,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
     return localStorage.getItem('np_twilio_token') || 'sk_live_twilio_sandbox_vaswani_token';
   });
 
-  // ─── 6. SOURAV AI ASSISTANT (GEMINI) STATE ───
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [isGeminiConfigured, setIsGeminiConfigured] = useState<boolean | null>(null);
-  const [geminiKeyOrigin, setGeminiKeyOrigin] = useState<string | null>(null);
-  const [isSyncingGeminiCloud, setIsSyncingGeminiCloud] = useState(false);
-  const [isPushingGeminiCloud, setIsPushingGeminiCloud] = useState(false);
-  const [cloudPushScope, setCloudPushScope] = useState<'office' | 'global'>('office');
-  const [isTestingGemini, setIsTestingGemini] = useState(false);
-  const [isSavingGemini, setIsSavingGemini] = useState(false);
-  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  // ─── 7. WINDOWS AUTO-START & DESKTOP LOCO PILOT STATE ───
+  // ─── 6. WINDOWS AUTO-START & DESKTOP LOCO PILOT STATE ───
   const [openAtLogin, setOpenAtLogin] = useState(false);
   const [isUpdatingAutostart, setIsUpdatingAutostart] = useState(false);
 
@@ -250,6 +246,9 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
         if (res.ok) {
           const data = await res.json();
           if (data && data.success) {
+            const resolvedMaster = data.masterDataPath || data.paths?.master?.path || data.dataPath || 'D:\\New folder';
+            setMasterDataPath(resolvedMaster);
+            setNewMasterPathInput(resolvedMaster);
             setCurrentDataPath(data.dataPath || '');
             setNewPathInput(data.dataPath || '');
             setServerHost(data.serverHost || '');
@@ -258,6 +257,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
               exists: Boolean(data.exists),
               isWritable: Boolean(data.isWritable),
               totalClientsWithData: data.totalClientsWithData,
+              totalVaultClients: data.totalVaultClients,
               totalFiles: data.totalFiles
             });
 
@@ -338,97 +338,71 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
       }
     };
 
-    // 4. Fetch Gemini AI status & origin
-    const fetchGemini = async () => {
-      try {
-        const res = await getGeminiStatus();
-        setIsGeminiConfigured(res.configured);
-        setGeminiKeyOrigin(res.origin || null);
-      } catch (e) {
-        console.warn('Failed fetching Gemini status:', e);
-      }
-    };
-
     fetchStorageConfig();
     fetchVault();
     fetchEmailSettings();
-    fetchGemini();
   }, [isOpen]);
 
-  const handleSaveGeminiKey = async () => {
-    const key = geminiApiKey.trim();
-    if (!key) {
-      toast.error('Please enter a valid Gemini API key');
+  // Handle saving unified Master Data Path for all modules
+  const handleSaveMasterPath = async () => {
+    const cleanPath = newMasterPathInput.trim().replace(/^["']|["']$/g, '').trim();
+    if (!cleanPath) {
+      toast.error('Master data path cannot be empty');
       return;
     }
-    setIsSavingGemini(true);
-    try {
-      await saveGeminiApiKey(key);
-      setIsGeminiConfigured(true);
-      setGeminiKeyOrigin('local_manual');
-      setGeminiApiKey('');
-      toast.success('Gemini API Key Saved', {
-        description: 'Sourav AI Assistant is now activated and ready to assist.',
-      });
-    } catch (e: any) {
-      toast.error('Failed to save Gemini API key', { description: e.message });
-    } finally {
-      setIsSavingGemini(false);
-    }
-  };
 
-  const handleSyncGeminiFromCloud = async () => {
-    setIsSyncingGeminiCloud(true);
+    setSavingStorageKey('master');
     try {
-      const res = await syncGeminiFromCloud();
-      setIsGeminiConfigured(true);
-      setGeminiKeyOrigin(res.origin || 'cloud_office');
-      toast.success('Synced from Cloud License', {
-        description: res.message || 'Gemini API key updated from cloud.',
+      const res = await safeApiFetch('/api/returns/master-storage-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ masterPath: cleanPath })
       });
-      // Automatically test connection after successful sync
-      handleTestGemini();
-    } catch (e: any) {
-      toast.error('Cloud Sync Failed', { description: e.message });
-    } finally {
-      setIsSyncingGeminiCloud(false);
-    }
-  };
+      const data = await res.json();
+      if (res.ok && data && data.success) {
+        setMasterDataPath(data.masterDataPath);
+        setNewMasterPathInput(data.masterDataPath);
+        setCurrentDataPath(data.masterDataPath);
+        setNewPathInput(data.masterDataPath);
+        if (data.subfolders) {
+          setRecoHistoryPath(data.subfolders.recoHistory);
+          setNewRecoHistoryInput(data.subfolders.recoHistory);
+          setMonthlyAuditPath(data.subfolders.monthlyAudit);
+          setNewMonthlyAuditInput(data.subfolders.monthlyAudit);
+        }
+        setStorageStatus(prev => ({
+          ...prev,
+          exists: true,
+          isWritable: true,
+          totalVaultClients: data.totalVaultClients,
+          totalClientsWithData: data.totalClientsWithData
+        }));
+        setRecoStatus(prev => ({ ...prev, exists: true, isWritable: true }));
+        setAuditStatus(prev => ({ ...prev, exists: true, isWritable: true }));
 
-  const handlePushGeminiToCloud = async () => {
-    const key = geminiApiKey.trim();
-    if (!key) {
-      toast.error('Enter an API key in the field above to push to Cloud');
-      return;
-    }
-    setIsPushingGeminiCloud(true);
-    try {
-      const res = await pushGeminiToCloud(key, cloudPushScope);
-      setIsGeminiConfigured(true);
-      setGeminiKeyOrigin(cloudPushScope === 'office' ? 'cloud_office' : 'cloud_global');
-      setGeminiApiKey('');
-      toast.success('Pushed to Firebase Cloud', {
-        description: res.message,
-      });
-    } catch (e: any) {
-      toast.error('Failed to push to Cloud', { description: e.message });
-    } finally {
-      setIsPushingGeminiCloud(false);
-    }
-  };
+        window.dispatchEvent(new CustomEvent('storage-config-updated', { detail: { dataPath: data.masterDataPath } }));
+        window.dispatchEvent(new CustomEvent('credentials-updated'));
+        window.dispatchEvent(new CustomEvent('clients-updated'));
 
-  const handleTestGemini = async () => {
-    setIsTestingGemini(true);
-    setGeminiTestResult(null);
-    try {
-      const reply = await sendChatMessage('Say: "Connected to Vaswani Enterprise!" in one short sentence.');
-      setGeminiTestResult({ success: true, message: reply });
-      toast.success('Gemini AI Connected Successfully!');
+        toast.success('Master Data Storage Configured', {
+          description: `All module folders synchronized under ${data.masterDataPath} (${data.totalVaultClients ?? 482} clients in database)`
+        });
+
+        // Re-fetch credentials vault so the Clients tab immediately shows the updated roster
+        const vRes = await safeApiFetch('/api/ims/credentials');
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          if (vData.success && Array.isArray(vData.clients)) {
+            setVaultClients(vData.clients);
+          }
+        }
+      } else {
+        toast.error('Failed to configure master path', { description: data?.error || 'Server error' });
+      }
     } catch (e: any) {
-      setGeminiTestResult({ success: false, message: e.message || 'Connection test failed' });
-      toast.error('Gemini Test Failed', { description: e.message });
+      toast.error('Network error configuring master path', { description: e.message });
     } finally {
-      setIsTestingGemini(false);
+      setSavingStorageKey(null);
     }
   };
 
@@ -436,8 +410,8 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   const handleSavePathFor = async (targetKey: 'returns' | 'reco' | 'audit') => {
     const rawInput =
       targetKey === 'returns' ? newPathInput :
-      targetKey === 'reco' ? newRecoHistoryInput :
-      newMonthlyAuditInput;
+        targetKey === 'reco' ? newRecoHistoryInput :
+          newMonthlyAuditInput;
 
     const cleanPath = rawInput.trim().replace(/^["']|["']$/g, '').trim();
     if (!cleanPath) {
@@ -496,10 +470,16 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   const handleResetPathFor = async (targetKey: 'returns' | 'reco' | 'audit') => {
     const label =
       targetKey === 'returns' ? 'Returns Preparation Storage' :
-      targetKey === 'reco' ? 'GST Reco & TDS Runs History' :
-      'Monthly Audit Working Papers';
+        targetKey === 'reco' ? 'GST Reco & TDS Runs History' :
+          'Monthly Audit Working Papers';
 
-    if (!window.confirm(`Reset ${label} back to local application default directory?`)) return;
+    const ok = await confirm({
+      title: 'Reset Storage Directory',
+      description: `Reset ${label} back to local application default directory?`,
+      confirmText: 'Reset Directory',
+      variant: 'default',
+    });
+    if (!ok) return;
 
     setSavingStorageKey(targetKey);
     try {
@@ -540,19 +520,21 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
   const handleResetDefaultStorage = () => handleResetPathFor('returns');
 
   // Browse folder using Electron native dialog or Windows FolderBrowserDialog
-  const handleBrowseFolderFor = async (targetKey: 'returns' | 'reco' | 'audit') => {
+  const handleBrowseFolderFor = async (targetKey: 'master' | 'returns' | 'reco' | 'audit') => {
     setBrowsingStorageKey(targetKey);
     try {
       const initialPath =
-        targetKey === 'returns' ? (newPathInput || currentDataPath) :
-        targetKey === 'reco' ? (newRecoHistoryInput || recoHistoryPath) :
-        (newMonthlyAuditInput || monthlyAuditPath);
+        targetKey === 'master' ? (newMasterPathInput || masterDataPath) :
+          targetKey === 'returns' ? (newPathInput || currentDataPath) :
+            targetKey === 'reco' ? (newRecoHistoryInput || recoHistoryPath) :
+              (newMonthlyAuditInput || monthlyAuditPath);
 
       // 1. Electron Native Folder Browser Dialog
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.invoke) {
-        const res = await (window as any).electronAPI.invoke('select_folder', initialPath);
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.selectFolder) {
+        const res = await (window as any).electronAPI.selectFolder(initialPath);
         if (res && res.success && res.folderPath) {
-          if (targetKey === 'returns') setNewPathInput(res.folderPath);
+          if (targetKey === 'master') setNewMasterPathInput(res.folderPath);
+          else if (targetKey === 'returns') setNewPathInput(res.folderPath);
           else if (targetKey === 'reco') setNewRecoHistoryInput(res.folderPath);
           else if (targetKey === 'audit') setNewMonthlyAuditInput(res.folderPath);
           toast.info('Folder Selected', { description: res.folderPath });
@@ -566,7 +548,8 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
       const res = await safeApiFetch('/api/returns/browse-folder', { method: 'POST' });
       const data = await res.json();
       if (data && data.success && data.folderPath) {
-        if (targetKey === 'returns') setNewPathInput(data.folderPath);
+        if (targetKey === 'master') setNewMasterPathInput(data.folderPath);
+        else if (targetKey === 'returns') setNewPathInput(data.folderPath);
         else if (targetKey === 'reco') setNewRecoHistoryInput(data.folderPath);
         else if (targetKey === 'audit') setNewMonthlyAuditInput(data.folderPath);
         toast.info('Folder Selected', { description: data.folderPath });
@@ -617,7 +600,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
           if (info && info.name) {
             setTallyCompany(info.name);
           }
-        } catch {}
+        } catch { }
         toast.success('TallyPrime Connected!', {
           description: `Tally XML Server active on ${tallyHost}:${tallyPort}`
         });
@@ -648,7 +631,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
         body: JSON.stringify({
           gstin,
           portal_username: update.portal_username,
-          portal_password: update.portal_password,
+          portal_password: update.portal_password === '••••••••' ? undefined : update.portal_password,
           phone: update.phone,
           trade_name: update.trade_name
         })
@@ -685,7 +668,13 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
 
   // Delete single client credential
   const handleDeleteVaultClient = async (gstin: string, tradeName: string) => {
-    if (!window.confirm(`Delete credentials for "${tradeName || gstin}" (${gstin})?`)) return;
+    const ok = await confirm({
+      title: 'Delete Client Credentials',
+      description: `Delete credentials for "${tradeName || gstin}" (${gstin})? This will clear saved GST portal credentials.`,
+      confirmText: 'Delete Credentials',
+      variant: 'destructive',
+    });
+    if (!ok) return;
 
     setDeletingGstin(gstin);
     try {
@@ -920,7 +909,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
       if (editingClient.gstin === activeAuditGstin) {
         try {
           localStorage.setItem('np_company_name', editingClient.trade_name || editingClient.legal_name || editingClient.gstin);
-        } catch {}
+        } catch { }
         window.dispatchEvent(new CustomEvent('client-selected', {
           detail: {
             gstin: editingClient.gstin,
@@ -1007,7 +996,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
       (c.portal_username || '').toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
-    const isConfigured = Boolean(c.portal_username && c.portal_password);
+    const isConfigured = Boolean(c.portal_username && (c.has_password || c.portal_password));
     if (vaultFilter === 'CONFIGURED') return isConfigured;
     if (vaultFilter === 'MISSING') return !isConfigured;
     return true;
@@ -1180,14 +1169,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
                       label: 'Credentials Vault',
                       description: 'GST Portal logins & PAN',
                       icon: Key,
-                      badge: vaultClients.filter(c => c.portal_username && c.portal_password).length
-                    },
-                    {
-                      id: 'ai' as SettingsTabKey,
-                      label: 'Sourav AI (Gemini)',
-                      description: 'AI assistant & cloud sync',
-                      icon: Bot,
-                      badge: isGeminiConfigured ? 'Active' : undefined
+                      badge: vaultClients.filter(c => c.portal_username && (c.has_password || c.portal_password)).length
                     },
                     {
                       id: 'gateway' as SettingsTabKey,
@@ -1234,18 +1216,16 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
                         key={tab.id}
                         type="button"
                         onClick={() => setActiveTab(tab.id)}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 transition-all cursor-pointer group ${
-                          isActive
+                        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 transition-all cursor-pointer group ${isActive
                             ? 'bg-slate-900 text-white shadow-xs font-semibold'
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                            isActive
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isActive
                               ? 'bg-white/15 text-white'
                               : 'bg-white border border-slate-200 text-slate-600 group-hover:border-slate-300 group-hover:text-slate-900 shadow-2xs'
-                          }`}>
+                            }`}>
                             <Icon className="w-3.5 h-3.5" />
                           </div>
                           <div className="min-w-0">
@@ -1258,11 +1238,10 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
                           </div>
                         </div>
                         {tab.badge !== undefined && (
-                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md font-bold shrink-0 ${
-                            isActive
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md font-bold shrink-0 ${isActive
                               ? 'bg-white/20 text-white'
                               : 'bg-white text-slate-700 border border-slate-200 shadow-2xs'
-                          }`}>
+                            }`}>
                             {tab.badge}
                           </span>
                         )}
@@ -1289,1791 +1268,1752 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
               RIGHT MAIN CONTENT AREA
           ══════════════════════════════════════════════════════════════════ */}
           <div className="p-6 sm:p-8 overflow-y-auto space-y-6 flex-1 bg-white min-w-0">
-          {/* ══════════════════════════════════════════════════════════════════════
+            {/* ══════════════════════════════════════════════════════════════════════
               TAB 0: CLIENT MASTER & ADDITION TEMPLATE
           ══════════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'clients' && (
-            <div className="space-y-5 animate-fadeIn">
-              <input
-                type="file"
-                ref={clientAdditionFileInputRef}
-                onChange={handleImportClientAdditionExcel}
-                accept=".xlsx,.xls"
-                className="hidden"
-              />
+            {activeTab === 'clients' && (
+              <div className="space-y-5 animate-fadeIn">
+                <input
+                  type="file"
+                  ref={clientAdditionFileInputRef}
+                  onChange={handleImportClientAdditionExcel}
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                />
 
-              {/* Informative Banner */}
-              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="font-bold text-indigo-950 flex items-center gap-1.5 text-xs">
-                    <Building2 className="w-4 h-4 text-indigo-600" />
-                    Universal Client Master &amp; Taxpayer Registry
-                  </p>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Centrally manage client businesses across all GST, TDS, Monthly Audit, and Income Tax modules. Download the standard Excel template for bulk addition or add individual clients below.
-                  </p>
-                </div>
-                {/* Metric Badges */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
-                    <div className="text-[10px] text-slate-500 font-medium">Total Clients</div>
-                    <div className="text-sm font-bold text-indigo-700 font-mono">{vaultClients.length}</div>
+                {/* Informative Banner */}
+                <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="font-bold text-indigo-950 flex items-center gap-1.5 text-xs">
+                      <Building2 className="w-4 h-4 text-indigo-600" />
+                      Universal Client Master &amp; Taxpayer Registry
+                    </p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Centrally manage client businesses across all GST, TDS, Monthly Audit, and Income Tax modules. Download the standard Excel template for bulk addition or add individual clients below.
+                    </p>
                   </div>
-                  <div className="bg-white border border-emerald-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
-                    <div className="text-[10px] text-slate-500 font-medium">Portal Logins</div>
-                    <div className="text-sm font-bold text-emerald-600 font-mono">
-                      {vaultClients.filter(c => c.portal_username && c.portal_password).length}
+                  {/* Metric Badges */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-medium">Total Clients</div>
+                      <div className="text-sm font-bold text-indigo-700 font-mono">{vaultClients.length}</div>
                     </div>
-                  </div>
-                  <div className="bg-white border border-amber-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
-                    <div className="text-[10px] text-slate-500 font-medium">Missing Logins</div>
-                    <div className="text-sm font-bold text-amber-600 font-mono">
-                      {vaultClients.filter(c => !c.portal_username || !c.portal_password).length}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions Toolbar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={vaultSearch}
-                    onChange={(e) => setVaultSearch(e.target.value)}
-                    placeholder="Search client name, GSTIN, phone, email..."
-                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-indigo-500 transition-colors"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Filter Pills */}
-                  <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 text-xs">
-                    {(['ALL', 'CONFIGURED', 'MISSING'] as const).map(f => (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => setVaultFilter(f)}
-                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                          vaultFilter === f ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {f === 'ALL' ? 'All Clients' : f === 'CONFIGURED' ? 'With Login' : 'No Login'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Template for Client Addition */}
-                  <button
-                    type="button"
-                    onClick={handleDownloadClientAdditionTemplate}
-                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer"
-                    title="Download Excel Template for Client Addition"
-                  >
-                    <Download className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Download Template</span>
-                  </button>
-
-                  {/* Bulk Import Clients from Excel */}
-                  <button
-                    type="button"
-                    onClick={() => clientAdditionFileInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                    title="Upload filled client addition template to bulk import"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>Import Excel</span>
-                  </button>
-
-                  {/* Add New Client (Manual Form) */}
-                  <button
-                    type="button"
-                    onClick={() => setIsAddClientModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Client</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Active Audit Client Indicator Banner */}
-              {(() => {
-                const activeClient = vaultClients.find(c => c.gstin === activeAuditGstin);
-                if (!activeClient) return null;
-                return (
-                  <div className="flex items-center justify-between p-3 bg-indigo-50/80 border border-indigo-200/90 rounded-2xl text-xs shadow-2xs">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs shrink-0">
-                        <Check className="w-3 h-3 text-emerald-600" />
-                        <span>Active in Suite 08 Audit</span>
-                      </span>
-                      <div className="truncate">
-                        <span className="font-bold text-slate-900 truncate mr-1.5">{activeClient.trade_name || activeClient.legal_name}</span>
-                        <span className="font-mono text-slate-500 text-[11px]">({activeClient.gstin})</span>
+                    <div className="bg-white border border-emerald-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-medium">Portal Logins</div>
+                      <div className="text-sm font-bold text-emerald-600 font-mono">
+                        {vaultClients.filter(c => c.portal_username && c.portal_password).length}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectClientForAudit(activeClient, true)}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
-                      title="Open Suite 08 Monthly Audit with this active client"
-                    >
-                      <ArrowRight className="w-3.5 h-3.5" />
-                      <span>Open Audit Paper</span>
-                    </button>
-                  </div>
-                );
-              })()}
-
-              {/* Client List */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[380px] overflow-y-auto divide-y divide-slate-100">
-                {loadingVault ? (
-                  <div className="p-8 text-center text-xs text-slate-400">Loading Client Master...</div>
-                ) : filteredVaultClients.length === 0 ? (
-                  <div className="p-10 text-center space-y-3">
-                    <Building2 className="w-10 h-10 text-slate-300 mx-auto" />
-                    <p className="text-xs text-slate-500 font-medium">
-                      No clients found matching "{vaultSearch}".
-                    </p>
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleDownloadClientAdditionTemplate}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download Template</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsAddClientModalOpen(true)}
-                        className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add First Client</span>
-                      </button>
+                    <div className="bg-white border border-amber-200 rounded-xl px-3 py-1.5 text-center shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-medium">Missing Logins</div>
+                      <div className="text-sm font-bold text-amber-600 font-mono">
+                        {vaultClients.filter(c => !c.portal_username || (!c.has_password && !c.portal_password)).length}
+                      </div>
                     </div>
                   </div>
-                ) : (
-                  filteredVaultClients.map((c) => {
-                    const isDeleting = deletingGstin === c.gstin;
-                    const hasCredentials = Boolean(c.portal_username && c.portal_password);
-                    const isActiveForAudit = activeAuditGstin === c.gstin;
+                </div>
 
-                    return (
-                      <div
-                        key={c.gstin}
-                        className={`p-3.5 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${
-                          isActiveForAudit
-                            ? 'bg-indigo-50/60 border-l-4 border-l-indigo-600 shadow-2xs'
-                            : 'hover:bg-slate-50/70'
-                        }`}
+                {/* Actions Toolbar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={vaultSearch}
+                      onChange={(e) => setVaultSearch(e.target.value)}
+                      placeholder="Search client name, GSTIN, phone, email..."
+                      className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Filter Pills */}
+                    <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 text-xs">
+                      {(['ALL', 'CONFIGURED', 'MISSING'] as const).map(f => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setVaultFilter(f)}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${vaultFilter === f ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                        >
+                          {f === 'ALL' ? 'All Clients' : f === 'CONFIGURED' ? 'With Login' : 'No Login'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Template for Client Addition */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadClientAdditionTemplate}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+                      title="Download Excel Template for Client Addition"
+                    >
+                      <Download className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Download Template</span>
+                    </button>
+
+                    {/* Bulk Import Clients from Excel */}
+                    <button
+                      type="button"
+                      onClick={() => clientAdditionFileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                      title="Upload filled client addition template to bulk import"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Import Excel</span>
+                    </button>
+
+                    {/* Add New Client (Manual Form) */}
+                    <button
+                      type="button"
+                      onClick={() => setIsAddClientModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Client</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Active Audit Client Indicator Banner */}
+                {(() => {
+                  const activeClient = vaultClients.find(c => c.gstin === activeAuditGstin);
+                  if (!activeClient) return null;
+                  return (
+                    <div className="flex items-center justify-between p-3 bg-indigo-50/80 border border-indigo-200/90 rounded-2xl text-xs shadow-2xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs shrink-0">
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Active in Suite 08 Audit</span>
+                        </span>
+                        <div className="truncate">
+                          <span className="font-bold text-slate-900 truncate mr-1.5">{activeClient.trade_name || activeClient.legal_name}</span>
+                          <span className="font-mono text-slate-500 text-[11px]">({activeClient.gstin})</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectClientForAudit(activeClient, true)}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                        title="Open Suite 08 Monthly Audit with this active client"
                       >
-                        {/* Client Identity */}
-                        <div className="min-w-0 md:w-4/12">
-                          <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
-                            {isActiveForAudit && (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5">
-                                <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>Active</span>
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200/60">
-                              {c.gstin}
-                            </span>
-                            {c.legal_name && c.legal_name !== c.trade_name && (
-                              <span className="text-[11px] text-slate-500 truncate max-w-[180px]">
-                                • {c.legal_name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>Open Audit Paper</span>
+                      </button>
+                    </div>
+                  );
+                })()}
 
-                        {/* Contact Information & Portal Status */}
-                        <div className="flex items-center gap-2 flex-wrap min-w-0 md:w-3/12">
-                          {c.email && (
-                            <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[160px]" title={c.email}>
-                              {c.email}
-                            </span>
-                          )}
-                          {c.phone && (
-                            <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                              {c.phone}
-                            </span>
-                          )}
-                          {hasCredentials ? (
-                            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span className="font-mono">{c.portal_username}</span>
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                              No Portal Login
-                            </span>
-                          )}
-                        </div>
+                {/* Client List */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[380px] overflow-y-auto divide-y divide-slate-100">
+                  {loadingVault ? (
+                    <div className="p-8 text-center text-xs text-slate-400">Loading Client Master...</div>
+                  ) : filteredVaultClients.length === 0 ? (
+                    <div className="p-10 text-center space-y-3">
+                      <Building2 className="w-10 h-10 text-slate-300 mx-auto" />
+                      <p className="text-xs text-slate-500 font-medium">
+                        No clients found matching "{vaultSearch}".
+                      </p>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleDownloadClientAdditionTemplate}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download Template</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddClientModalOpen(true)}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add First Client</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    filteredVaultClients.map((c) => {
+                      const isDeleting = deletingGstin === c.gstin;
+                      const hasCredentials = Boolean(c.portal_username && (c.has_password || c.portal_password));
+                      const isActiveForAudit = activeAuditGstin === c.gstin;
 
-                        {/* Action buttons: Select for Audit, Open Audit, Edit, Delete */}
-                        <div className="flex items-center gap-1.5 shrink-0 justify-end flex-wrap">
-                          {isActiveForAudit ? (
-                            <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold shadow-2xs">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Active in Audit</span>
+                      return (
+                        <div
+                          key={c.gstin}
+                          className={`p-3.5 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${isActiveForAudit
+                              ? 'bg-indigo-50/60 border-l-4 border-l-indigo-600 shadow-2xs'
+                              : 'hover:bg-slate-50/70'
+                            }`}
+                        >
+                          {/* Client Identity */}
+                          <div className="min-w-0 md:w-4/12">
+                            <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                              <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
+                              {isActiveForAudit && (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5">
+                                  <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Active</span>
+                                </span>
+                              )}
                             </div>
-                          ) : (
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200/60">
+                                {c.gstin}
+                              </span>
+                              {c.legal_name && c.legal_name !== c.trade_name && (
+                                <span className="text-[11px] text-slate-500 truncate max-w-[180px]">
+                                  • {c.legal_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Contact Information & Portal Status */}
+                          <div className="flex items-center gap-2 flex-wrap min-w-0 md:w-3/12">
+                            {c.email && (
+                              <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[160px]" title={c.email}>
+                                {c.email}
+                              </span>
+                            )}
+                            {c.phone && (
+                              <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                {c.phone}
+                              </span>
+                            )}
+                            {hasCredentials ? (
+                              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span className="font-mono">{c.portal_username}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                No Portal Login
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Action buttons: Select for Audit, Open Audit, Edit, Delete */}
+                          <div className="flex items-center gap-1.5 shrink-0 justify-end flex-wrap">
+                            {isActiveForAudit ? (
+                              <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold shadow-2xs">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Active in Audit</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectClientForAudit(c, false)}
+                                className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 text-xs font-bold rounded-lg border border-indigo-200 transition cursor-pointer flex items-center gap-1.5 shadow-2xs hover:shadow-xs"
+                                title="Set as Active Client for Suite 08 Monthly Audit & Returns"
+                              >
+                                <ClipboardCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                <span>Select for Audit</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => handleSelectClientForAudit(c, false)}
-                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 text-xs font-bold rounded-lg border border-indigo-200 transition cursor-pointer flex items-center gap-1.5 shadow-2xs hover:shadow-xs"
-                              title="Set as Active Client for Suite 08 Monthly Audit & Returns"
+                              onClick={() => handleSelectClientForAudit(c, true)}
+                              className="px-2.5 py-1.5 bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title="Select client and launch Suite 08 Monthly Audit"
                             >
-                              <ClipboardCheck className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Select for Audit</span>
+                              <ArrowRight className="w-3 h-3" />
+                              <span>Open in Suite 08</span>
                             </button>
-                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => handleSelectClientForAudit(c, true)}
-                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                            title="Select client and launch Suite 08 Monthly Audit"
-                          >
-                            <ArrowRight className="w-3 h-3" />
-                            <span>Open in Suite 08</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setEditingClient(c)}
-                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
-                            title="Edit Client Details"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteVaultClient(c.gstin, c.trade_name)}
-                            disabled={isDeleting}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Delete Client from Master"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingClient(c)}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
+                              title="Edit Client Details"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteVaultClient(c.gstin, c.trade_name)}
+                              disabled={isDeleting}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Client from Master"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ══════════════════════════════════════════════════════════════════════
+            {/* ══════════════════════════════════════════════════════════════════════
               TAB 1: DATA STORAGE PATH & LAN
           ══════════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'storage' && (
+            {activeTab === 'storage' && (
 
-            <div className="space-y-6 animate-fadeIn pb-4">
-              {/* Header Overview Banner */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-purple-50/50 border border-blue-200/70 text-xs text-slate-700 space-y-1.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <p className="font-bold text-slate-900 flex items-center gap-2 text-sm">
-                    <Database className="w-4 h-4 text-indigo-600" />
-                    Enterprise Multi-Module Storage &amp; Database Architecture
+              <div className="space-y-6 animate-fadeIn pb-4">
+                {/* Header Overview Banner */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-purple-50/50 border border-blue-200/70 text-xs text-slate-700 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-slate-900 flex items-center gap-2 text-sm">
+                      <FolderTree className="w-4 h-4 text-indigo-600" />
+                      Unified Multi-Module Master Data Architecture
+                    </p>
+                    <span className="text-[10px] font-mono font-bold bg-indigo-100/80 text-indigo-800 px-2 py-0.5 rounded-full border border-indigo-200">
+                      Single Path Architecture
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Configure <strong>one master data path</strong> for all modules. Dedicated subfolders for GST Returns (<code className="font-mono bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-semibold text-indigo-900">gst_returns_data/</code>), Reco &amp; TDS runs (<code className="font-mono bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-semibold text-indigo-900">reco_history/</code>), Monthly Audits (<code className="font-mono bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-semibold text-indigo-900">monthly_audits/</code>), and the Central Credentials Vault (<code className="font-mono bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-semibold text-indigo-900">central_clients_vault.json</code>) are automatically structured, created, and synchronized.
                   </p>
-                  <span className="text-[10px] font-mono font-bold bg-indigo-100/80 text-indigo-800 px-2 py-0.5 rounded-full border border-indigo-200">
-                    Active Storage Config
-                  </span>
                 </div>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Configure independent storage paths for GST Returns, Reco &amp; TDS session snapshots, and Monthly Audit working papers. All folders can be hosted locally or mapped to shared office LAN network paths (e.g. <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-semibold text-indigo-900">\\\\SERVER\\SharedStorage</code>) for real-time team collaboration.
-                </p>
-              </div>
 
-              {/* ─────────────────────────────────────────────────────────────
+                {/* ─────────────────────────────────────────────────────────────
+                  HERO MASTER DATA STORAGE CARD (ONE PATH FOR ALL MODULES)
+              ───────────────────────────────────────────────────────────── */}
+                <div className="p-5 rounded-2xl bg-white border-2 border-indigo-200 shadow-sm space-y-4 hover:border-indigo-400 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                        <HardDrive className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            Master Data Storage Directory (Unified Root)
+                          </h4>
+                          <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                            Master Path
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Single root directory on this PC or shared office LAN that synchronizes all modules &amp; client records
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      {isLoadingStorage ? (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Verifying...
+                        </span>
+                      ) : storageStatus.isWritable ? (
+                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Connected &amp; Writable
+                          <span className="text-emerald-800 font-sans ml-1">
+                            ({storageStatus.totalVaultClients ?? 482} database clients • {storageStatus.totalClientsWithData ?? 1} return folder{storageStatus.totalClientsWithData === 1 ? '' : 's'})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Current Active Master Path Display */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Current Master Root Directory
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-900 font-semibold truncate select-all"
+                        title={masterDataPath}
+                      >
+                        {isLoadingStorage ? 'Loading server path...' : masterDataPath || 'D:\\New folder'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (masterDataPath) {
+                            navigator.clipboard.writeText(masterDataPath);
+                            toast.success('Master data path copied to clipboard');
+                          }
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
+                        title="Copy Master Storage Path"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStorageExplorer(masterDataPath)}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-indigo-700 hover:border-indigo-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Open Master Directory in Windows Explorer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-indigo-600" />
+                        <span>Open Folder</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Update Master Path Input */}
+                  <div className="space-y-2 pt-3 border-t border-slate-100">
+                    <label className="text-xs font-bold text-slate-700">
+                      Update Master Data Storage Path (Local Drive or Shared LAN UNC)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newMasterPathInput}
+                        onChange={(e) => setNewMasterPathInput(e.target.value)}
+                        placeholder="e.g. D:\New folder or \\SERVER\SharedStorage"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBrowseFolderFor('master')}
+                        disabled={browsingStorageKey === 'master' || savingStorageKey === 'master'}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                        title="Browse and select master folder on disk or network"
+                      >
+                        {browsingStorageKey === 'master' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        ) : (
+                          <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                        <span>Browse...</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveMasterPath}
+                        disabled={savingStorageKey === 'master'}
+                        className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingStorageKey === 'master' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 text-emerald-300" />
+                        )}
+                        <span>Save &amp; Sync Master Path</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visual Directory Architecture Tree */}
+                  <div className="p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs space-y-2 border border-slate-800 shadow-inner">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-[11px] text-slate-400">
+                      <span className="font-bold text-indigo-400 flex items-center gap-1.5 font-sans">
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-400" />
+                        Automatic Subfolder Organization Under Master Root
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-sans font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Auto-Synchronized
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 text-[11px] text-slate-300 pt-1">
+                      <div className="flex items-center gap-2 text-indigo-300 font-bold">
+                        <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
+                        <span className="truncate">{masterDataPath || 'D:\\New folder'}</span>
+                      </div>
+                      <div className="pl-5 space-y-1 text-slate-400 text-[10.5px]">
+                        <div className="flex items-center gap-2 hover:text-slate-200 transition-colors">
+                          <span className="text-slate-600">├──</span>
+                          <Folder className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span className="font-semibold text-slate-200">gst_returns_data/</span>
+                          <span className="text-slate-400">— GSTR-3B Working Sheets, GSTR-1, 2B &amp; Client Folders ({storageStatus.totalClientsWithData ?? 1} active)</span>
+                        </div>
+                        <div className="flex items-center gap-2 hover:text-slate-200 transition-colors">
+                          <span className="text-slate-600">├──</span>
+                          <Folder className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="font-semibold text-slate-200">reco_history/</span>
+                          <span className="text-slate-400">— GST 2B Reco &amp; TDS Runs Snapshots ({recoStatus.totalFiles ?? 0} saved runs)</span>
+                        </div>
+                        <div className="flex items-center gap-2 hover:text-slate-200 transition-colors">
+                          <span className="text-slate-600">├──</span>
+                          <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="font-semibold text-slate-200">monthly_audits/</span>
+                          <span className="text-slate-400">— Suite 08 Monthly Working Papers &amp; Reports ({auditStatus.totalFiles ?? 0} files)</span>
+                        </div>
+                        <div className="flex items-center gap-2 hover:text-slate-200 transition-colors">
+                          <span className="text-slate-600">└──</span>
+                          <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span className="font-semibold text-amber-300">central_clients_vault.json</span>
+                          <span className="text-slate-400">— GST Credentials &amp; Client Master ({storageStatus.totalVaultClients ?? 482} clients loaded)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Collapsible Section: Advanced Individual Module Overrides */}
+                <div className="border border-slate-200 rounded-2xl bg-white overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedSubfolders(prev => !prev)}
+                    className="w-full px-5 py-3.5 flex items-center justify-between text-left text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-4 h-4 text-slate-500" />
+                      Advanced: Individual Module Subfolder Overrides &amp; Health
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] text-slate-400 font-normal">
+                      {showAdvancedSubfolders ? 'Hide Individual Folders' : 'Show Individual Folders'}
+                      {showAdvancedSubfolders ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {showAdvancedSubfolders && (
+                    <div className="p-5 border-t border-slate-100 space-y-5 bg-slate-50/50">
+
+                {/* ─────────────────────────────────────────────────────────────
                   CARD 1: SUITE 04 - RETURNS PREPARATION STORAGE
               ───────────────────────────────────────────────────────────── */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-blue-200 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
-                      <FileSpreadsheet className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-sm text-slate-900">
-                          Suite 04 • Returns Preparation Storage
-                        </h4>
-                        <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
-                          gst_returns_data
-                        </span>
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-blue-200 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
+                        <FileSpreadsheet className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        GSTR-3B rolling matrices, GSTR-1 outward sheets, GSTR-2B batches &amp; IMS decisions
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0">
-                    {isLoadingStorage ? (
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
-                      </span>
-                    ) : storageStatus.isWritable ? (
-                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Connected &amp; Writable
-                        {typeof storageStatus.totalClientsWithData === 'number' && storageStatus.totalClientsWithData > 0 && (
-                          <span className="text-emerald-800 font-sans ml-1">
-                            ({storageStatus.totalClientsWithData} clients)
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            Suite 04 • Returns Preparation Storage
+                          </h4>
+                          <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                            gst_returns_data
                           </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Current Active Path Display */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    Current Active Folder
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
-                      title={currentDataPath}
-                    >
-                      {isLoadingStorage ? 'Loading server path...' : currentDataPath || 'Local application directory'}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          GSTR-3B rolling matrices, GSTR-1 outward sheets, GSTR-2B batches &amp; IMS decisions
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (currentDataPath) {
-                          navigator.clipboard.writeText(currentDataPath);
-                          toast.success('Returns data path copied to clipboard');
-                        }
-                      }}
-                      className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
-                      title="Copy Returns Storage Path"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenStorageExplorer(currentDataPath)}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-blue-700 hover:border-blue-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                      title="Open Returns Directory in Windows Explorer"
-                    >
-                      <FolderOpen className="w-4 h-4 text-blue-600" />
-                      <span>Open Folder</span>
-                    </button>
-                  </div>
-                </div>
 
-                {/* Change Path Input Section */}
-                <div className="space-y-2 pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700">
-                      Update Returns Storage Path (Local Drive or Shared LAN UNC)
+                    <div className="shrink-0">
+                      {isLoadingStorage ? (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
+                        </span>
+                      ) : storageStatus.isWritable ? (
+                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Connected &amp; Writable
+                          {typeof storageStatus.totalClientsWithData === 'number' && (
+                            <span className="text-emerald-800 font-sans ml-1">
+                              ({storageStatus.totalClientsWithData} return folder{storageStatus.totalClientsWithData === 1 ? '' : 's'}{storageStatus.totalVaultClients ? ` • ${storageStatus.totalVaultClients} database clients` : ''})
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Current Active Path Display */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Current Active Folder
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => handleResetPathFor('returns')}
-                      disabled={savingStorageKey === 'returns'}
-                      className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
-                      title="Reset to local application folder"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Reset to Default
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
+                        title={currentDataPath}
+                      >
+                        {isLoadingStorage ? 'Loading server path...' : currentDataPath || 'Local application directory'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentDataPath) {
+                            navigator.clipboard.writeText(currentDataPath);
+                            toast.success('Returns data path copied to clipboard');
+                          }
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
+                        title="Copy Returns Storage Path"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStorageExplorer(currentDataPath)}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-blue-700 hover:border-blue-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Open Returns Directory in Windows Explorer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-blue-600" />
+                        <span>Open Folder</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newPathInput}
-                      onChange={(e) => setNewPathInput(e.target.value)}
-                      placeholder="e.g. D:\VaswaniReturnsData or \\SERVER\SharedReturns"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleBrowseFolderFor('returns')}
-                      disabled={browsingStorageKey === 'returns' || savingStorageKey === 'returns'}
-                      className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                      title="Browse and select folder on disk or network"
-                    >
-                      {browsingStorageKey === 'returns' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                      ) : (
-                        <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-                      )}
-                      <span>Browse...</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSavePathFor('returns')}
-                      disabled={savingStorageKey === 'returns'}
-                      className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                    >
-                      {savingStorageKey === 'returns' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      )}
-                      <span>Save Path</span>
-                    </button>
+
+                  {/* Change Path Input Section */}
+                  <div className="space-y-2 pt-3 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">
+                        Update Returns Storage Path (Local Drive or Shared LAN UNC)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleResetPathFor('returns')}
+                        disabled={savingStorageKey === 'returns'}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
+                        title="Reset to local application folder"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Reset to Default
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newPathInput}
+                        onChange={(e) => setNewPathInput(e.target.value)}
+                        placeholder="e.g. D:\VaswaniReturnsData or \\SERVER\SharedReturns"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBrowseFolderFor('returns')}
+                        disabled={browsingStorageKey === 'returns' || savingStorageKey === 'returns'}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                        title="Browse and select folder on disk or network"
+                      >
+                        {browsingStorageKey === 'returns' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                        ) : (
+                          <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
+                        )}
+                        <span>Browse...</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSavePathFor('returns')}
+                        disabled={savingStorageKey === 'returns'}
+                        className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingStorageKey === 'returns' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>Save Path</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ─────────────────────────────────────────────────────────────
+                {/* ─────────────────────────────────────────────────────────────
                   CARD 2: SUITE 02 - RECO & TDS RUNS HISTORY
               ───────────────────────────────────────────────────────────── */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-emerald-200 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
-                      <Sliders className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-sm text-slate-900">
-                          Suite 02 • GST Reco &amp; TDS Reconciliation History
-                        </h4>
-                        <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                          reco_history
-                        </span>
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-emerald-200 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                        <Sliders className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Persistent session run snapshots, supplier dispute logs &amp; TRACES 26AS/AIS ledgers
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0">
-                    {isLoadingStorage ? (
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
-                      </span>
-                    ) : recoStatus.isWritable ? (
-                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Connected &amp; Writable
-                        {typeof recoStatus.totalFiles === 'number' && (
-                          <span className="text-emerald-800 font-sans ml-1">
-                            ({recoStatus.totalFiles} saved runs)
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            Suite 02 • GST Reco &amp; TDS Reconciliation History
+                          </h4>
+                          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                            reco_history
                           </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Current Active Path Display */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    Current Active Folder
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
-                      title={recoHistoryPath}
-                    >
-                      {isLoadingStorage ? 'Loading server path...' : recoHistoryPath || 'Local application directory'}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Persistent session run snapshots, supplier dispute logs &amp; TRACES 26AS/AIS ledgers
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (recoHistoryPath) {
-                          navigator.clipboard.writeText(recoHistoryPath);
-                          toast.success('Reco history path copied to clipboard');
-                        }
-                      }}
-                      className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
-                      title="Copy Reco History Storage Path"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenStorageExplorer(recoHistoryPath)}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                      title="Open Reco History Directory in Windows Explorer"
-                    >
-                      <FolderOpen className="w-4 h-4 text-emerald-600" />
-                      <span>Open Folder</span>
-                    </button>
-                  </div>
-                </div>
 
-                {/* Change Path Input Section */}
-                <div className="space-y-2 pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700">
-                      Update Reco &amp; TDS History Path (Local Drive or Shared LAN UNC)
+                    <div className="shrink-0">
+                      {isLoadingStorage ? (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
+                        </span>
+                      ) : recoStatus.isWritable ? (
+                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Connected &amp; Writable
+                          {typeof recoStatus.totalFiles === 'number' && (
+                            <span className="text-emerald-800 font-sans ml-1">
+                              ({recoStatus.totalFiles} saved runs)
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Current Active Path Display */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Current Active Folder
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => handleResetPathFor('reco')}
-                      disabled={savingStorageKey === 'reco'}
-                      className="text-[11px] text-emerald-600 hover:text-emerald-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
-                      title="Reset to local application folder"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Reset to Default
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
+                        title={recoHistoryPath}
+                      >
+                        {isLoadingStorage ? 'Loading server path...' : recoHistoryPath || 'Local application directory'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (recoHistoryPath) {
+                            navigator.clipboard.writeText(recoHistoryPath);
+                            toast.success('Reco history path copied to clipboard');
+                          }
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
+                        title="Copy Reco History Storage Path"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStorageExplorer(recoHistoryPath)}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Open Reco History Directory in Windows Explorer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-emerald-600" />
+                        <span>Open Folder</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newRecoHistoryInput}
-                      onChange={(e) => setNewRecoHistoryInput(e.target.value)}
-                      placeholder="e.g. D:\VaswaniRecoHistory or \\SERVER\SharedReco"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleBrowseFolderFor('reco')}
-                      disabled={browsingStorageKey === 'reco' || savingStorageKey === 'reco'}
-                      className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                      title="Browse and select folder on disk or network"
-                    >
-                      {browsingStorageKey === 'reco' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                      ) : (
-                        <FolderOpen className="w-3.5 h-3.5 text-emerald-600" />
-                      )}
-                      <span>Browse...</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSavePathFor('reco')}
-                      disabled={savingStorageKey === 'reco'}
-                      className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                    >
-                      {savingStorageKey === 'reco' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      )}
-                      <span>Save Path</span>
-                    </button>
+
+                  {/* Change Path Input Section */}
+                  <div className="space-y-2 pt-3 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">
+                        Update Reco &amp; TDS History Path (Local Drive or Shared LAN UNC)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleResetPathFor('reco')}
+                        disabled={savingStorageKey === 'reco'}
+                        className="text-[11px] text-emerald-600 hover:text-emerald-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
+                        title="Reset to local application folder"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Reset to Default
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newRecoHistoryInput}
+                        onChange={(e) => setNewRecoHistoryInput(e.target.value)}
+                        placeholder="e.g. D:\VaswaniRecoHistory or \\SERVER\SharedReco"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBrowseFolderFor('reco')}
+                        disabled={browsingStorageKey === 'reco' || savingStorageKey === 'reco'}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                        title="Browse and select folder on disk or network"
+                      >
+                        {browsingStorageKey === 'reco' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                        ) : (
+                          <FolderOpen className="w-3.5 h-3.5 text-emerald-600" />
+                        )}
+                        <span>Browse...</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSavePathFor('reco')}
+                        disabled={savingStorageKey === 'reco'}
+                        className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingStorageKey === 'reco' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>Save Path</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ─────────────────────────────────────────────────────────────
+                {/* ─────────────────────────────────────────────────────────────
                   CARD 3: SUITE 08 - MONTHLY AUDIT WORKING PAPERS
               ───────────────────────────────────────────────────────────── */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-indigo-200 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
-                      <ClipboardCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-sm text-slate-900">
-                          Suite 08 • Monthly Audit Working Papers &amp; Reports
-                        </h4>
-                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
-                          monthly_audits
-                        </span>
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-indigo-200 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                        <ClipboardCheck className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Statutory audit workpapers, Maker-Checker observations &amp; released client sign-off packages
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0">
-                    {isLoadingStorage ? (
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
-                      </span>
-                    ) : auditStatus.isWritable ? (
-                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Connected &amp; Writable
-                        {typeof auditStatus.totalFiles === 'number' && (
-                          <span className="text-emerald-800 font-sans ml-1">
-                            ({auditStatus.totalFiles} audit files)
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            Suite 08 • Monthly Audit Working Papers &amp; Reports
+                          </h4>
+                          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
+                            monthly_audits
                           </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Current Active Path Display */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    Current Active Folder
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
-                      title={monthlyAuditPath}
-                    >
-                      {isLoadingStorage ? 'Loading server path...' : monthlyAuditPath || 'Local application directory'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (monthlyAuditPath) {
-                          navigator.clipboard.writeText(monthlyAuditPath);
-                          toast.success('Monthly audit path copied to clipboard');
-                        }
-                      }}
-                      className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
-                      title="Copy Monthly Audit Storage Path"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenStorageExplorer(monthlyAuditPath)}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-indigo-700 hover:border-indigo-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                      title="Open Monthly Audit Directory in Windows Explorer"
-                    >
-                      <FolderOpen className="w-4 h-4 text-indigo-600" />
-                      <span>Open Folder</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Change Path Input Section */}
-                <div className="space-y-2 pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700">
-                      Update Monthly Audit Working Directory (Local Drive or Shared LAN UNC)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleResetPathFor('audit')}
-                      disabled={savingStorageKey === 'audit'}
-                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
-                      title="Reset to local application folder"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Reset to Default
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newMonthlyAuditInput}
-                      onChange={(e) => setNewMonthlyAuditInput(e.target.value)}
-                      placeholder="e.g. D:\VaswaniMonthlyAudits or \\SERVER\SharedAudits"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleBrowseFolderFor('audit')}
-                      disabled={browsingStorageKey === 'audit' || savingStorageKey === 'audit'}
-                      className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                      title="Browse and select folder on disk or network"
-                    >
-                      {browsingStorageKey === 'audit' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                      ) : (
-                        <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
-                      )}
-                      <span>Browse...</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSavePathFor('audit')}
-                      disabled={savingStorageKey === 'audit'}
-                      className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                    >
-                      {savingStorageKey === 'audit' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      )}
-                      <span>Save Path</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* ─────────────────────────────────────────────────────────────
-                  CARD 4: MASTER RELATIONAL DATABASE (network_data.db)
-              ───────────────────────────────────────────────────────────── */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-purple-200 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shrink-0 shadow-2xs">
-                      <Database className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-sm text-slate-900">
-                          Master Relational SQLite Database
-                        </h4>
-                        <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200">
-                          network_data.db
-                        </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Statutory audit workpapers, Maker-Checker observations &amp; released client sign-off packages
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        High-performance ACID engine for client rosters, revisions, TDS rules &amp; audit indices
-                      </p>
+                    </div>
+
+                    <div className="shrink-0">
+                      {isLoadingStorage ? (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-bold flex items-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Checking...
+                        </span>
+                      ) : auditStatus.isWritable ? (
+                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Connected &amp; Writable
+                          {typeof auditStatus.totalFiles === 'number' && (
+                            <span className="text-emerald-800 font-sans ml-1">
+                              ({auditStatus.totalFiles} audit files)
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Inaccessible / Read-only
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="shrink-0">
-                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      {databaseInfo?.status || 'Connected & Healthy'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Database Path Display */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    Database File Location on Host Machine
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
-                      title={databaseInfo?.path}
-                    >
-                      {databaseInfo?.path || 'Local SQLite database file'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (databaseInfo?.path) {
-                          navigator.clipboard.writeText(databaseInfo.path);
-                          toast.success('Database path copied to clipboard');
-                        }
-                      }}
-                      className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
-                      title="Copy Database File Path"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenStorageExplorer(databaseInfo?.directory || databaseInfo?.path)}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-purple-700 hover:border-purple-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                      title="Open Database Directory in Windows Explorer"
-                    >
-                      <FolderOpen className="w-4 h-4 text-purple-600" />
-                      <span>Open Folder</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 4-KPI Health & Metrics Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Engine Status
-                    </span>
-                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Operational
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Database Size
-                    </span>
-                    <span className="text-xs font-bold text-slate-800 mt-1 block font-mono">
-                      {databaseInfo?.sizeBytes ? (databaseInfo.sizeBytes / (1024 * 1024)).toFixed(2) + ' MB' : 'Active'}
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Journal Mode
-                    </span>
-                    <span className="text-xs font-bold text-indigo-700 mt-1 flex items-center gap-1 font-mono">
-                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                      {databaseInfo?.walMode ? 'WAL Active' : 'Normal'}
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Storage Scope
-                    </span>
-                    <span className="text-xs font-bold text-slate-800 mt-1 block">
-                      All 8 Modules &amp; Hub
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* ─────────────────────────────────────────────────────────────
-                  LAN SERVER NETWORK INFORMATION
-              ───────────────────────────────────────────────────────────── */}
-              {serverIps.length > 0 && (
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 shrink-0">
-                      <Laptop className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-slate-800 font-bold block">
-                        Office LAN Server Network Address ({serverHost || 'Host'})
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        Other office PCs can access this server or map these shared drive paths directly.
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5 font-mono text-[11px] font-bold text-slate-800 flex-wrap">
-                    {serverIps.map((ip, i) => (
-                      <span
-                        key={i}
-                        onClick={() => {
-                          navigator.clipboard.writeText(ip);
-                          toast.success(`IP copied: ${ip}`);
-                        }}
-                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-700 cursor-pointer shadow-2xs transition-colors flex items-center gap-1"
-                        title="Click to copy IP"
+                  {/* Current Active Path Display */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Current Active Folder
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
+                        title={monthlyAuditPath}
                       >
-                        {ip}
-                      </span>
-                    ))}
+                        {isLoadingStorage ? 'Loading server path...' : monthlyAuditPath || 'Local application directory'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (monthlyAuditPath) {
+                            navigator.clipboard.writeText(monthlyAuditPath);
+                            toast.success('Monthly audit path copied to clipboard');
+                          }
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
+                        title="Copy Monthly Audit Storage Path"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStorageExplorer(monthlyAuditPath)}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-indigo-700 hover:border-indigo-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Open Monthly Audit Directory in Windows Explorer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-indigo-600" />
+                        <span>Open Folder</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Change Path Input Section */}
+                  <div className="space-y-2 pt-3 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">
+                        Update Monthly Audit Working Directory (Local Drive or Shared LAN UNC)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleResetPathFor('audit')}
+                        disabled={savingStorageKey === 'audit'}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer disabled:opacity-50"
+                        title="Reset to local application folder"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Reset to Default
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newMonthlyAuditInput}
+                        onChange={(e) => setNewMonthlyAuditInput(e.target.value)}
+                        placeholder="e.g. D:\VaswaniMonthlyAudits or \\SERVER\SharedAudits"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBrowseFolderFor('audit')}
+                        disabled={browsingStorageKey === 'audit' || savingStorageKey === 'audit'}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                        title="Browse and select folder on disk or network"
+                      >
+                        {browsingStorageKey === 'audit' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        ) : (
+                          <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                        <span>Browse...</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSavePathFor('audit')}
+                        disabled={savingStorageKey === 'audit'}
+                        className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingStorageKey === 'audit' ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>Save Path</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 2: TALLYPRIME LIVE BRIDGE (PORT 9000)
-          ══════════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'tally' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-pink-50/60 border border-pink-200/60 text-xs text-slate-700 space-y-1">
-                <p className="font-bold text-pink-900 flex items-center gap-1.5">
-                  <Server className="w-4 h-4 text-pink-600" />
-                  Real-Time TallyPrime Direct XML Integration (Port 9000)
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Connects directly to the TallyPrime XML Server running on this machine or LAN server to fetch Daybooks, Trial Balances, Purchase Registers, and TDS vouchers without manual export.
-                </p>
-              </div>
-
-              {/* Host & Port Configuration */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2 space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Tally Host IP / Domain</label>
-                  <input
-                    type="text"
-                    value={tallyHost}
-                    onChange={(e) => setTallyHost(e.target.value)}
-                    placeholder="localhost or 192.168.1.50"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">XML Server Port</label>
-                  <input
-                    type="number"
-                    value={tallyPort}
-                    onChange={(e) => setTallyPort(Number(e.target.value))}
-                    placeholder="9000"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
-                  />
-                </div>
-              </div>
-
-              {/* Connection Status Box */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">Bridge Status</span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {tallyStatus === 'online' && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        TallyPrime XML Server Online &amp; Ready
-                      </span>
-                    )}
-                    {tallyStatus === 'offline' && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                        Tally Server Unreachable
-                      </span>
-                    )}
-                    {tallyStatus === 'unknown' && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
-                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                        Status Unverified (Click Test Connection)
-                      </span>
-                    )}
-                  </div>
-                  {tallyCompany && (
-                    <span className="text-[11px] text-slate-700 font-medium block mt-1">
-                      Active Company: <strong className="text-slate-900 font-bold">{tallyCompany}</strong>
-                    </span>
+                    </div>
                   )}
                 </div>
 
-                <button
-                  onClick={handleTestTally}
-                  disabled={isTestingTally}
-                  className="px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isTestingTally ? 'animate-spin' : ''}`} />
-                  <span>Test Port {tallyPort}</span>
-                </button>
-              </div>
-            </div>
-          )}
+                {/* ─────────────────────────────────────────────────────────────
+                  CARD 4: MASTER RELATIONAL DATABASE (network_data.db)
+              ───────────────────────────────────────────────────────────── */}
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4 hover:border-purple-200 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shrink-0 shadow-2xs">
+                        <Database className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-900">
+                            Master Relational SQLite Database
+                          </h4>
+                          <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200">
+                            network_data.db
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          High-performance ACID engine for client rosters, revisions, TDS rules &amp; audit indices
+                        </p>
+                      </div>
+                    </div>
 
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 3: CREDENTIALS VAULT (PORTAL PASSWORDS & USERNAMES)
-          ══════════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'credentials' && (
-            <div className="space-y-4 animate-fadeIn">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImportVaultExcel}
-                accept=".xlsx,.xls"
-                className="hidden"
-              />
+                    <div className="shrink-0">
+                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        {databaseInfo?.status || 'Connected & Healthy'}
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Vault Actions Toolbar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={vaultSearch}
-                    onChange={(e) => setVaultSearch(e.target.value)}
-                    placeholder="Search client, GSTIN, username..."
-                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-amber-500 transition-colors"
-                  />
+                  {/* Database Path Display */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Database File Location on Host Machine
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 truncate select-all"
+                        title={databaseInfo?.path}
+                      >
+                        {databaseInfo?.path || 'Local SQLite database file'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (databaseInfo?.path) {
+                            navigator.clipboard.writeText(databaseInfo.path);
+                            toast.success('Database path copied to clipboard');
+                          }
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 transition-all shadow-2xs cursor-pointer"
+                        title="Copy Database File Path"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStorageExplorer(databaseInfo?.directory || databaseInfo?.path)}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-purple-700 hover:border-purple-300 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Open Database Directory in Windows Explorer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-purple-600" />
+                        <span>Open Folder</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4-KPI Health & Metrics Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Engine Status
+                      </span>
+                      <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Operational
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Database Size
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 mt-1 block font-mono">
+                        {databaseInfo?.sizeBytes ? (databaseInfo.sizeBytes / (1024 * 1024)).toFixed(2) + ' MB' : 'Active'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Journal Mode
+                      </span>
+                      <span className="text-xs font-bold text-indigo-700 mt-1 flex items-center gap-1 font-mono">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                        {databaseInfo?.walMode ? 'WAL Active' : 'Normal'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Storage Scope
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 mt-1 block">
+                        All 8 Modules &amp; Hub
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Filter Pills */}
-                  <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 text-xs">
-                    {(['ALL', 'CONFIGURED', 'MISSING'] as const).map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setVaultFilter(f)}
-                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${
-                          vaultFilter === f ? 'bg-amber-600 text-white' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {f}
-                      </button>
-                    ))}
+                {/* ─────────────────────────────────────────────────────────────
+                  LAN SERVER NETWORK INFORMATION
+              ───────────────────────────────────────────────────────────── */}
+                {serverIps.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 shrink-0">
+                        <Laptop className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-slate-800 font-bold block">
+                          Office LAN Server Network Address ({serverHost || 'Host'})
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          Other office PCs can access this server or map these shared drive paths directly.
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 font-mono text-[11px] font-bold text-slate-800 flex-wrap">
+                      {serverIps.map((ip, i) => (
+                        <span
+                          key={i}
+                          onClick={() => {
+                            navigator.clipboard.writeText(ip);
+                            toast.success(`IP copied: ${ip}`);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-700 cursor-pointer shadow-2xs transition-colors flex items-center gap-1"
+                          title="Click to copy IP"
+                        >
+                          {ip}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════════
+              TAB 2: TALLYPRIME LIVE BRIDGE (PORT 9000)
+          ══════════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'tally' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-pink-50/60 border border-pink-200/60 text-xs text-slate-700 space-y-1">
+                  <p className="font-bold text-pink-900 flex items-center gap-1.5">
+                    <Server className="w-4 h-4 text-pink-600" />
+                    Real-Time TallyPrime Direct XML Integration (Port 9000)
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Connects directly to the TallyPrime XML Server running on this machine or LAN server to fetch Daybooks, Trial Balances, Purchase Registers, and TDS vouchers without manual export.
+                  </p>
+                </div>
+
+                {/* Host & Port Configuration */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-xs font-bold text-slate-700">Tally Host IP / Domain</label>
+                    <input
+                      type="text"
+                      value={tallyHost}
+                      onChange={(e) => setTallyHost(e.target.value)}
+                      placeholder="localhost or 192.168.1.50"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700">XML Server Port</label>
+                    <input
+                      type="number"
+                      value={tallyPort}
+                      onChange={(e) => setTallyPort(Number(e.target.value))}
+                      placeholder="9000"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Connection Status Box */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">Bridge Status</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {tallyStatus === 'online' && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          TallyPrime XML Server Online &amp; Ready
+                        </span>
+                      )}
+                      {tallyStatus === 'offline' && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                          Tally Server Unreachable
+                        </span>
+                      )}
+                      {tallyStatus === 'unknown' && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                          Status Unverified (Click Test Connection)
+                        </span>
+                      )}
+                    </div>
+                    {tallyCompany && (
+                      <span className="text-[11px] text-slate-700 font-medium block mt-1">
+                        Active Company: <strong className="text-slate-900 font-bold">{tallyCompany}</strong>
+                      </span>
+                    )}
                   </div>
 
                   <button
-                    onClick={handleDownloadVaultTemplate}
-                    className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                    title="Download Excel Template"
+                    onClick={handleTestTally}
+                    disabled={isTestingTally}
+                    className="px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
                   >
-                    <Download className="w-3.5 h-3.5 text-amber-600" />
-                    <span className="hidden sm:inline">Template</span>
-                  </button>
-
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 shadow-xs"
-                    title="Import Client Credentials from Excel"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>Import Excel</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingTally ? 'animate-spin' : ''}`} />
+                    <span>Test Port {tallyPort}</span>
                   </button>
                 </div>
               </div>
+            )}
 
-              {/* Clients Credentials List */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto divide-y divide-slate-100">
-                {loadingVault ? (
-                  <div className="p-8 text-center text-xs text-slate-400">Loading credentials vault...</div>
-                ) : filteredVaultClients.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-400">No client credentials found matching filter.</div>
-                ) : (
-                  filteredVaultClients.map(c => {
-                    const edit = editedCredentials[c.gstin] || {};
-                    const currentUsername = edit.portal_username !== undefined ? edit.portal_username : (c.portal_username || '');
-                    const currentPassword = edit.portal_password !== undefined ? edit.portal_password : (c.portal_password || '');
-                    const isSaving = savingGstin === c.gstin;
-                    const isDeleting = deletingGstin === c.gstin;
-                    const isVisible = Boolean(showPasswords[c.gstin]);
+            {/* ══════════════════════════════════════════════════════════════════════
+              TAB 3: CREDENTIALS VAULT (PORTAL PASSWORDS & USERNAMES)
+          ══════════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'credentials' && (
+              <div className="space-y-4 animate-fadeIn">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImportVaultExcel}
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                />
 
-                    return (
-                      <div key={c.gstin} className="p-3.5 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                        {/* Client Info */}
-                        <div className="min-w-0 md:w-1/3">
-                          <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
+                {/* Vault Actions Toolbar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={vaultSearch}
+                      onChange={(e) => setVaultSearch(e.target.value)}
+                      placeholder="Search client, GSTIN, username..."
+                      className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-amber-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Filter Pills */}
+                    <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 text-xs">
+                      {(['ALL', 'CONFIGURED', 'MISSING'] as const).map(f => (
+                        <button
+                          key={f}
+                          onClick={() => setVaultFilter(f)}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all ${vaultFilter === f ? 'bg-amber-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={handleDownloadVaultTemplate}
+                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                      title="Download Excel Template"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="hidden sm:inline">Template</span>
+                    </button>
+
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 shadow-xs"
+                      title="Import Client Credentials from Excel"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Import Excel</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Clients Credentials List */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto divide-y divide-slate-100">
+                  {loadingVault ? (
+                    <div className="p-8 text-center text-xs text-slate-400">Loading credentials vault...</div>
+                  ) : filteredVaultClients.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-400">No client credentials found matching filter.</div>
+                  ) : (
+                    filteredVaultClients.map(c => {
+                      const edit = editedCredentials[c.gstin] || {};
+                      const currentUsername = edit.portal_username !== undefined ? edit.portal_username : (c.portal_username || '');
+                      const currentPassword = edit.portal_password !== undefined ? edit.portal_password : (c.portal_password || '');
+                      const isSaving = savingGstin === c.gstin;
+                      const isDeleting = deletingGstin === c.gstin;
+                      const isVisible = Boolean(showPasswords[c.gstin]);
+
+                      return (
+                        <div key={c.gstin} className="p-3.5 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                          {/* Client Info */}
+                          <div className="min-w-0 md:w-1/3">
+                            <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                              <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              <span className="truncate">{c.trade_name || c.legal_name || 'Client'}</span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                              {c.gstin}
+                            </div>
                           </div>
-                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                            {c.gstin}
-                          </div>
-                        </div>
 
-                        {/* Username & Password Inputs */}
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <input
-                            type="text"
-                            value={currentUsername}
-                            placeholder="Portal Username"
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditedCredentials(prev => ({
-                                ...prev,
-                                [c.gstin]: { ...prev[c.gstin], portal_username: val }
-                              }));
-                            }}
-                            className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
-                          />
-                          <div className="relative flex-1">
+                          {/* Username & Password Inputs */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
                             <input
-                              type={isVisible ? 'text' : 'password'}
-                              value={currentPassword}
-                              placeholder="Portal Password"
+                              type="text"
+                              value={currentUsername}
+                              placeholder="Portal Username"
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setEditedCredentials(prev => ({
                                   ...prev,
-                                  [c.gstin]: { ...prev[c.gstin], portal_password: val }
+                                  [c.gstin]: { ...prev[c.gstin], portal_username: val }
                                 }));
                               }}
-                              className="w-full px-2.5 py-1.5 pr-8 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
+                              className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
                             />
+                            <div className="relative flex-1">
+                              <input
+                                type={isVisible ? 'text' : 'password'}
+                                value={currentPassword}
+                                placeholder="Portal Password"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditedCredentials(prev => ({
+                                    ...prev,
+                                    [c.gstin]: { ...prev[c.gstin], portal_password: val }
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 pr-8 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder:text-slate-400 outline-none focus:border-amber-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPasswords(prev => ({ ...prev, [c.gstin]: !prev[c.gstin] }))}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                              >
+                                {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1.5 shrink-0 justify-end">
                             <button
-                              type="button"
-                              onClick={() => setShowPasswords(prev => ({ ...prev, [c.gstin]: !prev[c.gstin] }))}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                              onClick={() => handleSaveVaultClient(c.gstin)}
+                              disabled={isSaving}
+                              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-2xs disabled:opacity-50"
                             >
-                              {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              {isSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-emerald-400" />}
+                              <span>Save</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVaultClient(c.gstin, c.trade_name)}
+                              disabled={isDeleting}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                              title="Delete Client"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
-
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1.5 shrink-0 justify-end">
-                          <button
-                            onClick={() => handleSaveVaultClient(c.gstin)}
-                            disabled={isSaving}
-                            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-2xs disabled:opacity-50"
-                          >
-                            {isSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-emerald-400" />}
-                            <span>Save</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteVaultClient(c.gstin, c.trade_name)}
-                            disabled={isDeleting}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
-                            title="Delete Client"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ══════════════════════════════════════════════════════════════════════
+            {/* ══════════════════════════════════════════════════════════════════════
               TAB 4: GST RECO RULES & TOLERANCE
           ══════════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'reco' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 text-xs text-slate-700 space-y-1">
-                <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-4 h-4 text-emerald-600" />
-                  Section 16(2)(aa) Multi-Tier Reconciliation Matching Rules
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Configure maximum tax variance tolerance, alphanumeric cleaning strictness, and Section 16(4) outward cut-off tagging for automated 2B vs Books reconciliation.
-                </p>
-              </div>
+            {activeTab === 'reco' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 text-xs text-slate-700 space-y-1">
+                  <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-4 h-4 text-emerald-600" />
+                    Section 16(2)(aa) Multi-Tier Reconciliation Matching Rules
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Configure maximum tax variance tolerance, alphanumeric cleaning strictness, and Section 16(4) outward cut-off tagging for automated 2B vs Books reconciliation.
+                  </p>
+                </div>
 
-              {/* Match Tolerance Settings */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Maximum Tax Difference Tolerance (₹)</span>
-                    <span className="text-[11px] text-slate-500">Matched as "Value Mismatch" if variance is within this threshold</span>
+                {/* Match Tolerance Settings */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Maximum Tax Difference Tolerance (₹)</span>
+                      <span className="text-[11px] text-slate-500">Matched as "Value Mismatch" if variance is within this threshold</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 5, 10].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setTolerance(val)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all border ${tolerance === val
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                        >
+                          ₹{val}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    {[1, 2, 5, 10].map(val => (
+                </div>
+
+                {/* Fuzzy Invoice Strictness */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Fuzzy Invoice Matching Strictness</span>
+                    <span className="text-[11px] text-slate-500">Controls how aggressive the engine strips invoice serial numbers and prefixes</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { id: 'high', title: 'High (Standard)', desc: 'Strips FY prefix & leading zeroes. Exact serial.' },
+                      { id: 'medium', title: 'Medium (Balanced)', desc: 'Strips punctuation, hyphens, and legal suffixes (Pvt Ltd).' },
+                      { id: 'low', title: 'Low (Aggressive)', desc: 'Fuzzy token extraction and phonetic alphanumeric matching.' }
+                    ].map(lvl => (
                       <button
-                        key={val}
+                        key={lvl.id}
                         type="button"
-                        onClick={() => setTolerance(val)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all border ${
-                          tolerance === val
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                        }`}
+                        onClick={() => setFuzzyStrictness(lvl.id as any)}
+                        className={`p-3 rounded-xl text-left border transition-all ${fuzzyStrictness === lvl.id
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
                       >
-                        ₹{val}
+                        <span className="font-bold text-xs block">{lvl.title}</span>
+                        <span className="text-[10px] text-slate-500 leading-tight block mt-1">{lvl.desc}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-              </div>
 
-              {/* Fuzzy Invoice Strictness */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
-                <div>
-                  <span className="text-xs font-bold text-slate-900 block">Fuzzy Invoice Matching Strictness</span>
-                  <span className="text-[11px] text-slate-500">Controls how aggressive the engine strips invoice serial numbers and prefixes</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2.5">
-                  {[
-                    { id: 'high', title: 'High (Standard)', desc: 'Strips FY prefix & leading zeroes. Exact serial.' },
-                    { id: 'medium', title: 'Medium (Balanced)', desc: 'Strips punctuation, hyphens, and legal suffixes (Pvt Ltd).' },
-                    { id: 'low', title: 'Low (Aggressive)', desc: 'Fuzzy token extraction and phonetic alphanumeric matching.' }
-                  ].map(lvl => (
-                    <button
-                      key={lvl.id}
-                      type="button"
-                      onClick={() => setFuzzyStrictness(lvl.id as any)}
-                      className={`p-3 rounded-xl text-left border transition-all ${
-                        fuzzyStrictness === lvl.id
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="font-bold text-xs block">{lvl.title}</span>
-                      <span className="text-[10px] text-slate-500 leading-tight block mt-1">{lvl.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Statutory Switches */}
-              <div className="space-y-2">
-                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Section 16(4) Inward Cut-off Tagging</span>
-                    <span className="text-[11px] text-slate-500">Automatically flags invoices filed past 30th November as ineligible</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={section164Cutoff}
-                    onChange={(e) => setSection164Cutoff(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 rounded"
-                  />
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Rule 88A Tax Set-off Cascade Priority</span>
-                    <span className="text-[11px] text-slate-500">Exhausts IGST credit completely before utilizing CGST and SGST balances</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={rule88aCascade}
-                    onChange={(e) => setRule88aCascade(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 rounded"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={handleSaveRecoRules}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
-                >
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Save Reco Rules</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 5: SMTP MAILER & NOTIFICATION GATEWAYS
-          ══════════════════════════════════════════════ */}
-          {activeTab === 'gateway' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200/60 text-xs text-slate-700 space-y-1">
-                <div className="flex items-center justify-between">
-                  <p className="font-bold text-purple-900 flex items-center gap-1.5">
-                    <Mail className="w-4 h-4 text-purple-600" />
-                    Client Dispute Communication Mailer &amp; Gateway Configurations
-                  </p>
-                  {isSmtpConfigured ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      Active &amp; Authenticated
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                      <AlertTriangle className="w-3 h-3 text-amber-600" />
-                      App Password Required
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Configure your sender Gmail and 16-character Google App Password for dispatching GSTR-3B client summaries, IMS review sheets, and vendor mismatch notices.
-                </p>
-              </div>
-
-              {/* SMTP Configurations */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Google Gmail SMTP Credentials</h4>
-                
-                {/* Email and App Password */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">
-                      Sender Gmail Address <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={smtpSettings.email}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, email: e.target.value })}
-                      placeholder="e.g. ca.office@gmail.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                      <span>Google 16-Character App Password <span className="text-rose-500">*</span></span>
-                      <a
-                        href="https://myaccount.google.com/apppasswords"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] text-purple-600 hover:text-purple-800 font-normal inline-flex items-center gap-0.5"
-                      >
-                        Generate on Google <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showAppPassword ? "text" : "password"}
-                        value={appPassword}
-                        onChange={(e) => setAppPassword(e.target.value)}
-                        placeholder="•••• •••• •••• ••••"
-                        className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono tracking-wider"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAppPassword(!showAppPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                        title={showAppPassword ? "Hide password" : "Show password"}
-                      >
-                        {showAppPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                {/* Statutory Switches */}
+                <div className="space-y-2">
+                  <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Section 16(4) Inward Cut-off Tagging</span>
+                      <span className="text-[11px] text-slate-500">Automatically flags invoices filed past 30th November as ineligible</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Branding and Firm Phone */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">Sender Name (Branding)</label>
                     <input
-                      type="text"
-                      value={smtpSettings.senderName}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, senderName: e.target.value })}
-                      placeholder="Vaswani & Associates CA"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
+                      type="checkbox"
+                      checked={section164Cutoff}
+                      onChange={(e) => setSection164Cutoff(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">CA Office Contact / Phone</label>
+                  <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Rule 88A Tax Set-off Cascade Priority</span>
+                      <span className="text-[11px] text-slate-500">Exhausts IGST credit completely before utilizing CGST and SGST balances</span>
+                    </div>
                     <input
-                      type="text"
-                      value={caPhone}
-                      onChange={(e) => setCaPhone(e.target.value)}
-                      placeholder="+91 98200 12345 (Included in email footer)"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                      type="checkbox"
+                      checked={rule88aCascade}
+                      onChange={(e) => setRule88aCascade(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded"
                     />
                   </div>
                 </div>
 
-                {/* Host and Port */}
-                <div className="grid grid-cols-3 gap-3 pt-1">
-                  <div className="col-span-2 space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">SMTP Host</label>
-                    <input
-                      type="text"
-                      value={smtpSettings.host}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, host: e.target.value })}
-                      placeholder="smtp.gmail.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600">Port</label>
-                    <input
-                      type="text"
-                      value={smtpSettings.port}
-                      onChange={(e) => setSmtpSettings({ ...smtpSettings, port: e.target.value })}
-                      placeholder="587"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Twilio & WhatsApp Gateway */}
-              <div className="pt-2 border-t border-slate-100 space-y-2">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">SMS / WhatsApp Gateway Token</h4>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-600">Twilio / SMS Gateway API Key</label>
-                  <input
-                    type="password"
-                    value={twilioToken}
-                    onChange={(e) => setTwilioToken(e.target.value)}
-                    placeholder="sk_live_..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono outline-none focus:border-purple-500"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Default Indian DLT header registered: <strong>VASWNI</strong></p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={handleTestSmtp}
-                  disabled={isTestingSmtp || !smtpSettings.email || !appPassword}
-                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                  title="Sends a test verification email to verify Google SMTP credentials"
-                >
-                  <Send className={`w-3.5 h-3.5 text-purple-600 ${isTestingSmtp ? 'animate-pulse' : ''}`} />
-                  <span>{isTestingSmtp ? 'Sending Test...' : 'Test Connection'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveGateway}
-                  disabled={isSavingSmtp}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{isSavingSmtp ? 'Saving...' : 'Save Gateway Settings'}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 6: SOURAV AI ASSISTANT (GOOGLE GEMINI)
-          ══════════════════════════════════════════════ */}
-          {activeTab === 'ai' && (
-            <div className="space-y-5 animate-fadeIn">
-              {/* Hero Banner */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50/60 border border-amber-200/80 text-xs text-slate-800 flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-slate-950 font-bold text-xs shadow-xs">
-                      ✨
-                    </span>
-                    <span className="font-bold text-sm text-amber-950">
-                      Sourav — Universal Gemini AI Assistant
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                      gemini-2.0-flash
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Powered by Google Gemini 2.0 Flash with a 1-million token context window. Provides instant statutory answers for GST, GSTR-3B/1/2B mechanics, and 1-click deep-link action buttons across all 12 modules.
-                  </p>
-                </div>
-                <div className="shrink-0 pt-0.5">
-                  {isGeminiConfigured ? (
-                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                      {geminiKeyOrigin === 'cloud_office' && 'Active (Office Cloud License)'}
-                      {geminiKeyOrigin === 'cloud_global' && 'Active (Global Master)'}
-                      {geminiKeyOrigin === 'local_manual' && 'Active (Custom Local Key)'}
-                      {geminiKeyOrigin === 'env' && 'Active (Environment)'}
-                      {!['cloud_office', 'cloud_global', 'local_manual', 'env'].includes(geminiKeyOrigin || '') && 'Active & Ready'}
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                      Key Required
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* API Key Configuration Card */}
-              <div className="p-4 rounded-2xl border border-slate-200/80 bg-white space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Key className="w-4 h-4 text-amber-600" />
-                    Google Gemini API Key
-                  </label>
-                  <a
-                    href="https://aistudio.google.com/app/apikey"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1 hover:underline"
-                  >
-                    <span>Get Free Key at Google AI Studio</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-
-                <div className="relative">
-                  <input
-                    type={showGeminiKey ? 'text' : 'password'}
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value)}
-                    placeholder={isGeminiConfigured ? '•••••••••••••••••••••••••••••••••••••••• (Configured — enter new key to overwrite)' : 'Paste your Gemini API key (starts with AIzaSy...)'}
-                    className="w-full pr-10 pl-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 font-mono focus:bg-white focus:outline-none focus:border-amber-500 transition-all"
-                  />
+                <div className="flex justify-end pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowGeminiKey(!showGeminiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
-                    title={showGeminiKey ? 'Hide key' : 'Show key'}
+                    onClick={handleSaveRecoRules}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
                   >
-                    {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Save Reco Rules</span>
                   </button>
                 </div>
+              </div>
+            )}
 
-                <div className="flex items-center justify-between pt-1">
-                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Stored securely in local SQLite <code className="font-mono text-slate-700">app_config</code>. Never leaked to frontend bundles.</span>
+            {/* ══════════════════════════════════════════════════════════════════════
+              TAB 5: SMTP MAILER & NOTIFICATION GATEWAYS
+          ══════════════════════════════════════════════ */}
+            {activeTab === 'gateway' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200/60 text-xs text-slate-700 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-purple-900 flex items-center gap-1.5">
+                      <Mail className="w-4 h-4 text-purple-600" />
+                      Client Dispute Communication Mailer &amp; Gateway Configurations
+                    </p>
+                    {isSmtpConfigured ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Active &amp; Authenticated
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        <AlertTriangle className="w-3 h-3 text-amber-600" />
+                        App Password Required
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Configure your sender Gmail and 16-character Google App Password for dispatching GSTR-3B client summaries, IMS review sheets, and vendor mismatch notices.
+                  </p>
+                </div>
+
+                {/* SMTP Configurations */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Google Gmail SMTP Credentials</h4>
+
+                  {/* Email and App Password */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">
+                        Sender Gmail Address <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={smtpSettings.email}
+                        onChange={(e) => setSmtpSettings({ ...smtpSettings, email: e.target.value })}
+                        placeholder="e.g. ca.office@gmail.com"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+                        <span>Google 16-Character App Password <span className="text-rose-500">*</span></span>
+                        <a
+                          href="https://myaccount.google.com/apppasswords"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-purple-600 hover:text-purple-800 font-normal inline-flex items-center gap-0.5"
+                        >
+                          Generate on Google <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showAppPassword ? "text" : "password"}
+                          value={appPassword}
+                          onChange={(e) => setAppPassword(e.target.value)}
+                          placeholder="•••• •••• •••• ••••"
+                          className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono tracking-wider"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAppPassword(!showAppPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          title={showAppPassword ? "Hide password" : "Show password"}
+                        >
+                          {showAppPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSyncGeminiFromCloud}
-                      disabled={isSyncingGeminiCloud}
-                      className="px-3.5 py-2 rounded-xl border border-sky-300 bg-sky-50 text-sky-800 font-bold text-xs hover:bg-sky-100 transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                      title="Fetch and sync latest Gemini API key from Office Cloud License"
-                    >
-                      <CloudDownload className={`w-3.5 h-3.5 text-sky-600 ${isSyncingGeminiCloud ? 'animate-bounce' : ''}`} />
-                      <span>{isSyncingGeminiCloud ? 'Syncing...' : 'Sync from Cloud'}</span>
-                    </button>
+                  {/* Branding and Firm Phone */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">Sender Name (Branding)</label>
+                      <input
+                        type="text"
+                        value={smtpSettings.senderName}
+                        onChange={(e) => setSmtpSettings({ ...smtpSettings, senderName: e.target.value })}
+                        placeholder="Vaswani & Associates CA"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-medium"
+                      />
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={handleTestGemini}
-                      disabled={isTestingGemini || (!geminiApiKey.trim() && !isGeminiConfigured)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {isTestingGemini ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> : <Send className="w-3.5 h-3.5 text-amber-600" />}
-                      <span>{isTestingGemini ? 'Testing...' : 'Test Connection'}</span>
-                    </button>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">CA Office Contact / Phone</label>
+                      <input
+                        type="text"
+                        value={caPhone}
+                        onChange={(e) => setCaPhone(e.target.value)}
+                        placeholder="+91 98200 12345 (Included in email footer)"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
 
-                    <button
-                      type="button"
-                      onClick={handleSaveGeminiKey}
-                      disabled={isSavingGemini || !geminiApiKey.trim()}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs shadow-xs transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>{isSavingGemini ? 'Saving...' : 'Save Locally'}</span>
-                    </button>
+                  {/* Host and Port */}
+                  <div className="grid grid-cols-3 gap-3 pt-1">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">SMTP Host</label>
+                      <input
+                        type="text"
+                        value={smtpSettings.host}
+                        onChange={(e) => setSmtpSettings({ ...smtpSettings, host: e.target.value })}
+                        placeholder="smtp.gmail.com"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">Port</label>
+                      <input
+                        type="text"
+                        value={smtpSettings.port}
+                        onChange={(e) => setSmtpSettings({ ...smtpSettings, port: e.target.value })}
+                        placeholder="587"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-purple-500 font-mono text-[11px]"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Connection Test Result Feedback */}
-                {geminiTestResult && (
-                  <div className={`p-3 rounded-xl text-xs border ${
-                    geminiTestResult.success
-                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                      : 'bg-rose-50/70 border-rose-200 text-rose-900'
-                  }`}>
-                    <div className="flex items-center gap-1.5 font-bold mb-1">
-                      {geminiTestResult.success ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Gemini API Test Passed</span>
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="w-4 h-4 text-rose-600" />
-                          <span>Connection Test Failed</span>
-                        </>
-                      )}
-                    </div>
-                    <p className="text-[11px] font-mono leading-relaxed pl-5">
-                      {geminiTestResult.message}
-                    </p>
+                {/* Twilio & WhatsApp Gateway */}
+                <div className="pt-2 border-t border-slate-100 space-y-2">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">SMS / WhatsApp Gateway Token</h4>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">Twilio / SMS Gateway API Key</label>
+                    <input
+                      type="password"
+                      value={twilioToken}
+                      onChange={(e) => setTwilioToken(e.target.value)}
+                      placeholder="sk_live_..."
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono outline-none focus:border-purple-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Default Indian DLT header registered: <strong>VASWNI</strong></p>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* Central Office Cloud Distribution Card (Admin / Firebase) */}
-              <div className="p-4 rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-sky-50/50 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0 mt-0.5">
-                      <CloudUpload className="w-4 h-4" />
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={handleTestSmtp}
+                    disabled={isTestingSmtp || !smtpSettings.email || !appPassword}
+                    className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                    title="Sends a test verification email to verify Google SMTP credentials"
+                  >
+                    <Send className={`w-3.5 h-3.5 text-purple-600 ${isTestingSmtp ? 'animate-pulse' : ''}`} />
+                    <span>{isTestingSmtp ? 'Sending Test...' : 'Test Connection'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveGateway}
+                    disabled={isSavingSmtp}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isSavingSmtp ? 'Saving...' : 'Save Gateway Settings'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════════
+              TAB 6: THEME & SYSTEM ARCHITECTURE
+          ══════════════════════════════════════════════ */}
+            {activeTab === 'appearance' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60 text-xs text-slate-700 space-y-1">
+                  <p className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    Luminous Fluid Corporate Architecture
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Clean Light Theme Enterprise palette, tabular monospaced currency tables, and strict zero-merge Excel exports.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Windows Background Auto-Start Controls */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>🚀 Windows Background Auto-Start</span>
+                      </span>
+                      <p className="text-[11px] text-slate-500">
+                        Silently launch AUDIT WITH VASWANI on Windows boot in System Tray so Express backend (Port 3001) is always ready.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={openAtLogin}
+                      onCheckedChange={handleToggleAutostart}
+                      disabled={isUpdatingAutostart}
+                    />
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Zero-Merge Table Architecture</span>
+                      <span className="text-[11px] text-slate-500">Strips all &lt;mergeCell&gt; tags from exports to ensure 100% sortable &amp; XLOOKUP safe workbooks</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs">
+                      Strict Active
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Tabular Figures (JetBrains Mono)</span>
+                      <span className="text-[11px] text-slate-500">Guarantees razor-sharp column alignment across all multi-currency amounts</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs">
+                      Standard Locked
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Fluid 60 FPS Spring Animations</span>
+                      <span className="text-[11px] text-slate-500">Smooth hover drawer expansion and floating modal transitions</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs">
+                      Optimized
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════════
+              TAB 8: ACCOUNT & ENTERPRISE SIGN OUT
+          ══════════════════════════════════════════════ */}
+            {activeTab === 'account' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/60 text-xs text-slate-700 space-y-1">
+                  <p className="font-bold text-rose-900 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-rose-600" />
+                    Enterprise CA Session &amp; Security Authentication
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Manage your active practitioner session, verified CA firm credentials, and terminal authentication status.
+                  </p>
+                </div>
+
+                {/* Active Profile Card */}
+                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-base flex items-center justify-center shadow-xs">
+                      {(loginUser || 'CA').slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-2">
-                        Central Office Cloud Distribution (Firebase Firestore)
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold">
-                          Admin / Super User
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-base font-bold text-slate-900 leading-tight">
+                          {loginUser || 'CA Vipul Patel'}
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] uppercase">
+                          Verified
                         </span>
-                      </h4>
-                      <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
-                        Save the Gemini key into Firebase once. All team workstations in this office will automatically sync and activate Sourav AI without individual user configuration.
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Partner • VCAN &amp; Associates LLP, Chartered Accountants
+                      </p>
+                      <p className="text-[11px] font-mono text-blue-600">
+                        Firm Reg No: 104522W • Core Station Connected
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-2.5 border-t border-indigo-100 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-4 text-xs">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
-                      <input
-                        type="radio"
-                        name="cloudPushScope"
-                        value="office"
-                        checked={cloudPushScope === 'office'}
-                        onChange={() => setCloudPushScope('office')}
-                        className="text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>This Office License (<code className="font-mono text-indigo-900 font-bold">serial_keys</code>)</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
-                      <input
-                        type="radio"
-                        name="cloudPushScope"
-                        value="global"
-                        checked={cloudPushScope === 'global'}
-                        onChange={() => setCloudPushScope('global')}
-                        className="text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>Global Master Default (<code className="font-mono text-indigo-900 font-bold">system_config</code>)</span>
-                    </label>
+                {/* System Session Parameters */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                      Terminal Node
+                    </span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {typeof window !== 'undefined' ? window.location.hostname || 'Localhost 127.0.0.1' : 'Localhost'}
+                    </span>
                   </div>
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
+                      Security Layer
+                    </span>
+                    <span className="font-semibold text-emerald-700 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      AES-256 Encrypted Local SQLite
+                    </span>
+                  </div>
+                </div>
 
+                {/* Log Out Action Card */}
+                <div className="p-5 rounded-2xl bg-rose-50/40 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h5 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <LogOut className="w-4 h-4 text-rose-600" />
+                      Sign Out of Finpulse Consulting
+                    </h5>
+                    <p className="text-[11px] text-slate-600 max-w-md leading-relaxed">
+                      Safely disconnect the active workspace session. Unsaved draft return matrices are automatically preserved in the local storage cache.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={handlePushGeminiToCloud}
-                    disabled={isPushingGeminiCloud || !geminiApiKey.trim()}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                    title="Upload entered key to Firebase Firestore for centralized multi-workstation sync"
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: 'Log Out Session',
+                        description: 'Are you sure you want to log out of Finpulse Consulting?',
+                        confirmText: 'Log Out',
+                        variant: 'destructive',
+                      });
+                      if (ok) {
+                        onClose();
+                        if (onLogout) onLogout();
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all shrink-0 cursor-pointer"
                   >
-                    <CloudUpload className={`w-3.5 h-3.5 ${isPushingGeminiCloud ? 'animate-bounce' : ''}`} />
-                    <span>{isPushingGeminiCloud ? 'Pushing to Firebase...' : 'Push to Cloud'}</span>
+                    <LogOut className="w-4 h-4" />
+                    <span>Log Out Session</span>
                   </button>
                 </div>
               </div>
-
-              {/* Windows Background Auto-Start Controls */}
-              <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <span>🚀 Windows Background Auto-Start</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500">
-                      Silently launch AUDIT WITH VASWANI on Windows boot in System Tray so Express backend (Port 3001) is always ready.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={openAtLogin}
-                    onCheckedChange={handleToggleAutostart}
-                    disabled={isUpdatingAutostart}
-                  />
-                </div>
-              </div>
-
-              {/* Feature Grid Card */}
-              <div className="p-4 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-2.5">
-                <span className="text-xs font-bold text-slate-800 block">
-                  Sourav AI Capabilities &amp; Built-In Domain Safeguards
-                </span>
-                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
-                    <span className="font-semibold text-slate-900 block mb-0.5">⚖️ Statutory Authority</span>
-                    Cites exact CGST Act sections (Sec 16(2)(aa), Sec 17(5), Sec 50 interest) and official CBIC circulars.
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
-                    <span className="font-semibold text-slate-900 block mb-0.5">🧭 1-Click Navigation</span>
-                    Emits deep-link action pills allowing instant navigation to IMS, 3B Working, Reco, or Notices.
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
-                    <span className="font-semibold text-slate-900 block mb-0.5">🗣️ Adaptive Code-Switching</span>
-                    Responds naturally in Hindi, Hinglish, or professional English based on your input style.
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200/60">
-                    <span className="font-semibold text-slate-900 block mb-0.5">🏢 Context Grounding</span>
-                    Automatically recognizes your active client name, GSTIN, and financial year without manual typing.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 7: THEME & SYSTEM ARCHITECTURE
-          ══════════════════════════════════════════════ */}
-          {activeTab === 'appearance' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60 text-xs text-slate-700 space-y-1">
-                <p className="font-bold text-amber-900 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  Luminous Fluid Corporate Architecture
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Clean Light Theme Enterprise palette, tabular monospaced currency tables, and strict zero-merge Excel exports.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Zero-Merge Table Architecture</span>
-                    <span className="text-[11px] text-slate-500">Strips all &lt;mergeCell&gt; tags from exports to ensure 100% sortable &amp; XLOOKUP safe workbooks</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs">
-                    Strict Active
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Tabular Figures (JetBrains Mono)</span>
-                    <span className="text-[11px] text-slate-500">Guarantees razor-sharp column alignment across all multi-currency amounts</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs">
-                    Standard Locked
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Fluid 60 FPS Spring Animations</span>
-                    <span className="text-[11px] text-slate-500">Smooth hover drawer expansion and floating modal transitions</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs">
-                    Optimized
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════════
-              TAB 8: ACCOUNT & ENTERPRISE SIGN OUT
-          ══════════════════════════════════════════════ */}
-          {activeTab === 'account' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/60 text-xs text-slate-700 space-y-1">
-                <p className="font-bold text-rose-900 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-rose-600" />
-                  Enterprise CA Session &amp; Security Authentication
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Manage your active practitioner session, verified CA firm credentials, and terminal authentication status.
-                </p>
-              </div>
-
-              {/* Active Profile Card */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-base flex items-center justify-center shadow-xs">
-                    {(loginUser || 'CA').slice(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-base font-bold text-slate-900 leading-tight">
-                        {loginUser || 'CA Vipul Patel'}
-                      </h4>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] uppercase">
-                        Verified
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      Partner • VCAN &amp; Associates LLP, Chartered Accountants
-                    </p>
-                    <p className="text-[11px] font-mono text-blue-600">
-                      Firm Reg No: 104522W • Core Station Connected
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* System Session Parameters */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
-                    Terminal Node
-                  </span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    {typeof window !== 'undefined' ? window.location.hostname || 'Localhost 127.0.0.1' : 'Localhost'}
-                  </span>
-                </div>
-                <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
-                    Security Layer
-                  </span>
-                  <span className="font-semibold text-emerald-700 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    AES-256 Encrypted Local SQLite
-                  </span>
-                </div>
-              </div>
-
-              {/* Log Out Action Card */}
-              <div className="p-5 rounded-2xl bg-rose-50/40 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <h5 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <LogOut className="w-4 h-4 text-rose-600" />
-                    Sign Out of Vaswani Enterprise
-                  </h5>
-                  <p className="text-[11px] text-slate-600 max-w-md leading-relaxed">
-                    Safely disconnect the active workspace session. Unsaved draft return matrices are automatically preserved in the local storage cache.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to log out of Vaswani Return Enterprise?')) {
-                      onClose();
-                      if (onLogout) onLogout();
-                    }
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all shrink-0 cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out Session</span>
-                </button>
-              </div>
-            </div>
-          )}
+            )}
           </div>
         </div>
 
@@ -3083,8 +3023,14 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
             {onLogout && (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to log out of Vaswani Return Enterprise?')) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Log Out Session',
+                    description: 'Are you sure you want to log out of Finpulse Consulting?',
+                    confirmText: 'Log Out',
+                    variant: 'destructive',
+                  });
+                  if (ok) {
                     onClose();
                     onLogout();
                   }
@@ -3097,7 +3043,7 @@ export function SettingsModal({ isOpen, onClose, initialTab = 'storage', onLogou
               </button>
             )}
             <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
-              VASWANI RETURN ENTERPRISE v4.8 • ALL SETTINGS CONSOLIDATED &amp; PERSISTED
+              FINPULSE CONSULTING v4.8 • ALL SETTINGS CONSOLIDATED &amp; PERSISTED
             </span>
           </div>
           <button

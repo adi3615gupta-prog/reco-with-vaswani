@@ -26,7 +26,7 @@ describe('Suite 08: Monthly Audit UI & Navigation Registration', () => {
         const indexPath = path.resolve(__dirname, '../pages/Index.tsx');
         const content = fs.readFileSync(indexPath, 'utf8');
 
-        expect(content).toContain("import MonthlyAuditSuite from './MonthlyAuditSuite'");
+        expect(content.includes("import MonthlyAuditSuite from './MonthlyAuditSuite'") || content.includes("import('./MonthlyAuditSuite')")).toBe(true);
         expect(content).toContain("appRoute === 'monthly-audit'");
         expect(content).toContain("<MonthlyAuditSuite onBack={() => setAppRoute('hub')} />");
         expect(content).toContain('SUITE 08');
@@ -37,7 +37,7 @@ describe('Suite 08: Monthly Audit UI & Navigation Registration', () => {
         const auditPath = path.resolve(__dirname, '../pages/AuditModule.tsx');
         const content = fs.readFileSync(auditPath, 'utf8');
 
-        expect(content).toContain("import MonthlyAuditSuite from './MonthlyAuditSuite'");
+        expect(content.includes("import MonthlyAuditSuite from './MonthlyAuditSuite'") || content.includes("import('./MonthlyAuditSuite')")).toBe(true);
         expect(content).toContain("selectedSubModule === 'monthly-audit'");
         expect(content).toContain("<MonthlyAuditSuite onBack={() => setSelectedSubModule('menu')} />");
         expect(content).toContain('Launch Monthly Audit Suite');
@@ -84,7 +84,7 @@ describe('Suite 08: Monthly Audit UI & Navigation Registration', () => {
         // Check Section 3 sub-tabs
         expect(content).toContain('3.1 Sales (Reco R1)');
         expect(content).toContain('3.2 Purchase (Reco 2B)');
-        expect(content).toContain('3.3 Journal & TDS');
+        expect(content).toContain('3.3 TDS Working');
         expect(content).toContain('3.4 Bank, Loans & 26AS');
         expect(content).toContain('3.5 ROC Charges');
         expect(content).toContain('3.6 Cash 40A(3) & FA');

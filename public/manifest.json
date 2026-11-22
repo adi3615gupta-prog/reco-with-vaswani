@@ -1,6 +1,6 @@
 {
-  "name": "Vaswani Return Enterprise - Audit & Tax Intelligence",
-  "short_name": "Vaswani Return",
+  "name": "Finpulse Consulting - Audit & Tax Intelligence",
+  "short_name": "Finpulse Consulting",
   "description": "Enterprise-grade statutory audit, GSTN filing autopilot, TRACES TDS reconciliation, and bank CMA credit appraisal platform for Chartered Accountants.",
   "start_url": "/dashboard",
   "scope": "/",
@@ -10,6 +10,12 @@
   "theme_color": "#0f172a",
   "categories": ["business", "finance", "productivity"],
   "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",

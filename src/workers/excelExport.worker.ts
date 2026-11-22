@@ -166,8 +166,8 @@ self.onmessage = async (e: MessageEvent<ExportWorkerRequest>) => {
 
     wb.Props = {
       Title: filename.replace('.xlsx', ''),
-      Subject: 'Vaswani Enterprise Report',
-      Author: 'Vaswani Return Enterprise Suite',
+      Subject: 'Finpulse Consulting Report',
+      Author: 'Finpulse Consulting Suite',
       Company: payload?.companyName || 'Client Organization',
       CreatedDate: new Date()
     };
@@ -185,7 +185,7 @@ self.onmessage = async (e: MessageEvent<ExportWorkerRequest>) => {
       percent: 100
     } satisfies ExportWorkerResponse);
 
-    self.postMessage(
+    (self as any).postMessage(
       {
         type: 'SUCCESS',
         buffer: arrayBuffer,

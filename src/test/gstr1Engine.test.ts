@@ -185,4 +185,63 @@ describe('GSTR-1 Canonical Engine & TaxPower Normalizer (Plan 25-01)', () => {
     expect(parsed.hsn.hsn_b2b).toBeDefined();
     expect(parsed.doc_issue.doc_det).toBeDefined();
   });
+  it('enforces mandatory IGST for intra-state SEZ supplies per Sec 7(5)(b) IGST Act (GSTR1-01)', () => {
+    const rawInvoices: RawSalesRecord[] = [
+      {
+        gstin: '27AABCS1429B1Z1', // Same state (27 MH) as supplier
+        invoiceNo: 'SEZ-INV-01',
+        invoiceDate: '10-09-2024',
+        pos: '27',
+        taxRate: 18,
+        taxableValue: 100000,
+        invoiceValue: 118000,
+        invoiceType: 'SEWP'
+      }
+    ];
+
+    const returnData = classifyOutwardInvoices(rawInvoices, '092024', '27AAGCD4105L1ZO');
+    expect(returnData.b2b).toHaveLength(1);
+    const inv = returnData.b2b[0].inv[0];
+    expect(inv.inv_typ).toBe('SEWP');
+    // Must emit IGST, not CGST/SGST
+    expect(inv.itms[0].itm_det.iamt).toBe(18000);
+    expect(inv.itms[0].itm_det.camt).toBe(0);
+    expect(inv.itms[0].itm_det.samt).toBe(0);
+  });
+
+  it('groups multi-rate line items on same invoice under single invoice object with itms[] (GSTR1-02)', () => {
+    const rawInvoices: RawSalesRecord[] = [
+      {
+        gstin: '27AABCS1429B1Z1',
+        invoiceNo: 'MULTI-01',
+        invoiceDate: '15-09-2024',
+        pos: '27',
+        taxRate: 18,
+        taxableValue: 10000,
+        invoiceValue: 11800
+      },
+      {
+        gstin: '27AABCS1429B1Z1',
+        invoiceNo: 'MULTI-01',
+        invoiceDate: '15-09-2024',
+        pos: '27',
+        taxRate: 12,
+        taxableValue: 20000,
+        invoiceValue: 22400
+      }
+    ];
+
+    const returnData = classifyOutwardInvoices(rawInvoices, '092024', '27AAGCD4105L1ZO');
+    expect(returnData.b2b).toHaveLength(1);
+    // Exactly 1 invoice for MULTI-01
+    expect(returnData.b2b[0].inv).toHaveLength(1);
+    const inv = returnData.b2b[0].inv[0];
+    expect(inv.inum).toBe('MULTI-01');
+    expect(inv.val).toBe(34200);
+    expect(inv.itms).toHaveLength(2);
+    expect(inv.itms[0].num).toBe(1);
+    expect(inv.itms[0].itm_det.rt).toBe(18);
+    expect(inv.itms[1].num).toBe(2);
+    expect(inv.itms[1].itm_det.rt).toBe(12);
+  });
 });

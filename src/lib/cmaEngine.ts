@@ -212,9 +212,11 @@ export interface CmaAppraisalReport {
   mpbfMethodII: {
     currentAssets: number;
     currentLiabilities: number;
+    otherCurrentLiabilities?: number;
+    workingCapitalBankBorrowings?: number;
     workingCapitalGap: number;
     minimumStipulatedNWC: number; // 25% of CA
-    maxPermissibleBankFinance: number; // 75% of (CA - CL)
+    maxPermissibleBankFinance: number; // Method II MPBF
     actualNWCProvided: number;
     shortfallInNWC: number;
   };
@@ -1274,7 +1276,10 @@ export function generateCmaAppraisalReport(
   // Calculate Tandon Committee Method II MPBF
   const ca = normalizedData.normalizedCurrentAssets;
   const cl = normalizedData.normalizedCurrentLiabilities;
-  const workingCapitalGap = Math.max(0, ca - cl);
+  const workingCapitalBankBorrowings = normalizedData.workingCapitalBankBorrowings || 0;
+  // Other Current Liabilities (OCL) excludes short-term bank borrowings / CC / OD limits
+  const ocl = Math.max(0, cl - workingCapitalBankBorrowings);
+  const workingCapitalGap = Math.max(0, ca - ocl);
   const minimumStipulatedNWC = 0.25 * ca; // 25% of Current Assets
   const maxPermissibleBankFinance = Math.max(0, workingCapitalGap - minimumStipulatedNWC);
   const actualNWCProvided = Math.max(0, normalizedData.netWorkingCapital);
@@ -1282,7 +1287,7 @@ export function generateCmaAppraisalReport(
 
   return {
     companyName: extraction.companyInfo.name || 'Company',
-    financialYear: extraction.companyInfo.financialYear || '2025-26',
+    financialYear: extraction.companyInfo.financialYear || '2026-27',
     options,
     normalizedData,
     ratios,
@@ -1290,6 +1295,8 @@ export function generateCmaAppraisalReport(
     mpbfMethodII: {
       currentAssets: ca,
       currentLiabilities: cl,
+      otherCurrentLiabilities: ocl,
+      workingCapitalBankBorrowings,
       workingCapitalGap,
       minimumStipulatedNWC,
       maxPermissibleBankFinance,
@@ -1342,8 +1349,7 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   const wsAudit = workbook.addWorksheet('Tally Ledger Audit Mapping');
   wsAudit.views = [{ showGridLines: true }];
 
-  // Title Rows
-  wsAudit.mergeCells('A1:F1');
+  // Title Rows (Zero-Merge Architecture: Clean cell A1/A2 without locking columns)
   const titleCell3 = wsAudit.getCell('A1');
   titleCell3.value = `TALLY TO CMA ITEMISED LEDGER MAPPING TRACK RECORD — ${report.companyName.toUpperCase()}`;
   titleCell3.font = fontTitle;
@@ -1351,7 +1357,6 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   titleCell3.alignment = { vertical: 'middle', horizontal: 'left' };
   wsAudit.getRow(1).height = 30;
 
-  wsAudit.mergeCells('A2:F2');
   const subCell3 = wsAudit.getCell('A2');
   subCell3.value = `Total Mapped Ledgers: ${report.normalizedData.allMappedLedgers.length} | FY: ${report.financialYear}`;
   subCell3.font = fontSubTitle;
@@ -1428,7 +1433,7 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   const wsCma = workbook.addWorksheet('CMA Normalized Financials');
   wsCma.views = [{ showGridLines: true }];
 
-  wsCma.mergeCells('A1:E1');
+  // Title Rows (Zero-Merge Architecture: Clean cell A1/A2 without locking columns)
   const titleCell2 = wsCma.getCell('A1');
   titleCell2.value = `NORMALIZED CMA BALANCE SHEET & P&L STATEMENT (Tally vs Banking CMA Standard)`;
   titleCell2.font = fontTitle;
@@ -1436,7 +1441,6 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   titleCell2.alignment = { vertical: 'middle', horizontal: 'left' };
   wsCma.getRow(1).height = 30;
 
-  wsCma.mergeCells('A2:E2');
   const subCell2 = wsCma.getCell('A2');
   subCell2.value = `Company: ${report.companyName} | FY: ${report.financialYear}`;
   subCell2.font = fontSubTitle;
@@ -1518,7 +1522,7 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
 
     // Rows 46-49: MPBF
     { row: 46, head: 'TANDON COMMITTEE METHOD II MPBF CALCULATION', remarks: '', isHeader: true },
-    { row: 47, head: 'Working Capital Gap (Normalized CA - CL)', rawValue: 0, adjValue: 0, normFormula: 'D24-D29', normValue: Math.max(0, d.normalizedCurrentAssets - d.normalizedCurrentLiabilities), remarks: 'Assessed Working Capital Gap' },
+    { row: 47, head: 'Working Capital Gap (Normalized CA - OCL)', rawValue: 0, adjValue: 0, normFormula: 'D24-(D29-D27)', normValue: report.mpbfMethodII.workingCapitalGap, remarks: 'Assessed Working Capital Gap (Excluding CC/OD)' },
     { row: 48, head: 'Minimum Stipulated NWC Margin (25% of CA)', rawValue: 0, adjValue: 0, normFormula: '0.25*D24', normValue: report.mpbfMethodII.minimumStipulatedNWC, remarks: 'Mandatory Borrower Margin Contribution' },
     { row: 49, head: 'MAXIMUM PERMISSIBLE BANK FINANCE (MPBF)', rawValue: 0, adjValue: 0, normFormula: 'MAX(0, D47-D48)', normValue: report.mpbfMethodII.maxPermissibleBankFinance, remarks: 'Maximum Bank CC Limit Ceiling', isTotal: true },
   ];
@@ -1528,7 +1532,6 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
     row.height = item.isHeader ? 22 : item.isTotal ? 24 : 20;
 
     if (item.isHeader) {
-      wsCma.mergeCells(`A${item.row}:E${item.row}`);
       const cell = wsCma.getCell(`A${item.row}`);
       cell.value = item.head;
       cell.font = fontHeader;
@@ -1610,7 +1613,7 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   const wsRatios = workbook.addWorksheet('Bank Ratio Scorecard');
   wsRatios.views = [{ showGridLines: true }];
 
-  wsRatios.mergeCells('A1:F1');
+  // Title Rows (Zero-Merge Architecture: Clean cell A1/A2 without locking columns)
   const titleCell1 = wsRatios.getCell('A1');
   titleCell1.value = `CMA CREDIT APPRAISAL & FINANCIAL RATIO ANALYSIS — ${report.companyName.toUpperCase()}`;
   titleCell1.font = fontTitle;
@@ -1618,7 +1621,6 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
   titleCell1.alignment = { vertical: 'middle', horizontal: 'left' };
   wsRatios.getRow(1).height = 30;
 
-  wsRatios.mergeCells('A2:F2');
   const subCell1 = wsRatios.getCell('A2');
   subCell1.value = `Financial Year: ${report.financialYear} | Generated: ${report.generatedAt}`;
   subCell1.font = fontSubTitle;
@@ -1705,9 +1707,8 @@ export async function exportCmaReportToExcel(report: CmaAppraisalReport): Promis
     }
   });
 
-  // Alerts section below ratios
+  // Alerts section below ratios (Zero-Merge Architecture)
   const alertStartRow = 5 + report.ratios.length + 2;
-  wsRatios.mergeCells(`A${alertStartRow}:F${alertStartRow}`);
   const cellAlertHeader = wsRatios.getCell(`A${alertStartRow}`);
   cellAlertHeader.value = 'QUALITATIVE RISK ALERTS & UNDERWRITER DIAGNOSTICS';
   cellAlertHeader.font = fontHeader;

@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import type { MonthlyComparisonRow, DebitNoteRecord } from '../types';
 import type { PartySummary } from '@/lib/partyWise';
-import { ACC_FMT } from '../styles/palette';
+import { ACC_FMT, PARTY_STATUS_FILL, PARTY_STATUS_HEADER } from '../styles/palette';
 import { formatDateStr, numVal, parseMonthFY, getDiffMonthStr, r2 } from '../styles/formatters';
 import { addCorporateHeader } from '../styles/corporateHeader';
 import { removeAllMergesFromWorkbook } from '../styles/zeroMergeGuard';
@@ -10,18 +10,6 @@ import { appendExecutiveSummary, appendMethodologySheet } from './executiveSumma
 import { appendGstinReports } from './allInvoicesSheet';
 import { appendNavigationSheet } from './navigationSheet';
 import { appendAuditTrailSheet } from './masterExport';
-
-export const PARTY_STATUS_FILL: Record<string, string> = {
-  'All Matched': 'E6F5ED',
-  'Has Mismatches': 'FEF3C7',
-  'Has Missing': 'FEE2E2',
-};
-
-export const PARTY_STATUS_HEADER: Record<string, string> = {
-  'All Matched': '1B7A4D',
-  'Has Mismatches': 'B45309',
-  'Has Missing': 'B91C1C',
-};
 
 export function deriveOverallStatus(statuses: Set<string>): string {
   if (
@@ -272,7 +260,7 @@ export function appendPartyWiseSheets(
     headerRow[detailHeaders.length - 2] = overall;
     headerRow[detailHeaders.length - 1] = `${p.invoices.length} invoices`;
 
-    merges.push({ s: { r: startRowIdx, c: 0 }, e: { r: startRowIdx, c: detailHeaders.length - 3 } });
+    // Zero-merge architecture: avoid cell merges for sorting/filtering integrity
     detailRows.push(headerRow);
 
     for (const inv of p.invoices) {
@@ -303,7 +291,6 @@ export function appendPartyWiseSheets(
     }
     subRow[11] = { t: 's', f: `"Diff: ₹" & TEXT(ABS(F${subRowIdx + 1}-G${subRowIdx + 1})+ABS(H${subRowIdx + 1}-I${subRowIdx + 1})+ABS(J${subRowIdx + 1}-K${subRowIdx + 1}), "0.00")` };
 
-    merges.push({ s: { r: subRowIdx, c: 0 }, e: { r: subRowIdx, c: 3 } });
     subtotalRowIdxs.add(subRowIdx);
     detailRows.push(subRow);
 
@@ -315,8 +302,7 @@ export function appendPartyWiseSheets(
   const wsDetails = XLSX.utils.aoa_to_sheet([]);
   XLSX.utils.sheet_add_aoa(wsDetails, [detailHeaders, ...detailRows], { origin: 'A3' });
   addCorporateHeader(wsDetails, detailHeaders.length, companyName, 'Party Details', tabs);
-  if (!wsDetails['!merges']) wsDetails['!merges'] = [];
-  wsDetails['!merges'].push(...merges);
+  wsDetails['!merges'] = [];
   wsDetails['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
   wsDetails['!cols'] = [
     { wch: 14 }, { wch: 15 }, { wch: 15 }, { wch: 11 }, { wch: 11 },
@@ -1628,8 +1614,7 @@ export function appendPartyMismatchBreakdownSheet(
     ws['!rows'][excelRow] = { hpt: isTotal ? 22 : isBanner ? 20 : 16 };
 
     if (isBanner) {
-      if (!ws['!merges']) ws['!merges'] = [];
-      ws['!merges'].push({ s: { r: excelRow, c: 0 }, e: { r: excelRow, c: 19 } });
+      // Zero-merge architecture: avoid cell merge on banner
     }
 
     const rowData = dataRows[r - 1];
@@ -1936,7 +1921,7 @@ export function buildPartyWiseWorkbook(
     headerRow[NUM_DETAIL_COLS - 2] = p.overall;
     headerRow[NUM_DETAIL_COLS - 1] = `${p.totals.count} invoices`;
 
-    merges.push({ s: { r: startRowIdx, c: 0 }, e: { r: startRowIdx, c: NUM_DETAIL_COLS - 3 } });
+    // Zero-merge architecture: avoid cell merges for sorting/filtering integrity
     detailRows.push(headerRow);
 
     const invoiceStartRow = detailRows.length + 4;
@@ -1966,7 +1951,6 @@ export function buildPartyWiseWorkbook(
     subRow[11] = `Diff: ₹${p.totals.totalDiff.toFixed(2)}`;
 
     const subRowIdx = detailRows.length + 3;
-    merges.push({ s: { r: subRowIdx, c: 0 }, e: { r: subRowIdx, c: 3 } });
     subtotalRowIdxs.add(subRowIdx);
     detailRows.push(subRow);
 
@@ -1978,8 +1962,7 @@ export function buildPartyWiseWorkbook(
   const ws2 = XLSX.utils.aoa_to_sheet([]);
   XLSX.utils.sheet_add_aoa(ws2, [detailHeaders, ...detailRows], { origin: 'A3' });
   addCorporateHeader(ws2, detailHeaders.length, companyName, 'Party Details', tabs);
-  if (!ws2['!merges']) ws2['!merges'] = [];
-  ws2['!merges'].push(...merges);
+  ws2['!merges'] = [];
   ws2['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
   ws2['!cols'] = [
     { wch: 14 }, { wch: 15 }, { wch: 15 }, { wch: 11 }, { wch: 11 },

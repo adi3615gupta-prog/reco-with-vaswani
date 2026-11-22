@@ -33,97 +33,43 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────
 
-interface TallyDirectImportProps {
-  onBack: () => void;
-  onImportToReconciliation?: (data: {
-    prFile: File;
-    prDnFile?: File;
-    journalFiles?: File[];
-    companyName?: string;
-  }) => void;
-}
-
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
-
-export interface CustomTaxLedger {
+interface CustomTaxLedger {
   id: string;
   name: string;
   category: 'CGST' | 'SGST' | 'IGST';
   type: 'Input' | 'Output' | 'RCM';
 }
 
-
 interface VoucherTypeConfig {
   type: TallyVoucherType;
   label: string;
-  icon: string;
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  icon?: string;
+  color?: string;
+  bgColor?: string;
+  borderColor?: string;
   enabled: boolean;
+  count?: number;
 }
 
-// ─── Component ───────────────────────────────────────────────
+type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export default function TallyDirectImport({ onBack, onImportToReconciliation }: TallyDirectImportProps) {
-  const [logs, setLogs] = useState<string[]>([]);
+interface TallyDirectImportProps {
+  onBack: () => void;
+}
 
-  useEffect(() => {
-    const originalLog = console.log;
-    const originalError = console.error;
-    const originalWarn = console.warn;
-
-    const captureLog = (...args: any[]) => {
-      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-      setLogs(prev => [...prev.slice(-100), msg]);
-      originalLog(...args);
-    };
-
-    const captureError = (...args: any[]) => {
-      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-      setLogs(prev => [...prev.slice(-100), `❌ ${msg}`]);
-      originalError(...args);
-    };
-
-    const captureWarn = (...args: any[]) => {
-      const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-      setLogs(prev => [...prev.slice(-100), `⚠️ ${msg}`]);
-      originalWarn(...args);
-    };
-
-    console.log = captureLog;
-    console.error = captureError;
-    console.warn = captureWarn;
-
-    return () => {
-      console.log = originalLog;
-      console.error = originalError;
-      console.warn = originalWarn;
-    };
-  }, []);
-
+const TallyDirectImport: React.FC<TallyDirectImportProps> = ({ onBack }) => {
   const [showQuickGuide, setShowQuickGuide] = useState(false);
-  const [customInputTaxGroups, setCustomInputTaxGroups] = useState<string>('ITC, DUTIES & TAXES, DUTIES AND TAXES, INPUT');
-  const [customOutputTaxGroups, setCustomOutputTaxGroups] = useState<string>('OUTPUT, DUTIES & TAXES, DUTIES AND TAXES');
+  // Console lines: nothing writes to this yet, so the debug panel shows its empty state.
+  const [logs] = useState<string[]>([]);
   const [customTaxLedgers, setCustomTaxLedgers] = useState<CustomTaxLedger[]>([]);
-  const [strictMode, setStrictMode] = useState(false);
+  const [customInputTaxGroups, setCustomInputTaxGroups] = useState<string>(() => localStorage.getItem('tallyCustomInputTaxGroups') || '');
+  const [customOutputTaxGroups, setCustomOutputTaxGroups] = useState<string>(() => localStorage.getItem('tallyCustomOutputTaxGroups') || '');
+  const [strictMode, setStrictMode] = useState<boolean>(() => localStorage.getItem('tallyStrictMode') === 'true');
 
   useEffect(() => {
-    const storedInput = localStorage.getItem('tallyCustomInputTaxGroups');
-    if (storedInput) setCustomInputTaxGroups(storedInput);
-
-    const storedOutput = localStorage.getItem('tallyCustomOutputTaxGroups');
-    if (storedOutput) setCustomOutputTaxGroups(storedOutput);
-
-    const storedLedgers = localStorage.getItem('tallyCustomTaxLedgers');
-    if (storedLedgers) {
-      try {
-        setCustomTaxLedgers(JSON.parse(storedLedgers));
-      } catch (e) { }
-    }
-
-    const storedStrict = localStorage.getItem('tallyStrictMode');
-    if (storedStrict) setStrictMode(storedStrict === 'true');
+    return () => {
+      clearTallyMetadataCache();
+    };
   }, []);
 
   const handleInputTaxGroupsChange = (val: string) => {
@@ -748,110 +694,6 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     toast.success(`Downloading ${count} separate workbooks!`);
   }, [fetchedData, companyInfo, fromDate, toDate]);
 
-  // ─── Direct Send to Reconciliation Workspace ────────────────
-  const handleDirectSendToReconciliation = useCallback(() => {
-    if (fetchedData.length === 0 || !onImportToReconciliation) return;
-
-    try {
-      const getMonthName = (dateStr: string) => {
-        const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const m = parseInt(parts[1], 10);
-          if (m >= 1 && m <= 12) return months[m - 1];
-        }
-        return '';
-      };
-
-      const headers = [
-        'Voucher Type', 'Voucher Alias', 'Voucher No', 'Date', 'Month', 'Party Name', 'GSTIN',
-        'Invoice No', 'IGST', 'CGST', 'SGST',
-        'Taxable Value', 'Total Amount',
-        'IGST Ledger', 'CGST Ledger', 'SGST Ledger'
-      ];
-
-      // Group by type
-      const groupedData = fetchedData.reduce((acc, v) => {
-        const type = v.voucherType || 'Unknown';
-        if (!acc[type]) acc[type] = [];
-        acc[type].push(v);
-        return acc;
-      }, {} as Record<string, typeof fetchedData>);
-
-      // Helper to generate a virtual File object
-      const generateVirtualFile = (rowsData: typeof fetchedData, fileName: string) => {
-        const rows = rowsData.map((v) => [
-          v.voucherType, v.originalVoucherType || '', v.voucherNumber, v.date, getMonthName(v.date), v.partyName, v.gstin,
-          v.invoiceNo, v.igst, v.cgst, v.sgst,
-          v.taxableValue, v.totalAmount,
-          v.igstLedger || '', v.cgstLedger || '', v.sgstLedger || ''
-        ]);
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        ws['!cols'] = [
-          { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 18 },
-          { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-          { wch: 14 }, { wch: 14 },
-          { wch: 20 }, { wch: 20 }, { wch: 20 }
-        ];
-
-        // Apply basic header styles
-        for (let i = 0; i < headers.length; i++) {
-          const cellRef = XLSX.utils.encode_cell({ c: i, r: 0 });
-          if (ws[cellRef]) {
-            ws[cellRef].s = {
-              font: { bold: true, color: { rgb: "FFFFFF" } },
-              fill: { fgColor: { rgb: "0F172A" } },
-              alignment: { horizontal: "center", vertical: "center" }
-            };
-          }
-        }
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        const blob = new Blob([wbout], { type: 'application/octet-stream' });
-        return new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      };
-
-      // 1. Purchase Register File (Primary)
-      const purchaseVouchers = groupedData['Purchase'] || [];
-      if (purchaseVouchers.length === 0) {
-        toast.error("No Purchase vouchers found to send!");
-        return;
-      }
-      const prFile = generateVirtualFile(purchaseVouchers, 'Tally_Purchase_Register.xlsx');
-
-      // 2. Debit Note File (DN)
-      let prDnFile: File | undefined = undefined;
-      const debitNotes = groupedData['Debit Note'] || [];
-      if (debitNotes.length > 0) {
-        prDnFile = generateVirtualFile(debitNotes, 'Tally_Debit_Notes.xlsx');
-      }
-
-      // 3. Journals File
-      const journalFiles: File[] = [];
-      const journals = groupedData['Journal'] || [];
-      if (journals.length > 0) {
-        journalFiles.push(generateVirtualFile(journals, 'Tally_Journals.xlsx'));
-      }
-
-      const creditNotes = groupedData['Credit Note'] || [];
-      if (creditNotes.length > 0) {
-        journalFiles.push(generateVirtualFile(creditNotes, 'Tally_Credit_Notes.xlsx'));
-      }
-
-      onImportToReconciliation({
-        prFile,
-        prDnFile,
-        journalFiles,
-        companyName: companyInfo?.name
-      });
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to generate direct import files", { description: String(err) });
-    }
-  }, [fetchedData, companyInfo, onImportToReconciliation]);
-
   // ─── Toggle voucher type ─────────────────────────────────
 
   const toggleVoucherType = (idx: number) => {
@@ -907,13 +749,12 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold font-mono px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
-              connectionStatus === 'connected'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : connectionStatus === 'connecting'
+            <span className={`text-xs font-bold font-mono px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${connectionStatus === 'connected'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : connectionStatus === 'connecting'
                 ? 'bg-amber-50 text-amber-700 border-amber-200'
                 : 'bg-rose-50 text-rose-700 border-rose-200'
-            }`}>
+              }`}>
               <span className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'}`} />
               {connectionStatus === 'connected' ? 'Port 9000 Online' : connectionStatus === 'connecting' ? 'Connecting...' : 'Port 9000 Offline'}
             </span>
@@ -1111,19 +952,19 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { label: 'Full FY 25-26', from: '2025-04-01', to: '2026-03-31' },
-                  { label: 'Apr \'25', from: '2025-04-01', to: '2025-04-30' },
-                  { label: 'May \'25', from: '2025-05-01', to: '2025-05-31' },
-                  { label: 'Jun \'25', from: '2025-06-01', to: '2025-06-30' },
-                  { label: 'Jul \'25', from: '2025-07-01', to: '2025-07-31' },
-                  { label: 'Aug \'25', from: '2025-08-01', to: '2025-08-31' },
-                  { label: 'Sep \'25', from: '2025-09-01', to: '2025-09-30' },
-                  { label: 'Oct \'25', from: '2025-10-01', to: '2025-10-31' },
-                  { label: 'Nov \'25', from: '2025-11-01', to: '2025-11-30' },
-                  { label: 'Dec \'25', from: '2025-12-01', to: '2025-12-31' },
-                  { label: 'Jan \'26', from: '2026-01-01', to: '2026-01-31' },
-                  { label: 'Feb \'26', from: '2026-02-01', to: '2026-02-28' },
-                  { label: 'Mar \'26', from: '2026-03-01', to: '2026-03-31' },
+                  { label: 'Full FY 26-27', from: '2026-04-01', to: '2027-03-31' },
+                  { label: 'Apr \'26', from: '2026-04-01', to: '2026-04-30' },
+                  { label: 'May \'26', from: '2026-05-01', to: '2026-05-31' },
+                  { label: 'Jun \'26', from: '2026-06-01', to: '2026-06-30' },
+                  { label: 'Jul \'26', from: '2026-07-01', to: '2026-07-31' },
+                  { label: 'Aug \'26', from: '2026-08-01', to: '2026-08-31' },
+                  { label: 'Sep \'26', from: '2026-09-01', to: '2026-09-30' },
+                  { label: 'Oct \'26', from: '2026-10-01', to: '2026-10-31' },
+                  { label: 'Nov \'26', from: '2026-11-01', to: '2026-11-30' },
+                  { label: 'Dec \'26', from: '2026-12-01', to: '2026-12-31' },
+                  { label: 'Jan \'27', from: '2027-01-01', to: '2027-01-31' },
+                  { label: 'Feb \'27', from: '2027-02-01', to: '2027-02-28' },
+                  { label: 'Mar \'27', from: '2027-03-01', to: '2027-03-31' },
                 ].map((preset) => (
                   <button
                     key={preset.label}
@@ -1132,11 +973,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                       setFromDate(preset.from);
                       setToDate(preset.to);
                     }}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all ${
-                      fromDate === preset.from && toDate === preset.to
-                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/20'
-                        : 'bg-slate-100 text-slate-600 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all ${fromDate === preset.from && toDate === preset.to
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/20'
+                      : 'bg-slate-100 text-slate-600 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
                   >
                     {preset.label}
                   </button>
@@ -1343,15 +1183,6 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
               </div>
 
               <div className="flex items-center gap-2">
-                {onImportToReconciliation && (
-                  <button
-                    onClick={handleDirectSendToReconciliation}
-                    className="h-9 px-5 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-900 font-black text-xs rounded-lg hover:from-teal-300 hover:to-cyan-300 transition-all flex items-center gap-2 shadow-lg shadow-teal-500/15 animate-pulse hover:animate-none"
-                  >
-                    <Zap className="w-4 h-4 fill-slate-950 text-slate-900" />
-                    Send to Reconciliation Workspace
-                  </button>
-                )}
                 <button
                   onClick={handleExportExcel}
                   className="h-9 px-5 bg-gradient-to-r from-emerald-600 to-green-600 text-slate-900 font-bold text-xs rounded-lg hover:from-emerald-500 hover:to-green-500 transition-all flex items-center gap-2"
@@ -1405,17 +1236,15 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                       <button
                         key={vt.type}
                         onClick={() => setSelectedVoucherTypeFilter(vt.type)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border ${
-                          isSelected
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 border-amber-400 shadow-md shadow-amber-500/20 scale-105'
-                            : `bg-slate-50 text-slate-700 ${vt.color} hover:bg-slate-100 hover:text-slate-900`
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border ${isSelected
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 border-amber-400 shadow-md shadow-amber-500/20 scale-105'
+                          : `bg-slate-50 text-slate-700 ${vt.color} hover:bg-slate-100 hover:text-slate-900`
+                          }`}
                       >
                         <span>{vt.icon}</span>
                         <span>{vt.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                          isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
+                          }`}>
                           {count}
                         </span>
                       </button>
@@ -1464,16 +1293,14 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                       <button
                         key={m.key}
                         onClick={() => setSelectedMonthFilter(m.key)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-900 shadow-md shadow-teal-500/20 scale-105'
-                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${isSelected
+                          ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-900 shadow-md shadow-teal-500/20 scale-105'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          }`}
                       >
                         <span>{m.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                          isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${isSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-slate-700/60 text-slate-700'
+                          }`}>
                           {count}
                         </span>
                       </button>
@@ -1642,9 +1469,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                                 {row.tax >= 0 ? '' : '−'}₹{Math.abs(row.tax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </td>
                               <td className="px-3 py-2 text-center font-sans">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                                  row.tax >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${row.tax >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  }`}>
                                   {row.tax >= 0 ? '+ Inward Tax' : '− Reversal'}
                                 </span>
                               </td>
@@ -1750,9 +1576,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                           return (
                             <tr
                               key={row.key}
-                              className={`transition-colors ${
-                                isCurrentFiltered ? 'bg-cyan-950/40 border-l-4 border-l-cyan-400' : 'hover:bg-slate-100/40'
-                              }`}
+                              className={`transition-colors ${isCurrentFiltered ? 'bg-cyan-950/40 border-l-4 border-l-cyan-400' : 'hover:bg-slate-100/40'
+                                }`}
                             >
                               <td className="px-3 py-2 font-sans font-bold text-slate-200">{row.label}</td>
                               <td className="px-3 py-2 text-center text-slate-600">{row.count}</td>
@@ -1779,11 +1604,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                               <td className="px-3 py-2 text-center font-sans">
                                 <button
                                   onClick={() => setSelectedMonthFilter(row.key)}
-                                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                                    isCurrentFiltered
-                                      ? 'bg-cyan-500 text-slate-900 font-black'
-                                      : 'bg-slate-100 hover:bg-slate-100 text-cyan-300'
-                                  }`}
+                                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${isCurrentFiltered
+                                    ? 'bg-cyan-500 text-slate-900 font-black'
+                                    : 'bg-slate-100 hover:bg-slate-100 text-cyan-300'
+                                    }`}
                                 >
                                   {isCurrentFiltered ? 'Selected ✓' : 'Inspect Month 🔍'}
                                 </button>
@@ -1919,31 +1743,28 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                     <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-200">
                       <button
                         onClick={() => setPreviewImpactFilter('ALL')}
-                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
-                          previewImpactFilter === 'ALL'
-                            ? 'bg-slate-100 text-slate-900 shadow'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${previewImpactFilter === 'ALL'
+                          ? 'bg-slate-100 text-slate-900 shadow'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         All ({baseFiltered.length})
                       </button>
                       <button
                         onClick={() => setPreviewImpactFilter('REVERSALS')}
-                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-                          previewImpactFilter === 'REVERSALS'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow'
-                            : 'text-amber-400/70 hover:text-amber-300'
-                        }`}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${previewImpactFilter === 'REVERSALS'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow'
+                          : 'text-amber-400/70 hover:text-amber-300'
+                          }`}
                       >
                         <span>🔄</span> Reversals Only ({reversalsCount})
                       </button>
                       <button
                         onClick={() => setPreviewImpactFilter('INWARD')}
-                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-                          previewImpactFilter === 'INWARD'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow'
-                            : 'text-emerald-400/70 hover:text-emerald-300'
-                        }`}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${previewImpactFilter === 'INWARD'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow'
+                          : 'text-emerald-400/70 hover:text-emerald-300'
+                          }`}
                       >
                         <span>📥</span> Inward Only ({inwardCount})
                       </button>
@@ -1989,9 +1810,8 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             (h) => (
                               <th
                                 key={h}
-                                className={`px-3 py-2.5 ${
-                                  ['Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Inv Amt'].includes(h) ? 'text-right' : h === '#' || h === 'Impact' ? 'text-center' : 'text-left'
-                                }`}
+                                className={`px-3 py-2.5 ${['Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Inv Amt'].includes(h) ? 'text-right' : h === '#' || h === 'Impact' ? 'text-center' : 'text-left'
+                                  }`}
                               >
                                 {h}
                               </th>
@@ -2015,13 +1835,12 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                             return (
                               <tr
                                 key={i}
-                                className={`border-b border-slate-200/60 transition-colors ${
-                                  isReversal
-                                    ? 'bg-amber-950/20 hover:bg-amber-900/30'
-                                    : i % 2 === 0
+                                className={`border-b border-slate-200/60 transition-colors ${isReversal
+                                  ? 'bg-amber-950/20 hover:bg-amber-900/30'
+                                  : i % 2 === 0
                                     ? 'bg-white/30 hover:bg-slate-100/40'
                                     : 'hover:bg-slate-100/40'
-                                }`}
+                                  }`}
                               >
                                 <td className="px-3 py-2 text-center text-slate-500 font-mono text-[11px]">{globalIndex}</td>
                                 <td className="px-3 py-2">
@@ -2042,11 +1861,10 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
                                 </td>
                                 <td className="px-3 py-2 text-right text-slate-900 font-bold font-mono">{v.totalAmount.toFixed(2)}</td>
                                 <td className="px-3 py-2 text-center whitespace-nowrap">
-                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                                    isReversal
-                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                  }`}>
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isReversal
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    }`}>
                                     {isReversal ? '− Reversal' : '+ Inward'}
                                   </span>
                                 </td>
@@ -2143,3 +1961,5 @@ export default function TallyDirectImport({ onBack, onImportToReconciliation }: 
     </div>
   );
 }
+
+export default TallyDirectImport;

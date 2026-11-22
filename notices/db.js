@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+export { checkNoticeLimitation } from './limitation.js';
 
 // ─── 1. DATABASE SCHEMA INITIALIZATION ──────────────────────────────────────
 export function initGstNoticesDatabase(db) {
@@ -43,6 +44,28 @@ export function initGstNoticesDatabase(db) {
             FOREIGN KEY(notice_id) REFERENCES gst_notices(id) ON DELETE CASCADE
         )`);
 
+        // Table 2B: Itemized Alleged Invoices cited in Notice
+        db.run(`CREATE TABLE IF NOT EXISTS gst_notice_invoices (
+            id TEXT PRIMARY KEY,
+            notice_id TEXT NOT NULL,
+            client_gstin TEXT NOT NULL,
+            supplier_gstin TEXT NOT NULL,
+            supplier_name TEXT,
+            invoice_number TEXT NOT NULL,
+            invoice_date TEXT,
+            taxable_value REAL DEFAULT 0,
+            igst REAL DEFAULT 0,
+            cgst REAL DEFAULT 0,
+            sgst REAL DEFAULT 0,
+            cess REAL DEFAULT 0,
+            total_tax REAL DEFAULT 0,
+            financial_year TEXT,
+            alleged_reason TEXT,
+            created_at INTEGER,
+            FOREIGN KEY(notice_id) REFERENCES gst_notices(id) ON DELETE CASCADE
+        )`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_gst_notice_invoices_nid ON gst_notice_invoices(notice_id)`);
+
         // Table 3: Notice Replies & Legal Defense Drafts
         db.run(`CREATE TABLE IF NOT EXISTS gst_notice_replies (
             id TEXT PRIMARY KEY,
@@ -64,15 +87,100 @@ export function initGstNoticesDatabase(db) {
             FOREIGN KEY(notice_id) REFERENCES gst_notices(id) ON DELETE CASCADE
         )`);
 
+        // Table 4: Cases Master (groups multi-stage notices, replies, orders, appeals & payments)
+        db.run(`CREATE TABLE IF NOT EXISTS gst_cases (
+            id TEXT PRIMARY KEY,
+            client_gstin TEXT NOT NULL,
+            client_name TEXT,
+            financial_year TEXT,
+            tax_period TEXT,
+            case_category TEXT,
+            section_invoked TEXT,
+            portal_case_id TEXT,
+            officer_name TEXT,
+            status TEXT DEFAULT 'OPEN',
+            total_tax_demanded REAL DEFAULT 0,
+            total_interest_demanded REAL DEFAULT 0,
+            total_penalty_demanded REAL DEFAULT 0,
+            total_late_fee REAL DEFAULT 0,
+            total_paid_cash REAL DEFAULT 0,
+            total_paid_itc REAL DEFAULT 0,
+            predeposit_paid REAL DEFAULT 0,
+            source_folder_path TEXT,
+            created_at INTEGER,
+            updated_at INTEGER
+        )`);
+
+        // Table 5: Case Payments (DRC-03, DRC-03A adjusted, PMT-06, Pre-deposits)
+        db.run(`CREATE TABLE IF NOT EXISTS gst_case_payments (
+            id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL,
+            notice_id TEXT,
+            payment_type TEXT,
+            arn_no TEXT,
+            drc03_ref_no TEXT,
+            drc03a_adjusted INTEGER DEFAULT 0,
+            linked_demand_id TEXT,
+            payment_date TEXT,
+            paid_via TEXT,
+            igst REAL DEFAULT 0,
+            cgst REAL DEFAULT 0,
+            sgst REAL DEFAULT 0,
+            cess REAL DEFAULT 0,
+            interest_paid REAL DEFAULT 0,
+            penalty_paid REAL DEFAULT 0,
+            late_fee_paid REAL DEFAULT 0,
+            predeposit_pct REAL DEFAULT 0,
+            notes TEXT,
+            FOREIGN KEY(case_id) REFERENCES gst_cases(id) ON DELETE CASCADE
+        )`);
+
+        // Table 6: Case Events & Parameter-Level Issues
+        db.run(`CREATE TABLE IF NOT EXISTS gst_case_events (
+            id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL,
+            notice_id TEXT,
+            event_type TEXT,
+            event_date TEXT,
+            due_date TEXT,
+            form_code TEXT,
+            param_code TEXT,
+            portal_ref_no TEXT,
+            title TEXT,
+            summary TEXT,
+            tax_amount REAL DEFAULT 0,
+            interest_amount REAL DEFAULT 0,
+            penalty_amount REAL DEFAULT 0,
+            meta_json TEXT,
+            is_completed INTEGER DEFAULT 0,
+            FOREIGN KEY(case_id) REFERENCES gst_cases(id) ON DELETE CASCADE
+        )`);
+
+        // Guarded schema extensions on existing gst_notices (reusing existing din TEXT column)
+        for (const colDef of ['case_id TEXT', 'demand_id TEXT', 'param_codes_json TEXT', 'issue_breakdown_json TEXT']) {
+            db.run(`ALTER TABLE gst_notices ADD COLUMN ${colDef}`, () => {});
+        }
+
         // Helpful Indexes
         db.run(`CREATE INDEX IF NOT EXISTS idx_gst_notices_client ON gst_notices(client_gstin)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gst_notices_status ON gst_notices(status)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gst_notices_due ON gst_notices(due_date)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_gst_notices_att_nid ON gst_notice_attachments(notice_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_cases_gstin ON gst_cases(client_gstin)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_payments_case ON gst_case_payments(case_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_events_case ON gst_case_events(case_id)`);
     });
 }
 
 // ─── 2. LIMITATION & DEADLINE CALCULATION UTILITIES ─────────────────────────
+const DEADLINE_DAYS_MAP = [
+    [/DRC-01B|DRC-01C|SEC\s*125|REG-03|REG-17|REG-23|MOV-07|GSTR-10|RULE-86A|EWB-NIL/i, 7],
+    [/DRC-01A|GSTR-3A|RFD-08|MOV-10/i, 15],
+    [/ASMT-10|ASMT-13|DRC-01|REG-31|ADT-01|SPL-03/i, 30],
+    [/DRC-07|DRC-08|APL-04|MOV-09|REG-19|SPL-07|RFD-06/i, 90],
+    [/NOTIF.*22\/2024/i, 180]
+];
+
 export function computeLimitationDueDate(noticeType, issueDate, explicitDays = null) {
     if (!issueDate) return null;
 
@@ -81,28 +189,26 @@ export function computeLimitationDueDate(noticeType, issueDate, explicitDays = n
     if (typeof issueDate === 'string' && issueDate.includes('/')) {
         const parts = issueDate.split('/');
         if (parts.length === 3) {
-            // DD/MM/YYYY -> YYYY-MM-DD
             parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T00:00:00Z`);
         }
     } else {
         parsedDate = new Date(issueDate);
     }
 
-    if (isNaN(parsedDate.getTime())) return null;
+    if (!parsedDate || isNaN(parsedDate.getTime())) return null;
 
-    let offsetDays = 30; // standard default
-    const typeUpper = (noticeType || '').toUpperCase().trim();
+    let offsetDays = 30;
+    const typeUpper = (noticeType || '').toUpperCase().replace(/\s*[-–]\s*/g, '-').trim();
 
     if (explicitDays != null && !isNaN(Number(explicitDays))) {
         offsetDays = Number(explicitDays);
-    } else if (typeUpper.includes('DRC-01B') || typeUpper.includes('DRC-01C')) {
-        offsetDays = 7; // Rule 88C & 88D 7-day response mandate
-    } else if (typeUpper.includes('ASMT-10') || typeUpper.includes('DRC-01') || typeUpper.includes('DRC-01A')) {
-        offsetDays = 30; // Section 61 & 73/74 30-day response window
-    } else if (typeUpper.includes('REG-03') || typeUpper.includes('REG-17') || typeUpper.includes('REG-23')) {
-        offsetDays = 7; // Registration clarification/show-cause window
-    } else if (typeUpper.includes('ASMT-13') || typeUpper.includes('DRC-07')) {
-        offsetDays = 90; // Order appeal limitation window (Section 107)
+    } else {
+        for (const [rx, days] of DEADLINE_DAYS_MAP) {
+            if (rx.test(typeUpper)) {
+                offsetDays = days;
+                break;
+            }
+        }
     }
 
     const dueDateObj = new Date(parsedDate.getTime() + offsetDays * 24 * 60 * 60 * 1000);
@@ -177,8 +283,8 @@ export function upsertNotice(db, data) {
                 reference_no, din, financial_year, tax_period, issue_date,
                 due_date, issuing_officer, issuing_jurisdiction, section_cited,
                 tax_demanded, interest_demanded, penalty_demanded, total_demanded,
-                status, raw_notice_text, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, raw_notice_text, case_id, demand_id, param_codes_json, issue_breakdown_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(client_gstin, reference_no) DO UPDATE SET
                 portal_source = excluded.portal_source,
                 notice_type = excluded.notice_type,
@@ -195,6 +301,10 @@ export function upsertNotice(db, data) {
                 interest_demanded = CASE WHEN excluded.interest_demanded > 0 THEN excluded.interest_demanded ELSE gst_notices.interest_demanded END,
                 penalty_demanded = CASE WHEN excluded.penalty_demanded > 0 THEN excluded.penalty_demanded ELSE gst_notices.penalty_demanded END,
                 total_demanded = CASE WHEN excluded.total_demanded > 0 THEN excluded.total_demanded ELSE gst_notices.total_demanded END,
+                case_id = COALESCE(excluded.case_id, gst_notices.case_id),
+                demand_id = COALESCE(excluded.demand_id, gst_notices.demand_id),
+                param_codes_json = COALESCE(excluded.param_codes_json, gst_notices.param_codes_json),
+                issue_breakdown_json = COALESCE(excluded.issue_breakdown_json, gst_notices.issue_breakdown_json),
                 updated_at = ?
         `;
 
@@ -204,7 +314,9 @@ export function upsertNotice(db, data) {
             data.tax_period || '', data.issue_date || '', dueDate || '', data.issuing_officer || '',
             data.issuing_jurisdiction || '', data.section_cited || '', Number(data.tax_demanded) || 0,
             Number(data.interest_demanded) || 0, Number(data.penalty_demanded) || 0, totalDemanded,
-            data.status || 'PENDING_REPLY', data.raw_notice_text || '', now, now, now
+            data.status || 'PENDING_REPLY', data.raw_notice_text || '',
+            data.case_id || null, data.demand_id || null, data.param_codes_json || null, data.issue_breakdown_json || null,
+            now, now, now
         ], function (err) {
             if (err) return reject(err);
             resolve({ id, client_gstin: gstin, reference_no: refNo });
@@ -409,6 +521,181 @@ export function clearDemoNotices(db) {
                 if (err) return reject(err);
                 resolve({ deleted: this.changes });
             });
+        });
+    });
+}
+
+// ─── 4. STATUTORY LIMITATION & INVOICE LEDGER ENGINE (NOTICE-01, NOTICE-02) ──
+// (checkNoticeLimitation re-exported from shared ./limitation.js above)
+
+export function saveNoticeInvoices(db, noticeId, clientGstin, invoices) {
+    return new Promise((resolve, reject) => {
+        if (!invoices || invoices.length === 0) return resolve({ count: 0 });
+        const now = Date.now();
+        db.serialize(() => {
+            const stmt = db.prepare(`
+                INSERT INTO gst_notice_invoices (
+                    id, notice_id, client_gstin, supplier_gstin, supplier_name,
+                    invoice_number, invoice_date, taxable_value, igst, cgst, sgst, cess, total_tax,
+                    financial_year, alleged_reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            for (const inv of invoices) {
+                stmt.run([
+                    randomUUID(),
+                    noticeId,
+                    (clientGstin || '').toUpperCase(),
+                    (inv.supplierGstin || inv.ctin || '').toUpperCase(),
+                    inv.supplierName || inv.cname || '',
+                    inv.invoiceNo || inv.inum || '',
+                    inv.invoiceDate || inv.idt || '',
+                    Number(inv.taxableValue || inv.txval) || 0,
+                    Number(inv.igst) || 0,
+                    Number(inv.cgst) || 0,
+                    Number(inv.sgst) || 0,
+                    Number(inv.cess) || 0,
+                    Number(inv.totalTax || inv.val) || 0,
+                    inv.financialYear || null,
+                    inv.allegedReason || null,
+                    now
+                ]);
+            }
+            stmt.finalize((err) => {
+                if (err) return reject(err);
+                resolve({ count: invoices.length });
+            });
+        });
+    });
+}
+
+export function getNoticeInvoices(db, noticeId) {
+    return new Promise((resolve) => {
+        db.all(
+            `SELECT * FROM gst_notice_invoices WHERE notice_id = ? ORDER BY invoice_date DESC`,
+            [noticeId],
+            (err, rows) => resolve(rows || [])
+        );
+    });
+}
+
+// ─── 5. CASE LIFECYCLE, DRC-03/03A PAYMENTS & TIMELINE EVENTS ───────────────
+export function upsertCase(db, data) {
+    return new Promise((resolve, reject) => {
+        const id = data.id || randomUUID();
+        const now = Date.now();
+        const gstin = (data.client_gstin || 'UNASSIGNED').trim().toUpperCase();
+        db.run(
+            `INSERT INTO gst_cases (
+                id, client_gstin, client_name, financial_year, tax_period, case_category,
+                section_invoked, portal_case_id, officer_name, status,
+                total_tax_demanded, total_interest_demanded, total_penalty_demanded, total_late_fee,
+                total_paid_cash, total_paid_itc, predeposit_paid, source_folder_path, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                client_name = COALESCE(excluded.client_name, gst_cases.client_name),
+                financial_year = COALESCE(excluded.financial_year, gst_cases.financial_year),
+                case_category = COALESCE(excluded.case_category, gst_cases.case_category),
+                section_invoked = COALESCE(excluded.section_invoked, gst_cases.section_invoked),
+                status = excluded.status,
+                total_tax_demanded = MAX(gst_cases.total_tax_demanded, excluded.total_tax_demanded),
+                total_interest_demanded = MAX(gst_cases.total_interest_demanded, excluded.total_interest_demanded),
+                total_penalty_demanded = MAX(gst_cases.total_penalty_demanded, excluded.total_penalty_demanded),
+                total_late_fee = MAX(gst_cases.total_late_fee, excluded.total_late_fee),
+                updated_at = excluded.updated_at`,
+            [
+                id, gstin, data.client_name || '', data.financial_year || '', data.tax_period || 'Annual',
+                data.case_category || 'SCRUTINY', data.section_invoked || 'Section 73', data.portal_case_id || '',
+                data.officer_name || '', data.status || 'OPEN',
+                Number(data.total_tax_demanded) || 0, Number(data.total_interest_demanded) || 0,
+                Number(data.total_penalty_demanded) || 0, Number(data.total_late_fee) || 0,
+                Number(data.total_paid_cash) || 0, Number(data.total_paid_itc) || 0, Number(data.predeposit_paid) || 0,
+                data.source_folder_path || '', now, now
+            ],
+            (err) => (err ? reject(err) : resolve({ id, client_gstin: gstin }))
+        );
+    });
+}
+
+export function addCasePayment(db, p) {
+    return new Promise((resolve, reject) => {
+        const id = p.id || randomUUID();
+        db.run(
+            `INSERT INTO gst_case_payments (
+                id, case_id, notice_id, payment_type, arn_no, drc03_ref_no, drc03a_adjusted,
+                linked_demand_id, payment_date, paid_via, igst, cgst, sgst, cess,
+                interest_paid, penalty_paid, late_fee_paid, predeposit_pct, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id, p.case_id, p.notice_id || null, p.payment_type || 'DRC-03', p.arn_no || '',
+                p.drc03_ref_no || '', p.drc03a_adjusted ? 1 : 0, p.linked_demand_id || '',
+                p.payment_date || '', p.paid_via || 'CASH',
+                Number(p.igst) || 0, Number(p.cgst) || 0, Number(p.sgst) || 0, Number(p.cess) || 0,
+                Number(p.interest_paid) || 0, Number(p.penalty_paid) || 0, Number(p.late_fee_paid) || 0,
+                Number(p.predeposit_pct) || 0, p.notes || ''
+            ],
+            (err) => (err ? reject(err) : resolve({ id }))
+        );
+    });
+}
+
+export function addCaseEvent(db, ev) {
+    return new Promise((resolve, reject) => {
+        const id = ev.id || randomUUID();
+        db.run(
+            `INSERT INTO gst_case_events (
+                id, case_id, notice_id, event_type, event_date, due_date, form_code,
+                param_code, portal_ref_no, title, summary, tax_amount, interest_amount,
+                penalty_amount, meta_json, is_completed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id, ev.case_id, ev.notice_id || null, ev.event_type || 'DOCUMENT', ev.event_date || '',
+                ev.due_date || '', ev.form_code || 'OTHER', ev.param_code || '', ev.portal_ref_no || '',
+                ev.title || '', ev.summary || '', Number(ev.tax_amount) || 0,
+                Number(ev.interest_amount) || 0, Number(ev.penalty_amount) || 0,
+                ev.meta_json || null, ev.is_completed ? 1 : 0
+            ],
+            (err) => (err ? reject(err) : resolve({ id }))
+        );
+    });
+}
+
+export function getCasesByGstin(db, gstin = '') {
+    return new Promise((resolve, reject) => {
+        const clean = String(gstin || '').trim().toUpperCase();
+        const sql = clean && clean !== 'ALL'
+            ? `SELECT * FROM gst_cases WHERE client_gstin = ? ORDER BY updated_at DESC`
+            : `SELECT * FROM gst_cases ORDER BY updated_at DESC`;
+        db.all(sql, clean && clean !== 'ALL' ? [clean] : [], async (err, cases) => {
+            if (err) return reject(err);
+            const enriched = await Promise.all((cases || []).map((c) => getCaseDetail(db, c.id)));
+            resolve(enriched.filter(Boolean));
+        });
+    });
+}
+
+export function getCaseDetail(db, caseId) {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM gst_cases WHERE id = ?`, [caseId], (err, c) => {
+            if (err || !c) return resolve(null);
+            db.all(`SELECT * FROM gst_case_events WHERE case_id = ? ORDER BY event_date ASC, rowid ASC`, [caseId], (eErr, events) => {
+                if (eErr) return reject(eErr);
+                db.all(`SELECT * FROM gst_case_payments WHERE case_id = ? ORDER BY payment_date ASC`, [caseId], (pErr, payments) => {
+                    if (pErr) return reject(pErr);
+                    db.all(`SELECT * FROM gst_notices WHERE case_id = ?`, [caseId], (nErr, notices) => {
+                        if (nErr) return reject(nErr);
+                        resolve({ ...c, events: events || [], payments: payments || [], notices: notices || [] });
+                    });
+                });
+            });
+        });
+    });
+}
+
+export function deleteCase(db, caseId) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM gst_cases WHERE id = ?`, [caseId], function (err) {
+            if (err) return reject(err);
+            resolve({ deleted: this.changes > 0 });
         });
     });
 }

@@ -1,0 +1,15 @@
+{
+  "name": "vaswani-license-functions",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Firebase Cloud Functions licensing, auth & telemetry API for AUDIT WITH VASWANI",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^5.1.1"
+  }
+}

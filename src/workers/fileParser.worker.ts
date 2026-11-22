@@ -77,10 +77,22 @@ function parseJsonFile(
     }
   };
 
-  if (dt === 'b2b' || dt === 'primary' || dt === '2b' || !dt) extractInvoices(root.b2b);
-  if (dt === 'b2cl') extractInvoices(root.b2cl);
-  if (dt === 'cn') extractInvoices(root.cdnr || root.cdn);
-  if (dt === 'exp') extractInvoices(root.exp);
+  if (dt === 'b2b' || dt === 'primary' || dt === '2b' || !dt) {
+    extractInvoices(root.b2b);
+    extractInvoices(root.b2ba);
+  }
+  if (dt === 'b2cl') {
+    extractInvoices(root.b2cl);
+    extractInvoices(root.b2cla);
+  }
+  if (dt === 'cn' || dt === 'cdnr') {
+    extractInvoices(root.cdnr || root.cdn);
+    extractInvoices(root.cdnra);
+  }
+  if (dt === 'exp') {
+    extractInvoices(root.exp);
+    extractInvoices(root.expa);
+  }
   if (dt === 'b2c' || (!dt && rows.length === 0)) {
     for (const itm of (root.b2cs || root.b2c || [])) {
       rows.push({

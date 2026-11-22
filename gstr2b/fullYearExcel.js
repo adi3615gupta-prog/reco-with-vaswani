@@ -62,7 +62,7 @@ function formatGeneratedTimestamp() {
 
 export function generateGstr2bFullYearWorkbook({
     clientInfo = {},
-    financialYear = '2025-2026',
+    financialYear = '2026-2027',
     invoices = []
 }) {
     const wb = XLSX.utils.book_new();

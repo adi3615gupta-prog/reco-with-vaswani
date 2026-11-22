@@ -33,12 +33,19 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { reconcileNoticeDiscrepancy, generateNoticeAnnexureExcel, NoticeReconciliationResult } from '@/lib/noticeReconciliation';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import {
+    reconcileNoticeDiscrepancy,
+    generateNoticeAnnexureExcel,
+    generateDefenseWorkbook,
+    NoticeReconciliationResult
+} from '@/lib/noticeReconciliation';
 import { sanitizePayload, rehydrateDraft, SanitizationResult } from '@/lib/piiSanitizer';
-import { analyzeSanitizedNotice, GeminiNoticeAnalysis } from '@/lib/geminiTaxEngine';
+import { analyzeSanitizedNotice, TaxNoticeAnalysis } from '@/lib/geminiTaxEngine';
 import { NoticePipelineVisualizer, PipelineStage } from '@/components/NoticePipelineVisualizer';
 import { PrivacyVaultDiffViewer } from '@/components/PrivacyVaultDiffViewer';
 import { NoticeReplyWorkbenchModal } from '@/components/NoticeReplyWorkbenchModal';
+import { safeApiFetch, parseJsonSafe } from '@/lib/api';
 import * as XLSX from 'xlsx';
 
 interface GstNotice {
@@ -74,6 +81,9 @@ interface GstNotice {
         file_type: string;
         file_path: string;
     }>;
+    client_pan?: string;
+    client_legal_name?: string;
+    client_trade_name?: string;
 }
 
 interface ClientOption {
@@ -85,6 +95,7 @@ interface ClientOption {
 
 export default function GstNoticesDashboard() {
     const { toast } = useToast();
+    const confirm = useConfirm();
     const [notices, setNotices] = useState<GstNotice[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [scanning, setScanning] = useState<boolean>(false);
@@ -121,12 +132,19 @@ export default function GstNoticesDashboard() {
     const [privacyVaultOpen, setPrivacyVaultOpen] = useState<boolean>(false);
 
     // AI Analysis & Courtroom Workbench State
-    const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiNoticeAnalysis | null>(null);
+    const [taxAiAnalysis, setTaxAiAnalysis] = useState<TaxNoticeAnalysis | null>(null);
     const [rehydratedDraft, setRehydratedDraft] = useState<string>('');
     const [workbenchOpen, setWorkbenchOpen] = useState<boolean>(false);
 
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    // Offline Scrutiny Case & Folder Import State
+    const [viewMode, setViewMode] = useState<'NOTICES' | 'CASES'>('NOTICES');
+    const [cases, setCases] = useState<any[]>([]);
+    const [folderPathInput, setFolderPathInput] = useState<string>('');
+    const [folderScanPreview, setFolderScanPreview] = useState<any | null>(null);
+    const [folderBusy, setFolderBusy] = useState<boolean>(false);
 
     // Active client from local storage or default
     const [currentGstin, setCurrentGstin] = useState<string>(() => {
@@ -137,9 +155,9 @@ export default function GstNoticesDashboard() {
     useEffect(() => {
         const fetchClients = async () => {
             try {
-                const res = await fetch('/api/returns/clients-hub');
-                const data = await res.json();
-                if (data.success && Array.isArray(data.clients) && data.clients.length > 0) {
+                const res = await safeApiFetch('/api/returns/clients-hub');
+                const { ok, data } = await parseJsonSafe(res);
+                if (ok && data?.success && Array.isArray(data.clients) && data.clients.length > 0) {
                     setAvailableClients(data.clients);
                     if (!currentGstin) {
                         const firstGstin = data.clients[0].gstin;
@@ -167,9 +185,9 @@ export default function GstNoticesDashboard() {
 
         setLoading(true);
         try {
-            const res = await fetch(`/api/notices/${currentGstin}`);
-            const data = await res.json();
-            if (data.success && Array.isArray(data.notices)) {
+            const res = await safeApiFetch(`/api/notices/${encodeURIComponent(currentGstin)}`);
+            const { ok, data } = await parseJsonSafe(res);
+            if (ok && data?.success && Array.isArray(data.notices)) {
                 setNotices(data.notices);
             } else {
                 setNotices([]);
@@ -182,7 +200,61 @@ export default function GstNoticesDashboard() {
         }
     };
 
+    const fetchCases = async () => {
+        try {
+            const target = currentGstin || 'ALL';
+            const res = await safeApiFetch(`/api/notices/cases/${encodeURIComponent(target)}`);
+            const { ok, data } = await parseJsonSafe(res);
+            if (ok && data?.success && Array.isArray(data.cases)) {
+                setCases(data.cases);
+            }
+        } catch {}
+    };
+
+    const handleScanLocalFolder = async () => {
+        if (!folderPathInput.trim()) return;
+        setFolderBusy(true);
+        try {
+            const res = await safeApiFetch('/api/notices/scan-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folderPath: folderPathInput.trim() })
+            });
+            const { ok, data } = await parseJsonSafe(res);
+            if (!ok || !data?.success) throw new Error(data?.error || 'Scan failed');
+            setFolderScanPreview(data);
+            toast({ title: 'Folder Scanned', description: `Found ${data.documents?.length || 0} scrutiny docs for ${data.clientName}.` });
+        } catch (err: any) {
+            toast({ title: 'Scan Failed', description: err.message, variant: 'destructive' });
+        } finally {
+            setFolderBusy(false);
+        }
+    };
+
+    const handleImportLocalFolder = async () => {
+        if (!folderPathInput.trim()) return;
+        setFolderBusy(true);
+        try {
+            const res = await safeApiFetch('/api/notices/import-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folderPath: folderPathInput.trim(), gstinOverride: currentGstin || undefined })
+            });
+            const { ok, data } = await parseJsonSafe(res);
+            if (!ok || !data?.success) throw new Error(data?.error || 'Import failed');
+            setFolderScanPreview(null);
+            toast({ title: 'Case Ledger Imported', description: `Imported ${data.importedNotices} notices & ${data.importedPayments} DRC-03 payments.` });
+            fetchCases();
+            fetchNotices();
+        } catch (err: any) {
+            toast({ title: 'Import Failed', description: err.message, variant: 'destructive' });
+        } finally {
+            setFolderBusy(false);
+        }
+    };
+
     useEffect(() => {
+        fetchCases();
         if (currentGstin) {
             localStorage.setItem('last_active_gstin', currentGstin);
             fetchNotices();
@@ -231,27 +303,28 @@ export default function GstNoticesDashboard() {
             // Stage 3: Zero-Trust PII Masking
             setPipelineStage(3);
             setPipelineMessage('Masking sensitive identifiers via deterministic PII tokenization...');
+            const derivedPan = (notice.client_pan || notice.client_gstin?.substring(2, 12))?.toUpperCase();
             const sanitized = sanitizePayload(fullRawText, {
                 gstin: notice.client_gstin,
-                legalName: activeClient?.legal_name,
-                tradeName: activeClient?.trade_name,
-                pan: notice.client_gstin?.length >= 12 ? notice.client_gstin.substring(2, 12) : undefined,
+                legalName: activeClient?.legal_name || notice.client_legal_name,
+                tradeName: activeClient?.trade_name || notice.client_trade_name,
+                pan: derivedPan && derivedPan.length === 10 ? derivedPan : undefined,
                 officerName: notice.issuing_officer,
                 jurisdiction: notice.issuing_jurisdiction
             });
             setSanitizationResult(sanitized);
             await new Promise(r => setTimeout(r, 700));
 
-            // Stage 4: Gemini Statutory Reasoning
+            // Stage 4: Statutory Legal Reasoning AI
             setPipelineStage(4);
-            setPipelineMessage('Performing statutory legal analysis and defense synthesis...');
+            setPipelineMessage('Explaining notice parameters & synthesizing courtroom defense...');
             const analysis = await analyzeSanitizedNotice(sanitized.sanitizedText);
-            setGeminiAnalysis(analysis);
+            setTaxAiAnalysis(analysis);
             await new Promise(r => setTimeout(r, 800));
 
             // Stage 5: Local Re-Hydration & Assembly
             setPipelineStage(5);
-            setPipelineMessage('Locally re-hydrating courtroom reply draft with actual client details...');
+            setPipelineMessage('Locally re-hydrating notice explanation & courtroom draft...');
             const hydrated = rehydrateDraft(analysis.courtroomDraftMarkdown, sanitized.sessionId);
             setRehydratedDraft(hydrated);
 
@@ -268,7 +341,7 @@ export default function GstNoticesDashboard() {
 
             await new Promise(r => setTimeout(r, 400));
             setIsPipelineProcessing(false);
-            setPipelineMessage('Defense synthesis complete • Courtroom Reply Ready');
+            setPipelineMessage('Notice explained & verified • Courtroom Reply Ready');
 
             // Open reply workbench
             setWorkbenchOpen(true);
@@ -304,12 +377,12 @@ export default function GstNoticesDashboard() {
         setPipelineMessage(`Ingesting ${file.name}...`);
 
         try {
-            const res = await fetch('/api/notices/upload-pdf', {
+            const res = await safeApiFetch('/api/notices/upload-pdf', {
                 method: 'POST',
                 body: formData
             });
-            const data = await res.json();
-            if (data.success && data.notice) {
+            const { ok, data, error } = await parseJsonSafe(res);
+            if (ok && data?.success && data.notice) {
                 setNotices(prev => [data.notice, ...prev.filter(n => n.id !== data.notice.id)]);
                 toast({
                     title: 'Notice Processed Successfully',
@@ -317,7 +390,7 @@ export default function GstNoticesDashboard() {
                 });
                 executeDefensePipeline(data.notice, data.rawText);
             } else {
-                throw new Error(data.error || 'Failed to process notice file');
+                throw new Error(error || data?.error || 'Failed to process notice file');
             }
         } catch (err: any) {
             toast({
@@ -366,7 +439,7 @@ export default function GstNoticesDashboard() {
 
         // Save to SQLite
         try {
-            await fetch('/api/notices/save-demo', {
+            await safeApiFetch('/api/notices/save-demo', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -402,14 +475,22 @@ export default function GstNoticesDashboard() {
      * Delete notice handler
      */
     const handleDeleteNotice = async (noticeId: string, refNo: string) => {
-        if (!confirm(`Are you sure you want to delete notice ${refNo}?`)) return;
+        const ok = await confirm({
+            title: 'Delete Notice Record',
+            description: `Are you sure you want to permanently delete notice ${refNo}? This will remove attached defense files and working papers.`,
+            confirmText: 'Delete Notice',
+            variant: 'destructive',
+        });
+        if (!ok) return;
 
         try {
-            const res = await fetch(`/api/notices/${noticeId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.success) {
+            const res = await safeApiFetch(`/api/notices/${encodeURIComponent(noticeId)}`, { method: 'DELETE' });
+            const { ok, data, error } = await parseJsonSafe(res);
+            if (ok && data?.success) {
                 setNotices(prev => prev.filter(n => n.id !== noticeId));
                 toast({ title: 'Notice Deleted', description: `Notice ${refNo} removed from database.` });
+            } else {
+                throw new Error(error || data?.error || 'Failed to delete notice');
             }
         } catch (err: any) {
             toast({ title: 'Delete Failed', description: err.message, variant: 'destructive' });
@@ -428,7 +509,7 @@ export default function GstNoticesDashboard() {
         setScanning(true);
         setScanMessage('Initializing Playwright browser cascade...');
         try {
-            const response = await fetch('/api/notices/autopilot', {
+            const response = await safeApiFetch('/api/notices/autopilot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ gstin: currentGstin })
@@ -479,12 +560,33 @@ export default function GstNoticesDashboard() {
         setSelectedNotice(notice);
         setInspectorOpen(true);
         try {
-            const res = await fetch(`/api/notices/detail/${notice.id}`);
-            const data = await res.json();
-            if (data.success && data.notice) {
+            const res = await safeApiFetch(`/api/notices/detail/${encodeURIComponent(notice.id)}`);
+            const { ok, data } = await parseJsonSafe(res);
+            if (ok && data?.success && data.notice) {
                 setSelectedNotice(data.notice);
             }
         } catch (e) {}
+    };
+
+    const handleDownloadAttachment = async (att: { id: string; file_name: string }) => {
+        try {
+            const res = await safeApiFetch(`/api/notices/attachment/download/${encodeURIComponent(att.id)}`);
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Download failed (HTTP ${res.status})`);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = att.file_name || `notice_attachment_${att.id}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+        } catch (err: any) {
+            toast({ title: 'Download Failed', description: err.message || 'Unable to download attachment.', variant: 'destructive' });
+        }
     };
 
     const handleOpenReconciliation = async (notice: GstNotice) => {
@@ -532,7 +634,7 @@ export default function GstNoticesDashboard() {
     const activeClientDetails = availableClients.find(c => c.gstin === currentGstin);
 
     return (
-        <div className="min-h-screen bg-slate-50/40 text-slate-900 p-2 sm:p-4 space-y-3.5">
+        <div className="min-h-screen bg-slate-50/40 text-slate-900 p-2 sm:p-4 pb-28 space-y-3.5">
             {/* ─── TOP ELEVATED HEADER BAR (GST Notices Suite · Live) ─── */}
             <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
                 <div className="flex items-center gap-3">
@@ -671,12 +773,12 @@ export default function GstNoticesDashboard() {
                 <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <RefreshCw className="w-4 h-4 text-amber-700 font-bold animate-spin" />
-                        <span className="text-xs font-mono text-amber-300">{scanMessage}</span>
+                        <span className="text-xs font-mono text-amber-800">{scanMessage}</span>
                     </div>
                     <Button 
                         size="sm" 
                         variant="ghost" 
-                        onClick={() => fetch('/api/notices/autopilot/cancel', { method: 'POST' })}
+                        onClick={() => safeApiFetch('/api/notices/autopilot/cancel', { method: 'POST' })}
                         className="text-xs text-slate-600 hover:text-slate-900"
                     >
                         Cancel
@@ -700,7 +802,7 @@ export default function GstNoticesDashboard() {
                         <span className="text-xs font-medium text-amber-700 font-bold">Action Required (&le; 7 Days)</span>
                         <Clock className="w-4 h-4 text-amber-700 font-bold" />
                     </div>
-                    <p className="text-2xl font-black font-mono text-amber-300 mt-2">{urgentCount}</p>
+                    <p className="text-2xl font-black font-mono text-amber-700 mt-2">{urgentCount}</p>
                     <p className="text-[11px] text-amber-700 font-bold/80 mt-1">Imminent statutory deadlines</p>
                 </div>
 
@@ -720,7 +822,7 @@ export default function GstNoticesDashboard() {
                         <span className="text-xs font-medium text-emerald-700 font-bold">Privacy Shield Status</span>
                         <ShieldCheck className="w-4 h-4 text-emerald-700 font-bold" />
                     </div>
-                    <p className="text-lg font-bold font-mono text-emerald-300 mt-2">100% Local PII Masked</p>
+                    <p className="text-lg font-bold font-mono text-emerald-700 mt-2">100% Local PII Masked</p>
                     <p className="text-[11px] text-emerald-700 font-bold/80 mt-1">Zero client data sent to cloud</p>
                 </div>
             </div>
@@ -728,7 +830,23 @@ export default function GstNoticesDashboard() {
             {/* Filter Pills Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                    {[
+                    <button
+                        onClick={() => setViewMode('NOTICES')}
+                        className={`text-xs px-3.5 py-1.5 rounded-full font-bold transition-all ${
+                            viewMode === 'NOTICES' ? 'bg-slate-900 text-white shadow' : 'bg-white text-slate-700 border border-slate-300'
+                        }`}
+                    >
+                        Notices & Orders ({notices.length})
+                    </button>
+                    <button
+                        onClick={() => { setViewMode('CASES'); fetchCases(); }}
+                        className={`text-xs px-3.5 py-1.5 rounded-full font-bold transition-all ${
+                            viewMode === 'CASES' ? 'bg-purple-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-300'
+                        }`}
+                    >
+                        Cases & Offline Folder Import ({cases.length})
+                    </button>
+                    {viewMode === 'NOTICES' && [
                         { id: 'ALL', label: 'All Notices' },
                         { id: 'PENDING', label: 'Pending Reply' },
                         { id: 'ASMT', label: 'Scrutiny (ASMT-10)' },
@@ -741,7 +859,7 @@ export default function GstNoticesDashboard() {
                             className={`text-xs px-3.5 py-1.5 rounded-full font-medium transition-all ${
                                 activeFilter === tab.id
                                     ? 'bg-purple-600 text-white font-bold shadow-md shadow-purple-600/30'
-                                    : 'bg-slate-800/60 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300'
                             }`}
                         >
                             {tab.label}
@@ -762,8 +880,126 @@ export default function GstNoticesDashboard() {
                 )}
             </div>
 
+            {/* Cases & Offline Scrutiny Folder Import Panel */}
+            {viewMode === 'CASES' && (
+                <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <input
+                                type="text"
+                                value={folderPathInput}
+                                onChange={(e) => setFolderPathInput(e.target.value)}
+                                placeholder="Local client scrutiny folder (e.g. E:\software test files\...\Adesh Kad)"
+                                className="flex-1 text-xs font-mono px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-slate-900"
+                            />
+                            <Button size="sm" variant="outline" disabled={folderBusy} onClick={handleScanLocalFolder} className="text-xs font-bold">
+                                {folderBusy ? 'Scanning...' : 'Scan Offline Folder'}
+                            </Button>
+                            <Button size="sm" disabled={folderBusy} onClick={handleImportLocalFolder} className="text-xs font-bold bg-purple-600 text-white hover:bg-purple-700">
+                                Import into Case Ledger
+                            </Button>
+                        </div>
+                        {folderScanPreview && (
+                            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                                <div className="font-bold text-slate-800">
+                                    Preview: {folderScanPreview.clientName} ({folderScanPreview.detectedGstin || 'GSTIN Auto-Detect Pending'}) — {folderScanPreview.documents?.length || 0} Files
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                                    {(folderScanPreview.documents || []).slice(0, 24).map((d: any, idx: number) => (
+                                        <Badge key={idx} variant="outline" className="text-[10px] font-mono bg-white">
+                                            {d.formCode} {d.paramCodes?.length ? `[${d.paramCodes.join(',')}]` : ''} · {d.fileName}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {cases.length === 0 ? (
+                        <div className="p-10 rounded-xl border border-slate-200 bg-white text-center text-xs text-slate-600">
+                            No Case Bundles imported yet. Enter a local client scrutiny folder above to build a full Case Timeline + DRC-03 Ledger.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3">
+                            {cases.map((c: any) => (
+                                <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs space-y-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-sm text-slate-900">{c.client_name || c.client_gstin}</span>
+                                                <Badge className="text-[10px] font-mono bg-purple-100 text-purple-800 border-purple-200">{c.financial_year}</Badge>
+                                                <Badge className="text-[10px] font-mono bg-emerald-100 text-emerald-800 border-emerald-200">{c.status}</Badge>
+                                            </div>
+                                            <p className="text-[11px] font-mono text-slate-600 mt-0.5">
+                                                GSTIN: {c.client_gstin} • Tax Demanded: ₹{Number(c.total_tax_demanded || 0).toLocaleString('en-IN')} • Events: {c.events?.length || 0} • DRC-03 Payments: {c.payments?.length || 0}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                    const wb = generateDefenseWorkbook({
+                                                        clientName: c.client_name || c.client_gstin,
+                                                        gstin: c.client_gstin,
+                                                        financialYear: c.financial_year || 'Multi-FY',
+                                                        caseRef: c.portal_case_id || c.id.slice(0, 8),
+                                                        issues: (c.events || []).filter((e: any) => e.param_code).map((e: any) => ({
+                                                            paramCode: e.param_code,
+                                                            issueTitle: e.title,
+                                                            taxDemanded: e.tax_amount || 0,
+                                                            interestDemanded: e.interest_amount || 0,
+                                                            penaltyDemanded: e.penalty_amount || 0,
+                                                            strategy: e.form_code
+                                                        })),
+                                                        payments: (c.payments || []).map((p: any) => ({
+                                                            form: p.payment_type,
+                                                            refNo: p.drc03_ref_no || p.arn_no,
+                                                            date: p.payment_date,
+                                                            via: p.paid_via || 'CASH/ITC',
+                                                            tax: (p.igst || 0) + (p.cgst || 0) + (p.sgst || 0),
+                                                            interest: p.interest_paid || 0,
+                                                            penalty: p.penalty_paid || 0,
+                                                            drc03a: Boolean(p.drc03a_adjusted)
+                                                        }))
+                                                    });
+                                                    XLSX.writeFile(wb, `Defense_Workbook_${c.client_gstin}_${c.financial_year || 'Case'}.xlsx`);
+                                                    toast({ title: 'Zero-Merge Workbook Exported', description: '7-tab defense workbook saved cleanly.' });
+                                                }}
+                                                className="text-xs text-emerald-700 border-emerald-300 font-bold"
+                                            >
+                                                <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />
+                                                7-Tab Zero-Merge Workbook
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={async () => {
+                                                    await safeApiFetch(`/api/notices/cases/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+                                                    fetchCases();
+                                                }}
+                                                className="text-xs text-rose-700"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {(c.events || []).slice(0, 12).map((ev: any) => (
+                                            <span key={ev.id} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800">
+                                                {ev.form_code} {ev.param_code ? `(${ev.param_code})` : ''} {ev.event_date ? `• ${ev.event_date}` : ''}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Main Notices Ledger Table */}
-            <div className="rounded-xl border border-slate-200 bg-white backdrop-blur-md overflow-hidden">
+            {viewMode === 'NOTICES' && <div className="rounded-xl border border-slate-200 bg-white backdrop-blur-md overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 border-b-2 border-slate-200 text-slate-800 font-mono uppercase tracking-wider text-[11px] font-bold">
@@ -874,10 +1110,11 @@ export default function GstNoticesDashboard() {
                                                     <Button
                                                         size="sm"
                                                         onClick={() => executeDefensePipeline(n)}
-                                                        className="h-7 text-[11px] px-2.5 bg-purple-600 hover:bg-purple-700 text-slate-900 font-bold rounded shadow-sm shadow-purple-600/30 flex items-center gap-1"
+                                                        className="h-7 text-[11px] px-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded shadow-sm shadow-purple-600/30 flex items-center gap-1 cursor-pointer"
+                                                        title="Explain notice anatomy first, then generate statutory courtroom reply"
                                                     >
                                                         <Sparkles className="w-3 h-3" />
-                                                        Draft Reply
+                                                        Explain & Reply
                                                     </Button>
                                                     <Button
                                                         size="sm"
@@ -897,7 +1134,7 @@ export default function GstNoticesDashboard() {
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </div>}
 
             {/* Manual Ingest / Paste Notice Modal */}
             <Dialog open={manualModalOpen} onOpenChange={setManualModalOpen}>
@@ -918,12 +1155,20 @@ export default function GstNoticesDashboard() {
                                     onChange={e => setManualFormType(e.target.value)}
                                     className="w-full bg-white border border-slate-200 rounded-lg p-2 text-slate-900 font-mono"
                                 >
-                                    <option value="ASMT-10">Form GST ASMT-10 (Scrutiny Notice)</option>
-                                    <option value="DRC-01">Form GST DRC-01 (Show Cause Notice)</option>
-                                    <option value="DRC-01A">Form GST DRC-01A (Pre-SCN Intimation)</option>
-                                    <option value="DRC-01B">Form GST DRC-01B (Rule 88C Outward Intimation)</option>
-                                    <option value="DRC-01C">Form GST DRC-01C (Rule 88D ITC Intimation)</option>
-                                    <option value="REG-17">Form GST REG-17 (Registration SCN)</option>
+                                    <option value="ASMT-10">Form GST ASMT-10 (Scrutiny Notice - 30d)</option>
+                                    <option value="DRC-01">Form GST DRC-01 (Show Cause Notice - 30d)</option>
+                                    <option value="DRC-01 (Sec 125)">Form GST DRC-01 (Sec 125 Penalty - 7d)</option>
+                                    <option value="DRC-01A">Form GST DRC-01A (Pre-SCN Intimation - 15d)</option>
+                                    <option value="DRC-01B">Form GST DRC-01B (Rule 88C Outward - 7d)</option>
+                                    <option value="DRC-01C">Form GST DRC-01C (Rule 88D ITC - 7d)</option>
+                                    <option value="SPL-03">Form GST SPL-03 (Waiver Rejection SCN - 30d)</option>
+                                    <option value="SPL-07">Form GST SPL-07 (Amnesty Rejection - Restoration)</option>
+                                    <option value="REG-17">Form GST REG-17 (Registration SCN - 7d)</option>
+                                    <option value="REG-31">Form GST REG-31 (Suspension & SCN - 30d)</option>
+                                    <option value="MOV-07">Form GST MOV-07 (Sec 129 Detention - 7d)</option>
+                                    <option value="RFD-08">Form GST RFD-08 (Refund SCN - 15d)</option>
+                                    <option value="RULE-86A">Rule 86A ECrL Blocking Notice (7d)</option>
+                                    <option value="MVAT-303">MVAT Form 303(231) Assessment Order</option>
                                 </select>
                             </div>
                             <div>
@@ -1056,13 +1301,13 @@ export default function GstNoticesDashboard() {
                                                 <Paperclip className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                                                 <span className="truncate text-slate-800">{att.file_name}</span>
                                             </div>
-                                            <a 
-                                                href={`/api/notices/attachment/download/${att.id}`} 
-                                                download 
-                                                className="text-xs text-blue-400 hover:text-blue-300 font-medium ml-2"
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDownloadAttachment(att)}
+                                                className="text-xs text-blue-400 hover:text-blue-300 font-medium ml-2 cursor-pointer"
                                             >
                                                 Download
-                                            </a>
+                                            </button>
                                         </div>
                                     ))
                                 )}
@@ -1085,9 +1330,9 @@ export default function GstNoticesDashboard() {
                                 setInspectorOpen(false);
                                 executeDefensePipeline(selectedNotice);
                             }}
-                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-slate-900 font-medium text-xs"
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs"
                         >
-                            Execute AI Pipeline
+                            Explain Notice & Draft Reply
                         </Button>
                     </div>
                 </div>
@@ -1152,9 +1397,9 @@ export default function GstNoticesDashboard() {
                                 setRecoModalOpen(false);
                                 if (selectedNotice) executeDefensePipeline(selectedNotice);
                             }}
-                            className="bg-purple-600 hover:bg-purple-700 text-xs font-bold"
+                            className="bg-purple-600 hover:bg-purple-700 text-xs font-bold text-white"
                         >
-                            Proceed to Draft Reply
+                            Explain Notice & Draft Reply
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1173,12 +1418,12 @@ export default function GstNoticesDashboard() {
                     isOpen={workbenchOpen}
                     onClose={() => setWorkbenchOpen(false)}
                     notice={selectedNotice}
-                    analysis={geminiAnalysis}
+                    analysis={taxAiAnalysis}
                     recoResult={recoResult}
                     initialDraftText={rehydratedDraft}
                     sessionId={sanitizationResult?.sessionId || 'session_default'}
                     onSaveToDb={async (draftText, formName) => {
-                        await fetch('/api/notices/reply/save', {
+                        await safeApiFetch('/api/notices/reply/save', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

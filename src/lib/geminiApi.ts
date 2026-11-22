@@ -1,11 +1,11 @@
-import { getApiBase } from './api';
+import { getApiBase, authHeaders } from './api';
 
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
 }
 
-export interface GeminiContext {
+export interface AiAssistantContext {
   clientName?: string;
   gstin?: string;
   fy?: string;
@@ -13,10 +13,14 @@ export interface GeminiContext {
   userName?: string;
 }
 
-export interface GeminiStatus {
+export type GeminiContext = AiAssistantContext;
+
+export interface AiAssistantStatus {
   configured: boolean;
   origin?: 'cloud_office' | 'cloud_global' | 'local_manual' | 'env' | string | null;
 }
+
+export type GeminiStatus = AiAssistantStatus;
 
 export interface ChatMetaResponse {
   reply: string;
@@ -37,7 +41,7 @@ export async function sendChatMessageWithMeta(
 ): Promise<ChatMetaResponse> {
   const res = await fetch(`${getApiBase()}/api/gemini/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ message, context, history }),
   });
 
@@ -61,7 +65,7 @@ export async function sendChatMessageWithMeta(
 }
 
 /**
- * Send user message and conversation context to the backend Gemini chat API.
+ * Send user message and conversation context to the backend AI Assistant chat API.
  */
 export async function sendChatMessage(
   message: string,
@@ -73,39 +77,43 @@ export async function sendChatMessage(
 }
 
 /**
- * Check if the Google Gemini API key has been configured in the backend and return origin telemetry.
+ * Check if the AI Assistant API key has been configured in the backend and return origin telemetry.
  */
 export async function getGeminiStatus(): Promise<GeminiStatus> {
   try {
-    const res = await fetch(`${getApiBase()}/api/gemini/status`);
+    const res = await fetch(`${getApiBase()}/api/gemini/status`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) return { configured: false, origin: null };
     return await res.json();
   } catch (err) {
-    console.warn('[Gemini API] Failed to fetch status:', err);
+    console.warn('[AI API] Failed to fetch status:', err);
     return { configured: false, origin: null };
   }
 }
+export const getAiStatus = getGeminiStatus;
 
 /**
- * Persist the Gemini API key in the backend SQLite app_config table locally.
+ * Persist the AI activation key in the backend SQLite app_config table locally.
  */
 export async function saveGeminiApiKey(apiKey: string): Promise<{ ok: boolean; message?: string; origin?: string }> {
   const res = await fetch(`${getApiBase()}/api/gemini/config`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ apiKey }),
   });
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to save Gemini API key');
+    throw new Error(data.error || 'Failed to save AI activation key');
   }
 
   return data;
 }
+export const saveAiApiKey = saveGeminiApiKey;
 
 /**
- * Trigger immediate cloud synchronization of the Gemini API key from Firebase Firestore.
+ * Trigger immediate cloud synchronization of the AI key from Centralized License.
  */
 export async function syncGeminiFromCloud(): Promise<{
   ok: boolean;
@@ -116,19 +124,20 @@ export async function syncGeminiFromCloud(): Promise<{
 }> {
   const res = await fetch(`${getApiBase()}/api/gemini/sync-cloud`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
   });
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to sync Gemini API key from Cloud License');
+    throw new Error(data.error || 'Failed to sync AI activation key from Cloud License');
   }
 
   return data;
 }
+export const syncAiFromCloud = syncGeminiFromCloud;
 
 /**
- * Push Gemini API key to Firebase Firestore for centralized office or global distribution.
+ * Push AI key to Centralized Cloud for centralized office or global distribution.
  */
 export async function pushGeminiToCloud(
   apiKey: string,
@@ -136,17 +145,18 @@ export async function pushGeminiToCloud(
 ): Promise<{ ok: boolean; origin?: string; message: string }> {
   const res = await fetch(`${getApiBase()}/api/gemini/push-cloud`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ apiKey, scope }),
   });
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to push Gemini API key to Cloud');
+    throw new Error(data.error || 'Failed to push AI key to Cloud');
   }
 
   return data;
 }
+export const pushAiToCloud = pushGeminiToCloud;
 
 /**
  * Action target to human-readable label and navigation route mapping.

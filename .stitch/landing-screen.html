@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Vaswani Return Enterprise — Autonomous GST Reconciliation &amp; Tax Audit Defense</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Inter & JetBrains Mono Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-container": "#5d55f3",
+            "amber-practice": "#D97706",
+            "info-bg": "#EFF6FF",
+            "primary": "#004ac6",
+            "surface-container-low": "#f2f3ff",
+            "surface-dark": "#141920",
+            "on-primary-fixed-variant": "#003ea8",
+            "on-tertiary-container": "#f2eeff",
+            "on-tertiary-fixed": "#0f0069",
+            "canvas-light": "#F8FAFC",
+            "canvas-dark": "#0F1319",
+            "surface-light": "#FFFFFF",
+            "on-error": "#ffffff",
+            "on-secondary": "#ffffff",
+            "primary-container": "#2563eb",
+            "tertiary-fixed-dim": "#c3c0ff",
+            "on-surface": "#131b2e",
+            "tertiary-fixed": "#e2dfff",
+            "surface-container-high": "#e2e7ff",
+            "surface-bright": "#faf8ff",
+            "error": "#ba1a1a",
+            "surface-variant": "#dae2fd",
+            "outline-variant": "#c3c6d7",
+            "surface-container": "#eaedff",
+            "secondary-fixed-dim": "#adc6ff",
+            "on-primary": "#ffffff",
+            "surface-container-highest": "#dae2fd",
+            "on-secondary-fixed": "#001a42",
+            "elevated-dark": "#1A2130",
+            "critical-text": "#DC2626",
+            "on-secondary-container": "#fefcff",
+            "inverse-surface": "#283044",
+            "on-tertiary-fixed-variant": "#3323cc",
+            "surface-tint": "#0053db",
+            "tertiary": "#4338d9",
+            "surface": "#faf8ff",
+            "success-bg": "#ECFDF5",
+            "error-container": "#ffdad6",
+            "border-light": "#E2E8F0",
+            "secondary": "#0058be",
+            "on-surface-variant": "#434655",
+            "background": "#faf8ff",
+            "critical-bg": "#FEF2F2",
+            "primary-fixed": "#dbe1ff",
+            "secondary-fixed": "#d8e2ff",
+            "pink-tally": "#DB2777",
+            "on-primary-fixed": "#00174b",
+            "surface-container-lowest": "#ffffff",
+            "surface-dim": "#d2d9f4",
+            "elevated-light": "#F1F5F9",
+            "on-background": "#131b2e",
+            "on-tertiary": "#ffffff",
+            "inverse-on-surface": "#eef0ff",
+            "indigo-audit": "#4F46E5",
+            "secondary-container": "#2170e4",
+            "inverse-primary": "#b4c5ff",
+            "border-subtle": "#CBD5E1",
+            "warning-bg": "#FFFBEB",
+            "primary-fixed-dim": "#b4c5ff",
+            "border-dark": "#1E293B",
+            "on-primary-container": "#eeefff",
+            "on-secondary-fixed-variant": "#004395",
+            "outline": "#737686",
+            "on-error-container": "#93000a",
+            "emerald-gst": "#059669"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-lg": "1.5rem",
+            "space-md": "1rem",
+            "gutter": "1.5rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin": "2rem",
+            "space-xs": "0.25rem"
+          },
+          "fontFamily": {
+            "headline-sm": ["Inter"],
+            "headline-lg": ["Inter"],
+            "headline-md": ["Inter"],
+            "body-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "display-hero-mobile": ["Inter"],
+            "tabular-data": ["JetBrains Mono"],
+            "display-hero": ["Inter"]
+          },
+          "fontSize": {
+            "headline-sm": ["1.25rem", { "lineHeight": "1.35", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg": ["2.25rem", { "lineHeight": "1.2", "letterSpacing": "-0.025em", "fontWeight": "700" }],
+            "headline-md": ["1.75rem", { "lineHeight": "1.25", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+            "body-sm": ["0.875rem", { "lineHeight": "1.5", "fontWeight": "400" }],
+            "body-md": ["1rem", { "lineHeight": "1.6", "fontWeight": "400" }],
+            "display-hero-mobile": ["2.5rem", { "lineHeight": "1.15", "letterSpacing": "-0.025em", "fontWeight": "800" }],
+            "tabular-data": ["0.75rem", { "lineHeight": "1.4", "fontWeight": "600" }],
+            "display-hero": ["3.5rem", { "lineHeight": "1.1", "letterSpacing": "-0.03em", "fontWeight": "800" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="bg-canvas-light text-on-surface antialiased selection:bg-primary selection:text-white">
+<!-- 1. STICKY TOP APP BAR (Shared Component execution) -->
+<header class="sticky top-0 w-full z-50 bg-surface-container-lowest/85 backdrop-blur-md border-b border-border-light shadow-sm">
+<div class="max-w-7xl mx-auto px-6 h-[72px] flex items-center justify-between">
+<!-- Brand Logo / Product Anchor -->
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/20">
+<span class="material-symbols-outlined text-[22px]" data-icon="shield">shield</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-headline-sm text-headline-sm text-on-surface tracking-tight font-bold">Vaswani Return Enterprise</span>
+<span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container text-primary border border-border-subtle/50">
+              Autonomous Tax Suite
+            </span>
+</div>
+</div>
+</div>
+<!-- Center Navigation Links -->
+<nav class="hidden lg:flex items-center gap-7">
+<a class="font-body-md text-body-md text-primary font-semibold hover:text-primary transition-colors duration-150" href="#solutions">Solutions</a>
+<a class="font-body-md text-body-md text-on-surface-variant font-normal hover:text-primary transition-colors duration-150" href="#gst-reco">GST Reco</a>
+<a class="font-body-md text-body-md text-on-surface-variant font-normal hover:text-primary transition-colors duration-150" href="#audit-defense">Audit Defense</a>
+<a class="font-body-md text-body-md text-on-surface-variant font-normal hover:text-primary transition-colors duration-150" href="#telemetry">Telemetry</a>
+<a class="font-body-md text-body-md text-on-surface-variant font-normal hover:text-primary transition-colors duration-150" href="#pricing">Pricing</a>
+</nav>
+<!-- Trailing Action Buttons -->
+<div class="flex items-center gap-3">
+<button class="hidden sm:inline-flex items-center justify-center px-4 py-2.5 rounded-xl border border-border-light text-on-surface font-body-sm text-body-sm font-semibold hover:bg-elevated-light transition-all duration-200 active:scale-[0.99]">
+          Book Demo
+        </button>
+<button class="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary-container text-white font-body-sm text-body-sm font-semibold shadow-md shadow-primary-container/25 hover:bg-primary transition-all duration-200 active:scale-[0.99] gap-1.5">
+<span>Launch App</span>
+<span class="material-symbols-outlined text-base" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+</header>
+<!-- 2. HIGH-IMPACT HERO SECTION -->
+<section class="relative pt-12 pb-20 overflow-hidden bg-gradient-to-b from-canvas-light via-surface-container-low/30 to-canvas-light">
+<div class="max-w-7xl mx-auto px-6">
+<!-- Top Announcement Pill -->
+<div class="flex items-center justify-center mb-6">
+<div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-container border border-border-subtle/60 text-on-surface shadow-xs">
+<span class="text-amber-practice text-xs font-semibold">⚡ Autonomous Tax Compliance Suite</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span class="text-xs font-medium text-on-surface-variant">Section 16(2)(aa) Automated</span>
+</div>
+</div>
+<!-- Main Headline & Subtitle -->
+<div class="text-center max-w-4xl mx-auto mb-10">
+<h1 class="font-display-hero text-display-hero text-on-surface mb-6 tracking-tight">
+          Autonomous GST Reconciliation &amp; Tax Audit Defense
+        </h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl mx-auto">
+          Empower CFOs, Tax Directors, and Corporate Tax Teams with institutional-grade Section 16(2)(aa) compliance, 12-month GSTR-2B autopilot ingestion, and zero-loss bidirectional Tally Prime XML sync.
+        </p>
+</div>
+<!-- Primary & Secondary CTA Buttons -->
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
+<button class="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3.5 rounded-xl bg-primary-container text-white font-body-md text-body-md font-semibold shadow-lg shadow-primary-container/25 hover:bg-primary hover:-translate-y-0.5 transition-all duration-200 gap-2">
+<span>Launch Enterprise Suite</span>
+<span class="material-symbols-outlined text-lg" data-icon="arrow_forward">arrow_forward</span>
+</button>
+<button class="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3.5 rounded-xl bg-surface-container-lowest border border-border-light text-on-surface font-body-md text-body-md font-semibold hover:bg-elevated-light hover:border-border-subtle transition-all duration-200 gap-2 shadow-xs">
+<span class="material-symbols-outlined text-lg text-primary" data-icon="play_circle">play_circle</span>
+<span>Explore Interactive Demo</span>
+</button>
+</div>
+<!-- Three Pillars / Trust Badges -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-16">
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-lowest border border-border-light shadow-xs">
+<div class="w-8 h-8 rounded-lg bg-emerald-gst/10 flex items-center justify-center text-emerald-gst shrink-0">
+<span class="material-symbols-outlined text-lg" data-icon="table_view">table_view</span>
+</div>
+<span class="font-body-sm text-body-sm font-medium text-on-surface">Zero-Merge Excel Exports (Native Formula Ingestion)</span>
+</div>
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-lowest border border-border-light shadow-xs">
+<div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-lg" data-icon="security">security</span>
+</div>
+<span class="font-body-sm text-body-sm font-medium text-on-surface">Air-Gapped &amp; SOC2 Type II Local Processing Security</span>
+</div>
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-lowest border border-border-light shadow-xs">
+<div class="w-8 h-8 rounded-lg bg-tertiary-container/10 flex items-center justify-center text-tertiary shrink-0">
+<span class="material-symbols-outlined text-lg" data-icon="verified">verified</span>
+</div>
+<span class="font-body-sm text-body-sm font-medium text-on-surface">99.8% Automated Match Accuracy across 500k+ Invoices</span>
+</div>
+</div>
+<!-- 3. HERO VISUAL PREVIEW: Executive Financial Telemetry Mockup -->
+<div class="relative max-w-6xl mx-auto rounded-2xl bg-surface-container-lowest border border-border-light shadow-2xl p-6 sm:p-8 overflow-hidden">
+<!-- Header Strip of Mockup -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-border-light">
+<div class="flex items-center gap-3">
+<span class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-gst opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-gst"></span>
+</span>
+<span class="font-tabular-data text-tabular-data text-on-surface font-semibold">Live Engine Active • Connected to Tally Prime Port 9000</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-xs text-on-surface-variant font-medium">Session ID: <code class="font-tabular-data text-on-surface font-semibold">VR-ENT-8849-GSTIN</code></span>
+<span class="px-2.5 py-1 rounded-md bg-info-bg text-primary text-xs font-semibold border border-primary/20">IMS Sync 12M Active</span>
+</div>
+</div>
+<!-- Metric Badges Strip (4 Key Stats) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+<div class="p-4 rounded-xl bg-canvas-light border border-border-light">
+<div class="flex items-center justify-between text-xs text-on-surface-variant font-medium mb-1">
+<span>Total Eligible ITC</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-success-bg text-emerald-gst">99.8% Matched</span>
+</div>
+<div class="font-tabular-data text-xl text-on-surface font-bold tracking-tight">₹48,62,41,890</div>
+<div class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-emerald-gst" data-icon="check_circle">check_circle</span>
+              GSTR-2B Sec 16(2)(aa) Validated
+            </div>
+</div>
+<div class="p-4 rounded-xl bg-canvas-light border border-border-light">
+<div class="flex items-center justify-between text-xs text-on-surface-variant font-medium mb-1">
+<span>Sec 16(4) Risk / Mismatch</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-critical-bg text-critical-text">Action Req</span>
+</div>
+<div class="font-tabular-data text-xl text-critical-text font-bold tracking-tight">₹14,28,340</div>
+<div class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-critical-text" data-icon="warning">warning</span>
+              Missing Inward Vouchers
+            </div>
+</div>
+<div class="p-4 rounded-xl bg-canvas-light border border-border-light">
+<div class="flex items-center justify-between text-xs text-on-surface-variant font-medium mb-1">
+<span>Rounding Variance</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-warning-bg text-amber-practice">Auto-Cleared</span>
+</div>
+<div class="font-tabular-data text-xl text-on-surface font-bold tracking-tight">₹18,420.40</div>
+<div class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-amber-practice" data-icon="swap_horiz">swap_horiz</span>
+              Within ±₹10 Statutory Rule
+            </div>
+</div>
+<div class="p-4 rounded-xl bg-canvas-light border border-border-light">
+<div class="flex items-center justify-between text-xs text-on-surface-variant font-medium mb-1">
+<span>Vouchers Ingested</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-surface-container text-primary">8 GSTINs</span>
+</div>
+<div class="font-tabular-data text-xl text-on-surface font-bold tracking-tight">1,42,850</div>
+<div class="text-[11px] text-on-surface-variant mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary" data-icon="dataset">dataset</span>
+              Direct XML Ingestion Speed: 4.2k/s
+            </div>
+</div>
+</div>
+<!-- Party-wise Dispute & Reconciliation Mini-Table -->
+<div class="border border-border-light rounded-xl overflow-hidden bg-surface-light">
+<div class="px-5 py-3.5 bg-surface-container-low border-b border-border-light flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-base" data-icon="account_balance">account_balance</span>
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Institutional Ledger &amp; GSTR-2B Waterfall Telemetry</span>
+</div>
+<span class="text-xs font-tabular-data text-on-surface-variant">Live Real-Time Stream</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-border-light text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider bg-canvas-light/50">
+<th class="py-3 px-4">Vendor Entity &amp; GSTIN</th>
+<th class="py-3 px-4">Portal Status</th>
+<th class="py-3 px-4">Books Status</th>
+<th class="py-3 px-4 font-tabular-data">Variance (₹)</th>
+<th class="py-3 px-4">Audit Status / Section 16 Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-light font-body-sm text-body-sm">
+<!-- Row 1: Larsen & Toubro -->
+<tr class="hover:bg-canvas-light/60 transition-colors">
+<td class="py-3.5 px-4">
+<div class="font-semibold text-on-surface">Larsen &amp; Toubro Infotech</div>
+<div class="text-xs font-tabular-data text-on-surface-variant">27AAACL3044F1Z8</div>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-emerald-gst">
+                      GSTR-2B Filed
+                    </span>
+</td>
+<td class="py-3.5 px-4 text-xs font-medium text-on-surface">Tally Purchase Reg. Ingested</td>
+<td class="py-3.5 px-4 font-tabular-data font-semibold text-on-surface">₹0.00</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-success-bg text-emerald-gst border border-emerald-gst/20">
+<span class="material-symbols-outlined text-[14px]" data-icon="verified_user">verified_user</span>
+                      Approved ITC
+                    </span>
+</td>
+</tr>
+<!-- Row 2: Siemens -->
+<tr class="hover:bg-canvas-light/60 transition-colors">
+<td class="py-3.5 px-4">
+<div class="font-semibold text-on-surface">Siemens Industrial Automation</div>
+<div class="text-xs font-tabular-data text-on-surface-variant">27AABCS1429B1ZU</div>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-emerald-gst">
+                      2B Available
+                    </span>
+</td>
+<td class="py-3.5 px-4 text-xs font-medium text-critical-text">Missing in Books</td>
+<td class="py-3.5 px-4 font-tabular-data font-semibold text-critical-text">+₹4,82,000.00</td>
+<td class="py-3.5 px-4">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-primary text-white hover:bg-primary-container shadow-xs transition-colors">
+<span class="material-symbols-outlined text-[13px]" data-icon="sync_alt">sync_alt</span>
+                      Push to Tally
+                    </button>
+</td>
+</tr>
+<!-- Row 3: Tata Steel -->
+<tr class="hover:bg-canvas-light/60 transition-colors">
+<td class="py-3.5 px-4">
+<div class="font-semibold text-on-surface">Tata Steel Processing</div>
+<div class="text-xs font-tabular-data text-on-surface-variant">24AAACT2727Q1ZW</div>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-amber-practice">
+                      Delayed GSTR-1
+                    </span>
+</td>
+<td class="py-3.5 px-4 text-xs font-medium text-on-surface">Booked in Oct-24</td>
+<td class="py-3.5 px-4 font-tabular-data font-semibold text-amber-practice">₹12,400.00</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-on-surface-variant border border-border-subtle">
+                      Sec 16(2)(aa) Safe Harbor
+                    </span>
+</td>
+</tr>
+<!-- Row 4: Adani Logistics -->
+<tr class="hover:bg-canvas-light/60 transition-colors">
+<td class="py-3.5 px-4">
+<div class="font-semibold text-on-surface">Adani Logistics Solutions</div>
+<div class="text-xs font-tabular-data text-on-surface-variant">24AABCA2804L1ZJ</div>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-emerald-gst">
+                      2B Ingested
+                    </span>
+</td>
+<td class="py-3.5 px-4 text-xs font-medium text-on-surface">Tally Purchase (±4.20)</td>
+<td class="py-3.5 px-4 font-tabular-data font-semibold text-on-surface">±₹4.20</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-gst">
+<span class="material-symbols-outlined text-[14px]" data-icon="done_all">done_all</span>
+                      Auto-Balanced
+                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- 4. PERFORMANCE STATISTICS BAR -->
+<section class="bg-surface-dark text-white py-14 border-y border-border-dark">
+<div class="max-w-7xl mx-auto px-6">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-8 divide-y md:divide-y-0 md:divide-x divide-border-dark">
+<div class="pt-4 md:pt-0 md:px-6 first:pl-0">
+<div class="font-headline-lg text-headline-lg font-extrabold text-white tracking-tight">₹1,420+ Cr</div>
+<div class="font-body-sm text-body-sm text-surface-variant font-medium mt-1">ITC Reconciled Autonomously</div>
+<div class="text-[12px] text-outline-variant mt-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-emerald-gst text-sm" data-icon="trending_up">trending_up</span>
+            Across 14 Tier-1 Conglomerates
+          </div>
+</div>
+<div class="pt-4 md:pt-0 md:px-6">
+<div class="font-headline-lg text-headline-lg font-extrabold text-white tracking-tight">18x Faster</div>
+<div class="font-body-sm text-body-sm text-surface-variant font-medium mt-1">Month-end Closing Speed</div>
+<div class="text-[12px] text-outline-variant mt-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-primary-container text-sm" data-icon="bolt">bolt</span>
+            Cut closing from 14 days to 4 hours
+          </div>
+</div>
+<div class="pt-4 md:pt-0 md:px-6">
+<div class="font-headline-lg text-headline-lg font-extrabold text-white tracking-tight">99.82%</div>
+<div class="font-body-sm text-body-sm text-surface-variant font-medium mt-1">Unassisted Match Rate</div>
+<div class="text-[12px] text-outline-variant mt-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-emerald-gst text-sm" data-icon="auto_awesome">auto_awesome</span>
+            Complex CDNR &amp; Slash variations
+          </div>
+</div>
+<div class="pt-4 md:pt-0 md:px-6 last:pr-0">
+<div class="font-headline-lg text-headline-lg font-extrabold text-white tracking-tight">Zero Reversals</div>
+<div class="font-body-sm text-body-sm text-surface-variant font-medium mt-1">Section 73/74 Proceedings</div>
+<div class="text-[12px] text-outline-variant mt-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-primary-container text-sm" data-icon="verified_user">verified_user</span>
+            Statutory Audit &amp; ASMT-10 immunity
+          </div>
+</div>
+</div>
+</div>
+</section>
+<!-- 5. FEATURE MATRIX GRID (Bento Architecture) -->
+<section class="py-24 bg-canvas-light" id="solutions">
+<div class="max-w-7xl mx-auto px-6">
+<!-- Section Header -->
+<div class="text-center max-w-3xl mx-auto mb-16">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-primary font-body-sm text-body-sm font-semibold mb-3">
+<span class="material-symbols-outlined text-sm" data-icon="integration_instructions">integration_instructions</span>
+<span>Core Defense Architecture</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">
+          Precision Engineering for Corporate Tax &amp; Audit Teams
+        </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+          Every capability is built specifically to address harsh Indian statutory audits, aggressive departmental scrutiny notices, and high-volume ERP integrations.
+        </p>
+</div>
+<!-- 6 Comprehensive Enterprise Cards Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Card 1: Waterfall Reco Engine -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6 group-hover:bg-primary group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="waterfall_chart">waterfall_chart</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">Waterfall Reco Engine</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            4-stage algorithmic reconciliation resolving prefix/suffix stripping, invoice date drifts, fractional rounding tolerances (±₹10), and complex Credit/Debit Note linking without human intervention.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-primary">
+<span>Stage 1 to 4 Multi-pass Regex</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card 2: 12M Portal Autopilot -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-tertiary-container/10 flex items-center justify-center text-tertiary mb-6 group-hover:bg-tertiary-container group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="cloud_sync">cloud_sync</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">12M Portal Autopilot</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            Autonomous GSTN API automation that ingests full rolling 12 months of GSTR-2B, GSTR-1, and newly introduced IMS (Invoice Management System) actions without portal timeouts or CAPTCHA friction.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-tertiary">
+<span>Direct GSTN Sandbox Compliant</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card 3: Zero-Merge Audit Spreadsheets -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-emerald-gst/10 flex items-center justify-center text-emerald-gst mb-6 group-hover:bg-emerald-gst group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="file_present">file_present</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">Zero-Merge Audit Sheets</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            Exports pristine, multi-sheet working papers with embedded live Excel formulas (`SUMIFS`, `XLOOKUP`), zero merged cells, and strict tabular integrity directly digestible by statutory auditors and Big-4 teams.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-emerald-gst">
+<span>Big-4 Ready Working Papers</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card 4: Tally Prime Port 9000 XML -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-pink-tally/10 flex items-center justify-center text-pink-tally mb-6 group-hover:bg-pink-tally group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="developer_board">developer_board</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">Tally Prime Port 9000 XML</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            Bidirectional local XML sync pulling Purchase Daybooks and pushing verified e-invoice details directly via Port 9000. Eliminates intermediate CSV cleaning and guarantees zero sensitive ledger leaks to public clouds.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-pink-tally">
+<span>Zero Data Leakage • Local Loopback</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card 5: GSTR-1 & 3B Working Papers -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary mb-6 group-hover:bg-secondary group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="calculate">calculate</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">GSTR-1 &amp; 3B Working Papers</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            Real-time auto-calculation of Table 4 Eligible ITC, Table 3.1 Outward supplies, and autonomous Rule 37A 180-day vendor payment reversals with ready-to-file JSON payload exports.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-secondary">
+<span>Rule 37A &amp; Sec 16(4) Guardrails</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card 6: Notice Defense & Clause 44 Hub -->
+<div class="p-8 rounded-2xl bg-surface-container-lowest border border-border-light hover:border-primary/40 hover:shadow-xl transition-all duration-200 group">
+<div class="w-12 h-12 rounded-xl bg-amber-practice/10 flex items-center justify-center text-amber-practice mb-6 group-hover:bg-amber-practice group-hover:text-white transition-colors duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="gavel">gavel</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2 font-bold">Notice Defense &amp; Clause 44</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6">
+            Instantaneous Clause 44 Tax Audit break-up generator (exempt vs registered vs composite entities) and pre-drafted legal replies for ASMT-10 scrutiny notices backed by timestamped reconciliation ledgers.
+          </p>
+<div class="pt-4 border-t border-border-light flex items-center justify-between text-xs font-semibold text-amber-practice">
+<span>Statutory ASMT-10 Response Packs</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- CALL TO ACTION BANNER -->
+<section class="py-16 bg-surface-container-low border-t border-border-light">
+<div class="max-w-7xl mx-auto px-6">
+<div class="bg-primary rounded-3xl p-8 sm:p-14 text-white flex flex-col lg:flex-row items-center justify-between gap-8 shadow-xl shadow-primary/20">
+<div class="max-w-2xl">
+<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/10 text-white mb-4 border border-white/20">
+            Direct Statutory Audit Ready
+          </span>
+<h2 class="font-headline-lg text-headline-lg font-bold mb-4 tracking-tight">
+            Stop losing eligible ITC to manual spreadsheets and portal timeouts.
+          </h2>
+<p class="font-body-md text-body-md text-on-primary-container max-w-xl">
+            Join India's leading manufacturing units, tax consultancies, and enterprises handling multi-GSTIN compliance on autonomous autopilot.
+          </p>
+</div>
+<div class="flex flex-col sm:flex-row gap-4 shrink-0 w-full sm:w-auto">
+<button class="px-8 py-4 rounded-xl bg-surface-container-lowest text-primary font-body-md text-body-md font-bold shadow-lg hover:bg-canvas-light transition-all duration-200 text-center">
+            Launch App
+          </button>
+<button class="px-8 py-4 rounded-xl bg-primary-container text-white border border-white/20 font-body-md text-body-md font-semibold hover:bg-primary-container/80 transition-all duration-200 text-center">
+            Schedule Architecture Walkthrough
+          </button>
+</div>
+</div>
+</div>
+</section>
+<!-- 6. INSTITUTIONAL FOOTER (Shared Component execution) -->
+<footer class="w-full bg-surface-container-lowest border-t border-border-light">
+<!-- Top Grid with Mission & Links -->
+<div class="max-w-7xl mx-auto px-6 pt-16 pb-12">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
+<!-- Brand & Certifications Column -->
+<div class="lg:col-span-2">
+<div class="flex items-center gap-2 mb-4">
+<div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-lg" data-icon="shield">shield</span>
+</div>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">Vaswani Return Enterprise</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant max-w-sm mb-6">
+            Institutional-grade automated GST reconciliation, Section 16(2)(aa) safe harbor telemetry, and bidirectional Tally XML synchronization engine for Indian corporate tax departments.
+          </p>
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-surface-container text-on-surface border border-border-light">
+              SOC2 Type II
+            </span>
+<span class="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-surface-container text-on-surface border border-border-light">
+              ISO 27001
+            </span>
+<span class="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-surface-container text-on-surface border border-border-light">
+              GSTN Sandbox Certified
+            </span>
+</div>
+</div>
+<!-- Navigation Col 1: Platform -->
+<div>
+<h4 class="font-body-sm text-body-sm font-semibold text-on-surface uppercase tracking-wider mb-4">Platform</h4>
+<ul class="space-y-2.5 font-body-sm text-body-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#gst-reco">GST Reco Engine</a></li>
+<li><a class="hover:text-primary transition-colors" href="#ims">IMS Autopilot</a></li>
+<li><a class="hover:text-primary transition-colors" href="#tally">Tally Prime XML Sync</a></li>
+<li><a class="hover:text-primary transition-colors" href="#working-papers">Audit Spreadsheets</a></li>
+<li><a class="hover:text-primary transition-colors" href="#portal">12-Month Ingestion</a></li>
+</ul>
+</div>
+<!-- Navigation Col 2: Compliance Modules -->
+<div>
+<h4 class="font-body-sm text-body-sm font-semibold text-on-surface uppercase tracking-wider mb-4">Compliance</h4>
+<ul class="space-y-2.5 font-body-sm text-body-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#sec16">Section 16(2)(aa)</a></li>
+<li><a class="hover:text-primary transition-colors" href="#rule37a">Rule 37A Reversals</a></li>
+<li><a class="hover:text-primary transition-colors" href="#clause44">Clause 44 Tax Audit</a></li>
+<li><a class="hover:text-primary transition-colors" href="#asmt10">ASMT-10 Notice Defense</a></li>
+<li><a class="hover:text-primary transition-colors" href="#gstr9">GSTR-9 &amp; 9C Reconciler</a></li>
+</ul>
+</div>
+<!-- Navigation Col 3: Enterprise Security -->
+<div>
+<h4 class="font-body-sm text-body-sm font-semibold text-on-surface uppercase tracking-wider mb-4">Institutional</h4>
+<ul class="space-y-2.5 font-body-sm text-body-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#security">Air-Gapped Processing</a></li>
+<li><a class="hover:text-primary transition-colors" href="#telemetry">API Telemetry</a></li>
+<li><a class="hover:text-primary transition-colors" href="#soc2">SOC2 Compliance</a></li>
+<li><a class="hover:text-primary transition-colors" href="#support">CA Support Desk</a></li>
+<li><a class="hover:text-primary transition-colors" href="#privacy">Data Sovereignty</a></li>
+</ul>
+</div>
+</div>
+</div>
+<!-- Bottom Separation Line & Exact Shared Footer Logic -->
+<div class="border-t border-border-light">
+<div class="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center gap-6">
+<!-- Exact Copyright String as mandated by JSON -->
+<p class="font-body-sm text-body-sm text-on-surface-variant text-center md:text-left">
+          © 2025 Vaswani Return Enterprise Inc. Autonomous GST Reconciliation &amp; Institutional Audit Defense. All rights reserved.
+        </p>
+<!-- Mandatory JSON Links list -->
+<div class="flex flex-wrap items-center justify-center gap-6 font-body-sm text-body-sm">
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">Security &amp; Compliance</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">SOC2 Type II</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">Terms of Service</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">API Telemetry</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-150" href="#">Support Desk</a>
+</div>
+</div>
+</div>
+</footer>
+</body></html>

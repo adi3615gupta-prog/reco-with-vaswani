@@ -11,6 +11,8 @@ export interface ColumnMapping {
   date: string;
   invoiceNo: string;
   invoiceValue: string;
+  partyName?: string;
+  gstNo?: string;
   taxable: string[];
   cgst: string[];
   sgst: string[];

@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import multer from 'multer';
 import {
     initGstNoticesDatabase,
@@ -11,13 +12,29 @@ import {
     saveNoticeReply,
     getNoticesSummary,
     deleteNotice,
-    clearDemoNotices
+    clearDemoNotices,
+    computeLimitationDueDate,
+    upsertCase,
+    addCasePayment,
+    addCaseEvent,
+    getCasesByGstin,
+    getCaseDetail,
+    deleteCase
 } from './notices/db.js';
+import {
+    classifyNoticeDocument,
+    extractDemandBreakdown,
+    extractTextFromBuffer,
+    readZipEntries,
+    isSkippableScrutinyFile
+} from './notices/classifier.js';
 import { runNoticesAutopilot } from './notices/autopilot.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-export function setupNoticesRoutes(app, db) {
+export function setupNoticesRoutes(app, db, authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/notices', authMiddleware);
     const activeBrowsers = new Map();
 
     // Initialize Database Tables & Indexes
@@ -157,6 +174,12 @@ export function setupNoticesRoutes(app, db) {
                 return res.status(404).json({ success: false, error: 'Attachment record not found' });
             }
             const filePath = row.file_path;
+            const resolvedPath = path.resolve(filePath);
+            const allowedNoticesDir = path.resolve(process.cwd(), 'scratch', 'downloads', 'notices');
+            const allowedUploadsDir = path.resolve(process.cwd(), 'uploads');
+            if (!resolvedPath.startsWith(allowedNoticesDir + path.sep) && !resolvedPath.startsWith(allowedUploadsDir + path.sep)) {
+                return res.status(403).json({ success: false, error: 'Access denied: attachment path outside allowed storage.' });
+            }
             if (!fs.existsSync(filePath)) {
                 return res.status(404).json({ success: false, error: 'File does not exist on disk' });
             }
@@ -194,9 +217,13 @@ export function setupNoticesRoutes(app, db) {
 
             const { reconcileNoticeDiscrepancy } = await import('./src/lib/noticeReconciliation.js');
 
-            // Fetch 2B invoices for client
-            const twoBInvoices = await new Promise((resolve) => {
-                db.all(`SELECT * FROM gstr2b_invoices WHERE client_gstin = ?`, [notice.client_gstin], (err, rows) => {
+            // Case-isolated returns data (no silent cross-queries to foreign tables)
+            const twoBInvoices = req.body?.twoBInvoices || [];
+            const threeBReturns = req.body?.threeBReturns || [];
+
+            // Fetch alleged notice invoices
+            const allegedInvoices = await new Promise((resolve) => {
+                db.all(`SELECT supplier_gstin as supplierGstin, supplier_name as supplierName, invoice_number as invoiceNo, invoice_date as invoiceDate, taxable_value as taxableValue, total_tax as totalTax, igst, cgst, sgst, cess FROM gst_notice_invoices WHERE notice_id = ?`, [notice.id], (err, rows) => {
                     resolve(rows || []);
                 });
             });
@@ -207,8 +234,9 @@ export function setupNoticesRoutes(app, db) {
                 gstin: notice.client_gstin,
                 financialYear: notice.financial_year,
                 taxPeriod: notice.tax_period,
-                totalDemanded: notice.total_demanded
-            }, { twoBInvoices });
+                totalDemanded: notice.total_demanded,
+                allegedInvoices
+            }, { twoBInvoices, threeBReturns });
 
             res.json({ success: true, reconciliation: recoResult });
         } catch (err) {
@@ -230,8 +258,13 @@ export function setupNoticesRoutes(app, db) {
             const xlsx = await import('xlsx');
             const XLSX = xlsx.default || xlsx;
 
-            const twoBInvoices = await new Promise((resolve) => {
-                db.all(`SELECT * FROM gstr2b_invoices WHERE client_gstin = ?`, [notice.client_gstin], (err, rows) => {
+            // Case-isolated returns data (no silent cross-queries to foreign tables)
+            const twoBInvoices = [];
+            const threeBReturns = [];
+
+            // Fetch alleged notice invoices
+            const allegedInvoices = await new Promise((resolve) => {
+                db.all(`SELECT supplier_gstin as supplierGstin, supplier_name as supplierName, invoice_number as invoiceNo, invoice_date as invoiceDate, taxable_value as taxableValue, total_tax as totalTax, igst, cgst, sgst, cess FROM gst_notice_invoices WHERE notice_id = ?`, [notice.id], (err, rows) => {
                     resolve(rows || []);
                 });
             });
@@ -242,8 +275,9 @@ export function setupNoticesRoutes(app, db) {
                 gstin: notice.client_gstin,
                 financialYear: notice.financial_year,
                 taxPeriod: notice.tax_period,
-                totalDemanded: notice.total_demanded
-            }, { twoBInvoices });
+                totalDemanded: notice.total_demanded,
+                allegedInvoices
+            }, { twoBInvoices, threeBReturns });
 
             const wb = generateNoticeAnnexureExcel(recoResult, {
                 companyName: notice.client_gstin,
@@ -269,63 +303,55 @@ export function setupNoticesRoutes(app, db) {
 
             const fileName = req.file.originalname || 'Notice_Document.pdf';
             const fileBuffer = req.file.buffer;
-            let extractedText = '';
+            const extractedText = (await extractTextFromBuffer(fileBuffer, fileName))
+                || fileBuffer.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ');
 
-            if (fileName.toLowerCase().endsWith('.pdf') || req.file.mimetype === 'application/pdf') {
-                try {
-                    const pdfMod = await import('pdf-parse');
-                    const PDFParseClass = pdfMod.PDFParse || pdfMod.default?.PDFParse;
-                    if (PDFParseClass) {
-                        const parser = new PDFParseClass({ data: fileBuffer });
-                        extractedText = await parser.getText();
-                    } else if (typeof pdfMod.default === 'function') {
-                        const parsed = await pdfMod.default(fileBuffer);
-                        extractedText = parsed.text || '';
-                    } else {
-                        extractedText = fileBuffer.toString('utf-8');
-                    }
-                } catch (pdfErr) {
-                    console.warn('[Notices API] pdf-parse warning, attempting utf-8 stream fallback:', pdfErr.message);
-                    extractedText = fileBuffer.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ');
-                }
-            } else {
-                extractedText = fileBuffer.toString('utf-8');
+            const cls = classifyNoticeDocument(fileName, extractedText);
+            const amounts = extractDemandBreakdown(extractedText);
+
+            const detectedGstin = cls.gstin || (req.body.gstin || '').trim().toUpperCase();
+            if (!detectedGstin) {
+                return res.status(422).json({
+                    success: false,
+                    requiresManualConfirmation: true,
+                    extractedText,
+                    partialFields: {
+                        ref: cls.portalRefNo,
+                        din: cls.din,
+                        amount: amounts.taxDemanded || null,
+                        fy: cls.financialYear,
+                        formCode: cls.formCode,
+                        paramCodes: cls.paramCodes
+                    },
+                    error: 'Unable to extract valid GSTIN from uploaded notice PDF. Please provide client GSTIN.'
+                });
             }
-
-            // Extract GSTINs, sections, and amounts heuristically
-            const gstinMatch = extractedText.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b/);
-            const refMatch = extractedText.match(/\b(?:Reference|Ref|Notice No|ARN)[\s:-]*([A-Z0-9\/-]{8,30})\b/i);
-            const dinMatch = extractedText.match(/\bDIN[\s:-]*([0-9A-Z]{15,25})\b/i);
-            const rupeeMatch = extractedText.match(/₹\s*([0-9,]+)/);
-
-            const detectedGstin = gstinMatch ? gstinMatch[0] : (req.body.gstin || '27AAFCV1234A1Z5');
-            const detectedRef = refMatch ? refMatch[1] : `NOTICE-${Date.now()}`;
-            const detectedDin = dinMatch ? dinMatch[1] : '';
-            const detectedAmount = rupeeMatch ? parseInt(rupeeMatch[1].replace(/,/g, ''), 10) : 500000;
-
-            const isAsmt = /ASMT-?10|Section\s*61|Rule\s*99/i.test(extractedText);
-            const isDrc01b = /DRC-?01B|Rule\s*88C/i.test(extractedText);
-            const noticeType = isAsmt ? 'ASMT-10' : (isDrc01b ? 'DRC-01B' : 'DRC-01');
+            const detectedRef = cls.portalRefNo || `NOTICE-${Date.now()}`;
+            const detectedFy = cls.financialYear || '2023-24';
+            const issueDate = cls.issueDate || new Date().toISOString().split('T')[0];
+            const dueDate = cls.explicitDueDate || computeLimitationDueDate(cls.formCode, issueDate);
 
             const newNotice = {
                 id: `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                 client_gstin: detectedGstin,
                 portal_source: 'PDF_UPLOAD',
-                notice_type: noticeType,
-                form_description: `Uploaded ${noticeType} Notice`,
+                notice_type: cls.formCode,
+                form_description: `${cls.formCode}${cls.isScannedImagePdf ? ' [Scanned Image PDF - Needs OCR/Review]' : ''}${cls.paramCodes.length ? ` [Params: ${cls.paramCodes.join(', ')}]` : ''}`,
                 reference_no: detectedRef,
-                din: detectedDin,
-                financial_year: '2023-24',
+                din: cls.din || '',
+                financial_year: detectedFy,
                 tax_period: 'Annual',
-                issue_date: new Date().toISOString().split('T')[0],
-                due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-                issuing_officer: 'The Proper Officer',
-                issuing_jurisdiction: 'Jurisdictional GST Circle',
-                section_cited: isAsmt ? 'Section 61' : 'Section 73',
-                tax_demanded: detectedAmount,
-                interest_demanded: Math.round(detectedAmount * 0.25),
-                penalty_demanded: 0,
-                total_demanded: Math.round(detectedAmount * 1.25),
+                issue_date: issueDate,
+                due_date: dueDate,
+                issuing_officer: cls.issuingOfficer || 'The Proper Officer',
+                issuing_jurisdiction: cls.issuingJurisdiction || 'Jurisdictional GST Circle',
+                section_cited: cls.sectionCited || 'Section 73',
+                tax_demanded: amounts.taxDemanded,
+                interest_demanded: amounts.interestDemanded,
+                penalty_demanded: amounts.penaltyDemanded,
+                total_demanded: amounts.totalDemanded,
+                param_codes_json: JSON.stringify(cls.paramCodes),
+                issue_breakdown_json: JSON.stringify(amounts),
                 status: 'PENDING_REPLY',
                 raw_notice_text: extractedText
             };
@@ -335,8 +361,10 @@ export function setupNoticesRoutes(app, db) {
             res.json({
                 success: true,
                 notice: newNotice,
+                classification: cls,
+                amounts,
                 rawText: extractedText,
-                message: 'Notice PDF processed and saved to local database.'
+                message: `Classified as ${cls.formCode} and saved to local database.`
             });
         } catch (err) {
             console.error('[Notices API] Error processing PDF upload:', err);
@@ -402,6 +430,255 @@ export function setupNoticesRoutes(app, db) {
             res.json({ success: true, ...result, message: 'All demo simulator records removed from database.' });
         } catch (err) {
             console.error('[Notices API] Error clearing demo notices:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+    // ─── 13. OFFLINE SCRUTINY FOLDER SCAN, IMPORT & CASE LIFECYCLE APIs ──────
+    function isSafeFolderAccess(req, rawDir) {
+        const clean = String(rawDir || '').trim().replace(/^["']|["']$/g, '');
+        if (!clean || clean.startsWith('\\\\')) return { ok: false, error: 'Invalid or network UNC folder path.' };
+        const role = String(req.user?.role || '').toLowerCase();
+        if (role && !['admin', 'senior auditor', 'senior'].includes(role)) {
+            return { ok: false, error: 'Admin or Senior Auditor privileges required for host folder scanning.' };
+        }
+        const resolved = path.resolve(clean);
+        const blockedRoots = ['windows', 'program files', 'program files (x86)', 'programdata', 'system volume information', '$recycle.bin'];
+        const normLow = resolved.toLowerCase();
+        if (/^[a-z]:\\$/.test(normLow) || normLow === '/' || blockedRoots.some((b) => normLow.includes(`\\${b}`)) || /^\/(etc|proc|sys|dev|boot|root|bin|sbin|usr)(\/|$)/.test(normLow)) {
+            return { ok: false, error: 'Access denied: system root directories cannot be scanned.' };
+        }
+        return { ok: true, resolved };
+    }
+
+    async function walkScrutinyFolder(resolvedRoot, maxFiles = 400) {
+        if (!resolvedRoot || !fs.existsSync(resolvedRoot) || !fs.statSync(resolvedRoot).isDirectory()) {
+            throw new Error('Folder does not exist or is not a directory.');
+        }
+
+        const items = [];
+        const walk = (dir) => {
+            if (items.length >= maxFiles) return;
+            for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (items.length >= maxFiles) break;
+                if (ent.isSymbolicLink()) continue;
+                const full = path.join(dir, ent.name);
+                if (ent.isDirectory()) {
+                    walk(full);
+                    continue;
+                }
+                if (isSkippableScrutinyFile(ent.name)) continue;
+                const stat = fs.statSync(full);
+                if (stat.size > 20 * 1024 * 1024) continue;
+
+                const rel = path.relative(resolvedRoot, full).replace(/\\/g, '/');
+                if (ent.name.toLowerCase().endsWith('.zip')) {
+                    const buf = fs.readFileSync(full);
+                    const entries = readZipEntries(buf, (n) => /\.(pdf|docx|xlsx|csv|txt)$/i.test(n));
+                    items.push({ full, rel, name: ent.name, size: stat.size, ext: '.zip', zipEntries: entries.slice(0, 20) });
+                } else if (/\.(pdf|docx|xlsx|xls|csv|txt|json)$/i.test(ent.name)) {
+                    items.push({ full, rel, name: ent.name, size: stat.size, ext: path.extname(ent.name).toLowerCase() });
+                }
+            }
+        };
+        walk(resolvedRoot);
+
+        const classified = [];
+        const gstinScores = new Map();
+        for (const it of items) {
+            let text = '';
+            if (it.ext === '.zip') {
+                for (const ze of it.zipEntries || []) {
+                    const zTxt = await extractTextFromBuffer(ze.data, ze.name);
+                    if (zTxt) text += `\n[${ze.name}]\n${zTxt.slice(0, 8000)}`;
+                }
+            } else {
+                const buf = fs.readFileSync(it.full);
+                text = await extractTextFromBuffer(buf, it.name);
+            }
+            const cls = classifyNoticeDocument(it.name, text, it.rel);
+            const amounts = extractDemandBreakdown(text);
+            if (cls.gstin) {
+                const weight = ['NOTICE', 'ORDER', 'REPLY'].includes(cls.documentType) ? 10 : 1;
+                gstinScores.set(cls.gstin, (gstinScores.get(cls.gstin) || 0) + weight);
+            }
+            classified.push({
+                fileName: it.name,
+                relPath: it.rel,
+                filePath: it.full,
+                size: it.size,
+                ...cls,
+                ...amounts,
+                textLength: text.length,
+                rawSnippet: text.slice(0, 4000)
+            });
+        }
+        let detectedGstin = null;
+        let bestScore = -1;
+        for (const [g, sc] of gstinScores.entries()) {
+            if (sc > bestScore) { bestScore = sc; detectedGstin = g; }
+        }
+
+        return { resolvedRoot, clientName: path.basename(resolvedRoot), detectedGstin, documents: classified };
+    }
+
+    app.post('/api/notices/scan-folder', async (req, res) => {
+        try {
+            const { folderPath, maxFiles } = req.body || {};
+            const guard = isSafeFolderAccess(req, folderPath);
+            if (!guard.ok) return res.status(403).json({ success: false, error: guard.error });
+            const preview = await walkScrutinyFolder(guard.resolved, Math.min(Number(maxFiles) || 300, 600));
+            res.json({ success: true, ...preview });
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message });
+        }
+    });
+
+    app.post('/api/notices/import-folder', async (req, res) => {
+        let inTx = false;
+        const execSql = (sql, params = []) => new Promise((resolve, reject) => db.run(sql, params, (err) => (err ? reject(err) : resolve())));
+        try {
+            const { folderPath, gstinOverride, clientNameOverride } = req.body || {};
+            const guard = isSafeFolderAccess(req, folderPath);
+            if (!guard.ok) return res.status(403).json({ success: false, error: guard.error });
+            const scan = await walkScrutinyFolder(guard.resolved, 500);
+            const gstin = (gstinOverride || scan.detectedGstin || 'UNASSIGNED').trim().toUpperCase();
+            const fySet = new Set(scan.documents.map((d) => d.financialYear).filter(Boolean));
+            const primaryFy = fySet.size === 1 ? [...fySet][0] : ([...fySet][0] || 'Multi-FY');
+
+            const hasDropped = scan.documents.some((d) => ['DROPPED', 'WAIVER_APPROVED'].includes(d.stage));
+            const hasAppeal = scan.documents.some((d) => ['FIRST_APPEAL', 'GSTAT_APPEAL'].includes(d.stage));
+            const maxTax = Math.max(0, ...scan.documents.map((d) => d.taxDemanded || 0));
+            const maxInt = Math.max(0, ...scan.documents.map((d) => d.interestDemanded || 0));
+            const maxPen = Math.max(0, ...scan.documents.map((d) => d.penaltyDemanded || 0));
+            const caseCat = scan.documents.find((d) => d.documentType === 'NOTICE')?.stage || 'SCRUTINY';
+
+            const existingCase = await new Promise((resolve) => {
+                db.get(
+                    `SELECT id FROM gst_cases WHERE client_gstin = ? AND source_folder_path = ?`,
+                    [gstin, scan.resolvedRoot],
+                    (err, row) => resolve(row || null)
+                );
+            });
+
+            await execSql('BEGIN IMMEDIATE');
+            inTx = true;
+
+            const savedCase = await upsertCase(db, {
+                id: existingCase?.id,
+                client_gstin: gstin,
+                client_name: clientNameOverride || scan.clientName,
+                financial_year: primaryFy,
+                case_category: caseCat,
+                status: hasDropped ? 'DROPPED' : (hasAppeal ? 'IN_APPEAL' : 'OPEN'),
+                total_tax_demanded: maxTax,
+                total_interest_demanded: maxInt,
+                total_penalty_demanded: maxPen,
+                source_folder_path: scan.resolvedRoot
+            });
+
+            // Deduplicate repeat folder imports cleanly while preserving manual non-folder payments
+            await execSql(`DELETE FROM gst_case_events WHERE case_id = ?`, [savedCase.id]);
+            await execSql(`DELETE FROM gst_case_payments WHERE case_id = ? AND notes LIKE '%.%'`, [savedCase.id]);
+
+            let importedNotices = 0;
+            let importedPayments = 0;
+            for (const doc of scan.documents) {
+                const dueDate = doc.explicitDueDate || (doc.deadlineDays > 0 && doc.issueDate ? computeLimitationDueDate(doc.formCode, doc.issueDate) : '');
+                await addCaseEvent(db, {
+                    case_id: savedCase.id,
+                    event_type: doc.documentType,
+                    event_date: doc.issueDate || '',
+                    due_date: dueDate || '',
+                    form_code: doc.formCode,
+                    param_code: doc.paramCodes.join(','),
+                    portal_ref_no: doc.portalRefNo || '',
+                    title: `${doc.formCode} — ${doc.fileName}`,
+                    summary: doc.relPath,
+                    tax_amount: doc.taxDemanded,
+                    interest_amount: doc.interestDemanded,
+                    penalty_amount: doc.penaltyDemanded,
+                    is_completed: ['ORDER', 'PAYMENT', 'REPLY', 'ACKNOWLEDGMENT'].includes(doc.documentType)
+                });
+
+                if (doc.documentType === 'PAYMENT' && (doc.taxDemanded > 0 || doc.interestDemanded > 0 || doc.portalRefNo)) {
+                    await addCasePayment(db, {
+                        case_id: savedCase.id,
+                        payment_type: doc.formCode,
+                        arn_no: doc.portalRefNo || '',
+                        drc03_ref_no: doc.portalRefNo || '',
+                        drc03a_adjusted: doc.formCode === 'DRC-03A',
+                        payment_date: doc.issueDate || '',
+                        igst: doc.igst,
+                        cgst: doc.cgst,
+                        sgst: doc.sgst,
+                        interest_paid: doc.interestDemanded,
+                        penalty_paid: doc.penaltyDemanded,
+                        notes: doc.fileName
+                    });
+                    importedPayments++;
+                }
+
+                if ((doc.documentType === 'NOTICE' || doc.documentType === 'ORDER') && doc.formCode !== 'OTHER') {
+                    await upsertNotice(db, {
+                        client_gstin: gstin,
+                        portal_source: 'FOLDER_IMPORT',
+                        notice_type: doc.formCode,
+                        form_description: `${doc.formCode}${doc.isScannedImagePdf ? ' [Scanned Image PDF]' : ''} (${doc.relPath})`,
+                        reference_no: doc.portalRefNo || `LOCAL-${crypto.createHash('sha1').update(doc.relPath).digest('hex').slice(0, 12)}`,
+                        din: doc.din || '',
+                        financial_year: doc.financialYear || primaryFy,
+                        issue_date: doc.issueDate || '',
+                        due_date: dueDate || '',
+                        issuing_officer: doc.issuingOfficer || 'The Proper Officer',
+                        issuing_jurisdiction: doc.issuingJurisdiction || 'Jurisdictional GST Circle',
+                        section_cited: doc.sectionCited || '',
+                        tax_demanded: doc.taxDemanded,
+                        interest_demanded: doc.interestDemanded,
+                        penalty_demanded: doc.penaltyDemanded,
+                        case_id: savedCase.id,
+                        param_codes_json: JSON.stringify(doc.paramCodes),
+                        status: hasDropped ? 'DROPPED' : 'PENDING_REPLY',
+                        raw_notice_text: doc.rawSnippet
+                    });
+                    importedNotices++;
+                }
+            }
+
+            await execSql('COMMIT');
+            inTx = false;
+
+            const fullCase = await getCaseDetail(db, savedCase.id);
+            res.json({ success: true, case: fullCase, importedNotices, importedPayments, totalFiles: scan.documents.length });
+        } catch (err) {
+            if (inTx) { try { await execSql('ROLLBACK'); } catch {} }
+            console.error('[Notices API] import-folder error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    app.get(['/api/notices/cases', '/api/notices/cases/:gstin'], async (req, res) => {
+        try {
+            const cases = await getCasesByGstin(db, req.params.gstin || 'ALL');
+            res.json({ success: true, cases });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    app.post('/api/notices/cases/:id/payments', async (req, res) => {
+        try {
+            const result = await addCasePayment(db, { ...req.body, case_id: req.params.id });
+            res.json({ success: true, ...result });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    app.delete('/api/notices/cases/:id', async (req, res) => {
+        try {
+            const result = await deleteCase(db, req.params.id);
+            res.json({ success: true, ...result });
+        } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
     });

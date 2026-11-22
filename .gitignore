@@ -40,3 +40,28 @@ gst_returns_data/
 *.tmp_*
 dist-electron
 dist  
+
+.vault_key
+.integrity_private.pem
+firebase-functions/node_modules/
+firebase-functions/.env
+license-gateway/node_modules/
+license-gateway/.env
+license-gateway/.vercel/
+# Media & Audio/Video renders
+*.mp4
+*.wav
+*.mp3
+*.m4a
+*.pptx
+*.sqlite
+*.sqlite3
+cinematic-projects/
+preview_*.mp4
+
+# Existing ignore rules
+OTHERS/
+notice test/
+19-20/
+reco_history/
+scratch/

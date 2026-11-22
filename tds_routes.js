@@ -3,7 +3,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-export default function setupTdsRoutes(app, db, authenticateToken = (req, res, next) => next()) {
+export default function setupTdsRoutes(app, db, authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/tds', authMiddleware);
     // Initialize TDS Tables
     db.serialize(() => {
         // 1. TDS rules master table
@@ -519,12 +521,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
         // transactions: Array of { partyName, pan, ledgerName, date, amount, actualTdsDeducted, voucherNumber }
         // form26qRecords: Array of { partyPan, partyName, section, amountPaid, tdsDeducted }
 
-        try {
-            fs.writeFileSync('scratch_all_txns.json', JSON.stringify(transactions, null, 2));
-            fs.writeFileSync('scratch_all_traces.json', JSON.stringify(form26qRecords, null, 2));
-        } catch (e) {
-            console.error("Failed to write diagnostic files", e);
-        }
+        // Diagnostic dumps omitted for production security
 
         if (!transactions || !Array.isArray(transactions)) {
             return res.status(400).json({ error: "transactions array is required" });
@@ -1024,8 +1021,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
                                     matchedTraces[tKeyExact] = books;
                                     matchMethods[bKey] = 'PAN';
                                     unmatchedBooks.delete(bKey);
-                                    // Do not delete tKeyExact if other party entries share the same PAN
-                                    // unmatchedTraces.delete(tKeyExact);
+                                    unmatchedTraces.delete(tKeyExact);
                                     continue;
                                 }
 
@@ -1512,7 +1508,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
     });
 
     // API: Reset all TDS Module Tables (except TDS Rules) - Admin Only with Confirmation
-    app.post('/api/tds/reset', authenticateToken, (req, res) => {
+    app.post('/api/tds/reset', authMiddleware, (req, res) => {
         if (!req.user || req.user.role !== 'admin') {
             return res.status(403).json({ success: false, error: 'Unauthorized: Admin role required to reset TDS data' });
         }
@@ -1587,8 +1583,9 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
                 return res.status(400).json({ error: "Invalid snapshot payload" });
             }
             const snapshotId = payload.id || `reco_snapshot_${Date.now()}`;
+            if (!/^[A-Za-z0-9_-]{1,120}$/.test(snapshotId)) return res.status(400).json({ error: "Invalid snapshot id" });
             const companyName = payload.companyName || 'Company';
-            const fy = payload.financialYear || '2024-25';
+            const fy = payload.financialYear || '2026-27';
             const createdAt = payload.createdAt || new Date().toISOString();
             const machineName = payload.machineName || os.hostname();
             const summaryObj = { ...(payload.summary || {}) };
@@ -1632,6 +1629,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
 
     // Get full payload to restore local session
     app.get('/api/tds/local-snapshots/:id', (req, res) => {
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(req.params.id)) return res.status(400).json({ error: "Invalid snapshot id" });
         db.get('SELECT payload_json FROM Local_Snapshots WHERE id = ?', [req.params.id], async (err, row) => {
             if (err) return res.status(500).json({ error: err.message });
             if (!row || !row.payload_json) {
@@ -1655,6 +1653,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = (req, res, n
 
     // Delete local snapshot
     app.delete('/api/tds/local-snapshots/:id', (req, res) => {
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(req.params.id)) return res.status(400).json({ error: "Invalid snapshot id" });
         db.run('DELETE FROM Local_Snapshots WHERE id = ?', [req.params.id], async function (err) {
             if (err) return res.status(500).json({ error: err.message });
             try {

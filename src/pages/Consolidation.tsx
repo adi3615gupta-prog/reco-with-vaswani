@@ -6,19 +6,21 @@ import { DataPreview } from "@/components/consolidation/DataPreview";
 import { CompanyInfoForm, type CompanyInfo } from "@/components/consolidation/CompanyInfoForm";
 import { Database, Trash2, Building2, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   type ParsedFile,
   type ColumnMapping,
   type ProcessedRow,
   processData,
 } from "@/lib/gst-processor";
-import { getApiBase, getAuthToken } from '@/lib/api';
+import { getApiBase, getAuthToken, safeApiFetch } from '@/lib/api';
 
 interface ConsolidationProps {
-  onSendToReco?: (companyName: string) => void;
+  onBack?: () => void;
 }
 
-export default function Consolidation({ onSendToReco }: ConsolidationProps = {}) {
+export default function Consolidation({ onBack }: ConsolidationProps = {}) {
+  const confirm = useConfirm();
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [step, setStep] = useState(0);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
@@ -41,7 +43,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
 
   const handleCompany = useCallback(async (info: CompanyInfo) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/usage/increment`, {
+      const res = await safeApiFetch('/api/usage/increment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ module_name: 'Consolidator' })
       });
@@ -229,7 +231,13 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
                       <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={async (e) => {
                           e.stopPropagation();
-                          if (window.confirm("Delete this workspace permanently from the server?")) {
+                          const ok = await confirm({
+                            title: "Delete Workspace",
+                            description: `Are you sure you want to permanently delete workspace "${c.company_name}" from the server?`,
+                            confirmText: "Delete Workspace",
+                            variant: "destructive",
+                          });
+                          if (ok) {
                             try {
                               await fetch(`${getApiBase()}/api/consolidations/${c.id}`, {
                                 method: 'DELETE',
@@ -284,7 +292,7 @@ export default function Consolidation({ onSendToReco }: ConsolidationProps = {})
         )}
 
         {step === 3 && company && (
-          <DataPreview files={parsedFiles.map((f, i) => ({ fileName: f.fileName, rows: processedByFile[i] ?? [], category: fileCategories[i] || 'PR' }))} company={company} onReset={reset} onSendToReco={() => onSendToReco?.(company.name)} />
+          <DataPreview files={parsedFiles.map((f, i) => ({ fileName: f.fileName, rows: processedByFile[i] ?? [], category: fileCategories[i] || 'PR' }))} company={company} onReset={reset} />
         )}
       </div>
     </div>

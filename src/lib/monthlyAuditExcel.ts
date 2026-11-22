@@ -16,33 +16,20 @@ import type {
     MonthSales3WayRow,
     MonthPurchase3WayRow,
     BankFacilityItem,
-    RocLoanChargeItem
+    RocLoanChargeItem,
+    TdsSectionWorkingRow
 } from './monthlyAuditEngine';
 import {
     DEFAULT_PROFITABILITY_STATEMENT,
     createInitialSales3WayMatrix,
     createInitialPurchase3WayMatrix,
     createInitialBankFacilities,
-    createInitialRocLoanCharges
+    createInitialRocLoanCharges,
+    createDefaultTdsSectionMatrix
 } from './monthlyAuditEngine';
 
-// ─── 1. Zero-Merge Architecture & Corporate Styling Helpers ─────────────────
-
-/**
- * Strips all merged cell declarations from every worksheet in the workbook.
- * This guarantees zero '<mergeCell>' records in the generated XLSX, permanently
- * preventing Excel "all merged cells need to be the same size" AutoFilter errors.
- */
-export function removeAllMergesFromWorkbook(wb: XLSX.WorkBook): XLSX.WorkBook {
-    if (!wb || !wb.Sheets) return wb;
-    for (const name of Object.keys(wb.Sheets)) {
-        const ws = wb.Sheets[name];
-        if (ws) {
-            ws['!merges'] = [];
-        }
-    }
-    return wb;
-}
+export { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
+import { removeAllMergesFromWorkbook } from './excel/styles/zeroMergeGuard';
 
 const STYLES = {
     NAVY_HEADER: {
@@ -492,6 +479,121 @@ function buildPurchase2BRecoSheet(purchase: FullAuditVerificationSnapshot['purch
 }
 
 /**
+ * Sheet: TDS_Section_Matrix (Section-Wise Reconciliation & Statutory Discrepancies)
+ */
+function buildTdsSectionMatrixSheet(
+    journal?: FullAuditVerificationSnapshot['journal']
+): XLSX.WorkSheet {
+    const matrix = journal?.tdsSectionMatrix && journal.tdsSectionMatrix.length > 0
+        ? journal.tdsSectionMatrix
+        : createDefaultTdsSectionMatrix();
+
+    const rows: any[][] = [];
+    rows.push(['TDS SECTION-WISE RECONCILIATION & STATUTORY DISCREPANCY MATRIX']);
+    rows.push(['Taxable base & TDS comparison across Books, Actual Liable (Audit Scrutiny) and Returns Filed (Form 26Q / 24Q)']);
+    rows.push([]);
+
+    rows.push([
+        'SECTION',
+        'NATURE OF PAYMENT',
+        'RATE (%)',
+        'BOOKS TAXABLE (₹)',
+        'BOOKS TDS (₹)',
+        'ACTUAL TAXABLE (₹)',
+        'ACTUAL TDS LIABLE (₹)',
+        'RETURN TAXABLE (₹)',
+        'RETURN TDS PAID (₹)',
+        'BOOKING PENDING IN BOOKS (₹)',
+        'TDS PAYABLE / SHORT DEDUCTION (₹)',
+        'CHALLAN PENDING (₹)',
+        'STATUS',
+        'AUDITOR SCRUTINY REMARKS'
+    ]);
+
+    let sumBooksTaxable = 0;
+    let sumBooksTds = 0;
+    let sumActualTaxable = 0;
+    let sumActualTds = 0;
+    let sumReturnTaxable = 0;
+    let sumReturnTds = 0;
+    let sumBookingPending = 0;
+    let sumTdsPayable = 0;
+    let sumChallanPending = 0;
+
+    matrix.forEach(r => {
+        const bookingPending = Math.max(0, (r.actualTaxable || 0) - (r.booksTaxable || 0));
+        const tdsPayable = Math.max(0, (r.actualTds || 0) - (r.returnTds || 0));
+        const challanPending = Math.max(0, (r.booksTds || 0) - (r.returnTds || 0));
+
+        sumBooksTaxable += Number(r.booksTaxable || 0);
+        sumBooksTds += Number(r.booksTds || 0);
+        sumActualTaxable += Number(r.actualTaxable || 0);
+        sumActualTds += Number(r.actualTds || 0);
+        sumReturnTaxable += Number(r.returnTaxable || 0);
+        sumReturnTds += Number(r.returnTds || 0);
+        sumBookingPending += bookingPending;
+        sumTdsPayable += tdsPayable;
+        sumChallanPending += challanPending;
+
+        let status = 'MATCHED';
+        if (tdsPayable > 0) status = 'TDS PAYABLE (SHORT DEDUCTION)';
+        else if (bookingPending > 0) status = 'BOOKING PENDING IN BOOKS';
+        else if (challanPending > 0) status = 'CHALLAN PENDING';
+
+        rows.push([
+            r.section,
+            r.natureOfPayment,
+            r.rate,
+            r.booksTaxable,
+            r.booksTds,
+            r.actualTaxable,
+            r.actualTds,
+            r.returnTaxable,
+            r.returnTds,
+            bookingPending,
+            tdsPayable,
+            challanPending,
+            status,
+            r.remarks || ''
+        ]);
+    });
+
+    // Total Row
+    rows.push([
+        'TOTAL',
+        `${matrix.length} Statutory Sections`,
+        '',
+        sumBooksTaxable,
+        sumBooksTds,
+        sumActualTaxable,
+        sumActualTds,
+        sumReturnTaxable,
+        sumReturnTds,
+        sumBookingPending,
+        sumTdsPayable,
+        sumChallanPending,
+        sumTdsPayable > 0 ? 'NET TDS PAYABLE TO GOVT' : 'ALL TDS DEPOSITED',
+        sumTdsPayable > 0 ? 'Sec 40(a)(ia) 30% disallowance & Sec 201(1A) interest exposure applies' : 'Fully matched'
+    ]);
+
+    if (journal?.excelAttachment?.fileName) {
+        rows.push([]);
+        rows.push(['TDS WORKING ATTACHMENT EVIDENCE', journal.excelAttachment.fileName, journal.excelAttachment.filePath || `${(journal.excelAttachment.fileSize ? (journal.excelAttachment.fileSize / 1024).toFixed(1) + ' KB' : 'Attached')}`]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+        { wch: 12 }, { wch: 36 }, { wch: 10 },
+        { wch: 18 }, { wch: 16 },
+        { wch: 18 }, { wch: 18 },
+        { wch: 18 }, { wch: 18 },
+        { wch: 24 }, { wch: 28 }, { wch: 20 },
+        { wch: 26 }, { wch: 45 }
+    ];
+    return ws;
+}
+
+/**
  * Sheet 5: Cash_&_Statutory_Check
  */
 function buildCashAndStatutorySheet(
@@ -826,7 +928,10 @@ export function generateMonthlyAuditWorkbook(bundle: MonthlyAuditExportBundle): 
     // 5. Purchase_&_2B_Reco
     XLSX.utils.book_append_sheet(wb, buildPurchase2BRecoSheet(bundle.verification.purchase), 'Purchase_&_2B_Reco');
 
-    // 6. Cash_&_Statutory_Check
+    // 6. TDS_Section_Matrix (Section-Wise Statutory Discrepancies)
+    XLSX.utils.book_append_sheet(wb, buildTdsSectionMatrixSheet(bundle.verification.journal), 'TDS_Section_Matrix');
+
+    // 7. Cash_&_Statutory_Check
     XLSX.utils.book_append_sheet(wb, buildCashAndStatutorySheet(bundle.verification.cashCompliance, bundle.verification.labor), 'Cash_&_Statutory_Check');
 
     // 7. Current_Year_Observations

@@ -444,7 +444,7 @@ export default function UserGuideCenter({ isOpen, onClose, initialModule }: User
                   </div>
                   <div>
                     <h3 className="font-extrabold text-white text-sm tracking-tight">Help & Documentation</h3>
-                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Vaswani Return Deck</p>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Finpulse Consulting Deck</p>
                   </div>
                 </div>
 

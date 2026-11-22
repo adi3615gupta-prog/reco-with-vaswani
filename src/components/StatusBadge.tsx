@@ -5,7 +5,7 @@ const STATUS_CONFIG: Record<MatchStatus, { bg: string; text: string; dot: string
   'Perfect Match': { bg: 'bg-[var(--np-green)]/10', text: 'text-[var(--np-green)]', dot: 'bg-[var(--np-green)]' },
   'Matched (Diff Date)': { bg: 'bg-[var(--np-green)]/10', text: 'text-[var(--np-green)]', dot: 'bg-[var(--np-green)]/70' },
   'Value Mismatch': { bg: 'bg-yellow-500/10', text: 'text-yellow-500', dot: 'bg-yellow-500' },
-  'Invoice Missing': { bg: 'bg-[var(--np-red)]/10', text: 'text-[var(--np-red)]', dot: 'bg-[var(--np-red)]' },
+  'Timing Difference (Next Period)': { bg: 'bg-blue-500/10', text: 'text-blue-400', dot: 'bg-blue-400' },
   'Not in 2B': { bg: 'bg-[var(--np-red)]/10', text: 'text-[var(--np-red)]', dot: 'bg-[var(--np-red)]' },
   'Not in Books': { bg: 'bg-indigo-400/10', text: 'text-indigo-400', dot: 'bg-indigo-400' },
   'Unmatched Vendor': { bg: 'bg-[var(--np-red)]/10', text: 'text-[var(--np-red)]', dot: 'bg-[var(--np-red)]' },

@@ -13,10 +13,15 @@ const silenceProxyErrors = (target: string, isTally = false) => ({
     proxy.removeAllListeners('error');
     proxy.on('error', (err: any, req: any, res: any) => {
       if (err.code === 'ECONNRESET' || err.message?.includes('ECONNRESET')) return;
-      if (isTally && (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED'))) {
+      if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
         if (res && !res.headersSent && typeof res.writeHead === 'function') {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Tally is offline or not running on port 9000' }));
+          res.end(JSON.stringify({
+            success: false,
+            error: isTally
+              ? 'Tally is offline or not running on port 9000'
+              : 'Backend server is offline or not running on port 3001. Please ensure server.js is running.'
+          }));
         }
         return;
       }
@@ -31,21 +36,24 @@ const silenceProxyErrors = (target: string, isTally = false) => ({
 export default defineConfig(({ mode }) => ({
   base: "./",
   server: {
-    host: "::",
+    host: process.env.VITE_DEV_HOST || "127.0.0.1",
     port: 8080,
-    allowedHosts: true,
     watch: {
       ignored: [
-        "**/dist-electron/**", 
-        "**/dist/**", 
-        "**/*.tmp", 
-        "**/scratch/**", 
-        "**/downloads/**", 
-        "**/*.db", 
+        "**/dist-electron/**",
+        "**/dist/**",
+        "**/*.tmp",
+        "**/scratch/**",
+        "**/downloads/**",
+        "**/*.db",
         "**/*.db-journal",
         "**/*.json",
         "**/*.xlsx",
-        "**/*.zip"
+        "**/*.zip",
+        "**/*.mp4",
+        "**/*.mp3",
+        "**/*.wav",
+        "**/*.pdf"
       ],
     },
     hmr: {

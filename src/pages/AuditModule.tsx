@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { safeApiFetch } from '@/lib/api';
 import * as XLSX from 'xlsx-js-style';
 
 import {
@@ -60,13 +61,20 @@ interface AuditModuleProps {
 export default function AuditModule({ onBack }: AuditModuleProps) {
   // --- Tally Connection State ---
   const [tallyPort, setTallyPort] = useState(9000);
+  // Phase 40: Scoped Tally Session Unmount Teardown
+  useEffect(() => {
+    return () => {
+      clearTallyMetadataCache();
+    };
+  }, []);
+
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [companyName, setCompanyName] = useState('Demo Enterprise');
   const [isFetching, setIsFetching] = useState(false);
 
   // --- Date state for Ageing ---
-  const [fromDate, setFromDate] = useState('2024-04-01');
-  const [evaluationDate, setEvaluationDate] = useState('2025-03-31');
+  const [fromDate, setFromDate] = useState('2026-04-01');
+  const [evaluationDate, setEvaluationDate] = useState('2027-03-31');
 
   // --- View tabs ---
   const [activeTab, setActiveTab] = useState<'debtors' | 'creditors' | 'insights'>('debtors');
@@ -185,14 +193,14 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
         return `${year}-${(year + 1).toString().slice(-2)}`;
       }
     } catch (e) {}
-    return '2024-25';
+    return '2026-27';
   };
 
   const loadSa530History = async () => {
     const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
     const fy = getAuditFy();
     try {
-      const res = await fetch(`/api/audit-storage/sa530/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`);
+      const res = await safeApiFetch(`/api/audit-storage/sa530/${encodeURIComponent(clientGstin)}/${encodeURIComponent(fy)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.samples)) {
         setSavedSampleHistory(data.samples);
@@ -225,7 +233,7 @@ export default function AuditModule({ onBack }: AuditModuleProps) {
     try {
       const clientGstin = localStorage.getItem('last_active_gstin') || localStorage.getItem('monthly_audit_selected_client') || 'DEFAULT_CLIENT';
       const fy = getAuditFy();
-      const res = await fetch('/api/audit-storage/sa530/save', {
+      const res = await safeApiFetch('/api/audit-storage/sa530/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

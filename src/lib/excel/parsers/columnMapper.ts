@@ -13,7 +13,7 @@ export const KNOWN_HEADERS: Record<keyof ColumnMapping, string[]> = {
   taxableValue: ['taxable value', 'taxable amount', 'taxable val', 'assessable value', 'taxable', 'total purchase/taxable value', 'taxable value (₹)', 'taxable+nilrated', 'purchase+nilrated', 'taxable turnover'],
   nilRated: ['nil rated', 'nil rated value', 'exempted', 'exempted value', 'nil rated supplies'],
   nonTaxable: ['non taxable', 'non-taxable', 'non gst', 'non-gst', 'exempt', 'exempt supplies', 'exempted supplies', 'non gst outward', 'non-gst supplies', 'non gst supplies'],
-  pos: ['pos', 'place of supply', 'state', 'state code', 'place of supply (pos)'],
+  pos: ['pos', 'place of supply', 'state code', 'place of supply (pos)', 'pos state'],
   returnPeriod: ['month', 'period', 'return period', 'original period', 'return period (month)'],
   filingStatus: ['gstr-1 status', 'gstr1 status', 'filing status', 'return filing status'],
   filingDate: ['filing date', 'gstr-1 filing date', 'return filing date', 'date of filing'],
@@ -22,29 +22,34 @@ export const KNOWN_HEADERS: Record<keyof ColumnMapping, string[]> = {
 export function detectColumnMapping(headers: string[]): Partial<ColumnMapping> {
   const mapping: Partial<ColumnMapping> = {};
   const lowerHeaders = headers.map((h) => h.toLowerCase().trim());
+  const claimedIndices = new Set<number>();
 
+  // Pass 1: Try exact match first
   for (const [field, aliases] of Object.entries(KNOWN_HEADERS) as [keyof ColumnMapping, string[]][]) {
-    // Pass 1: Try exact match first
-    let matched = false;
     for (const alias of aliases) {
-      const idx = lowerHeaders.findIndex((h) => h === alias);
+      const idx = lowerHeaders.findIndex((h, i) => !claimedIndices.has(i) && h === alias);
       if (idx !== -1) {
         mapping[field] = headers[idx];
-        matched = true;
+        claimedIndices.add(idx);
         break;
       }
     }
-    // Pass 2: Try contains match if no exact match was found
-    if (!matched) {
-      for (const alias of aliases) {
-        const idx = lowerHeaders.findIndex((h) => h.includes(alias));
-        if (idx !== -1) {
-          mapping[field] = headers[idx];
-          break;
-        }
+  }
+
+  // Pass 2: Try contains match if no exact match was found (skip short tokens to avoid collisions)
+  for (const [field, aliases] of Object.entries(KNOWN_HEADERS) as [keyof ColumnMapping, string[]][]) {
+    if (mapping[field]) continue;
+    for (const alias of aliases) {
+      if (alias.length <= 4) continue;
+      const idx = lowerHeaders.findIndex((h, i) => !claimedIndices.has(i) && h.includes(alias));
+      if (idx !== -1) {
+        mapping[field] = headers[idx];
+        claimedIndices.add(idx);
+        break;
       }
     }
   }
+
   return mapping;
 }
 

@@ -1,7 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { parseTallyVouchers } from './tallyApi';
+import { parseTallyVouchers, unescapeXml, escapeXml } from './tallyApi';
+
+describe('Tally XML Entity Decoding', () => {
+  it('should correctly decode standard and numeric XML entities', () => {
+    expect(unescapeXml('M/S A &amp; B &lt;Trading&gt;')).toBe('M/S A & B <Trading>');
+    expect(unescapeXml('&quot;Hello&quot; &amp; &apos;World&apos;')).toBe('"Hello" & \'World\'');
+    expect(unescapeXml('Party &#38; Co.')).toBe('Party & Co.');
+    expect(unescapeXml('Hex &#x26; Symbol')).toBe('Hex & Symbol');
+    // Numeric ampersand preceding entity name is resolved
+    expect(unescapeXml('Test &#38;lt; Value')).toBe('Test < Value');
+  });
+
+  it('should roundtrip safely with escapeXml', () => {
+    const raw = 'M/S A & B <Pvt> "Ltd" \'Co\'';
+    const escaped = escapeXml(raw);
+    expect(escaped).toBe('M/S A &amp; B &lt;Pvt&gt; &quot;Ltd&quot; &apos;Co&apos;');
+    expect(unescapeXml(escaped)).toBe(raw);
+  });
+});
 
 describe('Tally API parsing logic', () => {
   it('should parse Sales vouchers with correct tax values', async () => {

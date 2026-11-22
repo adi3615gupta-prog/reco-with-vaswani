@@ -1,3 +1,4 @@
+import { decryptSecret } from '../cryptoVault.js';
 /*! javascript-obfuscator:disable */
 // Playwright dynamically imported inside runGstr1Autopilot to prevent startup crashes
 import path from 'path';
@@ -9,9 +10,50 @@ import * as xlsxModule from 'xlsx';
 const XLSX = xlsxModule.default || xlsxModule;
 import { bulkSaveGstr1Invoices, saveGstr1Summary, markGstr1MonthRequested, markGstr1MonthSyncedEmpty } from './db.js';
 import { parseGstr1Json, parseGstr1Excel, parseGstr1Zip } from './parsers.js';
-import { generateGstr1FullYearWorkbook } from './fullYearExcel.js';
+import { buildGstr1FullYearWorkbookFromDb } from './fullYearExcel.js';
 import { launchAutopilotBrowser } from '../gstr2b/browserLauncher.js';
 import { parseGstr1PdfBuffer } from '../gstr1PdfParser.js';
+
+const MONTH_INDEX = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+
+/** hasReturnPeriodEnded("October 2026", now): true once the whole month is over. Unparseable periods are allowed through. */
+export function hasReturnPeriodEnded(period, now = new Date()) {
+    const m = String(period || '').trim().match(/^([a-zA-Z]+)[\s,]+(\d{4})$/);
+    const mIdx = m ? MONTH_INDEX[m[1].toLowerCase()] : undefined;
+    if (mIdx === undefined) return true;
+    return new Date(Number(m[2]), mIdx + 1, 1) <= now;
+}
+
+/**
+ * saveGstr1FullYearExcel: Writes the 12-sheet SectionWiseSummary to the download dir and to
+ * <Settings returns_data_path>/gstr1/<GSTIN> when configured. Never throws; returns the path or null.
+ */
+export async function saveGstr1FullYearExcel(db, gstinUpper, financialYear, downloadDir) {
+    try {
+        const { wb, filename } = await buildGstr1FullYearWorkbookFromDb(db, gstinUpper, financialYear);
+        const consExcelPath = path.join(downloadDir, filename);
+        XLSX.writeFile(wb, consExcelPath);
+        console.log(`[GSTR-1 Full Year] Generated consolidated workbook at: ${consExcelPath}`);
+
+        const configRow = await new Promise((resolve) => db.get(
+            "SELECT value FROM app_config WHERE key = 'returns_data_path' OR key = 'master_data_path' ORDER BY CASE WHEN key = 'returns_data_path' THEN 1 ELSE 2 END LIMIT 1",
+            [], (err, row) => resolve(err ? null : row)));
+        const rawDir = String(configRow?.value || '').trim().replace(/^["']|["']$/g, '');
+        if (rawDir && fs.existsSync(rawDir)) {
+            try {
+                const tDir = path.join(path.resolve(rawDir), 'gstr1', gstinUpper);
+                fs.mkdirSync(tDir, { recursive: true });
+                XLSX.writeFile(wb, path.join(tDir, filename));
+            } catch (cpErr) {
+                console.warn('[GSTR-1 Full Year] Could not copy consolidated Excel to Settings folder:', cpErr.message);
+            }
+        }
+        return consExcelPath;
+    } catch (xlErr) {
+        console.error('[GSTR-1 Full Year] Error generating consolidated Excel:', xlErr.message);
+        return null;
+    }
+}
 
 /**
  * runGstr1Autopilot — Autonomous Playwright engine for GSTR-1:
@@ -25,16 +67,18 @@ import { parseGstr1PdfBuffer } from '../gstr1PdfParser.js';
 export async function runGstr1Autopilot({
     db,
     gstin,
-    returnPeriod = 'April 2025',
-    financialYear = '2025-26',
+    returnPeriod = 'April 2026',
+    financialYear = '2026-27',
     isFullYear = false,
     targetMonth = null,
     isDownloadOnly = false,
     downloadFormat = 'JSON', // 'JSON' or 'PDF'
     req,
     res,
-    browserState = null
+    browserState = null,
+    onEvent = null
 }) {
+    const emit = (evt, data) => { try { onEvent?.(evt, data); } catch (e) {} };
     let browser = null;
     let context = null;
     let page = null;
@@ -69,7 +113,7 @@ export async function runGstr1Autopilot({
             });
             if (clientRow) {
                 portalUser = clientRow.portal_username || '';
-                portalPass = clientRow.portal_password || '';
+                portalPass = decryptSecret(clientRow.portal_password || '');
                 clientTradeName = clientRow.trade_name || clientRow.legal_name || gstinUpper;
             }
         } catch (e) {
@@ -125,29 +169,34 @@ export async function runGstr1Autopilot({
             });
         }
 
-        const browserPid = browser && typeof browser.process === 'function' ? browser.process()?.pid : null;
+        let browserPid = null;
+        try {
+            const cdp = await browser.newBrowserCDPSession();
+            const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+            browserPid = processInfo.find(x => x.type === 'browser')?.id || null;
+            if (browserPid) console.log('[GSTR-1 Autopilot] Detected Chrome Browser PID:', browserPid);
+        } catch (e) {}
+
         const focusDesktopWindow = () => {
             try {
-                let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
-                if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-                psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-                psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-                psParts.push(`$wshell.AppActivate('Goods & Services Tax (GST) | Login');`);
-                psParts.push(`$wshell.AppActivate('GST | Login');`);
-                psParts.push(`$wshell.AppActivate('Login');`);
-                psParts.push(`$wshell.AppActivate('Chrome');`);
-                psParts.push(`$wshell.AppActivate('Chromium');`);
-                const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
-                exec(psCmd, () => {});
-
-                if (browserPid) {
-                    const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
-                    if (fs.existsSync(bringPath)) {
-                        exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {});
-                    }
+                const bringPath = path.join(process.cwd(), 'scratch', 'bring_to_front.ps1');
+                if (fs.existsSync(bringPath)) {
+                    const arg = browserPid ? `-TargetPid ${browserPid}` : '';
+                    exec(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {});
+                } else {
+                    let psParts = ['$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys(\'%\');'];
+                    if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+                    psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+                    psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+                    psParts.push(`$wshell.AppActivate('GST | Login');`);
+                    psParts.push(`$wshell.AppActivate('Login');`);
+                    psParts.push(`$wshell.AppActivate('Chrome');`);
+                    const psCmd = `powershell -NoProfile -Command "${psParts.join(' ')}"`;
+                    exec(psCmd, () => {});
                 }
             } catch (e) {}
         };
+        focusDesktopWindow();
 
         // Download event listener
         const activeGstr1DownloadPromises = new Set();
@@ -337,16 +386,19 @@ export async function runGstr1Autopilot({
 
         // Wait for user to log in
         console.log('[GSTR-1 Autopilot] Waiting for user to complete login...');
+        emit('LOGIN_WAIT', { phase: 'WAITING_CAPTCHA', message: 'GST portal window open: enter CAPTCHA and click LOGIN (waiting up to 3 min)...' });
         await page.waitForFunction(() => {
             const url = window.location.href;
             const isAuth = url.includes('/auth/') || url.includes('/dashboard') || url.includes('/quicklinks/') || url.includes('/returns/');
             const isNotLogin = !url.includes('/login');
             const hasNoInputs = !document.querySelector('#username') && !document.querySelector('#user_pass');
             const hasLogout = Boolean(document.querySelector('a[href*="logout"], [ng-click*="logout"], .user-name, #navbar-usr-menu, li.dropdown.user'));
-            return (isAuth && isNotLogin) || (isNotLogin && hasNoInputs) || hasLogout;
+            // The login page itself carries a hidden header "Logout" link, so nothing counts until we leave /login.
+            return isNotLogin && (isAuth || hasNoInputs || hasLogout);
         }, null, { timeout: 180000, polling: 100 });
 
         console.log('[GSTR-1 Autopilot] Logged in successfully!');
+        emit('LOGGED_IN', { phase: 'LOGGED_IN', message: 'Logged in to GST portal. Opening Returns Dashboard...' });
         focusDesktopWindow();
         await page.waitForTimeout(1000);
         await dismissPopups();
@@ -361,26 +413,28 @@ export async function runGstr1Autopilot({
                 targetFy = `${yearNum}-${String(yearNum + 1).slice(-2)}`;
             }
         }
-        if (!targetFy) targetFy = '2025-26';
+        if (!targetFy) targetFy = '2026-27';
 
         // ─── SAFE SEARCH SCREEN NAVIGATION HELPER ─────────────────────────────
         // Helper to navigate from Returns Quick Links to Return Dashboard via authentic in-page native click
         // STRICT ZERO URL PUSH: Direct page.goto or window.location.href to return.gst.gov.in triggers "Access Denied" by GSTN WAF.
         const clickReturnsDashboardInPage = async () => {
-            console.log('[GSTR-1 Autopilot] ⚡ Navigating from Quick Links to Returns Dashboard via native click...');
+            console.log('[GSTR-1 Autopilot] ⚡ Navigating from Home/Quick Links to Returns Dashboard via native click...');
             try {
                 // Priority 1: Native Playwright click on the card/tile/button
-                const dashTile = page.locator('div.card, div.panel, div.box, a, button, div[class*="card"], div[class*="box"]')
-                    .filter({ hasText: /returns dashboard|file returns/i })
+                // visible: the portal's top menu holds a hidden "Returns Dashboard" link that would otherwise win .first()
+                const dashTile = page.locator('div.card, div.panel, div.box, a, button, div[class*="card"], div[class*="box"], div[role="button"]')
+                    .filter({ hasText: /returns?\s*dashboard|file\s*returns/i })
+                    .filter({ visible: true })
                     .first();
-                if (await dashTile.isVisible({ timeout: 1200 }).catch(() => false)) {
+                if (await dashTile.isVisible({ timeout: 1500 }).catch(() => false)) {
                     await dashTile.scrollIntoViewIfNeeded().catch(() => {});
                     await dashTile.click({ force: true }).catch(() => {});
                     console.log('[GSTR-1 Autopilot] ✓ Clicked Returns Dashboard tile natively with Playwright');
                 } else {
                     // Fallback to direct anchor link
                     const dashLink = page.locator('a[href*="returns/auth/dashboard"], a[href*="returns.gst.gov.in"]').first();
-                    if (await dashLink.isVisible({ timeout: 800 }).catch(() => false)) {
+                    if (await dashLink.isVisible({ timeout: 1000 }).catch(() => false)) {
                         await dashLink.click({ force: true }).catch(() => {});
                         console.log('[GSTR-1 Autopilot] ✓ Clicked Returns Dashboard anchor link');
                     }
@@ -442,9 +496,9 @@ export async function runGstr1Autopilot({
                     }
                 } catch(e) {}
 
-                // 3. If on Returns Quick Links screen -> Click Returns Dashboard tile with native click
-                if (curUrl.includes('quicklinks/returns') || curUrl.includes('/quicklinks')) {
-                    console.log('[GSTR-1 Autopilot] Detected Returns Quick Links screen. Clicking Returns Dashboard tile natively...');
+                // 3. If on Returns Quick Links screen OR dashboard home screen -> Click Returns Dashboard tile with native click
+                if (curUrl.includes('quicklinks/returns') || curUrl.includes('/quicklinks') || curUrl.includes('/auth/home')) {
+                    console.log('[GSTR-1 Autopilot] Detected Home/Quick Links screen. Clicking Returns Dashboard natively...');
                     if (await clickReturnsDashboardInPage()) {
                         return true;
                     }
@@ -453,8 +507,11 @@ export async function runGstr1Autopilot({
 
                 // 4. Check for RETURN DASHBOARD / File Returns button on dashboard home page
                 try {
-                    const retDashBtn = page.locator('button:has-text("RETURN DASHBOARD"), button:has-text("File Returns"), a:has-text("RETURN DASHBOARD"), a:has-text("File Returns")').first();
-                    if (await retDashBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+                    const retDashBtn = page.locator('button, a, div[role="button"]')
+                        .filter({ hasText: /returns?\s*dashboard|file\s*returns/i })
+                        .filter({ visible: true })
+                        .first();
+                    if (await retDashBtn.isVisible({ timeout: 600 }).catch(() => false)) {
                         console.log('[GSTR-1 Autopilot] Clicking RETURN DASHBOARD button on dashboard...');
                         await retDashBtn.click({ force: true }).catch(() => {});
                         try {
@@ -468,7 +525,7 @@ export async function runGstr1Autopilot({
 
                 // 5. Check for breadcrumb "Return Dashboard"
                 try {
-                    const breadcrumb = page.locator('.breadcrumb a:has-text("Return"), a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').first();
+                    const breadcrumb = page.locator('.breadcrumb a:has-text("Return"), a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').filter({ visible: true }).first();
                     if (await breadcrumb.isVisible({ timeout: 400 }).catch(() => false)) {
                         console.log('[GSTR-1 Autopilot] Clicking Return Dashboard breadcrumb...');
                         await breadcrumb.click({ force: true }).catch(() => {});
@@ -570,6 +627,8 @@ export async function runGstr1Autopilot({
                 return t.includes(`quarter ${quarterNum}`) || t.includes(`q${quarterNum}`) || quarterMonthNames.some(m => t.includes(m));
             });
 
+            // Never search with a stale selection: that files a request for the previous month under this month's name.
+            if (!matchedQuarter) throw new Error(`Quarter ${quarterNum} of FY ${effectiveFy} not offered by portal for ${effectiveMonth}`);
             if (matchedQuarter) {
                 const currentQIndex = await qLoc.evaluate(el => el.selectedIndex);
                 if (currentQIndex !== matchedQuarter.index) {
@@ -597,21 +656,14 @@ export async function runGstr1Autopilot({
             const targetMonthLower = String(effectiveMonth).toLowerCase().trim();
             const targetMonthShort = targetMonthLower.slice(0, 3);
 
-            let matchedMonth = mOptions.find(o => {
+            const matchedMonth = mOptions.find(o => {
                 const t = o.text.toLowerCase().trim();
                 if (t.includes('select') || t.startsWith('--')) return false;
                 return t.includes(targetMonthLower) || t.includes(targetMonthShort);
             });
 
-            if (!matchedMonth) {
-                let pos = 0;
-                if (['apr', 'jul', 'oct', 'jan'].some(m => targetMonthLower.includes(m))) pos = 0;
-                else if (['may', 'aug', 'nov', 'feb'].some(m => targetMonthLower.includes(m))) pos = 1;
-                else if (['jun', 'sep', 'dec', 'mar'].some(m => targetMonthLower.includes(m))) pos = 2;
-                const selectable = mOptions.filter(o => !o.text.toLowerCase().includes('select') && !o.text.startsWith('--'));
-                if (selectable.length > pos) matchedMonth = selectable[pos];
-            }
-
+            // No positional guess: picking "the 1st option of the quarter" pulled another month's data.
+            if (!matchedMonth) throw new Error(`${effectiveMonth} not offered by portal in FY ${effectiveFy} (return period not open yet?)`);
             if (matchedMonth) {
                 await mLoc.selectOption({ index: matchedMonth.index });
                 await mLoc.evaluate(el => {
@@ -627,25 +679,52 @@ export async function runGstr1Autopilot({
             await page.waitForTimeout(400);
 
             // 4. Click SEARCH
-            const searchLoc = page.locator('button:has-text("SEARCH"), input[value="SEARCH" i], button.btn-primary:has-text("SEARCH"), #search').first();
-            if (await searchLoc.isVisible({ timeout: 2000 })) {
-                await searchLoc.click();
-            } else {
+            const searchLoc = page.locator('button:has-text("SEARCH"), input[value="SEARCH" i], button.btn-primary:has-text("SEARCH"), #search, button:has-text("Search")').first();
+            let clickedSearch = false;
+            try {
+                if (await searchLoc.isVisible({ timeout: 2000 })) {
+                    await searchLoc.scrollIntoViewIfNeeded().catch(() => {});
+                    await searchLoc.click();
+                    clickedSearch = true;
+                }
+            } catch(e) {}
+
+            if (!clickedSearch) {
                 await page.evaluate(() => {
                     const btns = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a.btn'));
                     const s = btns.find(b => (b.innerText || b.value || b.textContent || '').trim().toUpperCase() === 'SEARCH');
-                    if (s) s.click();
+                    if (s) {
+                        s.scrollIntoView({ block: 'center' });
+                        s.click();
+                        if (window.angular) {
+                            try {
+                                window.angular.element(s).triggerHandler('click');
+                                window.angular.element(s).scope()?.$apply();
+                            } catch(e) {}
+                        }
+                    }
                 });
             }
 
-            // 5. Wait for returns cards
+            // 5. Wait for returns cards to render (handling loading overlay and AJAX digest)
+            try {
+                await page.waitForSelector('.loading, .spinner, .overlay, [ng-show*="loading"], .busy-indicator', { timeout: 1500 }).catch(() => {});
+                await page.waitForSelector('.loading, .spinner, .overlay, [ng-show*="loading"], .busy-indicator', { state: 'hidden', timeout: 12000 }).catch(() => {});
+            } catch(e) {}
+
             try {
                 await page.waitForFunction(() => {
-                    const text = (document.body.innerText || '').toUpperCase();
-                    return text.includes('GSTR-1') || text.includes('GSTR 1') || text.includes('OUTWARD SUPPLIES') || Boolean(document.querySelector('.returns-card'));
-                }, null, { timeout: 12000 });
+                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav'));
+                    const allHeadings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, .panel-title, strong, b, div, span, p'));
+                    return allHeadings.some(el => {
+                        if (isTopNavbarOrHeader(el)) return false;
+                        const txt = (el.innerText || el.textContent || '').trim().toUpperCase();
+                        if (txt.length > 120) return false;
+                        return txt.includes('OUTWARD SUPPLIES') || ((txt.includes('GSTR-1') || txt.includes('GSTR 1')) && !txt.includes('3B') && !txt.includes('2B'));
+                    });
+                }, null, { timeout: 15000 });
             } catch (e) {}
-            await page.waitForTimeout(400);
+            await page.waitForTimeout(600);
         };
 
         // ─── DOWNLOAD GSTR-1 & PERSIST HELPER ──────────────────────────────────
@@ -658,288 +737,599 @@ export async function runGstr1Autopilot({
             const actionStartTime = Date.now();
 
             let clickedG1Download = false;
+            let clickedBtnText = '';
 
-            // Target GSTR-1 card PREPARE OFFLINE / DOWNLOAD button (strictly excluding header/navbar)
-            try {
-                const g1ClickResult = await page.evaluate(() => {
-                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
-                    const cards = Array.from(document.querySelectorAll('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel'));
-                    for (const card of cards) {
-                        if (isTopNavbarOrHeader(card)) continue;
-                        const cardText = (card.innerText || '').toUpperCase();
-                        const isG1 = (cardText.includes('GSTR-1') || cardText.includes('GSTR 1') || cardText.includes('OUTWARD SUPPLIES') || cardText.includes('IFF')) &&
-                                     !cardText.includes('GSTR-2B') && !cardText.includes('GSTR-2A') && !cardText.includes('GSTR-3B');
+            // ─── STEP 5: TARGET GSTR-1 CARD & CLICK "PREPARE OFFLINE" / "DOWNLOAD" ───
+            console.log(`[GSTR-1 Autopilot] Step 5: Locating GSTR-1 card on dashboard for ${currentPeriodStr}...`);
+            await updateBanner(`Locating GSTR-1 card on dashboard for ${currentPeriodStr}...`, '#8b5cf6');
+            await dismissPopups();
 
-                        if (isG1) {
-                            const btns = Array.from(card.querySelectorAll('button, a, input[type="button"]'));
-                            const dlBtn = btns.find(b => {
-                                if (isTopNavbarOrHeader(b)) return false;
-                                const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
-                                return t === 'PREPARE OFFLINE' || t.includes('PREPARE OFFLINE') || t === 'DOWNLOAD';
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                if (clickedG1Download) break;
+                if (page.isClosed()) break;
+
+                // Priority 1: Title-down matching from GSTR-1 specific heading to its card
+                try {
+                    const titleDownRes = await page.evaluate(() => {
+                        const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
+                        
+                        // 1. Find the specific heading element for GSTR-1
+                        const allHeadings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, .panel-title, strong, b, div, span, p'));
+                        const g1TitleEl = allHeadings.find(el => {
+                            if (isTopNavbarOrHeader(el)) return false;
+                            const txt = (el.innerText || el.textContent || '').trim().toUpperCase();
+                            if (txt.length > 120) return false;
+                            const isOutward = txt.includes('OUTWARD SUPPLIES') || txt.includes('DETAILS OF OUTWARD');
+                            const isG1Only = (txt.includes('GSTR-1') || txt.includes('GSTR 1') || txt === 'GSTR1') && !txt.includes('3B') && !txt.includes('2B') && !txt.includes('2A');
+                            return isOutward || isG1Only;
+                        });
+
+                        if (!g1TitleEl) return { success: false, reason: 'GSTR-1 title element not found' };
+
+                        // 2. Climb up to find the enclosing card container
+                        let card = g1TitleEl.parentElement;
+                        let matchedCard = null;
+                        while (card && card !== document.body) {
+                            const btns = Array.from(card.querySelectorAll('button, a, input[type="button"], .btn')).filter(b => !isTopNavbarOrHeader(b));
+                            const cardText = (card.innerText || '').toUpperCase();
+
+                            // Stop if container starts enclosing multiple distinct returns (e.g. both GSTR-3B and GSTR-2B)
+                            const hasOtherReturns = (cardText.includes('GSTR-3B') || cardText.includes('GSTR 3B') || cardText.includes('MONTHLY RETURN')) &&
+                                                    (cardText.includes('GSTR-2B') || cardText.includes('AUTO-DRAFTED') || cardText.includes('GSTR-2A'));
+                            if (hasOtherReturns) break;
+
+                            const hasTargetBtn = btns.some(b => {
+                                const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                return bt.includes('OFFLINE') || bt.includes('PREPARE OFFLINE') || bt === 'DOWNLOAD' || bt.includes('DOWNLOAD');
                             });
-                            if (dlBtn) {
-                                dlBtn.scrollIntoView({ block: 'center' });
-                                dlBtn.click();
+
+                            if (hasTargetBtn) {
+                                matchedCard = card;
+                                const cls = card.className || '';
+                                if (cls.includes('col-') || cls.includes('card') || cls.includes('panel') || cls.includes('box')) {
+                                    break;
+                                }
+                            }
+                            card = card.parentElement;
+                        }
+
+                        if (!matchedCard) {
+                            matchedCard = g1TitleEl.closest('.returns-card, div.panel, div.card, div.box, [class*="col-md-"], [class*="col-sm-"], [class*="col-lg-"], div.border-box');
+                        }
+
+                        if (matchedCard) {
+                            const btns = Array.from(matchedCard.querySelectorAll('button, a, input[type="button"], .btn')).filter(b => !isTopNavbarOrHeader(b));
+                            
+                            // Priority A: PREPARE OFFLINE (for unfiled / pending return)
+                            let targetBtn = btns.find(b => {
+                                const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                return bt === 'PREPARE OFFLINE' || bt.includes('PREPARE OFFLINE') || bt.includes('OFFLINE');
+                            });
+
+                            // Priority B: DOWNLOAD (for filed return)
+                            if (!targetBtn) {
+                                targetBtn = btns.find(b => {
+                                    const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                    return bt === 'DOWNLOAD' || bt.includes('DOWNLOAD');
+                                });
+                            }
+
+                            if (targetBtn) {
+                                targetBtn.scrollIntoView({ block: 'center' });
+                                targetBtn.click();
                                 if (window.angular) {
                                     try {
-                                        window.angular.element(dlBtn).triggerHandler('click');
-                                        window.angular.element(dlBtn).scope()?.$apply();
+                                        window.angular.element(targetBtn).triggerHandler('click');
+                                        window.angular.element(targetBtn).scope()?.$apply();
                                     } catch(e) {}
                                 }
-                                return { success: true };
+                                return { success: true, text: (targetBtn.innerText || targetBtn.value || '').trim() };
                             }
                         }
-                    }
-                    return { success: false };
-                });
-                clickedG1Download = g1ClickResult.success;
-            } catch (e) {}
 
-            if (!clickedG1Download) {
-                try {
-                    const g1Card = page.locator('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel')
-                        .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                        .filter({ hasText: /GSTR-?1|Outward\s*Supplies|IFF/i })
-                        .filter({ hasNotText: /GSTR-?2B|Auto\s*-\s*drafted|GSTR-?3B/i })
-                        .first();
-                    if (await g1Card.isVisible({ timeout: 2000 })) {
-                        const dlBtn = g1Card.locator('button, a, input[type="button"]')
-                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu') })
-                            .filter({ hasText: /PREPARE\s*OFFLINE|DOWNLOAD/i })
-                            .first();
-                        if (await dlBtn.isVisible({ timeout: 1500 })) {
-                            await dlBtn.scrollIntoViewIfNeeded().catch(() => {});
-                            await dlBtn.click({ force: true });
-                            clickedG1Download = true;
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            // Allow time for Offline page to load
-            try {
-                await page.waitForFunction(() => {
-                    const u = window.location.href.toLowerCase();
-                    return u.includes('/offline') || Boolean(document.querySelector('ul.nav-tabs, a[data-toggle="tab"], #download, #upload'));
-                }, null, { timeout: 8000 }).catch(() => {});
-            } catch (e) {}
-            await page.waitForTimeout(1500);
-            await dismissPopups();
-
-            // ─── CRITICAL STEP: SWITCH TO IN-PAGE "DOWNLOAD" TAB (STRICTLY EXCLUDING TOP NAVBAR) ───
-            let switchedToDownloadTab = false;
-            try {
-                console.log(`[GSTR-1 Autopilot] Switching to in-page "Download" tab on offline preparation page...`);
-
-                // Priority 1: In-page evaluate targeting strictly the offline tab, ignoring any navbar/header
-                switchedToDownloadTab = await page.evaluate(() => {
-                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
-
-                    const tabCandidates = Array.from(document.querySelectorAll('ul.nav-tabs a, .nav-tabs li a, a[data-toggle="tab"], .nav-pills a, button[role="tab"]'));
-                    for (const tab of tabCandidates) {
-                        if (isTopNavbarOrHeader(tab)) continue;
-                        const txt = (tab.innerText || tab.textContent || '').trim().toUpperCase();
-                        const href = (tab.getAttribute('href') || '').toLowerCase();
-                        if (txt === 'DOWNLOAD' || txt === 'DOWNLOAD DETAILS' || href === '#download' || href.endsWith('/download')) {
-                            tab.scrollIntoView({ block: 'center' });
-                            tab.click();
-                            if (window.angular) {
-                                try {
-                                    window.angular.element(tab).triggerHandler('click');
-                                    window.angular.element(tab).scope()?.$apply();
-                                } catch(e) {}
-                            }
-                            return true;
-                        }
-                    }
-                    return false;
-                });
-
-                if (switchedToDownloadTab) {
-                    console.log('[GSTR-1 Autopilot] ✓ Switched to in-page Download tab via evaluate');
-                } else {
-                    // Priority 2: Playwright locator strictly scoped to main content and excluding navbar/header
-                    const nativeTab = page.locator('div[ng-view], #main, .content, body')
-                        .locator('ul.nav-tabs a, a[data-toggle="tab"], .nav-tabs li a')
-                        .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                        .filter({ hasText: /^download$/i })
-                        .first();
-                    if (await nativeTab.isVisible({ timeout: 2000 }).catch(() => false)) {
-                        await nativeTab.scrollIntoViewIfNeeded().catch(() => {});
-                        await nativeTab.click({ force: true }).catch(() => {});
-                        switchedToDownloadTab = true;
-                        console.log('[GSTR-1 Autopilot] ✓ Switched to in-page Download tab via scoped Playwright locator');
-                    }
-                }
-            } catch (tabErr) {
-                console.warn('[GSTR-1 Autopilot] Notice while switching to Download tab:', tabErr.message);
-            }
-
-            await page.waitForTimeout(1200);
-            await dismissPopups();
-
-            // ─── STEP 1: HELPER TO FIND & CLICK "Click here to download - File 1" BELOW BUTTON ───
-            let foundReadyLink = false;
-            let readyLinkText = '';
-
-            const clickReadyLinkIfFound = async () => {
-                // Priority 1: In-page evaluate strictly inside main offline content area / table / tab-pane (never in navbar/header)
-                try {
-                    const evalRes = await page.evaluate(() => {
-                        const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
-
-                        // Look inside the active tab-pane, #download section, table, or main view
-                        const containers = Array.from(document.querySelectorAll('.tab-pane.active, #download, table, div[ng-view], .content, main'));
-                        const searchAreas = containers.length > 0 ? containers : [document.body];
-
-                        for (const area of searchAreas) {
-                            if (isTopNavbarOrHeader(area)) continue;
-                            const anchors = Array.from(area.querySelectorAll('a'));
-                            for (const a of anchors) {
-                                if (isTopNavbarOrHeader(a)) continue;
-                                const t = (a.innerText || a.textContent || '').trim().toLowerCase();
-                                if (t.includes('generate')) continue;
-
-                                // Match "Click here to download - File 1" or "Click here to download" or "File 1"
-                                const isClickHereToDownload = t.includes('click here') && t.includes('download');
-                                const isFile1 = t.includes('file 1') || t === 'file 1' || t.includes('file-1');
-                                const isTableDownload = a.closest('table, tbody, tr') && t.includes('download');
-
-                                if (isClickHereToDownload || isFile1 || isTableDownload) {
-                                    a.scrollIntoView({ block: 'center' });
-                                    a.click();
-                                    if (window.angular) {
-                                        try {
-                                            window.angular.element(a).triggerHandler('click');
-                                            window.angular.element(a).scope()?.$apply();
-                                        } catch(e) {}
-                                    }
-                                    return { success: true, text: a.innerText || 'Click here to download - File 1' };
-                                }
-                            }
-                        }
-                        return { success: false };
+                        return { success: false, reason: 'Button not found inside matched GSTR-1 card' };
                     });
 
-                    if (evalRes && evalRes.success) {
-                        readyLinkText = evalRes.text || 'Click here to download - File 1';
-                        console.log(`[GSTR-1 Autopilot] 🎯 Clicked ready download link via evaluate: "${readyLinkText.trim()}"`);
-                        return true;
+                    if (titleDownRes.success) {
+                        clickedG1Download = true;
+                        clickedBtnText = titleDownRes.text;
+                        console.log(`[GSTR-1 Autopilot] ✓ Clicked "${clickedBtnText}" on GSTR-1 card via Title-Down Search (Attempt ${attempt})`);
+                        break;
                     }
-                } catch(e) {}
+                } catch (e) {}
 
-                // Priority 2: Playwright locator strictly excluding header/nav/footer
-                try {
-                    const readyLocators = [
-                        page.locator('.tab-pane.active, #download, table, div[ng-view], .content')
-                            .locator('a')
-                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                            .filter({ hasText: /click\s*here\s*to\s*download/i }),
-                        page.locator('.tab-pane.active, #download, table, div[ng-view], .content')
-                            .locator('a')
-                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                            .filter({ hasText: /file\s*1/i }),
-                        page.locator('table tr td a')
-                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                    ];
-
-                    for (const loc of readyLocators) {
-                        if (await loc.first().isVisible({ timeout: 1000 }).catch(() => false)) {
-                            readyLinkText = (await loc.first().innerText().catch(() => '')) || 'Click here to download';
-                            console.log(`[GSTR-1 Autopilot] 🎯 Found ready download link via locator: "${readyLinkText.trim()}" for ${currentPeriodStr}`);
-                            await loc.first().scrollIntoViewIfNeeded().catch(() => {});
-                            await loc.first().click({ force: true }).catch(() => {});
-                            return true;
-                        }
-                    }
-                } catch(e) {}
-
-                return false;
-            };
-
-            // Check if download link is already showing on tab load
-            foundReadyLink = await clickReadyLinkIfFound();
-
-            // ─── STEP 2: CLICK "GENERATE JSON FILE TO DOWNLOAD" (1 TIME) ─────────────────────
-            // User explicit requirement:
-            // "it should click generate JSON FILE TO Download if it is first time then request will be send then 20 mins waiting time will be then after that it will again go then again click on generate json file to download then below that button Click here to download - File 1 will show it will click on that to download file understood !!"
-            if (!foundReadyLink) {
-                console.log(`[GSTR-1 Autopilot] Clicking "GENERATE JSON FILE TO DOWNLOAD" for ${currentPeriodStr}...`);
-                let clickedGenerate = false;
-
-                // Priority 1: In-page evaluate strictly inside main content (never in navbar/header)
-                clickedGenerate = await page.evaluate(() => {
-                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
-                    for (const b of btns) {
-                        if (isTopNavbarOrHeader(b)) continue;
-                        const txt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
-                        if (txt.includes('GENERATE JSON') || txt.includes('GENERATE FILE') || txt === 'GENERATE') {
-                            b.scrollIntoView({ block: 'center' });
-                            b.click();
-                            if (window.angular) {
-                                try {
-                                    window.angular.element(b).triggerHandler('click');
-                                    window.angular.element(b).scope()?.$apply();
-                                } catch(e) {}
-                            }
-                            return true;
-                        }
-                    }
-                    return false;
-                });
-
-                if (clickedGenerate) {
-                    console.log(`[GSTR-1 Autopilot] ⚡ Clicked GENERATE JSON FILE TO DOWNLOAD via evaluate.`);
-                } else {
-                    // Priority 2: Playwright locator strictly excluding header/nav
+                // Priority 2: Return cards container scan
+                if (!clickedG1Download) {
                     try {
-                        const genBtn = page.locator('div[ng-view], #main, .content, .tab-pane.active, #download, body')
-                            .locator('button, input[type="button"], a')
-                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
-                            .filter({ hasText: /GENERATE\s*JSON/i })
-                            .first();
-                        if (await genBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                            await genBtn.scrollIntoViewIfNeeded().catch(() => {});
-                            await genBtn.click({ force: true }).catch(() => {});
-                            clickedGenerate = true;
-                            console.log(`[GSTR-1 Autopilot] ⚡ Clicked GENERATE JSON FILE TO DOWNLOAD via Playwright locator.`);
+                        const cardScanRes = await page.evaluate(() => {
+                            const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
+                            const potentialCards = Array.from(document.querySelectorAll('.returns-card, div.panel, div.card, div.box, [class*="col-md-"], [class*="col-sm-"], [class*="col-lg-"], div.border-box'));
+
+                            for (const pc of potentialCards) {
+                                if (isTopNavbarOrHeader(pc)) continue;
+                                const headings = Array.from(pc.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, .panel-title, strong, b, div, span, p'));
+                                const isG1 = headings.some(h => {
+                                    const ht = (h.innerText || h.textContent || '').trim().toUpperCase();
+                                    if (ht.length > 80) return false;
+                                    return ht.includes('OUTWARD SUPPLIES') || (ht.includes('GSTR-1') && !ht.includes('3B') && !ht.includes('2B'));
+                                });
+
+                                const is3Bor2B = headings.some(h => {
+                                    const ht = (h.innerText || h.textContent || '').trim().toUpperCase();
+                                    if (ht.length > 80) return false;
+                                    return ht.includes('MONTHLY RETURN') || (ht.includes('GSTR-3B') && !ht.includes('1')) || (ht.includes('GSTR-2B') && !ht.includes('1'));
+                                });
+
+                                if (isG1 && !is3Bor2B) {
+                                    const btns = Array.from(pc.querySelectorAll('button, a, input[type="button"], .btn')).filter(b => !isTopNavbarOrHeader(b));
+                                    let btn = btns.find(b => {
+                                        const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                        return bt === 'PREPARE OFFLINE' || bt.includes('PREPARE OFFLINE') || bt.includes('OFFLINE');
+                                    });
+                                    if (!btn) {
+                                        btn = btns.find(b => {
+                                            const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                            return bt === 'DOWNLOAD' || bt.includes('DOWNLOAD');
+                                        });
+                                    }
+                                    if (btn) {
+                                        btn.scrollIntoView({ block: 'center' });
+                                        btn.click();
+                                        if (window.angular) {
+                                            try {
+                                                window.angular.element(btn).triggerHandler('click');
+                                                window.angular.element(btn).scope()?.$apply();
+                                            } catch(e) {}
+                                        }
+                                        return { success: true, text: (btn.innerText || btn.value || '').trim() };
+                                    }
+                                }
+                            }
+                            return { success: false };
+                        });
+
+                        if (cardScanRes.success) {
+                            clickedG1Download = true;
+                            clickedBtnText = cardScanRes.text;
+                            console.log(`[GSTR-1 Autopilot] ✓ Clicked "${clickedBtnText}" on GSTR-1 card via Card Scan (Attempt ${attempt})`);
+                            break;
                         }
                     } catch(e) {}
                 }
 
-                // ─── STEP 3: WAIT AND CHECK WHETHER "Click here to download - File 1" APPEARS BELOW BUTTON ──
-                console.log(`[GSTR-1 Autopilot] Checking for "Click here to download - File 1" below button for ${currentPeriodStr}...`);
-                const checkStart = Date.now();
+                // Priority 3: Playwright scoped locator click
+                if (!clickedG1Download) {
+                    try {
+                        const g1Card = page.locator('div[class*="col-"], div.card, div.panel, .returns-card, div.box, div[class*="card"]')
+                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                            .filter({ hasText: /Outward\s*Supplies|GSTR-?1\b|IFF/i })
+                            .filter({ hasNotText: /Monthly\s*Return|GSTR-?3B/i })
+                            .first();
 
-                while (Date.now() - checkStart < 5000) {
+                        if (await g1Card.isVisible({ timeout: 1500 }).catch(() => false)) {
+                            const dlBtn = g1Card.locator('button, a, input[type="button"], .btn')
+                                .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu') })
+                                .filter({ hasText: /PREPARE\s*OFFLINE|OFFLINE|^DOWNLOAD$/i })
+                                .first();
+                            if (await dlBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                                await dlBtn.scrollIntoViewIfNeeded().catch(() => {});
+                                await dlBtn.click({ force: true });
+                                clickedG1Download = true;
+                                console.log(`[GSTR-1 Autopilot] ✓ Clicked button on GSTR-1 card via Playwright locator (Attempt ${attempt})`);
+                                break;
+                            }
+                        }
+                    } catch(e) {}
+                }
+
+                if (!clickedG1Download && attempt < 3) {
+                    console.log(`[GSTR-1 Autopilot] GSTR-1 card button not clicked on attempt ${attempt}/3, waiting 1s for DOM...`);
+                    await page.waitForTimeout(1000);
+                }
+            }
+
+            // Verify navigation to GSTR-1 Offline Preparation or Download screen
+            console.log(`[GSTR-1 Autopilot] Waiting for GSTR-1 Offline / Download screen to load...`);
+            await updateBanner(`Entering GSTR-1 Offline / Download screen...`, '#8b5cf6');
+            let landedOnOffline = false;
+
+            try {
+                await page.waitForFunction(() => {
+                    const u = window.location.href.toLowerCase();
+                    const bodyText = (document.body ? document.body.innerText : '').toUpperCase();
+                    const hasOfflineUrl = u.includes('/offline') || u.includes('offline') || u.includes('offlinedownload');
+                    const hasOfflineTabs = Boolean(document.querySelector('ul.nav-tabs, a[data-toggle="tab"], #download, #upload, button[role="tab"]'));
+                    const hasOfflineText = bodyText.includes('OFFLINE DOWNLOAD FOR GSTR-1') || 
+                                           bodyText.includes('DOWNLOAD DATA FOR GSTR-1') ||
+                                           (bodyText.includes('OFFLINE') && (bodyText.includes('DOWNLOAD') || bodyText.includes('UPLOAD'))) ||
+                                           bodyText.includes('GENERATE JSON FILE TO DOWNLOAD');
+                    return hasOfflineUrl || hasOfflineTabs || hasOfflineText;
+                }, null, { timeout: 12000 });
+                landedOnOffline = true;
+            } catch (e) {}
+
+            await page.waitForTimeout(1000);
+            await dismissPopups();
+
+            // Guard: If Step 5 failed, do NOT falsely proceed to Step 6 or Step 7!
+            if (!landedOnOffline) {
+                console.error(`[GSTR-1 Autopilot] ❌ Step 5 Failed: Could not open GSTR-1 Prepare Offline screen for ${currentPeriodStr}. Current URL: ${page.url()}`);
+                await updateBanner(`❌ Could not open GSTR-1 Prepare Offline screen.`, '#ef4444');
+                await page.waitForTimeout(2000);
+                return { status: 'FAILED', count: 0, excelPath: null, jsonPath: null, summary: null, error: 'Could not open GSTR-1 Prepare Offline screen from portal dashboard.' };
+            }
+
+            // ─── STEP 6: VERIFY / SWITCH TO IN-PAGE "DOWNLOAD" TAB (IF NOT ALREADY ON DOWNLOAD SCREEN) ───
+            console.log(`[GSTR-1 Autopilot] Step 6: Verifying in-page "Download" tab on offline preparation page...`);
+            await updateBanner(`Verifying in-page "Download" tab...`, '#8b5cf6');
+
+            // Check if already on the Download screen (e.g. /offlinedownload or Download tab already active)
+            const isAlreadyOnDownloadScreen = await page.evaluate(() => {
+                const u = window.location.href.toLowerCase();
+                const bodyText = (document.body ? document.body.innerText : '').toUpperCase();
+                const isDirectDownloadUrl = u.includes('offlinedownload');
+                const hasDirectGenerateBtn = bodyText.includes('GENERATE JSON FILE TO DOWNLOAD') || bodyText.includes('DOWNLOAD DATA FOR GSTR-1');
+                const activeTab = document.querySelector('ul.nav-tabs li.active a, .nav-tabs .active, a.nav-link.active');
+                const isDownloadTabActive = activeTab && (activeTab.innerText || '').toUpperCase().includes('DOWNLOAD');
+                return Boolean(isDirectDownloadUrl || hasDirectGenerateBtn || isDownloadTabActive);
+            });
+
+            if (isAlreadyOnDownloadScreen) {
+                console.log('[GSTR-1 Autopilot] ✓ Already on GSTR-1 Download screen (no tab switch needed)');
+            } else {
+                let switchedToDownloadTab = false;
+                try {
+                    // Priority 1: In-page evaluate targeting strictly the offline tab, ignoring any navbar/header
+                    switchedToDownloadTab = await page.evaluate(() => {
+                        const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
+                        const tabCandidates = Array.from(document.querySelectorAll('ul.nav-tabs a, .nav-tabs li a, a[data-toggle="tab"], .nav-pills a, button[role="tab"], a.nav-link, li.nav-item a'));
+                        for (const tab of tabCandidates) {
+                            if (isTopNavbarOrHeader(tab)) continue;
+                            const txt = (tab.innerText || tab.textContent || '').trim().toUpperCase();
+                            const href = (tab.getAttribute('href') || '').toLowerCase();
+                            if (txt === 'DOWNLOAD' || txt === 'DOWNLOAD DETAILS' || txt.includes('DOWNLOAD') || href === '#download' || href.endsWith('/download')) {
+                                tab.scrollIntoView({ block: 'center' });
+                                tab.click();
+                                if (tab.parentElement && tab.parentElement.click) tab.parentElement.click();
+                                if (window.angular) {
+                                    try {
+                                        window.angular.element(tab).triggerHandler('click');
+                                        window.angular.element(tab).scope()?.$apply();
+                                    } catch(e) {}
+                                }
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+
+                    if (switchedToDownloadTab) {
+                        console.log('[GSTR-1 Autopilot] ✓ Switched to in-page Download tab via evaluate');
+                    } else {
+                        // Priority 2: Playwright locator strictly scoped to main content and excluding navbar/header
+                        const nativeTab = page.locator('div[ng-view], #main, .content, body')
+                            .locator('ul.nav-tabs a, a[data-toggle="tab"], .nav-tabs li a, a.nav-link')
+                            .filter({ hasNot: page.locator('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                            .filter({ hasText: /^download/i })
+                            .first();
+                        if (await nativeTab.isVisible({ timeout: 2000 }).catch(() => false)) {
+                            await nativeTab.scrollIntoViewIfNeeded().catch(() => {});
+                            await nativeTab.click({ force: true }).catch(() => {});
+                            switchedToDownloadTab = true;
+                            console.log('[GSTR-1 Autopilot] ✓ Switched to in-page Download tab via scoped Playwright locator');
+                        }
+                    }
+                } catch (tabErr) {
+                    console.warn('[GSTR-1 Autopilot] Notice while switching to Download tab:', tabErr.message);
+                }
+
+                // Verify that Download Tab is active or Download pane / buttons are visible
+                try {
+                    await page.waitForFunction(() => {
+                        const activeTab = document.querySelector('ul.nav-tabs li.active a, .nav-tabs .active, a.nav-link.active');
+                        const isTabActive = activeTab && (activeTab.innerText || '').toUpperCase().includes('DOWNLOAD');
+                        const dlPane = document.querySelector('#download, .tab-pane.active, div[ng-view]');
+                        const text = dlPane ? (dlPane.innerText || '').toUpperCase() : '';
+                        const hasDownloadContent = text.includes('GENERATE') || text.includes('FILE 1') || text.includes('CLICK HERE TO DOWNLOAD') || text.includes('GENERATE JSON');
+                        return isTabActive || hasDownloadContent;
+                    }, null, { timeout: 8000 });
+                } catch(e) {}
+            }
+
+            // Settle Download screen and wait for DOM elements
+            try {
+                await page.waitForFunction(() => {
+                    const isTopNav = (el) => Boolean(el.closest('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav'));
+                    const els = Array.from(document.querySelectorAll('a, span, button, [role="link"], p, div, input'));
+                    return els.some(el => {
+                        if (isTopNav(el)) return false;
+                        const t = (el.innerText || el.value || el.textContent || '').trim().toLowerCase();
+                        return (t.includes('click here') && t.includes('download')) ||
+                               t.includes('file 1') ||
+                               t.includes('generate json file to download') ||
+                               t.includes('download data for gstr-1');
+                    });
+                }, null, { timeout: 6000 });
+            } catch(e) {}
+
+            await page.waitForTimeout(600);
+            await dismissPopups();
+
+            // ─── STEP 7: DYNAMIC JSON LINK DISCOVERY & REQUEST GENERATION (CASES A, B, C) ───
+            let foundValidDownload = false;
+            let linkWasExpired = false;
+
+            // Robust function to locate the download link element
+            // Strictly excludes the top navbar, user dropdown, and footer (DO NOT exclude .header)
+            const findDownloadLink = async () => {
+                // 1. Playwright Locator
+                try {
+                    const loc = page.locator('a, span, button, [role="link"], p')
+                        .filter({ hasNot: page.locator('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                        .filter({ hasText: /Click\s*here\s*to\s*download|File\s*1/i })
+                        .first();
+                    if (await loc.isVisible({ timeout: 1500 }).catch(() => false)) {
+                        const txt = (await loc.innerText().catch(() => '')) || 'Click here to download - File 1';
+                        return { found: true, text: txt.trim() };
+                    }
+                } catch(e) {}
+
+                // 2. DOM evaluate fallback
+                try {
+                    return await page.evaluate(() => {
+                        const isTopNav = (el) => Boolean(el.closest('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown-menu'));
+                        const candidates = Array.from(document.querySelectorAll('a, span, button, [role="link"], p, div'));
+                        for (const el of candidates) {
+                            if (isTopNav(el)) continue;
+                            const t = (el.innerText || el.textContent || '').trim();
+                            const lower = t.toLowerCase();
+                            if (lower.includes('generate')) continue;
+                            const isClickHere = (lower.includes('click here') && lower.includes('download')) || lower.includes('file 1') || lower.includes('file-1');
+                            if (isClickHere) {
+                                return { found: true, text: t };
+                            }
+                        }
+                        return { found: false, text: '' };
+                    });
+                } catch(e) {
+                    return { found: false, text: '' };
+                }
+            };
+
+            // Direct click on "Click here to download - File 1"
+            const clickReadyDownloadLink = async () => {
+                let clicked = false;
+                // Method 1: Playwright native locator
+                try {
+                    const dlLoc = page.locator('a, span, button, [role="link"], p')
+                        .filter({ hasNot: page.locator('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                        .filter({ hasText: /Click\s*here\s*to\s*download|File\s*1/i })
+                        .first();
+                    if (await dlLoc.isVisible({ timeout: 1500 }).catch(() => false)) {
+                        await dlLoc.scrollIntoViewIfNeeded().catch(() => {});
+                        await dlLoc.click({ force: true });
+                        clicked = true;
+                    }
+                } catch(e) {}
+
+                // Method 2: DOM Evaluate click fallback
+                if (!clicked) {
+                    try {
+                        clicked = await page.evaluate(() => {
+                            const isTopNav = (el) => Boolean(el.closest('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown-menu'));
+                            const candidates = Array.from(document.querySelectorAll('a, span, button, [role="link"], p, div'));
+                            for (const el of candidates) {
+                                if (isTopNav(el)) continue;
+                                const t = (el.innerText || el.textContent || '').trim();
+                                const lower = t.toLowerCase();
+                                if (lower.includes('generate')) continue;
+                                if ((lower.includes('click here') && lower.includes('download')) || lower.includes('file 1') || lower.includes('file-1')) {
+                                    const target = el.closest('a, button, [role="link"]') || el;
+                                    target.scrollIntoView({ block: 'center' });
+                                    target.click();
+                                    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                                    if (window.angular) {
+                                        try {
+                                            const ngEl = window.angular.element(target);
+                                            ngEl.triggerHandler('click');
+                                            const sc = ngEl.scope();
+                                            if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
+                                        } catch(e) {}
+                                    }
+                                    return true;
+                                }
+                            }
+                            return false;
+                        });
+                    } catch(e) {}
+                }
+                return clicked;
+            };
+
+            // Shared test clicker for download link: handles Case A (expired tab) vs Case B (file stream)
+            const testDownloadLink = async (linkText) => {
+                console.log(`[GSTR-1 Autopilot] Found download link on screen: "${linkText}". Testing validity...`);
+                await updateBanner(`Testing download link validity...`, '#8b5cf6');
+
+                let openedNewTab = null;
+                let downloadEventTriggered = false;
+
+                const pageListener = (newPage) => { openedNewTab = newPage; };
+                if (context && typeof context.on === 'function') {
+                    context.on('page', pageListener);
+                }
+                const dlListener = () => { downloadEventTriggered = true; };
+                page.on('download', dlListener);
+
+                const didClick = await clickReadyDownloadLink();
+                if (didClick) {
+                    console.log(`[GSTR-1 Autopilot] ✓ Clicked "${linkText}". Monitoring for tab vs file stream (up to 3.5s)...`);
+                    const startWait = Date.now();
+                    while (Date.now() - startWait < 3500) {
+                        if (openedNewTab) break;
+                        if (downloadEventTriggered || parsedInvoices || (activeGstr1DownloadPromises && activeGstr1DownloadPromises.size > 0)) break;
+                        await page.waitForTimeout(150);
+                    }
+                }
+
+                if (context && typeof context.off === 'function') context.off('page', pageListener);
+                page.off('download', dlListener);
+
+                // Check outcomes:
+                if (openedNewTab) {
+                    await page.waitForTimeout(500);
+                    const isDownloadStream = downloadEventTriggered || parsedInvoices || (activeGstr1DownloadPromises && activeGstr1DownloadPromises.size > 0);
+                    if (!isDownloadStream) {
+                        console.log(`[GSTR-1 Autopilot] ⚠️ CASE A DETECTED: Download link is EXPIRED! Closing error tab...`);
+                        await updateBanner('Download link is expired. Closing error tab...', '#f59e0b');
+
+                        await openedNewTab.close().catch(() => {});
+                        console.log('[GSTR-1 Autopilot] ✓ Closed new error tab.');
+
+                        await page.bringToFront().catch(() => {});
+                        focusDesktopWindow();
+                        await page.waitForTimeout(500);
+
+                        return { isValid: false, isExpired: true };
+                    } else {
+                        await openedNewTab.close().catch(() => {});
+                        await page.bringToFront().catch(() => {});
+                        return { isValid: true, isExpired: false };
+                    }
+                } else if (downloadEventTriggered || parsedInvoices || (activeGstr1DownloadPromises && activeGstr1DownloadPromises.size > 0)) {
+                    console.log(`[GSTR-1 Autopilot] 🎯 CASE B DETECTED: Valid download stream initiated for ${currentPeriodStr}!`);
+                    return { isValid: true, isExpired: false };
+                }
+
+                return { isValid: false, isExpired: false };
+            };
+
+            // ─── STEP 7.1: TEST CLICK EXISTING LINK (IF PRESENT ON SCREEN BEFORE GENERATE) ───
+            let linkCheck = await findDownloadLink();
+            if (linkCheck.found) {
+                const res = await testDownloadLink(linkCheck.text);
+                if (res.isValid) {
+                    foundValidDownload = true;
+                } else if (res.isExpired) {
+                    linkWasExpired = true;
+                }
+            }
+
+            // ─── STEP 7.2 / CASE C: CLICK "GENERATE JSON FILE TO DOWNLOAD" ───
+            if (!foundValidDownload) {
+                const reqReason = linkWasExpired
+                    ? 'Expired link was detected and closed. Now clicking GENERATE JSON FILE TO DOWNLOAD'
+                    : 'No download link present on screen. Clicking GENERATE JSON FILE TO DOWNLOAD';
+                console.log(`[GSTR-1 Autopilot] Step 7.2: ${reqReason} for ${currentPeriodStr}...`);
+                await updateBanner(`Clicking "GENERATE JSON FILE TO DOWNLOAD"...`, '#8b5cf6');
+
+                let clickedGenerate = false;
+
+                // Priority 1: In-page evaluate targeting GENERATE JSON FILE TO DOWNLOAD
+                try {
+                    clickedGenerate = await page.evaluate(() => {
+                        const isTopNav = (el) => Boolean(el.closest('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown-menu'));
+                        const candidates = Array.from(document.querySelectorAll('button, input, a.btn, a, .btn'));
+                        for (const b of candidates) {
+                            if (isTopNav(b)) continue;
+                            const txt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                            const isGen = txt === 'GENERATE JSON FILE TO DOWNLOAD' ||
+                                          (txt.includes('GENERATE') && txt.includes('JSON')) ||
+                                          (txt.includes('GENERATE') && txt.includes('DOWNLOAD')) ||
+                                          (txt.includes('GENERATE') && txt.includes('FILE'));
+                            if (isGen) {
+                                b.scrollIntoView({ block: 'center' });
+                                b.click();
+                                b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                                if (window.angular) {
+                                    try {
+                                        const ngEl = window.angular.element(b);
+                                        ngEl.triggerHandler('click');
+                                        const sc = ngEl.scope();
+                                        if (sc && !sc.$$phase && !sc.$root.$$phase) sc.$apply();
+                                    } catch(e) {}
+                                }
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                } catch(e) {}
+
+                // Priority 2: Playwright native click
+                if (!clickedGenerate) {
+                    try {
+                        const genLocators = [
+                            page.locator('button, input[type="submit"], input[type="button"], input, a.btn, a')
+                                .filter({ hasNot: page.locator('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                                .filter({ hasText: /GENERATE\s*JSON\s*FILE\s*TO\s*DOWNLOAD/i }),
+                            page.locator('button, input[type="submit"], input[type="button"], input, a.btn, a')
+                                .filter({ hasNot: page.locator('header, nav, .navbar, footer, #navbar, #navbar-usr-menu, .navbar-nav') })
+                                .filter({ hasText: /GENERATE\s*JSON/i }),
+                            page.locator('input[value*="GENERATE JSON" i], input[value*="GENERATE" i]')
+                        ];
+
+                        for (const loc of genLocators) {
+                            if (await loc.first().isVisible({ timeout: 1500 }).catch(() => false)) {
+                                await loc.first().scrollIntoViewIfNeeded().catch(() => {});
+                                await loc.first().click({ force: true }).catch(() => {});
+                                clickedGenerate = true;
+                                break;
+                            }
+                        }
+                    } catch(e) {}
+                }
+
+                if (clickedGenerate) {
+                    console.log(`[GSTR-1 Autopilot] ⚡ Clicked GENERATE JSON FILE TO DOWNLOAD successfully.`);
+                    await updateBanner(`Clicked GENERATE JSON. Awaiting portal response...`, '#10b981');
+                } else {
+                    console.warn(`[GSTR-1 Autopilot] ⚠️ Could not find GENERATE JSON FILE TO DOWNLOAD button.`);
+                }
+
+                // ─── STEP 7.3: POST-GENERATE CHECK: MONITOR UP TO 8 SECONDS FOR DOWNLOAD LINK OR 20-MIN CONFIRMATION ───
+                console.log(`[GSTR-1 Autopilot] Post-Generate: Checking for download link or 20-min wait confirmation for ${currentPeriodStr}...`);
+                const postGenStart = Date.now();
+
+                while (Date.now() - postGenStart < 8000) {
                     if (page.isClosed()) break;
 
-                    foundReadyLink = await clickReadyLinkIfFound();
-                    if (foundReadyLink) {
-                        console.log(`[GSTR-1 Autopilot] 🎯 "Click here to download - File 1" appeared below button! Proceeding to download.`);
-                        break;
+                    // 1. Check if download link is available on screen (e.g. from previously generated file or freshly rendered)
+                    // Only test if not already confirmed expired in this round
+                    if (!linkWasExpired) {
+                        const postLinkCheck = await findDownloadLink();
+                        if (postLinkCheck.found) {
+                            console.log(`[GSTR-1 Autopilot] Post-Generate: Detected download link on screen: "${postLinkCheck.text}". Testing validity...`);
+                            const postRes = await testDownloadLink(postLinkCheck.text);
+                            if (postRes.isValid) {
+                                foundValidDownload = true;
+                                break;
+                            } else if (postRes.isExpired) {
+                                linkWasExpired = true;
+                            }
+                        }
                     }
 
-                    // Check if portal has confirmed that generation is in progress (20-min wait)
+                    // 2. Check if portal shows 20-min wait confirmation message
                     try {
                         const pageText = await page.evaluate(() => {
                             const mainEl = document.querySelector('div[ng-view], .content, main, body');
                             return (mainEl ? mainEl.innerText : document.body.innerText || '').toLowerCase();
                         });
                         if (pageText.includes('in progress') || pageText.includes('processed') || pageText.includes('20 minutes') || pageText.includes('check after') || pageText.includes('request has been received')) {
-                            console.log(`[GSTR-1 Autopilot] Portal confirmed: Generation request received (20-min wait).`);
+                            console.log(`[GSTR-1 Autopilot] ✓ Portal confirmed: Generation request received (20-min wait).`);
                             break;
                         }
                     } catch(e) {}
 
-                    await page.waitForTimeout(600);
+                    await page.waitForTimeout(500);
                 }
             }
 
-            // ─── STEP 4: IF READY DOWNLOAD LINK WAS FOUND & CLICKED -> DOWNLOAD & PERSIST ───
-            if (foundReadyLink) {
-                console.log(`[GSTR-1 Autopilot] Download initiated for ${currentPeriodStr}. Waiting up to 15s for file stream...`);
+            // ─── STEP 4: IF VALID DOWNLOAD LINK WAS FOUND & CLICKED (CASE B) -> DOWNLOAD & PERSIST ───
+            if (foundValidDownload) {
+                console.log(`[GSTR-1 Autopilot] CASE B: Download stream in progress for ${currentPeriodStr}. Waiting up to 15s for file completion...`);
+                await updateBanner(`Downloading & extracting GSTR-1 for ${currentPeriodStr}...`, '#10b981');
 
                 let curExcelPath = capturedExcelPath;
                 let curJsonPath = capturedJsonPath;
@@ -1062,13 +1452,37 @@ export async function runGstr1Autopilot({
 
             // Click official on-screen BACK button (strictly excluding anchor <a> tags, breadcrumbs, navbars)
             try {
-                const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn')
-                    .filter({ hasText: /^back$/i })
-                    .filter({ hasNot: page.locator('.navbar, .breadcrumb, nav, header, footer') })
-                    .first();
-                if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    await backBtn.scrollIntoViewIfNeeded().catch(() => {});
-                    await backBtn.click({ force: true }).catch(() => {});
+                const clickedBack = await page.evaluate(() => {
+                    const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, .btn'));
+                    const b = btns.find(btn => {
+                        if (isTopNavbarOrHeader(btn)) return false;
+                        const t = (btn.innerText || btn.value || btn.textContent || '').trim().toUpperCase();
+                        return t === 'BACK';
+                    });
+                    if (b) {
+                        b.scrollIntoView({ block: 'center' });
+                        b.click();
+                        if (window.angular) {
+                            try {
+                                window.angular.element(b).triggerHandler('click');
+                                window.angular.element(b).scope()?.$apply();
+                            } catch(e) {}
+                        }
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (!clickedBack) {
+                    const backBtn = page.locator('button, input[type="button"], input[type="submit"], a.btn, .btn')
+                        .filter({ hasText: /^back$/i })
+                        .filter({ hasNot: page.locator('.navbar, .breadcrumb, nav, header, footer') })
+                        .first();
+                    if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                        await backBtn.scrollIntoViewIfNeeded().catch(() => {});
+                        await backBtn.click({ force: true }).catch(() => {});
+                    }
                 }
             } catch(e) {}
 
@@ -1092,40 +1506,76 @@ export async function runGstr1Autopilot({
             try {
                 const clickRes = await page.evaluate(() => {
                     const isTopNavbarOrHeader = (el) => Boolean(el.closest('header, nav, .navbar, .header, footer, #navbar, #navbar-usr-menu, .navbar-nav, .dropdown, .dropdown-menu'));
-                    const cards = Array.from(document.querySelectorAll('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel'));
-                    for (const card of cards) {
-                        if (isTopNavbarOrHeader(card)) continue;
-                        const cardText = (card.innerText || '').toUpperCase();
-                        const isG1 = (cardText.includes('GSTR-1') || cardText.includes('GSTR 1') || cardText.includes('OUTWARD SUPPLIES') || cardText.includes('DETAILS OF OUTWARD')) &&
-                                     !cardText.includes('GSTR-2B') && !cardText.includes('GSTR-2A') && !cardText.includes('GSTR-3B');
 
-                        if (isG1) {
-                            const btns = Array.from(card.querySelectorAll('button, a, input[type="button"]'));
-                            // Check "VIEW" first
-                            let targetBtn = btns.find(b => {
-                                if (isTopNavbarOrHeader(b)) return false;
-                                const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
-                                return t === 'VIEW' || t.startsWith('VIEW ') || t.includes('VIEW DETAILS');
+                    // Title-down matching
+                    const allHeadings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, .card-title, .panel-title, strong, b, div, span, p'));
+                    const g1TitleEl = allHeadings.find(el => {
+                        if (isTopNavbarOrHeader(el)) return false;
+                        const txt = (el.innerText || el.textContent || '').trim().toUpperCase();
+                        if (txt.length > 120) return false;
+                        const isOutward = txt.includes('OUTWARD SUPPLIES') || txt.includes('DETAILS OF OUTWARD');
+                        const isG1Only = (txt.includes('GSTR-1') || txt.includes('GSTR 1') || txt === 'GSTR1') && !txt.includes('3B') && !txt.includes('2B') && !txt.includes('2A');
+                        return isOutward || isG1Only;
+                    });
+
+                    let matchedCard = null;
+                    if (g1TitleEl) {
+                        let card = g1TitleEl.parentElement;
+                        while (card && card !== document.body) {
+                            const btns = Array.from(card.querySelectorAll('button, a, input[type="button"], .btn')).filter(b => !isTopNavbarOrHeader(b));
+                            const cardText = (card.innerText || '').toUpperCase();
+                            const hasOtherReturns = (cardText.includes('GSTR-3B') || cardText.includes('GSTR 3B') || cardText.includes('MONTHLY RETURN')) &&
+                                                    (cardText.includes('GSTR-2B') || cardText.includes('AUTO-DRAFTED') || cardText.includes('GSTR-2A'));
+                            if (hasOtherReturns) break;
+
+                            const hasTargetBtn = btns.some(b => {
+                                const bt = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                return bt === 'VIEW' || bt.includes('VIEW') || bt.includes('PREPARE ONLINE') || bt === 'ONLINE';
                             });
-                            // Fallback to "PREPARE ONLINE"
-                            if (!targetBtn) {
-                                targetBtn = btns.find(b => {
-                                    if (isTopNavbarOrHeader(b)) return false;
-                                    const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
-                                    return t === 'PREPARE ONLINE' || t.includes('PREPARE ONLINE') || t === 'ONLINE';
-                                });
+
+                            if (hasTargetBtn) {
+                                matchedCard = card;
+                                const cls = card.className || '';
+                                if (cls.includes('col-') || cls.includes('card') || cls.includes('panel') || cls.includes('box')) break;
                             }
-                            if (targetBtn) {
-                                targetBtn.scrollIntoView({ block: 'center' });
-                                targetBtn.click();
-                                if (window.angular) {
-                                    try {
-                                        window.angular.element(targetBtn).triggerHandler('click');
-                                        window.angular.element(targetBtn).scope()?.$apply();
-                                    } catch(e) {}
-                                }
-                                return { success: true, text: (targetBtn.innerText || targetBtn.value || '').trim() };
+                            card = card.parentElement;
+                        }
+                    }
+
+                    if (!matchedCard) {
+                        const cards = Array.from(document.querySelectorAll('div.col-md-4, div.col-sm-6, .returns-card, .card, div.panel, div.box, [class*="col-"]'));
+                        matchedCard = cards.find(card => {
+                            if (isTopNavbarOrHeader(card)) return false;
+                            const cardText = (card.innerText || '').toUpperCase();
+                            return (cardText.includes('GSTR-1') || cardText.includes('GSTR 1') || cardText.includes('OUTWARD SUPPLIES') || cardText.includes('DETAILS OF OUTWARD')) &&
+                                   !cardText.includes('GSTR-2B') && !cardText.includes('GSTR-2A') && !cardText.includes('GSTR-3B');
+                        });
+                    }
+
+                    if (matchedCard) {
+                        const btns = Array.from(matchedCard.querySelectorAll('button, a, input[type="button"], .btn')).filter(b => !isTopNavbarOrHeader(b));
+                        // Check "VIEW" first
+                        let targetBtn = btns.find(b => {
+                            const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                            return t === 'VIEW' || t.startsWith('VIEW ') || t.includes('VIEW DETAILS');
+                        });
+                        // Fallback to "PREPARE ONLINE"
+                        if (!targetBtn) {
+                            targetBtn = btns.find(b => {
+                                const t = (b.innerText || b.value || b.textContent || '').trim().toUpperCase();
+                                return t === 'PREPARE ONLINE' || t.includes('PREPARE ONLINE') || t === 'ONLINE';
+                            });
+                        }
+                        if (targetBtn) {
+                            targetBtn.scrollIntoView({ block: 'center' });
+                            targetBtn.click();
+                            if (window.angular) {
+                                try {
+                                    window.angular.element(targetBtn).triggerHandler('click');
+                                    window.angular.element(targetBtn).scope()?.$apply();
+                                } catch(e) {}
                             }
+                            return { success: true, text: (targetBtn.innerText || targetBtn.value || '').trim() };
                         }
                     }
                     return { success: false };
@@ -1389,35 +1839,62 @@ export async function runGstr1Autopilot({
             if (page.isClosed()) break;
             const mInfo = monthsToProcess[i];
             const progressLabel = isTargetedMonth ? `Target: ${mInfo.period}` : `Month ${i + 1}/12: ${mInfo.period}`;
+
+            // A month's GSTR-1 exists only after the month ends (filed by the 11th of the next month).
+            if (!hasReturnPeriodEnded(mInfo.period)) {
+                const notDueMsg = `${mInfo.period} has not ended yet, GSTR-1 not due. Skipped (no portal request).`;
+                console.log(`[GSTR-1 Autopilot] ${notDueMsg}`);
+                syncedResults.push({ period: mInfo.period, month: mInfo.month, status: 'NOT_DUE', count: 0, error: notDueMsg });
+                emit('MONTH_DONE', { period: mInfo.period, month: mInfo.month, status: 'NOT_DUE', count: 0, message: `${progressLabel}: not due yet, skipped` });
+                continue;
+            }
             console.log(`\n--- [GSTR-1 Autopilot] Processing ${progressLabel} ---`);
-            await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Searching...`, '#8b5cf6');
+            emit('MONTH_START', { phase: 'SYNCING', period: mInfo.period, month: mInfo.month, currentMonthIndex: i + 1, totalTargetMonths: monthsToProcess.length, message: `${progressLabel}: searching...` });
 
-            await selectPeriodAndSearch(mInfo.month, targetFy, progressLabel);
-            await page.waitForTimeout(400);
+            try {
+                await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Searching...`, '#8b5cf6');
+                await selectPeriodAndSearch(mInfo.month, targetFy, progressLabel);
+                await page.waitForTimeout(400);
 
-            await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Checking download / requesting file...`, '#10b981');
-            const mRes = downloadFormat === 'PDF'
-                ? await downloadAndProcessGstr1Pdf(mInfo.period)
-                : await downloadAndProcessGstr1(mInfo.period);
-            syncedResults.push({ period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count });
+                await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Checking download / requesting file...`, '#10b981');
+                const mRes = downloadFormat === 'PDF'
+                    ? await downloadAndProcessGstr1Pdf(mInfo.period)
+                    : await downloadAndProcessGstr1(mInfo.period);
+                syncedResults.push({ period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count });
+                emit('MONTH_DONE', { period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count || 0, message: `${progressLabel}: ${mRes.status} (${mRes.count || 0} docs)` });
 
-            if (mRes.status === 'SYNCED') {
-                totalDownloadedCount += (mRes.count || 0);
-            } else if (mRes.status === 'REQUESTED') {
-                totalRequestedCount++;
+                if (mRes.status === 'SYNCED') {
+                    totalDownloadedCount += (mRes.count || 0);
+                } else if (mRes.status === 'REQUESTED') {
+                    totalRequestedCount++;
+                }
+            } catch (mErr) {
+                // Browser closed/cancelled ends the run; any other glitch fails only this month (existing data untouched).
+                if (page.isClosed() || /closed/i.test(mErr.message || '')) throw mErr;
+                console.error(`[GSTR-1 Autopilot] ${progressLabel} failed:`, mErr.message);
+                syncedResults.push({ period: mInfo.period, month: mInfo.month, status: 'FAILED', count: 0, error: mErr.message });
+                emit('MONTH_DONE', { level: 'error', period: mInfo.period, month: mInfo.month, status: 'FAILED', error: mErr.message, message: `${progressLabel}: FAILED - ${mErr.message}` });
             }
 
             if (i < monthsToProcess.length - 1) {
-                await updateBanner(`[GSTR-1 Autopilot] Returning to dashboard for ${monthsToProcess[i + 1].period}...`, '#8b5cf6');
-                await ensureReturnsSearchScreen();
-                await page.waitForTimeout(400);
+                try {
+                    await updateBanner(`[GSTR-1 Autopilot] Returning to dashboard for ${monthsToProcess[i + 1].period}...`, '#8b5cf6');
+                    await ensureReturnsSearchScreen();
+                    await page.waitForTimeout(400);
+                } catch (navErr) {
+                    if (page.isClosed()) throw navErr;
+                    console.error('[GSTR-1 Autopilot] Search screen reset error:', navErr.message);
+                }
             }
         }
 
         if (isTargetedMonth) {
             const resMonth = syncedResults[0];
+            const monthFailed = !resMonth || resMonth.status === 'FAILED' || resMonth.status === 'NOT_DUE';
             if (resMonth && resMonth.status === 'SYNCED' && (resMonth.count > 0 || capturedGstr1PdfSummary)) {
                 await updateBanner(`✓ SUCCESS: GSTR-1 ${downloadFormat === 'PDF' ? 'PDF' : 'Invoices'} downloaded for ${resMonth.period}! Closing in 2s...`, '#10b981');
+            } else if (monthFailed) {
+                await updateBanner(`✗ GSTR-1 download failed for ${resMonth?.period || returnPeriod}: ${resMonth?.error || 'unknown error'}. Closing in 2s...`, '#ef4444');
             } else {
                 await updateBanner(`⏱️ File generation is in progress for ${resMonth?.period || returnPeriod}. Timer running. Closing in 2s...`, '#f59e0b');
             }
@@ -1434,6 +1911,9 @@ export async function runGstr1Autopilot({
             await browser.close().catch(() => {});
             if (browserState) browserState.current = null;
 
+            if (monthFailed) {
+                return res.json({ success: false, gstin: gstinUpper, period: resMonth?.period || returnPeriod, status: 'FAILED', error: `GSTR-1 download failed for ${resMonth?.period || returnPeriod}: ${resMonth?.error || 'unknown error'}` });
+            }
             return res.json({
                 success: true,
                 message: resMonth && resMonth.status === 'SYNCED'
@@ -1448,22 +1928,36 @@ export async function runGstr1Autopilot({
             });
         } else {
             // Full 12-Month Loop completed!
-            await updateBanner(`✓ Completed 12 Months: ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-min timers! Closing in 2s...`, '#10b981');
+            const failedCount = syncedResults.filter(r => r.status === 'FAILED').length;
+            await updateBanner(`✓ Completed 12 Months: ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-min timers${failedCount ? `, ${failedCount} failed` : ''}! Closing in 2s...`, failedCount ? '#f59e0b' : '#10b981');
+
+            // Let in-flight downloads finish writing to SQLite before consolidating
+            if (activeGstr1DownloadPromises.size > 0) {
+                await Promise.race([
+                    Promise.all(Array.from(activeGstr1DownloadPromises)),
+                    new Promise(resolve => setTimeout(resolve, 15000))
+                ]);
+            }
             await page.waitForTimeout(2500);
             await browser.close().catch(() => {});
             if (browserState) browserState.current = null;
 
+            const consExcelPath = await saveGstr1FullYearExcel(db, gstinUpper, targetFy, downloadDir);
+            if (consExcelPath) emit('EXCEL_SAVED', { phase: 'CONSOLIDATING', message: `12-Month SectionWiseSummary saved: ${consExcelPath}`, data: { path: consExcelPath } });
+
             return res.json({
                 success: true,
-                message: `Successfully processed all 12 months for ${gstinUpper}! ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-minute countdown timers.`,
+                message: `Processed 12 months for ${gstinUpper}: ${syncedResults.filter(r => r.status !== 'FAILED' && r.status !== 'NOT_DUE').length} OK, ${failedCount} failed, ${syncedResults.filter(r => r.status === 'NOT_DUE').length} not due yet; ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-minute countdown timers.`,
                 isFullYear: true,
                 gstin: gstinUpper,
                 financialYear: targetFy,
                 totalInvoices: totalDownloadedCount,
+                consolidatedExcelPath: consExcelPath,
                 months: syncedResults
             });
         }
     } catch (err) {
+        console.error('[GSTR-1 Autopilot] Raw error details:', err.message, err.stack);
         const isClosedByUser = err.message?.includes('Target page') || err.message?.includes('browser has been closed') || err.message?.includes('closed');
         if (isClosedByUser) {
             console.log('[GSTR-1 Autopilot] Session cancelled: GST Portal browser was closed by user.');
@@ -1543,7 +2037,7 @@ export async function runGstr1UploadAutopilot({
                 });
                 if (clientRow) {
                     portalUser = clientRow.portal_username || '';
-                    portalPass = clientRow.portal_password || '';
+                    portalPass = decryptSecret(clientRow.portal_password || '');
                     clientTradeName = clientRow.trade_name || clientRow.legal_name || gstinUpper;
                 }
             } catch (e) {

@@ -11,7 +11,9 @@ import {
     canSubmitForReview,
     canSeniorReview,
     canReleaseToClient,
-    autoPopulateMonthlyAudit
+    autoPopulateMonthlyAudit,
+    createDefaultTdsSectionMatrix,
+    calculateTdsMatrixTotals
 } from '../lib/monthlyAuditEngine';
 
 describe('Monthly Audit Engine Verification Algorithms (Suite 08)', () => {
@@ -62,6 +64,25 @@ describe('Monthly Audit Engine Verification Algorithms (Suite 08)', () => {
         expect(result.tds194Q_HighVolumeCount).toBe(1);
         expect(result.salaryVariance).toBe(50000);
         expect(result.remarks).toContain('WARNING: 1 Suspense entries');
+        expect(result.tdsSectionMatrix).toBeDefined();
+        expect(result.tdsSectionMatrix?.length).toBeGreaterThanOrEqual(7);
+    });
+
+    it('TDS Working Matrix: calculates Booking Pending, Net TDS Payable, and Section 40(a)(ia) disallowance', () => {
+        const matrix = createDefaultTdsSectionMatrix();
+        expect(matrix.length).toBeGreaterThanOrEqual(7);
+
+        const totals = calculateTdsMatrixTotals(matrix);
+        expect(totals.totalBooksTaxable).toBeGreaterThan(0);
+        expect(totals.totalActualTaxable).toBeGreaterThan(0);
+        expect(totals.totalReturnTaxable).toBeGreaterThan(0);
+
+        // Section 194J has 1,30,000 unbooked in books (actual: 7,50,000, books: 6,20,000)
+        expect(totals.totalBookingPending).toBeGreaterThanOrEqual(130000);
+        expect(totals.totalTdsPayable).toBeGreaterThanOrEqual(13000);
+        expect(totals.payableCount).toBeGreaterThanOrEqual(1);
+        expect(totals.bookingPendingCount).toBeGreaterThanOrEqual(1);
+        expect(totals.sec40aDisallowance).toBeGreaterThanOrEqual(130000 * 0.3);
     });
 
     it('Bank & Loan Statements: tracks stale cheques, overdue interest, and Form 26AS variance', () => {
