@@ -422,7 +422,6 @@ export default function Index() {
   // LAYER 3.5: Splash Screen handler (MUST BE ABOVE EARLY RETURNS)
   const handleSplashComplete = useCallback(() => {
     setShowSplash(false);
-    safeSetItem('np_splash_shown', 'true');
   }, []);
 
   useEffect(() => {
@@ -1390,6 +1389,7 @@ export default function Index() {
         setIsAuthenticated(true);
         setIsAdmin(data.role === 'admin');
         setLoginUser(data.username);
+        setShowSplash(true);
         setAppRoute('hub');
         toast.success("Filing session authenticated successfully!", { id: loadingId });
       } else {

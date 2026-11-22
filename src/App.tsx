@@ -20,6 +20,7 @@ const TallyXmlSuite = lazy(() => import("./pages/TallyXmlSuite.tsx"));
 const MonthlyAuditSuite = lazy(() => import("./pages/MonthlyAuditSuite.tsx"));
 const LandingPage = lazy(() => import("./pages/LandingPage.tsx"));
 const PerspectiveTunnelDemo = lazy(() => import("./pages/PerspectiveTunnelDemo.tsx"));
+const Splash = lazy(() => import("./pages/Splash.tsx"));
 
 const RouteLoadingFallback = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-[var(--np-bg,#F8FAFC)] text-slate-700 font-sans">
@@ -150,7 +151,8 @@ const App = () => (
                     <Route path="/tally-xml" element={<TallyXmlSuite onBack={() => { window.location.hash = '#/'; }} />} />
                     <Route path="/monthly-audit" element={<MonthlyAuditSuite onBack={() => { window.location.hash = '#/'; }} />} />
                     <Route path="/landing" element={<LandingPage />} />
-<Route path="/tunnel-demo" element={<PerspectiveTunnelDemo />} />
+                    <Route path="/tunnel-demo" element={<PerspectiveTunnelDemo />} />
+                    <Route path="/splash" element={<Splash themeStyles="" onComplete={() => { window.location.hash = '#/'; }} />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Suspense>
