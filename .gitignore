@@ -58,6 +58,7 @@ license-gateway/.vercel/
 *.sqlite3
 cinematic-projects/
 preview_*.mp4
+_SECRETS_AND_DATABASE_FOR_LAPTOP2/
 
 # Existing ignore rules
 OTHERS/
