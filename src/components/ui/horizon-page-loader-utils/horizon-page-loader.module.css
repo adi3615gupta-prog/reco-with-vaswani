@@ -1,0 +1,141 @@
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #070913;
+  color: var(--horizon-accent, #eeeae0);
+  font-family: inherit;
+  overflow: hidden;
+  user-select: none;
+}
+
+.root[data-mode="fixed"] {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+}
+
+.root[data-mode="contained"] {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+
+.atmosphere {
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 50%,
+    rgba(99, 102, 241, 0.18),
+    rgba(168, 85, 247, 0.1) 40%,
+    rgba(14, 165, 233, 0.06) 60%,
+    transparent 75%
+  );
+  pointer-events: none;
+  animation: atmospherePulse var(--horizon-ambient-duration, 4400ms) ease-in-out infinite alternate;
+}
+
+.content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  transition: opacity 0.3s ease;
+}
+
+.horizon {
+  position: relative;
+  width: 22rem;
+  max-width: 80vw;
+  height: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 15%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0.08) 85%,
+    transparent 100%
+  );
+  border-radius: 9999px;
+}
+
+.light {
+  position: absolute;
+  inset: -1px 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--horizon-accent, #eeeae0) 50%,
+    transparent
+  );
+  filter: blur(3px);
+  opacity: 0.75;
+}
+
+.pearl {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 
+    0 0 10px 2px var(--horizon-accent, #eeeae0),
+    0 0 20px 4px rgba(99, 102, 241, 0.8),
+    0 0 35px 8px rgba(168, 85, 247, 0.5);
+  animation: pearlSweep var(--horizon-duration, 2200ms) cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.label {
+  font-size: 0.925rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+@keyframes pearlSweep {
+  0% {
+    left: 0%;
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  100% {
+    left: 100%;
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes atmospherePulse {
+  0% {
+    transform: scale(0.94);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
