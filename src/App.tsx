@@ -9,6 +9,7 @@ import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { AuthProvider } from "@/lib/authContext";
 import Index from "./pages/Index.tsx";
 import ClothingRailHeroDemo from "@/components/ui/product-rail-gallery.demo";
+import CommandHubPreview from "./pages/CommandHubPreview";
 
 // Route-level code splitting via React.lazy
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
@@ -154,6 +155,7 @@ const App = () => (
                     <Route path="/landing" element={<LandingPage />} />
                     <Route path="/tunnel-demo" element={<PerspectiveTunnelDemo />} />
                     <Route path="/rail-demo" element={<ClothingRailHeroDemo />} />
+                    <Route path="/command-hub-preview" element={<CommandHubPreview />} />
                     <Route path="/splash"element={<Splash themeStyles="" onComplete={() => { window.location.hash = '#/'; }} />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>

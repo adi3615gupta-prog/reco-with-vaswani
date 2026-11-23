@@ -50,25 +50,6 @@ export interface CommandHubCard {
   items: CommandHubItem[];
 }
 
-const TONE: Record<CommandHubCard["tone"], { bar: string; iconWrap: string; text: string; hover: string; ctaText: string; pill: string }> = {
-  emerald: { bar: "from-emerald-500 via-teal-400 to-teal-600", iconWrap: "bg-emerald-50 border-emerald-200 text-emerald-600", text: "group-hover:text-emerald-700", hover: "hover:shadow-emerald-500/5", ctaText: "text-emerald-700", pill: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  rose: { bar: "from-pink-500 via-rose-400 to-rose-600", iconWrap: "bg-rose-50 border-rose-200 text-rose-600", text: "group-hover:text-pink-700", hover: "hover:shadow-rose-500/5", ctaText: "text-rose-700", pill: "bg-rose-50 text-rose-700 border-rose-200" },
-  indigo: { bar: "from-indigo-600 via-violet-500 to-fuchsia-500", iconWrap: "bg-indigo-50 border-indigo-200 text-indigo-600", text: "group-hover:text-indigo-700", hover: "hover:shadow-indigo-500/5", ctaText: "text-indigo-700", pill: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  blue: { bar: "from-blue-600 via-sky-400 to-blue-500", iconWrap: "bg-blue-50 border-blue-200 text-blue-600", text: "group-hover:text-blue-700", hover: "hover:shadow-blue-500/5", ctaText: "text-blue-700", pill: "bg-blue-50 text-blue-700 border-blue-200" },
-  violet: { bar: "from-violet-600 via-purple-400 to-violet-500", iconWrap: "bg-violet-50 border-violet-200 text-violet-600", text: "group-hover:text-violet-700", hover: "hover:shadow-violet-500/5", ctaText: "text-violet-700", pill: "bg-violet-50 text-violet-700 border-violet-200" },
-  amber: { bar: "from-amber-500 via-yellow-400 to-orange-500", iconWrap: "bg-amber-50 border-amber-200 text-amber-600", text: "group-hover:text-amber-700", hover: "hover:shadow-amber-500/5", ctaText: "text-amber-700", pill: "bg-amber-50 text-amber-700 border-amber-200" },
-};
-
-const DOT: Record<NonNullable<CommandHubItem["tone"]>, string> = {
-  emerald: "bg-emerald-600",
-  rose: "bg-rose-500",
-  indigo: "bg-indigo-600",
-  blue: "bg-blue-600",
-  violet: "bg-violet-600",
-  amber: "bg-amber-500",
-  slate: "bg-slate-400",
-};
-
 export const COMMAND_HUB_CARDS: CommandHubCard[] = [
   {
     id: "reco",
@@ -215,6 +196,34 @@ export interface CommandHubProps extends React.ComponentProps<"section"> {
   cards?: CommandHubCard[];
 }
 
+const ICON_TONE: Record<CommandHubCard["tone"], string> = {
+  emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  rose: "bg-rose-50 text-rose-600 ring-rose-100",
+  indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
+  blue: "bg-blue-50 text-blue-600 ring-blue-100",
+  violet: "bg-violet-50 text-violet-600 ring-violet-100",
+  amber: "bg-amber-50 text-amber-600 ring-amber-100",
+};
+
+const CTA_TONE: Record<CommandHubCard["tone"], string> = {
+  emerald: "text-emerald-700",
+  rose: "text-rose-700",
+  indigo: "text-indigo-700",
+  blue: "text-blue-700",
+  violet: "text-violet-700",
+  amber: "text-amber-700",
+};
+
+const DOT_TONE: Record<NonNullable<CommandHubItem["tone"]>, string> = {
+  emerald: "bg-emerald-500",
+  rose: "bg-rose-500",
+  indigo: "bg-indigo-500",
+  blue: "bg-blue-500",
+  violet: "bg-violet-500",
+  amber: "bg-amber-500",
+  slate: "bg-slate-300",
+};
+
 export function CommandHub({
   userName = "CA Vipul Patel",
   designation,
@@ -228,16 +237,11 @@ export function CommandHub({
   className,
   ...rest
 }: CommandHubProps) {
-  const kpis = [
-    { label: "Clients R1 Pending", value: `${counts.r1Pending} Clients Pending`, tone: "amber" as const, icon: ClipboardList },
-    { label: "3B Pending", value: `${counts.gstr3bPending} Clients Pending`, tone: "rose" as const, icon: Calculator },
-    { label: "Monthly Audit Pending", value: `${counts.monthlyAuditPending} ${counts.monthlyAuditPending === 1 ? "Audit" : "Audits"} Pending`, tone: "indigo" as const, icon: ClipboardList },
+  const stats = [
+    { label: "Clients pending R1", value: counts.r1Pending, unit: "clients", tone: "bg-amber-400" },
+    { label: "Clients pending 3B", value: counts.gstr3bPending, unit: "clients", tone: "bg-rose-400" },
+    { label: "Monthly audits pending", value: counts.monthlyAuditPending, unit: counts.monthlyAuditPending === 1 ? "audit" : "audits", tone: "bg-indigo-400" },
   ];
-  const kpiTone = {
-    amber: "border-amber-200 bg-amber-50 text-amber-800",
-    rose: "border-pink-200 bg-pink-50 text-pink-800",
-    indigo: "border-indigo-200 bg-indigo-50 text-indigo-800",
-  } as const;
 
   const open = (card: CommandHubCard) => {
     if (card.drill) onOpenDrill?.(card.drill);
@@ -245,102 +249,77 @@ export function CommandHub({
   };
 
   return (
-    <section {...rest} className={cn("mx-auto w-full max-w-7xl space-y-3.5 text-slate-900", className)}>
-      {/* Welcome and KPI strip */}
-      <div className="flex flex-col justify-between gap-3.5 rounded-xl border border-slate-200/90 bg-white px-5 py-3 shadow-xs xl:flex-row xl:items-center">
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-[19px] font-bold leading-none tracking-tight text-slate-900">
-              Welcome back, {userName}
-              {designation && (
-                <span className="ml-2 text-xs font-semibold text-slate-500">
-                  ({designation}{department ? ` • ${department}` : ""})
-                </span>
-              )}
-            </h1>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-              <ShieldCheck className="size-3.5 text-emerald-600" />
-              verified
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-slate-500">
-            <span className="font-medium text-slate-800">Partner</span>
-            <span>·</span>
-            <span>{firm}</span>
-            <span className="text-slate-300">|</span>
-            <span className="font-mono text-[11.5px] font-medium text-blue-600">Firm Reg: {firmReg}</span>
-          </div>
+    <section {...rest} className={cn("mx-auto w-full max-w-7xl space-y-8 px-1 text-slate-900", className)}>
+      {/* Header */}
+      <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Command Hub</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Welcome back, {userName}</h1>
+          <p className="text-sm text-slate-500">
+            {designation ? `${designation}${department ? ` · ${department}` : ""} · ` : ""}
+            {firm} · Firm Reg {firmReg}
+          </p>
         </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+          <ShieldCheck className="size-3.5" />
+          Verified
+        </span>
+      </header>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {kpis.map((kpi) => (
-            <div key={kpi.label} className={cn("flex items-center gap-2.5 rounded-lg border px-3 py-1.5", kpiTone[kpi.tone])}>
-              <kpi.icon className="size-4 shrink-0 opacity-80" />
-              <div className="flex flex-col">
-                <span className="text-[9px] font-bold uppercase leading-none tracking-wider opacity-80">{kpi.label}</span>
-                <span className="font-mono text-[13px] font-bold leading-tight">{kpi.value}</span>
-              </div>
+      {/* Pending KPIs */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span className={cn("size-2 rounded-full", stat.tone)} />
+              {stat.label}
             </div>
-          ))}
-        </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="font-mono text-3xl font-semibold tracking-tight text-slate-900">{stat.value}</span>
+              <span className="text-sm text-slate-500">{stat.unit} pending</span>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Section heading */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-        <div className="flex items-center gap-2.5">
-          <span className="size-2.5 rounded-full bg-blue-600" />
-          <h2 className="text-[13px] font-bold uppercase tracking-wide text-slate-800">Enterprise Compliance &amp; Advisory Suites</h2>
-          <span className="rounded-full border border-blue-200/70 bg-gradient-to-r from-blue-50 to-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700">
-            Series 01 – 08 Standardized
+      {/* Suites */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-900">Compliance & advisory suites</h2>
+          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+            <RotateCcw className="size-3.5 text-blue-500" />
+            {cards.length} suites connected
           </span>
         </div>
-        <div className="hidden items-center gap-2 rounded-lg border border-slate-200/60 bg-slate-50/80 px-2.5 py-1 font-mono text-[11px] text-slate-500 sm:flex">
-          <RotateCcw className="size-3.5 text-blue-600" />
-          <span>{cards.length} Autonomous Suites Connected</span>
-        </div>
-      </div>
 
-      {/* Suite grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((card) => {
-          const tone = TONE[card.tone];
-          const Icon = card.icon;
-          return (
-            <article
-              key={card.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => open(card)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  open(card);
-                }
-              }}
-              className={cn(
-                "group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs transition-all duration-300 hover:-translate-y-1 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:p-4.5",
-                tone.hover,
-              )}
-            >
-              <div aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r transition-all duration-300 group-hover:h-1.5", tone.bar)} />
-
-              <div className="relative z-10">
-                <div className="mb-2.5 flex items-center justify-between gap-2">
-                  <div className={cn("flex size-9 items-center justify-center rounded-xl border shadow-2xs transition-transform duration-200 group-hover:scale-110", tone.iconWrap)}>
-                    <Icon className="size-[18px]" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article
+                key={card.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => open(card)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    open(card);
+                  }
+                }}
+                className="group flex cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className={cn("flex size-10 items-center justify-center rounded-xl ring-1", ICON_TONE[card.tone])}>
+                    <Icon className="size-5" />
                   </div>
-                  <span className={cn("flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider", tone.pill)}>
-                    <span className="size-1.5 rounded-full bg-current" />
-                    {card.suite}
-                  </span>
+                  <span className="text-xs font-medium text-slate-400">{card.suite}</span>
                 </div>
 
-                <h3 className={cn("mb-1 line-clamp-1 text-[14.5px] font-bold leading-snug tracking-tight text-slate-900 transition-colors duration-200", tone.text)}>
-                  {card.title}
-                </h3>
-                <p className="mb-3 line-clamp-2 min-h-[32px] text-[11.5px] leading-relaxed text-slate-500">{card.description}</p>
+                <h3 className="mt-4 text-[15px] font-semibold leading-snug text-slate-900">{card.title}</h3>
+                <p className="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-slate-500">{card.description}</p>
 
-                <ul className="mb-3.5 flex flex-col gap-1.5 text-[11.5px]">
+                <ul className="mt-4 space-y-1 border-t border-slate-100 pt-4">
                   {card.items.map((item) => (
                     <li
                       key={item.label}
@@ -348,33 +327,28 @@ export function CommandHub({
                         event.stopPropagation();
                         if (item.route) onNavigate?.(item.route);
                       }}
-                      className={cn(
-                        "group/item flex cursor-pointer items-center justify-between rounded-lg border px-2.5 py-1.5 transition-all duration-200 hover:-translate-y-px",
-                        item.pending ? "border-amber-200/80 bg-amber-50/70 hover:bg-amber-50" : "border-slate-200/60 bg-slate-50/80 hover:bg-white hover:shadow-2xs",
-                      )}
+                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors hover:bg-slate-50"
                     >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className={cn("size-1.5 shrink-0 rounded-full transition-transform group-hover/item:scale-125", DOT[item.tone ?? "slate"])} />
-                        <span className="truncate font-medium text-slate-700">{item.label}</span>
-                      </div>
-                      <span className="ml-1.5 shrink-0 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-700 shadow-2xs">
-                        {item.badge}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className={cn("size-1.5 shrink-0 rounded-full", DOT_TONE[item.tone ?? "slate"])} />
+                        <span className={cn("truncate", item.pending ? "font-medium text-amber-700" : "text-slate-700")}>{item.label}</span>
                       </span>
+                      <span className={cn("shrink-0 text-xs", item.pending ? "font-semibold text-amber-700" : "text-slate-400")}>{item.badge}</span>
                     </li>
                   ))}
                 </ul>
-              </div>
 
-              <div className="relative z-10 flex items-center justify-between border-t border-slate-100 pt-2.5">
-                <span className="font-mono text-[10px] text-slate-400 transition-colors group-hover:text-slate-600">{card.path}</span>
-                <span className={cn("inline-flex items-center gap-1.5 text-[11.5px] font-semibold transition-all duration-200", tone.ctaText)}>
-                  {card.cta}
-                  <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
-                </span>
-              </div>
-            </article>
-          );
-        })}
+                <div className="mt-auto flex items-center justify-between pt-5">
+                  <span className="font-mono text-[11px] text-slate-400">{card.path}</span>
+                  <span className={cn("inline-flex items-center gap-1 text-sm font-medium", CTA_TONE[card.tone])}>
+                    {card.cta}
+                    <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
