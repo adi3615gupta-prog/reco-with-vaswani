@@ -51,6 +51,12 @@ export interface ClothingRailHeroProps extends React.ComponentProps<"section"> {
   hanger?: "wood" | "matte" | "none";
   /** Shows each item's name permanently under its hanger. */
   showNames?: boolean;
+  /** Largest hanger height in pixels. */
+  maxHeight?: number;
+  /** Spreads the items evenly across the full width. */
+  spread?: boolean;
+  /** Adds an action in the detail view, e.g. to open the item's page. */
+  onItemSelect?: (item: RailGarment, index: number) => void;
   labels?: ClothingRailHeroLabels;
   onOpenChange?: (index: number | null) => void;
 }
@@ -60,7 +66,7 @@ const VB_H = 310;
 const ASPECT = VB_W / VB_H;
 const HOOK_TOP = 4;
 const RAIL_R = 4.6;
-const REST = -70;
+const REST = -40;
 const PERSPECTIVE = 1100;
 const GAP = 0.035;
 const MAX_H = 400;
@@ -539,6 +545,9 @@ export function ClothingRailHero({
   interval = 2600,
   hanger = "wood",
   showNames = false,
+  maxHeight = MAX_H,
+  spread = false,
+  onItemSelect,
   labels = DEFAULT_LABELS,
   onOpenChange,
   className,
@@ -592,14 +601,14 @@ export function ClothingRailHero({
       const activeK = footprint(1, 0, sideW) + GAP;
       const fit = (width - 24) / (count * restK + (activeK - restK));
       const carousel = fit < MIN_WIDE_H;
-      const h = carousel ? Math.min(CAROUSEL_H, Math.max(220, width * 0.86)) : Math.min(MAX_H, fit);
+      const h = carousel ? Math.min(CAROUSEL_H, Math.max(220, width * 0.86)) : Math.min(maxHeight, fit);
       setSize((old) => (Math.abs(old.width - width) < 0.5 && old.carousel === carousel && Math.abs(old.h - h) < 0.5 ? old : { width, h: Math.round(h), carousel }));
     };
     measure(stage.clientWidth);
     const observer = new ResizeObserver((entries) => { const box = entries[0]; if (box) measure(box.contentRect.width); });
     observer.observe(stage);
     return () => observer.disconnect();
-  }, [count]);
+  }, [count, maxHeight]);
 
   const targets = React.useCallback((h: number, width: number, carousel: boolean, front: number | null) => {
     const feet = items.map((_, i) => footprint(h, i === front ? 0 : REST, sideWidths[i]) + h * GAP);
@@ -611,10 +620,11 @@ export function ClothingRailHero({
       for (let i = centre - 1; i >= 0; i--) xs[i] = (xs[i + 1] ?? 0) - ((feet[i + 1] ?? 0) + (feet[i] ?? 0)) / 2;
       return xs;
     }
+    if (spread) return items.map((_, i) => ((i + 0.5) * width) / items.length);
     const total = feet.reduce((sum, f) => sum + f, 0);
     let cursor = (width - total) / 2;
     return feet.map((f) => { const x = cursor + f / 2; cursor += f; return x; });
-  }, [items, sideWidths]);
+  }, [items, sideWidths, spread]);
 
   const paint = React.useCallback((i: number) => {
     const s = sim.current;
@@ -951,7 +961,7 @@ export function ClothingRailHero({
         role="group"
         aria-label={heading ?? "Clothing rail"}
         className="relative mt-5 w-full touch-pan-y select-none"
-        style={{ height: Math.round(railY + h * bottom + h * 0.05 + 12 + (showNames ? 44 : 0)), overflowX: "clip" }}
+        style={{ height: showNames ? Math.round(railY + (Object.keys(artBottoms).length ? Math.max(...Object.values(artBottoms)) : h) + 64) : Math.round(railY + h * bottom + h * 0.05 + 12), overflowX: "clip" }}
         onPointerMove={onPointerMove}
         onPointerDown={onPointerDown}
         onPointerUp={(event) => finishPointer(event, false)}
@@ -1066,6 +1076,7 @@ export function ClothingRailHero({
           labels={labels}
           reduced={reduced}
           source={() => turns.current[openIndex]?.getBoundingClientRect() ?? null}
+          onOpen={onItemSelect ? () => onItemSelect(items[openIndex], openIndex) : undefined}
           onLift={(lift) => setLifted(lift ? openIndex : null)}
           onClose={() => { const index = openIndex; returnFocus.current = index; close(); impulse(index, (index % 2 ? 1 : -1) * 44); }}
         />
@@ -1074,7 +1085,7 @@ export function ClothingRailHero({
   );
 }
 
-function Detail({ uid, item, index, total, hanger, labels, reduced, source, onLift, onClose }: {
+function Detail({ uid, item, index, total, hanger, labels, reduced, source, onLift, onClose, onOpen }: {
   uid: string;
   item: RailGarment;
   index: number;
@@ -1085,6 +1096,7 @@ function Detail({ uid, item, index, total, hanger, labels, reduced, source, onLi
   source: () => DOMRect | null;
   onLift: (lifted: boolean) => void;
   onClose: () => void;
+  onOpen?: () => void;
 }) {
   const dialogRef = React.useRef(null as HTMLDivElement | null);
   const figureRef = React.useRef(null as HTMLDivElement | null);
@@ -1235,14 +1247,19 @@ function Detail({ uid, item, index, total, hanger, labels, reduced, source, onLi
               {item.details.map((detail) => <li key={detail} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{detail}</li>)}
             </ul>
           )}
-          <div role="group" aria-label={`${labels.front} / ${labels.back}`} className="mt-2 inline-flex justify-center gap-6 md:justify-start">
+          {onOpen && (
+            <button type="button" onClick={onOpen} className="inline-flex w-fit items-center gap-2 self-center rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:self-start">
+              Open suite
+            </button>
+          )}
+          {(item.backImage || !item.image) && <div role="group" aria-label={`${labels.front} / ${labels.back}`} className="mt-2 inline-flex justify-center gap-6 md:justify-start">
             {(["front", "back"] as const).map((face) => (
               <button key={face} type="button" aria-pressed={side === face} onClick={() => turnTo(face)} className={`relative pb-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${side === face ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 {face === "front" ? labels.front : labels.back}
                 <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 h-px origin-left bg-foreground transition-transform duration-300 motion-reduce:transition-none ${side === face ? "scale-x-100" : "scale-x-0"}`} />
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
     </div>,

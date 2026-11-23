@@ -1,8 +1,16 @@
-const admin = require('firebase-admin');
+let admin;
+try {
+  admin = require('firebase-admin');
+} catch {
+  admin = null;
+}
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 function getDb() {
+  if (!admin) {
+    throw new Error("firebase-admin is required for cloud database operations");
+  }
   if (!admin.apps.length) {
     const rawSa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     if (rawSa) {

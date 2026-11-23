@@ -478,7 +478,7 @@ describe('TDS Engine', () => {
                 date: new Date('2025-06-15'),
                 partyName: 'ABC ADVANCE SUPPLIER',
                 partyPan: 'ABCPP1234F',
-                ledgerName: 'Payment / Disbursement',
+                ledgerName: 'Payments (TDS deducted)',
                 amount: 0,
                 actualTdsDeducted: 0,
                 isPayment: true,

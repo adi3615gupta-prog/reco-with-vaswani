@@ -585,6 +585,20 @@ export interface TallyMetadata {
   panMap: Map<string, string>;
   groupParentMap: Map<string, string>;
   ledgerParentMap: Map<string, string>;
+  /** UPPER-CASE key -> original display name (group names / ledger names) */
+  groupDisplayNames?: Map<string, string>;
+  ledgerDisplayNames?: Map<string, string>;
+}
+
+/**
+ * Tally returns some names/parents with control-character entities (e.g. "&#4; Primary").
+ * Reduce them to clean display text; the root pseudo-group "Primary" becomes an empty parent.
+ */
+function cleanTallyName(raw: string): string {
+  return unescapeXml(raw)
+    .replace(/[\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Fetch GSTIN and Tax Classification mapping for all ledgers */
@@ -606,6 +620,8 @@ export async function fetchTallyMetadata(
     const groupResp = await sendTallyRequest(groupXml, config, 10000);
 
     const groupParentMap = new Map<string, string>();
+    const groupDisplayNames = new Map<string, string>();
+    const ledgerDisplayNames = new Map<string, string>();
 
     // Parse groups using robust regex instead of DOMParser
     const groupBlockRegex = /<GROUP[^>]*>([\s\S]*?)<\/GROUP>/g;
@@ -620,13 +636,16 @@ export async function fetchTallyMetadata(
         const nameTagMatch = block.match(/<NAME\b[^>]*>([^<]+)<\/NAME>/i);
         if (nameTagMatch) name = unescapeXml(nameTagMatch[1]);
       }
-      name = name.replace(/\s+/g, ' ').trim().toUpperCase();
+      const displayName = cleanTallyName(name);
+      name = displayName.toUpperCase();
 
       const parentMatch = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
-      const parent = parentMatch ? unescapeXml(parentMatch[1]).replace(/\s+/g, ' ').trim().toUpperCase() : '';
+      let parent = parentMatch ? cleanTallyName(parentMatch[1]).toUpperCase() : '';
+      if (parent === 'PRIMARY') parent = '';
 
       if (name) {
         groupParentMap.set(name, parent);
+        groupDisplayNames.set(name, displayName);
       }
     }
 
@@ -710,7 +729,10 @@ export async function fetchTallyMetadata(
 
       let parentMatch = block.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
       if (parentMatch && ledgerName) {
-        ledgerParentMap.set(ledgerName.toUpperCase(), unescapeXml(parentMatch[1]).replace(/\s+/g, ' ').trim().toUpperCase());
+        let ledgerParent = cleanTallyName(parentMatch[1]).toUpperCase();
+        if (ledgerParent === 'PRIMARY') ledgerParent = '';
+        ledgerParentMap.set(ledgerName.toUpperCase(), ledgerParent);
+        ledgerDisplayNames.set(ledgerName.toUpperCase(), cleanTallyName(ledgerName));
       }
     }
 
@@ -789,7 +811,7 @@ export async function fetchTallyMetadata(
     console.log(`[TallyAPI] GSTIN Map loaded: ${gstinMap.size} entries, Tax Map: ${taxMap.size} entries`);
     console.log(`[TallyAPI] Sample entries:`, Array.from(gstinMap.entries()).slice(0, 5));
 
-    return { gstinMap, taxMap, panMap, groupParentMap, ledgerParentMap };
+    return { gstinMap, taxMap, panMap, groupParentMap, ledgerParentMap, groupDisplayNames, ledgerDisplayNames };
   })();
 
   return metadataCachePromise.catch(err => {
@@ -840,6 +862,69 @@ export async function fetchLedgerClassifications(
     }
   }
   return { revenueLedgers, expenseLedgers, allLedgers };
+}
+
+// ─── TDS: full expense ledger master ────────────────────────
+
+/** Top-level expense roots whose descendants are TDS-relevant expense ledgers */
+const TDS_EXPENSE_ROOT_GROUPS = new Set(['DIRECT EXPENSES', 'INDIRECT EXPENSES', 'PURCHASE ACCOUNTS']);
+/** Duties & Taxes side: TDS payable and other tax ledgers */
+const TDS_TAX_ROOT_GROUPS = new Set(['DUTIES AND TAXES', 'DUTIES & TAXES']);
+
+export interface TdsMasterLedger {
+  ledgerName: string;
+  parentGroup: string;
+  parentGroupPath: string;
+  /** Nearest parent first, root last */
+  parentGroupHierarchy: string[];
+}
+
+/**
+ * Reads the full Tally ledger master and returns EVERY ledger that sits under an expense root
+ * (Direct / Indirect Expenses, Purchase Accounts) at any depth.
+ * Unlike fetchTdsTransactions this does not depend on the date range or on which vouchers were posted.
+ */
+export async function fetchExpenseLedgerMaster(
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<TdsMasterLedger[]> {
+  return fetchLedgerMasterUnder(TDS_EXPENSE_ROOT_GROUPS, config);
+}
+
+/** Every ledger under Duties & Taxes (TDS payable etc.), at any depth. */
+export async function fetchTaxLedgerMaster(
+  config: TallyConnectionConfig = DEFAULT_CONFIG
+): Promise<TdsMasterLedger[]> {
+  return fetchLedgerMasterUnder(TDS_TAX_ROOT_GROUPS, config);
+}
+
+async function fetchLedgerMasterUnder(
+  roots: Set<string>,
+  config: TallyConnectionConfig
+): Promise<TdsMasterLedger[]> {
+  const meta = await fetchTallyMetadata(config);
+  const displayOf = (upper: string, map?: Map<string, string>) => map?.get(upper) ?? upper;
+
+  const result: TdsMasterLedger[] = [];
+  for (const [ledgerUpper, parentUpper] of meta.ledgerParentMap.entries()) {
+    const chainUpper: string[] = [];
+    const visited = new Set<string>();
+    let current = parentUpper;
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      chainUpper.push(current);
+      current = meta.groupParentMap.get(current) || '';
+    }
+    if (!chainUpper.some(g => roots.has(g))) continue;
+
+    const chain = chainUpper.map(g => displayOf(g, meta.groupDisplayNames));
+    result.push({
+      ledgerName: displayOf(ledgerUpper, meta.ledgerDisplayNames),
+      parentGroup: chain[0] || 'Expense',
+      parentGroupPath: chain.join(', '),
+      parentGroupHierarchy: chain
+    });
+  }
+  return result;
 }
 
 // ─── Fixed Assets API ───────────────────────────────────────
@@ -1453,6 +1538,8 @@ export interface TallyTdsTransaction {
   tdsLedgerName?: string;
   parentGroup?: string;
   parentGroupPath?: string;
+  /** Full ancestor chain of the expense ledger, nearest parent first (e.g. ['Advocate Fees', 'Legal & Professional Charges', 'Indirect Expenses']) */
+  parentGroupHierarchy?: string[];
   isPayment?: boolean;
   paymentAmount?: number;
 }
@@ -1659,7 +1746,7 @@ export async function fetchTdsTransactions(
           date,
           partyName: party.name,
           partyPan: party.pan,
-          ledgerName: 'Payment / Disbursement',
+          ledgerName: 'Payments (TDS deducted)',
           amount: 0,
           actualTdsDeducted: allocatedPaymentTds,
           tdsLedgerName: allocatedPaymentTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
@@ -1688,7 +1775,8 @@ export async function fetchTdsTransactions(
             actualTdsDeducted: allocatedTds,
             tdsLedgerName: allocatedTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
             parentGroup: exp.hierarchy[0] || 'Expense',
-            parentGroupPath: exp.hierarchy.join(', ')
+            parentGroupPath: exp.hierarchy.join(', '),
+            parentGroupHierarchy: [...exp.hierarchy]
           });
         }
       }
@@ -1705,8 +1793,9 @@ export async function fetchTdsTransactions(
           amount: partyCreditExp,
           actualTdsDeducted: allocatedTds,
           tdsLedgerName: allocatedTds > 0 ? (mainTdsLedgerName || 'TDS') : '',
-          parentGroup: 'Direct Expenses',
-          parentGroupPath: 'Direct Expenses'
+          // No real expense ledger on this voucher: leave the group empty rather than inventing one
+          parentGroup: '',
+          parentGroupPath: ''
         });
       }
     }

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { WorksWheel, type WorksWheelItem } from "@/components/ui/works-wheel";
 
 export type HubCardId = "reco" | "collector" | "returns" | "audit" | "tax" | "wip";
 
@@ -60,6 +61,7 @@ export const COMMAND_HUB_CARDS: CommandHubCard[] = [
     tone: "emerald",
     path: "/reconciliation",
     cta: "Open Reco",
+    drill: "reco",
     route: "reco",
     items: [
       { label: "GST Reco (PR vs 2B)", badge: "±₹2.00 Tol", route: "reco", tone: "emerald" },
@@ -196,33 +198,17 @@ export interface CommandHubProps extends React.ComponentProps<"section"> {
   cards?: CommandHubCard[];
 }
 
-const ICON_TONE: Record<CommandHubCard["tone"], string> = {
-  emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
-  rose: "bg-rose-50 text-rose-600 ring-rose-100",
-  indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
-  blue: "bg-blue-50 text-blue-600 ring-blue-100",
-  violet: "bg-violet-50 text-violet-600 ring-violet-100",
-  amber: "bg-amber-50 text-amber-600 ring-amber-100",
-};
-
-const CTA_TONE: Record<CommandHubCard["tone"], string> = {
-  emerald: "text-emerald-700",
-  rose: "text-rose-700",
-  indigo: "text-indigo-700",
-  blue: "text-blue-700",
-  violet: "text-violet-700",
-  amber: "text-amber-700",
-};
-
-const DOT_TONE: Record<NonNullable<CommandHubItem["tone"]>, string> = {
-  emerald: "bg-emerald-500",
-  rose: "bg-rose-500",
-  indigo: "bg-indigo-500",
-  blue: "bg-blue-500",
-  violet: "bg-violet-500",
-  amber: "bg-amber-500",
-  slate: "bg-slate-300",
-};
+/** Landing-page photos, one per suite on the rail. */
+const SUITE_PHOTOS = [
+  "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80",
+];
 
 export function CommandHub({
   userName = "CA Vipul Patel",
@@ -243,111 +229,59 @@ export function CommandHub({
     { label: "Monthly audits pending", value: counts.monthlyAuditPending, unit: counts.monthlyAuditPending === 1 ? "audit" : "audits", tone: "bg-indigo-400" },
   ];
 
+  const wheelItems: WorksWheelItem[] = cards.map((card, index) => ({
+    title: card.title,
+    image: SUITE_PHOTOS[index % SUITE_PHOTOS.length] as string,
+  }));
+
   const open = (card: CommandHubCard) => {
     if (card.drill) onOpenDrill?.(card.drill);
     else if (card.route) onNavigate?.(card.route);
   };
 
+  // Fill whatever is left of the window below the wheel's top edge, so the
+  // page never needs to scroll whatever the surrounding chrome measures.
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const [boxH, setBoxH] = React.useState<number | undefined>(undefined);
+  React.useLayoutEffect(() => {
+    const read = () => {
+      const el = boxRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      setBoxH(Math.max(360, window.innerHeight - top - 24));
+    };
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+
   return (
-    <section {...rest} className={cn("mx-auto w-full max-w-7xl space-y-8 px-1 text-slate-900", className)}>
-      {/* Header */}
-      <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1.5">
+    <section {...rest} className={cn("relative w-full text-slate-900", className)}>
+      {/* The wheel fills the rest of the window */}
+      <div ref={boxRef} className="relative min-h-[24rem] w-full overflow-hidden" style={{ height: boxH }}>
+        {/* Header in the top-left corner, clear of the wheel */}
+        <div className="pointer-events-none absolute top-4 left-3 z-10 max-w-[16rem] space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Command Hub</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Welcome back, {userName}</h1>
+          <h1 className="text-base font-semibold tracking-tight text-slate-900">Welcome back, {userName}</h1>
           <p className="text-sm text-slate-500">
             {designation ? `${designation}${department ? ` · ${department}` : ""} · ` : ""}
             {firm} · Firm Reg {firmReg}
           </p>
-        </div>
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-          <ShieldCheck className="size-3.5" />
-          Verified
-        </span>
-      </header>
-
-      {/* Pending KPIs */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        {stats.map((stat) => (
-          <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <span className={cn("size-2 rounded-full", stat.tone)} />
-              {stat.label}
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="font-mono text-3xl font-semibold tracking-tight text-slate-900">{stat.value}</span>
-              <span className="text-sm text-slate-500">{stat.unit} pending</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Suites */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">Compliance & advisory suites</h2>
-          <span className="flex items-center gap-1.5 text-xs text-slate-500">
-            <RotateCcw className="size-3.5 text-blue-500" />
-            {cards.length} suites connected
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+            <ShieldCheck className="size-3.5" />
+            Verified
           </span>
         </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {cards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <article
-                key={card.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => open(card)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    open(card);
-                  }
-                }}
-                className="group flex cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className={cn("flex size-10 items-center justify-center rounded-xl ring-1", ICON_TONE[card.tone])}>
-                    <Icon className="size-5" />
-                  </div>
-                  <span className="text-xs font-medium text-slate-400">{card.suite}</span>
-                </div>
-
-                <h3 className="mt-4 text-[15px] font-semibold leading-snug text-slate-900">{card.title}</h3>
-                <p className="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-slate-500">{card.description}</p>
-
-                <ul className="mt-4 space-y-1 border-t border-slate-100 pt-4">
-                  {card.items.map((item) => (
-                    <li
-                      key={item.label}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (item.route) onNavigate?.(item.route);
-                      }}
-                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors hover:bg-slate-50"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className={cn("size-1.5 shrink-0 rounded-full", DOT_TONE[item.tone ?? "slate"])} />
-                        <span className={cn("truncate", item.pending ? "font-medium text-amber-700" : "text-slate-700")}>{item.label}</span>
-                      </span>
-                      <span className={cn("shrink-0 text-xs", item.pending ? "font-semibold text-amber-700" : "text-slate-400")}>{item.badge}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-auto flex items-center justify-between pt-5">
-                  <span className="font-mono text-[11px] text-slate-400">{card.path}</span>
-                  <span className={cn("inline-flex items-center gap-1 text-sm font-medium", CTA_TONE[card.tone])}>
-                    {card.cta}
-                    <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-                  </span>
-                </div>
-              </article>
-            );
-          })}
+        <div className="h-full pl-[6%]">
+        <WorksWheel
+          items={wheelItems}
+          label="8 suites"
+          action="Open"
+          onItemClick={(_item, index) => {
+            const card = cards[index];
+            if (card) open(card);
+          }}
+        />
         </div>
       </div>
     </section>

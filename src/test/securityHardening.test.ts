@@ -687,7 +687,7 @@ describe('Phase 37 Plan 01 - Enterprise Auth, Privilege & Transport Hardening', 
         expect(rulesSrc).toContain('allow read, write: if false;');
 
         const indexSrc = fs.readFileSync(path.resolve('src/pages/Index.tsx'), 'utf8');
-        expect(indexSrc).toContain("if (rememberMe) {\n          safeSetItem('np_token', data.token, true);");
+        expect(indexSrc.replace(/\r\n/g, '\n')).toContain("if (rememberMe) {\n          safeSetItem('np_token', data.token, true);");
 
         const fbJson = JSON.parse(fs.readFileSync(path.resolve('firebase.json'), 'utf8'));
         expect(fbJson.functions?.source).toBe('firebase-functions');

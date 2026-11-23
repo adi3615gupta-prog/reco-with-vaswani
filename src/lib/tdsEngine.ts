@@ -12,8 +12,28 @@ export interface TallyTdsTransaction {
     tdsLedgerName?: string;
     parentGroup?: string;
     parentGroupPath?: string;
+    /** Full ancestor chain of the ledger, nearest parent first */
+    parentGroupHierarchy?: string[];
     isPayment?: boolean;
     paymentAmount?: number;
+}
+
+/**
+ * A ledger's TDS section mapping as served by /api/tds/ledgers.
+ * `sectionCode` is the explicit (user-set) section; `inheritedSectionCode` is the
+ * section inherited from a mapped Tally group anywhere in the ledger's hierarchy.
+ */
+export interface LedgerSectionMapping {
+    ledgerName: string;
+    sectionCode?: string | null;
+    inheritedSectionCode?: string | null;
+}
+
+/** Explicit ledger mapping always wins; otherwise fall back to the inherited group section. */
+export function resolveLedgerSection(m: LedgerSectionMapping): string | null {
+    const section = m.sectionCode || m.inheritedSectionCode || null;
+    // 'EXCLUDE' means not subject to TDS: it is never a section to apply
+    return section === 'EXCLUDE' ? null : section;
 }
 
 export interface AdvanceTdsResult {
@@ -137,7 +157,7 @@ function getTdsRate(section: string, pan: string, sectionsMaster?: TdsSection[])
  */
 export function computeBooksTdsLiability(
     transactions: TallyTdsTransaction[],
-    mappings: { ledgerName: string; sectionCode: string }[],
+    mappings: LedgerSectionMapping[],
     sectionsMaster: TdsSection[]
 ) {
     // 1. Group transactions by Party PAN, then by Section
@@ -159,7 +179,11 @@ export function computeBooksTdsLiability(
     const cleanLedgerStr = (s: string) => (s || '').replace(/\u00A0/g, ' ').replace(/["']/g, '').toLowerCase().trim();
 
     // Map ledger names to their statutory section configuration
-    const ledgerToSectionMap = new Map(mappings.map(m => [cleanLedgerStr(m.ledgerName), m.sectionCode]));
+    const ledgerToSectionMap = new Map<string, string>();
+    for (const m of mappings) {
+        const section = resolveLedgerSection(m);
+        if (section) ledgerToSectionMap.set(cleanLedgerStr(m.ledgerName), section);
+    }
     const sectionLimits = new Map(sectionsMaster.map(s => [s.old_section, s]));
 
     // Pre-scan to build a map of party name to its resolved section codes
@@ -392,6 +416,7 @@ export interface TallyTdsTransaction {
     isPayment?: boolean;
     paymentAmount?: number;
     openingBalanceCr?: number;
+    parentGroupHierarchy?: string[];
 }
 
 export interface AdvanceTdsResult {
@@ -417,13 +442,17 @@ export interface AdvanceTdsResult {
  */
 export function computeAdvanceTdsAudit(
     transactions: TallyTdsTransaction[],
-    mappings: { ledgerName: string; sectionCode: string }[],
+    mappings: LedgerSectionMapping[],
     sectionsMaster: TdsSection[],
     partyMasterSectionMap?: Map<string, string>,
     partyOpeningBalances?: Map<string, number>
 ): AdvanceTdsResult[] {
     const cleanLedgerStr = (s: string) => (s || '').replace(/\u00A0/g, ' ').replace(/["']/g, '').toLowerCase().trim();
-    const ledgerToSectionMap = new Map(mappings.map(m => [cleanLedgerStr(m.ledgerName), m.sectionCode]));
+    const ledgerToSectionMap = new Map<string, string>();
+    for (const m of mappings) {
+        const section = resolveLedgerSection(m);
+        if (section) ledgerToSectionMap.set(cleanLedgerStr(m.ledgerName), section);
+    }
     const sectionLimits = new Map(sectionsMaster.map(s => [s.old_section, s]));
 
     interface PartySummary {
@@ -1136,7 +1165,7 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
         'Taxable Variance',
         'Status',
         'Closing Balance',
-        'Expense Ledgers',
+        'Ledgers & Payments',
         'TDS Ledgers',
         'Applicability Reason'
     ];

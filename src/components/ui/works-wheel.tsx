@@ -68,8 +68,8 @@ export interface WorksWheelProps extends Omit<
    swinging on a huge drum. The three that matter are tuned together: STEP
    against DRUM sets how hard the neighbours rotate away, and DRUM against LENS
    decides whether they land inside the frame or run off it. */
-const CARD_H = 0.38; // front card height, of the stage
-const CARD_MAX_W = 0.34; // ... but never wider than this much of the stage
+const CARD_H = 0.46; // front card height, of the stage
+const CARD_MAX_W = 0.52; // ... but never wider than this much of the stage
 const CARD_RATIO = 1.45; // card width / height
 const STEP = 40; // degrees between cards on the drum
 const DRUM = 2.22; // drum radius, in card heights - and everything below likewise
@@ -81,7 +81,7 @@ const RING_R = 1.14; // ring radius
    swung back left as well as up and down. BOW is that arc's radius; nothing else
    makes the difference between a stack of cards and a wheel seen side on. */
 const BOW = 1.82;
-const TITLE = 0.124; // ring label and front-card title
+const TITLE = 0.085; // ring label and front-card title
 const INDEX = 0.04; // the index down the right-hand side
 /** Items either side of the front still worth drawing. Past this a card is
     edge-on, and further round it would stack up on the vanishing point. */
@@ -160,6 +160,8 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
   const [active, setActive] = React.useState(0);
   const [stage, setStage] = React.useState<Stage>({ w: 0, h: 0 });
   const drag = React.useRef<number | null>(null);
+  const dragStart = React.useRef(0);
+  const dragCaptured = React.useRef(false);
   const settling = React.useRef(0);
 
   const count = items.length;
@@ -388,8 +390,11 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
           pinned
             ? undefined
             : (event) => {
+                // Capture only once the pointer really drags, so a plain click
+                // still reaches the card underneath.
                 drag.current = event.clientY;
-                event.currentTarget.setPointerCapture(event.pointerId);
+                dragStart.current = event.clientY;
+                dragCaptured.current = false;
               }
         }
         onPointerMove={
@@ -397,6 +402,11 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
             ? undefined
             : (event) => {
                 if (drag.current === null) return;
+                if (!dragCaptured.current) {
+                  if (Math.abs(event.clientY - dragStart.current) < 4) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  dragCaptured.current = true;
+                }
                 to(target.current + (drag.current - event.clientY) / DRAG_UNITS);
                 drag.current = event.clientY;
               }
@@ -519,7 +529,7 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
           <li key={item.title}>
             <button
               type="button"
-              onClick={() => goTo(i + 1)}
+              onClick={() => (onItemClick ? onItemClick(item, i) : goTo(i + 1))}
               className={cn(
                 "focus-visible:outline-foreground cursor-pointer transition-colors outline-none focus-visible:outline-1",
                 i === active && "text-foreground font-medium",

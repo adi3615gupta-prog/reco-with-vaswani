@@ -19,7 +19,10 @@ describe('Gemini Cloud Sync & Office Distribution', () => {
     _type: 'mock_firestore'
   };
 
+  const originalLicenseUrl = process.env.LICENSE_API_URL;
+
   beforeAll(async () => {
+    process.env.LICENSE_API_URL = '';
     app = express();
     app.use(express.json());
 
@@ -46,6 +49,7 @@ describe('Gemini Cloud Sync & Office Distribution', () => {
   });
 
   afterAll(async () => {
+    process.env.LICENSE_API_URL = originalLicenseUrl;
     if (server) server.close();
     if (db) db.close();
   });

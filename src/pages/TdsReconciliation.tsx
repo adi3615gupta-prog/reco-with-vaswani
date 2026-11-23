@@ -9,10 +9,11 @@ import ExcelJS from 'exceljs';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { parseFile } from '@/lib/fileParser';
 import { exportTdsReport, computeAdvanceTdsAudit, computeMultiLedgerPans, exportMultiLedgerPanWorkbook, type AdvanceTdsResult, type MultiLedgerPanInfo } from '@/lib/tdsEngine';
-import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo } from '@/lib/tallyApi';
+import { pingTally, fetchCompanyInfo, fetchTdsTransactions, fetchExpenseLedgerMaster, fetchTaxLedgerMaster, fetchPartyBalances, clearTallyMetadataCache, type TallyCompanyInfo, type TdsMasterLedger } from '@/lib/tallyApi';
 import { safeApiFetch } from '@/lib/api';
 import { saveLocalRecoSnapshot } from '@/lib/gdrive';
 import { RecoHistoryModal } from '@/components/RecoHistoryModal';
+import { TdsGroupTree, type GroupTreeData, type GroupTreeNode } from '@/components/TdsGroupTree';
 
 // Phase 1: Statutory TDS Master Data
 export interface TdsSection {
@@ -87,7 +88,7 @@ function CollapsibleSection({ title, subtitle, icon: Icon, children, defaultOpen
 // ─── Stepper Component ───────────────────────────────────────
 function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string; icon: React.ElementType; ready: boolean; info?: string; disabled?: boolean }[]; activeStep: number; onStepClick: (i: number) => void }) {
     return (
-        <div className="flex items-stretch gap-1 bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-stretch gap-1 bg-white p-1 rounded-xl border border-slate-200/80 shadow-xs">
             {steps.map((step, i) => {
                 const Icon = step.icon;
                 const isActive = activeStep === i;
@@ -97,7 +98,7 @@ function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string
                         key={i}
                         onClick={() => !isDisabled && onStepClick(i)}
                         disabled={isDisabled}
-                        className={`flex-1 min-w-0 relative py-2.5 px-3 rounded-xl font-bold text-xs transition-all flex flex-col items-center gap-1 group ${isActive
+                        className={`flex-1 min-w-0 relative py-1.5 px-2 rounded-lg font-bold text-xs transition-all flex flex-col items-center gap-0.5 group ${isActive
                                 ? 'bg-indigo-600 text-white shadow-xs'
                                 : isDisabled
                                     ? 'text-slate-600 cursor-not-allowed opacity-40'
@@ -105,7 +106,7 @@ function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string
                             }`}
                     >
                         <div className="flex items-center gap-2">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${step.ready && !isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${step.ready && !isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                     isActive ? 'bg-white/20 text-white' :
                                         'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
@@ -114,7 +115,7 @@ function StepperNav({ steps, activeStep, onStepClick }: { steps: { label: string
                             <Icon className="w-4 h-4 hidden sm:block" />
                         </div>
                         <span className="truncate max-w-full text-[11px] tracking-wide uppercase">{step.label}</span>
-                        {step.info && <span className={`text-[9px] font-medium truncate max-w-full ${isActive ? 'text-white/80' : 'text-slate-500'}`}>{step.info}</span>}
+                        {step.info && <span className={`text-[10px] font-semibold truncate max-w-full ${isActive ? 'text-white/90' : 'text-slate-600'}`}>{step.info}</span>}
                         {i < steps.length - 1 && (
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 hidden lg:block">
                                 <ChevronRight className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-200' : 'text-slate-700'}`} />
@@ -147,12 +148,12 @@ function StatusFilterChips({ active, onChange, counts }: { active: StatusFilter;
         return 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-slate-200 shadow-2xs font-semibold';
     };
     return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
             {STATUS_FILTERS.map(s => (
                 <button
                     key={s}
                     onClick={() => onChange(s)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${getChipStyle(s, active === s)}`}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wide whitespace-nowrap transition-all ${getChipStyle(s, active === s)}`}
                 >
                     {s} {counts[s] !== undefined && <span className="ml-1 opacity-70">({counts[s]})</span>}
                 </button>
@@ -175,7 +176,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const handleRestoreTdsSession = (payload: any) => {
         if (payload.results) {
             setReconResults(payload.results);
-            setActiveStep(4);
+            setActiveStep(3);
         }
         if (payload.summary) {
             setReconSummary(payload.summary);
@@ -213,6 +214,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     };
 
     // Group Mapping State (Database-backed templates)
+    const [groupTree, setGroupTree] = useState<GroupTreeData | null>(null);
     const [groupMappings, setGroupMappings] = useState<{ id: string; expenseGroup: string; subGroup: string; subGroup2: string; sectionCode: string }[]>([]);
     const [newExpenseGroup, setNewExpenseGroup] = useState('');
     const [newSubGroup, setNewSubGroup] = useState('');
@@ -246,7 +248,8 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     // Ingestion State
     const [form26qFile, setForm26qFile] = useState<File | null>(null);
-    const [strictModeOnlyMapped, setStrictModeOnlyMapped] = useState<boolean>(false);
+    // Strict: only ledgers mapped in Step 1 (directly or via their group) are reconciled
+    const [strictModeOnlyMapped, setStrictModeOnlyMapped] = useState<boolean>(true);
 
     const today = new Date();
 
@@ -322,7 +325,10 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const [reconResults, setReconResults] = useState<any[] | null>(null);
     const [multiLedgerPans, setMultiLedgerPans] = useState<MultiLedgerPanInfo[]>([]);
     const [advanceTdsResults, setAdvanceTdsResults] = useState<AdvanceTdsResult[]>([]);
-    const [activeResultsSubTab, setActiveResultsSubTab] = useState<'RECONCILIATION' | 'ADVANCE_AUDIT'>('RECONCILIATION');
+    const [activeResultsSubTab, setActiveResultsSubTab] = useState<'RECONCILIATION' | 'SPLIT_PANS' | 'ADVANCE_AUDIT'>('RECONCILIATION');
+    const [mappingTreeTab, setMappingTreeTab] = useState<'EXPENSE' | 'DUTIES'>('EXPENSE');
+    const [showEnterpriseMapping, setShowEnterpriseMapping] = useState(false);
+    const [showAdvancedVouchers, setShowAdvancedVouchers] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -516,6 +522,70 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         } catch (err) { console.error("Failed to fetch group mappings", err); }
     };
 
+    const [taxTree, setTaxTree] = useState<GroupTreeData | null>(null);
+
+    const loadTaxTree = async () => {
+        try {
+            const res = await safeApiFetch('/api/tds/group-tree?side=TAX');
+            if (res.ok) setTaxTree(await res.json());
+        } catch (err) { console.error('Failed to fetch Duties & Taxes tree', err); }
+    };
+
+    // Ticking TDS on a Duties & Taxes ledger marks it as a TDS ledger (its section is kept as is)
+    const handleSetLedgerTds = async (ledgerName: string, isTds: boolean, sectionCode: string | null) => {
+        try {
+            const res = await safeApiFetch('/api/tds/ledgers/update', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ledgerName, sectionCode, isTdsLedger: isTds })
+            });
+            if (!res.ok) return toast.error('Failed to update TDS flag');
+            loadTaxTree(); loadMappings();
+        } catch (err) { toast.error('Connection error updating TDS flag'); }
+    };
+
+    const loadGroupTree = async () => {
+        try {
+            const res = await safeApiFetch('/api/tds/group-tree');
+            if (res.ok) setGroupTree(await res.json());
+        } catch (err) { console.error("Failed to fetch group tree", err); }
+    };
+
+    // Group tree actions: a group section applies to every ledger and sub-group beneath it
+    const handleSetGroupSection = async (path: string[], sectionCode: string | null) => {
+        try {
+            const res = await safeApiFetch('/api/tds/group-tree/section', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, sectionCode })
+            });
+            if (!res.ok) return toast.error('Failed to update group section');
+            toast.success(sectionCode ? `${path[path.length - 1]} → ${sectionCode}` : `${path[path.length - 1]} section cleared`);
+            loadGroupTree(); loadTaxTree(); loadGroupMappings(); loadMappings();
+        } catch (err) { toast.error('Connection error updating group'); }
+    };
+
+    const handleSetLedgerSectionFromTree = async (ledgerName: string, sectionCode: string) => {
+        try {
+            const res = await safeApiFetch('/api/tds/ledgers/update', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ledgerName, sectionCode, isTdsLedger: false })
+            });
+            if (!res.ok) return toast.error('Failed to update ledger');
+            loadGroupTree(); loadTaxTree(); loadMappings(); loadSuggestions();
+        } catch (err) { toast.error('Connection error updating ledger'); }
+    };
+
+    // Back to inheriting from the group (clears the ledger's own section without blocking inheritance)
+    const handleClearLedgerOverride = async (ledgerName: string) => {
+        try {
+            const res = await safeApiFetch('/api/tds/ledgers/update', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ledgerName, clearOverride: true })
+            });
+            if (!res.ok) return toast.error('Failed to clear ledger override');
+            loadGroupTree(); loadTaxTree(); loadMappings(); loadSuggestions();
+        } catch (err) { toast.error('Connection error clearing override'); }
+    };
+
     const loadParties = async () => {
         try {
             const res = await safeApiFetch('/api/tds/parties');
@@ -523,7 +593,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         } catch (err) { console.error("Failed to fetch party master", err); }
     };
 
-    useEffect(() => { loadRules(); loadMappings(); loadSuggestions(); loadParties(); loadGroupMappings(); }, []);
+    useEffect(() => { loadRules(); loadMappings(); loadSuggestions(); loadParties(); loadGroupMappings(); loadGroupTree(); loadTaxTree(); }, []);
 
     // ─── Group Mapping CRUD ──────────────────────────────────
     const handleAddGroupMapping = async () => {
@@ -675,12 +745,36 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         } catch (err) { console.error("Failed to sync party metadata to DB", err); }
     };
 
-    const syncLedgersFromTallyData = async (tallyTxns: any[]) => {
+    // Discovers Tally group templates (e.g. Indirect Expenses > Legal & Professional Charges > Advocate Fees => 194J(b))
+    // from the ledger hierarchies of fetched vouchers and persists them into Tally_Group_Mappings.
+    const autoDiscoverGroupTemplates = async (tallyTxns: any[]) => {
+        const hierarchies = Array.from(new Map(
+            tallyTxns
+                .filter(t => Array.isArray(t.parentGroupHierarchy) && t.parentGroupHierarchy.length > 0)
+                .map(t => [(t.parentGroupHierarchy as string[]).join('>').toUpperCase(), t.parentGroupHierarchy as string[]])
+        ).values());
+        if (hierarchies.length === 0) return;
+        try {
+            const res = await safeApiFetch('/api/tds/auto-discover-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hierarchies }) });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.inserted > 0) toast.success(`${data.inserted} group template${data.inserted === 1 ? '' : 's'} auto-discovered from Tally`);
+                await loadGroupMappings();
+                loadGroupTree(); loadTaxTree();
+            }
+        } catch (err) { console.error("Failed to auto-discover group templates", err); }
+    };
+
+    const syncLedgersFromTallyData = async (tallyTxns: any[], replaceAuto = false) => {
         const distinctLedgers = Array.from(new Map(tallyTxns.filter(t => t.ledgerName).map(t => [t.ledgerName.toUpperCase().trim(), { ledgerName: t.ledgerName, parentGroup: t.parentGroup || 'Expense', parentGroupPath: t.parentGroupPath || '' }])).values());
         if (distinctLedgers.length === 0) return;
         try {
-            const res = await safeApiFetch('/api/tds/extract-ledgers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ledgers: distinctLedgers }) });
-            if (res.ok) { loadMappings(); loadSuggestions(); }
+            const res = await safeApiFetch('/api/tds/extract-ledgers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ledgers: distinctLedgers, replaceAuto }) });
+            if (res.ok) {
+                // Templates must exist before reloading ledgers, so inherited sections are computed from them
+                await autoDiscoverGroupTemplates(tallyTxns);
+                loadMappings(); loadSuggestions();
+            }
         } catch (err) { console.error("Failed to sync ledgers to DB", err); }
     };
 
@@ -856,79 +950,95 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         reader.readAsArrayBuffer(file); event.target.value = '';
     };
 
-    const exportGroupMappings = async () => {
-        let dataToExport = groupMappings.map(m => ({ 
-            expenseGroup: m.expenseGroup, 
-            subGroup: m.subGroup || '', 
-            subGroup2: m.subGroup2 || '', 
-            sectionCode: m.sectionCode 
-        }));
-        if (dataToExport.length === 0) dataToExport = [{ expenseGroup: 'Indirect Expenses', subGroup: 'PROFESSIONAL AND CONSULTING FEES', subGroup2: '', sectionCode: '194J(b)' }];
-        
-        const workbook = new ExcelJS.Workbook();
-        const ws = workbook.addWorksheet('TDS Group Mappings');
-        const wsRef = workbook.addWorksheet('Valid Sections List');
+    // ─── Mapping template: every group and every ledger, with the section to set ───
+    // Blank section = keep as it is. INHERIT = remove the group's own section / return the ledger to inheritance.
+    const exportGroupMappings = async (side: 'EXPENSE' | 'TAX' = 'EXPENSE') => {
+        let tree: GroupTreeData | null = null;
+        try {
+            const res = await safeApiFetch(`/api/tds/group-tree?side=${side}`);
+            if (res.ok) tree = await res.json();
+        } catch (err) { tree = null; }
+        if (!tree) return toast.error('Could not read the group tree from the server');
 
-        // Setup Reference Tab
+        type TemplateRow = { type: 'Group' | 'Ledger'; path: string[]; ledgerName: string; section: string; inherited: string };
+        const out: TemplateRow[] = [];
+        const walk = (node: GroupTreeNode) => {
+            if (!node.virtual) out.push({
+                type: 'Group',
+                path: node.path,
+                ledgerName: '',
+                section: node.explicitSectionCode || '',
+                inherited: node.explicitSectionCode ? '' : (node.effectiveSectionCode || '')
+            });
+            node.ledgers.forEach(l => out.push({
+                type: 'Ledger',
+                path: node.path,
+                ledgerName: l.ledgerName,
+                section: l.sectionCode || '',
+                inherited: l.sectionCode ? '' : (l.inheritedSectionCode || '')
+            }));
+            node.children.forEach(walk);
+        };
+        tree.roots.forEach(walk);
+        if (out.length === 0) return toast.error('There are no ledgers to export yet. Fetch vouchers from Tally first.');
+
+        const depth = Math.max(3, ...out.map(r => r.path.length));
+        const workbook = new ExcelJS.Workbook();
+        const ws = workbook.addWorksheet('TDS Mapping Template');
+        const wsRef = workbook.addWorksheet('Valid Sections List');
+        const wsHelp = workbook.addWorksheet('How To Fill');
+
+        const headerStyle = (row: ExcelJS.Row, argb: string) => {
+            row.eachCell(cell => {
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+        };
+
         wsRef.columns = [
             { header: 'Section Code', key: 'old_section', width: 16 },
             { header: 'New Section (IT Act 2025)', key: 'new_section_2025', width: 25 },
-            { header: 'Nature of Payment', key: 'nature_of_payment', width: 45 },
-            { header: 'Single Bill Threshold', key: 'single_bill_threshold', width: 22 },
-            { header: 'Annual Threshold', key: 'annual_aggregate_threshold', width: 22 },
-            { header: 'Individual/HUF Rate (%)', key: 'rate_individual_huf', width: 24 },
-            { header: 'Company/Others Rate (%)', key: 'rate_company_others', width: 24 },
-            { header: 'Missing PAN Rate (206AA) (%)', key: 'rate_missing_pan_206AA', width: 28 }
+            { header: 'Nature of Payment', key: 'nature_of_payment', width: 45 }
         ];
+        rules.forEach(s => wsRef.addRow({ old_section: s.old_section, new_section_2025: s.new_section_2025, nature_of_payment: s.nature_of_payment }));
+        wsRef.addRow({ old_section: 'EXCLUDE', new_section_2025: '', nature_of_payment: 'Excluded from TDS (not subject to TDS)' });
+        headerStyle(wsRef.getRow(1), 'FF0F172A');
 
-        rules.forEach(s => {
-            wsRef.addRow({
-                old_section: s.old_section,
-                new_section_2025: s.new_section_2025,
-                nature_of_payment: s.nature_of_payment,
-                single_bill_threshold: s.single_bill_threshold !== null ? s.single_bill_threshold : 'N/A',
-                annual_aggregate_threshold: s.annual_aggregate_threshold,
-                rate_individual_huf: `${s.rate_individual_huf}%`,
-                rate_company_others: `${s.rate_company_others}%`,
-                rate_missing_pan_206AA: `${s.rate_missing_pan_206AA}%`
-            });
-        });
+        wsHelp.columns = [{ header: 'How to fill the template', key: 'text', width: 110 }];
+        [
+            'Each Group row sets the TDS section for that group. Its ledgers and sub-groups inherit it.',
+            'Each Ledger row sets the TDS section for that one ledger. It overrides its group.',
+            'Pick a section from the dropdown in the "TDS Section Code" column.',
+            'Leave the cell blank to keep the current setting unchanged.',
+            'Type INHERIT to remove a group\'s own section, or to return a ledger to its group.',
+            'Do not edit the Type, Level or Ledger Name columns. They identify the row.',
+            'The "Currently Inherited" column is for information only and is ignored on import.'
+        ].forEach(t => wsHelp.addRow({ text: t }));
+        headerStyle(wsHelp.getRow(1), 'FF475569');
 
-        wsRef.getRow(1).eachCell(cell => {
-            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
-            cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        });
-
-        // Setup Primary Tab
+        const levelColumns = Array.from({ length: depth }, (_, i) => ({ header: `Level ${i + 1}`, key: `level${i + 1}`, width: 30 }));
+        const sectionCol = depth + 3;
         ws.columns = [
-            { header: 'Expense Group', key: 'expenseGroup', width: 30 },
-            { header: 'Sub-Group', key: 'subGroup', width: 35 },
-            { header: 'Sub-Group 2', key: 'subGroup2', width: 30 },
-            { header: 'TDS Section Code', key: 'sectionCode', width: 22 }
+            { header: 'Type', key: 'type', width: 10 },
+            ...levelColumns,
+            { header: 'Ledger Name', key: 'ledgerName', width: 42 },
+            { header: 'TDS Section Code', key: 'section', width: 22 },
+            { header: 'Currently Inherited', key: 'inherited', width: 22 }
         ];
-
-        dataToExport.forEach(row => ws.addRow(row));
-
-        ws.getRow(1).eachCell(cell => {
-            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        out.forEach(r => {
+            const row: Record<string, string> = { type: r.type, ledgerName: r.ledgerName, section: r.section, inherited: r.inherited };
+            r.path.forEach((name, i) => { row[`level${i + 1}`] = name; });
+            ws.addRow(row);
         });
+        headerStyle(ws.getRow(1), 'FF1E3A8A');
 
-        // Add Native Data Validation Dropdowns for Column D (D2:D1000)
-        const totalRows = Math.max(dataToExport.length + 50, 1000);
-        const sectionRange = `'Valid Sections List'!$A$2:$A$${rules.length + 1}`;
-
+        const sectionRange = `'Valid Sections List'!$A$2:$A$${rules.length + 2}`;
+        const totalRows = out.length + 200;
         for (let r = 2; r <= totalRows; r++) {
-            const cellD = ws.getCell(`D${r}`);
-            cellD.dataValidation = {
-                type: 'list',
-                allowBlank: true,
-                formulae: [sectionRange],
-                showErrorMessage: true,
-                errorTitle: 'Invalid TDS Section Code',
-                error: 'Please select a valid TDS Section Code from the dropdown list.'
+            ws.getCell(r, sectionCol).dataValidation = {
+                type: 'list', allowBlank: true, formulae: [sectionRange], showErrorMessage: true,
+                errorTitle: 'Invalid TDS Section Code', error: 'Pick a section from the list, or type INHERIT.'
             };
         }
 
@@ -937,24 +1047,191 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'TDS_Group_Mappings_Template.xlsx';
+        a.download = side === 'TAX' ? 'TDS_Payable_Ledger_Template.xlsx' : 'TDS_Mapping_Template.xlsx';
         a.click();
         setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+        const groupCount = out.filter(r => r.type === 'Group').length;
+        toast.success(`Exported ${groupCount} groups and ${out.length - groupCount} ledgers`);
     };
 
-    const importGroupMappings = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Reads the template: Group rows (no Ledger Name) and Ledger rows (Ledger Name filled).
+    const importGroupMappings = (event: React.ChangeEvent<HTMLInputElement>, side: 'EXPENSE' | 'TAX' = 'EXPENSE') => {
         const file = event.target.files?.[0]; if (!file) return;
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
-                const data = new Uint8Array(e.target?.result as ArrayBuffer); const workbook = XLSX.read(data, { type: 'array' }); const sheetName = workbook.SheetNames[0]; const worksheet = workbook.Sheets[sheetName]; const json = XLSX.utils.sheet_to_json(worksheet);
-                const validSections = new Set(rules.map(s => s.old_section).concat(rules.map(s => s.new_section_2025)));
-                const newMappings = json.map((row: any) => ({ expenseGroup: String(row['Expense Group'] || '').trim(), subGroup: String(row['Sub-Group'] || '').trim() || undefined, subGroup2: String(row['Sub-Group 2'] || '').trim() || undefined, sectionCode: String(row['TDS Section Code'] || '').trim() })).filter(m => m.expenseGroup && validSections.has(m.sectionCode));
-                if (newMappings.length > 0) {
-                    let successCount = 0;
-                    for (const m of newMappings) { const res = await safeApiFetch('/api/tds/group-mappings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }); if (res.ok) successCount++; }
-                    toast.success(`Imported ${successCount} group mapping templates!`); loadGroupMappings();
-                } else toast.error('No valid group mappings found in Excel file');
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+                if (json.length === 0) return toast.error('The file has no rows');
+
+                const headers = Object.keys(json[0]);
+                const levelKeys = headers
+                    .map(h => ({ h, m: /^level\s*(\d+)$/i.exec(h.trim()) }))
+                    .filter(x => x.m)
+                    .sort((a, b) => Number(a.m![1]) - Number(b.m![1]))
+                    .map(x => x.h);
+                const legacyKeys = ['Expense Group', 'Sub-Group', 'Sub-Group 2'].filter(h => headers.includes(h));
+                const groupKeys = levelKeys.length ? levelKeys : legacyKeys;
+                const sectionKey = headers.find(h => ['TDS Section Code', 'Section', 'Section Code'].includes(h.trim()));
+                const ledgerKey = headers.find(h => h.trim() === 'Ledger Name');
+                if (groupKeys.length === 0 || !sectionKey) {
+                    return toast.error('Use the template columns: Level 1..N, Ledger Name and TDS Section Code');
+                }
+
+                // Accept the section code or the IT Act 2025 section name; store the code
+                const toOld = new Map<string, string>();
+                rules.forEach(s => { toOld.set(s.old_section, s.old_section); toOld.set(s.new_section_2025, s.old_section); });
+                toOld.set('EXCLUDE', 'EXCLUDE');
+
+                const groups: { path: string[]; sectionCode: string | null }[] = [];
+                const ledgers: { ledgerName: string; sectionCode: string | null }[] = [];
+                let invalid = 0;
+                for (const row of json) {
+                    const raw = String(row[sectionKey] ?? '').trim();
+                    if (!raw) continue; // blank = keep as it is
+                    let sectionCode: string | null = null;
+                    if (raw.toUpperCase() !== 'INHERIT') {
+                        sectionCode = toOld.get(raw) ?? null;
+                        if (!sectionCode) { invalid++; continue; }
+                    }
+                    const ledgerName = ledgerKey ? String(row[ledgerKey] ?? '').trim() : '';
+                    if (ledgerName) {
+                        ledgers.push({ ledgerName, sectionCode });
+                        continue;
+                    }
+                    const path = groupKeys.map(k => String(row[k] ?? '').trim()).filter(Boolean);
+                    if (path.length > 0) groups.push({ path, sectionCode });
+                }
+                if (groups.length === 0 && ledgers.length === 0) {
+                    return toast.error('Nothing to import: fill the TDS Section Code column');
+                }
+
+                const res = await safeApiFetch('/api/tds/group-tree/import', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: groups, ledgers })
+                });
+                if (!res.ok) return toast.error('Import failed');
+                const r = await res.json();
+                toast.success(
+                    `Imported: ${r.created} groups added, ${r.updated} updated, ${r.removed} cleared, ` +
+                    `${r.ledgersSet} ledgers set, ${r.ledgersCleared} back to inherit` +
+                    (invalid ? `, ${invalid} unknown sections skipped` : '')
+                );
+                loadGroupTree(); loadTaxTree(); loadGroupMappings(); loadMappings(); loadSuggestions();
+            } catch (error) { toast.error('Invalid Excel file'); }
+        };
+        reader.readAsArrayBuffer(file); event.target.value = '';
+    };
+
+    // ─── TDS Payable ledger template (Duties & Taxes): one row per ledger, mark YES / NO ───
+    const exportTaxTemplate = async () => {
+        let tree: GroupTreeData | null = null;
+        try {
+            const res = await safeApiFetch('/api/tds/group-tree?side=TAX');
+            if (res.ok) tree = await res.json();
+        } catch (err) { tree = null; }
+        if (!tree) return toast.error('Could not read the Duties & Taxes ledgers from the server');
+
+        const rowsOut: { path: string[]; ledgerName: string; tds: string }[] = [];
+        const walk = (node: GroupTreeNode) => {
+            node.ledgers.forEach(l => rowsOut.push({ path: node.path, ledgerName: l.ledgerName, tds: l.isTdsLedger ? 'YES' : 'NO' }));
+            node.children.forEach(walk);
+        };
+        tree.roots.forEach(walk);
+        if (rowsOut.length === 0) return toast.error('No Duties & Taxes ledgers yet. Fetch vouchers from Tally first.');
+
+        const depth = Math.max(3, ...rowsOut.map(r => r.path.length));
+        const workbook = new ExcelJS.Workbook();
+        const ws = workbook.addWorksheet('TDS Payable Ledgers');
+        const wsHelp = workbook.addWorksheet('How To Fill');
+
+        wsHelp.columns = [{ header: 'How to fill the template', key: 'text', width: 100 }];
+        [
+            'Mark YES in the "TDS Ledger" column for every ledger that is a TDS payable ledger.',
+            'Mark NO to take a ledger off the TDS list. Leave the cell blank to keep it unchanged.',
+            'Do not edit the Level or Ledger Name columns. They identify the ledger.'
+        ].forEach(t => wsHelp.addRow({ text: t }));
+        wsHelp.getRow(1).eachCell(cell => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        });
+
+        const levelColumns = Array.from({ length: depth }, (_, i) => ({ header: `Level ${i + 1}`, key: `level${i + 1}`, width: 30 }));
+        ws.columns = [
+            ...levelColumns,
+            { header: 'Ledger Name', key: 'ledgerName', width: 42 },
+            { header: 'TDS Ledger (YES/NO)', key: 'tds', width: 22 }
+        ];
+        rowsOut.forEach(r => {
+            const row: Record<string, string> = { ledgerName: r.ledgerName, tds: r.tds };
+            r.path.forEach((name, i) => { row[`level${i + 1}`] = name; });
+            ws.addRow(row);
+        });
+        ws.getRow(1).eachCell(cell => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+
+        const tdsCol = depth + 2;
+        for (let r = 2; r <= rowsOut.length + 200; r++) {
+            ws.getCell(r, tdsCol).dataValidation = {
+                type: 'list', allowBlank: true, formulae: ['"YES,NO"'], showErrorMessage: true,
+                errorTitle: 'Invalid value', error: 'Choose YES or NO.'
+            };
+        }
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'TDS_Payable_Ledger_Template.xlsx';
+        a.click();
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+        toast.success(`Exported ${rowsOut.length} Duties & Taxes ledgers`);
+    };
+
+    // Reads YES / NO from the TDS column; blank rows are left unchanged
+    const importTaxTemplate = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+                if (json.length === 0) return toast.error('The file has no rows');
+
+                const headers = Object.keys(json[0]);
+                const ledgerKey = headers.find(h => h.trim() === 'Ledger Name');
+                const tdsKey = headers.find(h => /^tds/i.test(h.trim()));
+                if (!ledgerKey || !tdsKey) return toast.error('Use the template columns: Ledger Name and TDS Ledger (YES/NO)');
+
+                const ledgers: { ledgerName: string; tds: boolean }[] = [];
+                let invalid = 0;
+                for (const row of json) {
+                    const ledgerName = String(row[ledgerKey] ?? '').trim();
+                    if (!ledgerName) continue;
+                    const raw = String(row[tdsKey] ?? '').trim().toUpperCase();
+                    if (!raw) continue; // blank = keep as it is
+                    if (raw === 'YES') ledgers.push({ ledgerName, tds: true });
+                    else if (raw === 'NO') ledgers.push({ ledgerName, tds: false });
+                    else invalid++;
+                }
+                if (ledgers.length === 0) return toast.error('Nothing to import: fill the TDS column with YES or NO');
+
+                const res = await safeApiFetch('/api/tds/group-tree/import', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: [], ledgers })
+                });
+                if (!res.ok) return toast.error('Import failed');
+                const r = await res.json();
+                toast.success(`Imported: ${r.ledgersSet} ledgers updated` + (invalid ? `, ${invalid} rows without YES/NO skipped` : ''));
+                loadTaxTree(); loadMappings();
             } catch (error) { toast.error('Invalid Excel file'); }
         };
         reader.readAsArrayBuffer(file); event.target.value = '';
@@ -1012,15 +1289,45 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         try {
             const purchaseTypes = customPurchaseVouchers.split(/[.,;]/).map(s => s.trim()).filter(s => s.length > 0);
             const journalTypes = customJournalVouchers.split(/[.,;]/).map(s => s.trim()).filter(s => s.length > 0);
-            const tdsLedgerNames = ledgerMappings.filter(m => m.isTdsLedger).map(m => m.ledgerName);
+            // TDS-flagged ledgers from both sides (expense and Duties & Taxes)
+            let taxTdsNames: string[] = [];
+            try {
+                const taxRes = await safeApiFetch('/api/tds/ledgers?side=TAX');
+                if (taxRes.ok) taxTdsNames = (await taxRes.json()).filter((l: any) => l.isTdsLedger).map((l: any) => l.ledgerName);
+            } catch (err) { console.error('Failed to read TDS ledger flags', err); }
+            const tdsLedgerNames = [...ledgerMappings.filter(m => m.isTdsLedger).map(m => m.ledgerName), ...taxTdsNames];
+            clearTallyMetadataCache(); // read the live Tally master, not a previous company's cache
             const data = await fetchTdsTransactions(fromDate, toDate, { host: 'localhost', port: tallyPort }, groupMappings, purchaseTypes, journalTypes, tdsLedgerNames);
             setTallyDirectData(data);
             await syncPartiesFromTallyData(data);
-            await syncLedgersFromTallyData(data);
+
+            // Full expense ledger master (every ledger under Direct / Indirect Expenses / Purchase Accounts),
+            // independent of the date range. Voucher-derived ledgers are merged in as well.
+            let masterLedgers: TdsMasterLedger[] = [];
+            try {
+                masterLedgers = await fetchExpenseLedgerMaster({ host: 'localhost', port: tallyPort });
+            } catch (err) {
+                toast.warning('Could not read full ledger master from Tally', { description: String(err) });
+            }
+            const masterAsTxns = masterLedgers.map(l => ({ ledgerName: l.ledgerName, parentGroup: l.parentGroup, parentGroupPath: l.parentGroupPath, parentGroupHierarchy: l.parentGroupHierarchy }));
+            // The master is the source of truth for the expense tree. Only if it was read successfully,
+            // stale auto rows are cleared; otherwise fall back to the voucher ledgers without clearing anything.
+            let taxMaster: TdsMasterLedger[] = [];
+            try {
+                taxMaster = await fetchTaxLedgerMaster({ host: 'localhost', port: tallyPort });
+            } catch (err) {
+                toast.warning('Could not read Duties & Taxes ledgers from Tally', { description: String(err) });
+            }
+            const taxAsTxns = taxMaster.map(l => ({ ledgerName: l.ledgerName, parentGroup: l.parentGroup, parentGroupPath: l.parentGroupPath, parentGroupHierarchy: l.parentGroupHierarchy }));
+            // Stale auto rows are cleared only when both Tally masters were read successfully
+            const bothRead = masterLedgers.length > 0 && taxMaster.length > 0;
+            if (masterLedgers.length + taxMaster.length > 0) await syncLedgersFromTallyData([...masterAsTxns, ...taxAsTxns], bothRead);
+            else await syncLedgersFromTallyData(data);
+
             // Pass the parsed party names immediately to fetchBalances to bypass React state update delay
             const parsedPartyNames = Array.from(new Set(data.map(t => t.partyName)));
             fetchBalances(parsedPartyNames);
-            toast.success(`Fetched ${data.length} expense/payment vouchers from Tally!`);
+            toast.success(`Fetched ${data.length} vouchers and ${masterLedgers.length} expense ledgers from Tally master`);
         } catch (err) { toast.error('Fetch failed', { description: String(err) }); }
         finally { setIsFetchingTally(false); }
     };
@@ -1307,7 +1614,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
             setReconSummary(data.summary);
             setReconResults(mappedResults);
-            setActiveStep(splitPans.length > 0 ? 3 : 4);
+            setActiveStep(3);
             setExpandedRows(new Set());
             toast.success("TDS Reconciliation engine executed successfully!");
 
@@ -1338,24 +1645,34 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
         });
         if (!ok) return;
         try {
-            const res = await safeApiFetch('/api/tds/reset', { method: 'POST' });
+            // The server only resets when it receives the explicit confirmation token
+            const res = await safeApiFetch('/api/tds/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'RESET_ALL_TDS_DATA' })
+            });
             if (res.ok) {
                 setForm26qFile(null); setTallyDirectData(null); setReconResults(null); setReconSummary(null);
-                setLedgerMappings([]); setGroupMappings([]); setSuggestions([]); setSelectedSuggestions({});
+                setLedgerMappings([]); setGroupMappings([]); setGroupTree(null); setTaxTree(null);
+                setSuggestions([]); setSelectedSuggestions({});
                 setSuggestedSections({}); setParties([]); setPartyBalances(new Map()); setActiveStep(0);
                 toast.success("TDS Module completely reset successfully!");
-            } else toast.error("Failed to reset database tables");
+            } else {
+                const body = await res.json().catch(() => ({} as { error?: string }));
+                toast.error(body.error || 'Failed to reset database tables');
+            }
         } catch (err) { toast.error("Error communicating with reset server"); }
     };
 
     const getStatusStyle = (status: string) => {
         switch (status) {
-            case 'Matched': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-            case 'Short Deducted': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
-            case 'Excess Deducted': return 'bg-purple-500/15 text-purple-400 border-purple-500/30';
-            case 'Missing in 26Q': return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
-            case 'Missing in Books': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-            default: return 'bg-slate-800 text-slate-700 border-slate-700';
+            case 'Matched': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+            case 'Short Deducted': return 'bg-amber-50 text-amber-700 border-amber-200';
+            case 'Excess Deducted': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+            case 'Missing in 26Q': return 'bg-rose-50 text-rose-700 border-rose-200';
+            case 'Missing in Books': return 'bg-blue-50 text-blue-700 border-blue-200';
+            case 'Under Threshold': return 'bg-slate-100 text-slate-700 border-slate-200';
+            default: return 'bg-slate-100 text-slate-700 border-slate-200';
         }
     };
 
@@ -1385,15 +1702,14 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
     // ─── Stepper readiness ───────────────────────────────────
     const step1Ready = !!tallyDirectData;
-    const step2Ready = !!form26qFile;
+    const step2Ready = !!form26qFile || (!!itrParsedTdsRecords && itrParsedTdsRecords.length > 0) || manualTdsRecords.length > 0;
     const step3Ready = parties.length > 0;
 
     const steps = [
-        { label: 'Data & Mappings', icon: Database, ready: step1Ready, info: tallyDirectData ? `${tallyDirectData.length} vouchers` : 'Fetch Tally Data' },
-        { label: '26Q Ingestion', icon: UploadCloud, ready: step2Ready, info: form26qFile ? form26qFile.name.slice(0, 12) : 'Upload 26Q' },
+        { label: 'Tally Ingestion & Mappings', icon: Database, ready: step1Ready, info: tallyDirectData ? `${tallyDirectData.length} vouchers` : 'Fetch Tally' },
+        { label: 'Form 26Q Ingestion', icon: UploadCloud, ready: step2Ready, info: form26qFile ? form26qFile.name.slice(0, 14) : 'Upload 26Q' },
         { label: 'Vendor Review', icon: Users, ready: step3Ready, info: step3Ready ? `${parties.length} vendors` : 'Review Vendors' },
-        { label: 'Multi-Ledger PAN Audit', icon: AlertTriangle, ready: multiLedgerPans.length > 0, info: multiLedgerPans.length > 0 ? `${multiLedgerPans.length} split PANs` : 'No split PANs', disabled: !reconResults },
-        { label: 'Results', icon: Activity, ready: !!reconResults, info: reconResults ? `${reconResults.length} records` : 'Run engine', disabled: !reconResults }
+        { label: 'Audit & Reconciliation', icon: Activity, ready: !!reconResults, info: reconResults ? `${reconResults.length} records` : 'Run Engine', disabled: !reconResults }
     ];
 
     /**
@@ -1435,7 +1751,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
     const fmtAmt = (val: number) => '₹' + Math.abs(val).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
     return (
-        <div className="w-full max-w-6xl mx-auto space-y-3 silk-reveal">
+        <div className="w-full max-w-6xl mx-auto space-y-2 silk-reveal">
             {/* Header */}
             <header className="bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
                 <div className="flex items-center gap-3">
@@ -1490,23 +1806,27 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
             {/* Navigation Stepper */}
             <StepperNav steps={steps} activeStep={activeStep} onStepClick={setActiveStep} />
 
-            {/* ═══════════════ STEP 0: DATA & MAPPINGS (MERGED) ═══════════════ */}
+            {/* ═══════════════ STEP 0: TALLY INGESTION & AUTO-MAPPINGS ═══════════════ */}
             {activeStep === 0 && (
-                <div className="space-y-5 animate-pop-in">
-
-                    {/* Financial Year Selector */}
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-4 animate-pop-in">
+                    {/* Card 1: Assessment Period & TallyPrime Connection */}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><CalendarClock className="w-5 h-5 text-indigo-600" /> Financial Year</h3>
-                                <p className="text-xs text-slate-500 mt-0.5 font-medium">Select the assessment period for TDS reconciliation</p>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <CalendarClock className="w-5 h-5 text-indigo-600" />
+                                    Assessment Period & TallyPrime Connection
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Select the financial year and fetch transactions live from your running TallyPrime company.
+                                </p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                                 {FY_OPTIONS.map(fy => (
                                     <button
                                         key={fy}
                                         onClick={() => { setSelectedFY(fy); const yr = parseInt(fy.split('-')[0]); setFromDate(`${yr}-04-01`); setToDate(`${yr + 1}-03-31`); }}
-                                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${selectedFY === fy
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${selectedFY === fy
                                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-white'
                                         }`}
@@ -1516,97 +1836,229 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 ))}
                             </div>
                         </div>
-                    </div>
 
-                    {/* Tally Live API Connection */}
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
-                        <h3 className="text-base font-bold text-slate-900 mb-1.5 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-600" /> Tally Data Ingestion</h3>
-                        <p className="text-xs text-slate-500 mb-5 font-medium">Fetch ledger balances and transactions directly from TallyPrime via Live API.</p>
-                        
-                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-bold text-slate-800 flex items-center gap-2"><Server className="w-4 h-4 text-teal-600" /> Live Tally API Connection</span>
+                        {/* Live Tally Connection Row */}
+                        <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200/90 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="flex items-center gap-2">
-                                    <input type="number" value={tallyPort} onChange={e => setTallyPort(Number(e.target.value))} className="w-20 h-7 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold focus:border-indigo-500 outline-none" />
-                                    <button onClick={connectToTally} disabled={connectionStatus === 'connecting'} className="h-7 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded text-xs font-bold transition-colors shadow-lg shadow-teal-900/20 disabled:opacity-50">{connectionStatus === 'connecting' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}</button>
+                                    <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200/70 text-teal-600 flex items-center justify-center">
+                                        <Server className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                                            TallyPrime Live Gateway
+                                            {connectionStatus === 'connected' ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    Connected: {companyInfo?.name || 'Company'}
+                                                </span>
+                                            ) : connectionStatus === 'connecting' ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                    <Loader2 className="w-2.5 h-2.5 animate-spin" /> Connecting...
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                                    Disconnected (Port {tallyPort})
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">Local XML Server HTTP Port (Default: 9000)</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        value={tallyPort}
+                                        onChange={e => setTallyPort(Number(e.target.value))}
+                                        className="w-20 h-8 bg-white border border-slate-300 rounded-lg px-2.5 text-xs text-slate-900 font-bold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 outline-none shadow-2xs"
+                                        title="TallyPrime HTTP XML Server Port"
+                                    />
+                                    <button
+                                        onClick={connectToTally}
+                                        disabled={connectionStatus === 'connecting'}
+                                        className="h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        {connectionStatus === 'connecting' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                        {connectionStatus === 'connected' ? 'Re-Connect' : 'Connect'}
+                                    </button>
                                 </div>
                             </div>
-                            {connectionStatus === 'connected' && (
-                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                    <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded w-fit border border-emerald-500/20"><CheckCircle2 className="w-3 h-3" /> Connected: {companyInfo?.name}</div>
-                                    <div className="flex gap-2">
-                                        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="flex-1 h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 focus:border-indigo-500 outline-none" />
-                                        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="flex-1 h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold focus:border-teal-500 outline-none" />
-                                        <button onClick={handleFetchTally} disabled={isFetchingTally} className="h-8 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-bold transition-colors flex items-center gap-2">{isFetchingTally ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Fetch Vouchers</button>
+
+                            {/* Date range & Fetch button */}
+                            <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-200/60">
+                                <div className="flex items-center gap-1.5 flex-1 min-w-[280px]">
+                                    <label className="text-xs font-semibold text-slate-600 shrink-0">Period:</label>
+                                    <input
+                                        type="date"
+                                        value={fromDate}
+                                        onChange={e => setFromDate(e.target.value)}
+                                        className="flex-1 h-8 bg-white border border-slate-300 rounded-lg px-2.5 text-xs text-slate-900 font-semibold focus:border-indigo-500 outline-none shadow-2xs"
+                                    />
+                                    <span className="text-xs text-slate-400">to</span>
+                                    <input
+                                        type="date"
+                                        value={toDate}
+                                        onChange={e => setToDate(e.target.value)}
+                                        className="flex-1 h-8 bg-white border border-slate-300 rounded-lg px-2.5 text-xs text-slate-900 font-semibold focus:border-indigo-500 outline-none shadow-2xs"
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={handleFetchTally}
+                                    disabled={isFetchingTally || connectionStatus !== 'connected'}
+                                    className="h-8 px-5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+                                >
+                                    {isFetchingTally ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+                                    {isFetchingTally ? 'Fetching Vouchers & Masters...' : 'Fetch Tally Vouchers'}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvancedVouchers(!showAdvancedVouchers)}
+                                    className="h-8 px-2.5 text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                                    title="Configure custom purchase/journal voucher type names"
+                                >
+                                    <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Voucher Types</span>
+                                    {showAdvancedVouchers ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+                            </div>
+
+                            {/* Collapsible custom voucher types */}
+                            {showAdvancedVouchers && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 animate-in fade-in">
+                                    <div>
+                                        <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Custom Purchase Voucher Types</label>
+                                        <input
+                                            type="text"
+                                            value={customPurchaseVouchers}
+                                            onChange={e => handleCustomPurchaseChange(e.target.value)}
+                                            placeholder="e.g. Purchase GST, Inward Supply"
+                                            className="w-full h-8 bg-white border border-slate-300 rounded-lg px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 outline-none"
+                                        />
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3 pt-1">
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Purchase Vouchers</label><input type="text" value={customPurchaseVouchers} onChange={e => handleCustomPurchaseChange(e.target.value)} placeholder="e.g. Purchase GST" className="w-full h-8 bg-white border border-slate-300 rounded px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-purple-500 outline-none" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Custom Journal Vouchers</label><input type="text" value={customJournalVouchers} onChange={e => handleCustomJournalChange(e.target.value)} placeholder="e.g. TDS Journal" className="w-full h-8 bg-white border border-slate-300 rounded px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-purple-500 outline-none" /></div>
+                                    <div>
+                                        <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Custom Journal Voucher Types</label>
+                                        <input
+                                            type="text"
+                                            value={customJournalVouchers}
+                                            onChange={e => handleCustomJournalChange(e.target.value)}
+                                            placeholder="e.g. TDS Journal, Provision"
+                                            className="w-full h-8 bg-white border border-slate-300 rounded-lg px-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 outline-none"
+                                        />
                                     </div>
-                                    {tallyDirectData && <div className="text-xs text-indigo-300 font-medium pt-1">✅ {tallyDirectData.length} expense/payment vouchers fetched.</div>}
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Strict Mode Toggle Checkbox */}
-                    <div className="bg-white border border-indigo-200/80 rounded-2xl p-4 flex items-center justify-between shadow-xs">
-                        <div className="flex items-center gap-3">
-                            <input 
-                                type="checkbox" 
-                                id="strictModeCheckbox"
-                                checked={strictModeOnlyMapped}
-                                onChange={(e) => setStrictModeOnlyMapped(e.target.checked)}
-                                className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
-                            />
-                            <div>
-                                <label htmlFor="strictModeCheckbox" className="text-xs font-bold text-slate-900 cursor-pointer flex items-center gap-2">
-                                    <ShieldAlert className="w-4 h-4 text-purple-400" />
-                                    Strict Reconciliation Mode: Use ONLY explicitly mapped expense ledgers
-                                </label>
-                                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">When checked, unmapped ledgers will be strictly ignored and excluded from TDS calculations.</p>
-                            </div>
-                        </div>
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${strictModeOnlyMapped ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-600'}`}>
-                            {strictModeOnlyMapped ? 'Strict Mode ON' : 'Standard Mode'}
-                        </span>
-                    </div>
+                    {/* Card 2: Auto-Mapping Summary & Reconciliation Mode (Shown once Tally vouchers are loaded) */}
+                    {tallyDirectData && (
+                        <div className="bg-white border border-emerald-200/90 rounded-2xl p-5 shadow-xs space-y-4 animate-in fade-in">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                            Auto-Mapping Active from Tally Group Hierarchy
+                                            <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
+                                                100% Automated
+                                            </span>
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            Every expense ledger automatically inherits its statutory TDS section from parent & sub-groups.
+                                        </p>
+                                    </div>
+                                </div>
 
-                    {/* Unmapped Fetched Ledgers Section */}
-                    {tallyDirectData && unmappedFetchedLedgers.length > 0 && (
-                        <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs">
-                            <div className="flex items-center justify-between mb-3">
-                                <div>
-                                    <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
-                                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                        Unmapped Fetched Ledgers ({unmappedFetchedLedgers.length})
-                                    </h4>
-                                    <p className="text-xs text-slate-600 mt-0.5">Assign TDS sections directly here or use the Ledger Mapping section below.</p>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                                        <input
+                                            type="checkbox"
+                                            id="strictModeCheckbox"
+                                            checked={strictModeOnlyMapped}
+                                            onChange={(e) => setStrictModeOnlyMapped(e.target.checked)}
+                                            className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                                        />
+                                        <label htmlFor="strictModeCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                            Strict Mode
+                                        </label>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${strictModeOnlyMapped ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-200/70 text-slate-600'}`}>
+                                            {strictModeOnlyMapped ? 'ON' : 'OFF'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50">
+
+                            {/* Stats Counter Bar */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Vouchers Loaded</span>
+                                    <span className="text-xl font-black text-slate-900">{tallyDirectData.length}</span>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Group Templates</span>
+                                    <span className="text-xl font-black text-indigo-600">{groupMappings.length}</span>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Ledgers Mapped</span>
+                                    <span className="text-xl font-black text-emerald-600">
+                                        {ledgerMappings.filter(m => m.sectionCode || m.inheritedSectionCode || m.isTdsLedger).length}
+                                    </span>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Unmapped Ledgers</span>
+                                    <span className={`text-xl font-black ${unmappedFetchedLedgers.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        {unmappedFetchedLedgers.length}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Card 3: Unmapped Ledgers Quick Assigner (Only if unmapped ledgers exist) */}
+                    {tallyDirectData && unmappedFetchedLedgers.length > 0 && (
+                        <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                                    <div>
+                                        <h4 className="text-sm font-bold text-slate-900">
+                                            {unmappedFetchedLedgers.length} Ledgers Require Attention
+                                        </h4>
+                                        <p className="text-xs text-slate-500">
+                                            These expense ledgers have no inherited group template. Assign a TDS section below or leave unmapped.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50/60">
                                 <table className="w-full text-left text-xs">
-                                    <thead className="bg-slate-50 text-slate-600 sticky top-0 border-b border-slate-200">
+                                    <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200 font-bold uppercase text-[10px]">
                                         <tr>
-                                            <th className="px-3 py-2 font-medium">Ledger Name</th>
-                                            <th className="px-3 py-2 font-medium">Assign TDS Section</th>
+                                            <th className="px-4 py-2.5">Ledger Name</th>
+                                            <th className="px-4 py-2.5">Assign TDS Section</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800/40">
+                                    <tbody className="divide-y divide-slate-200">
                                         {unmappedFetchedLedgers.map((ledgerName, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="px-3 py-2 text-slate-900 font-semibold">{ledgerName}</td>
-                                                <td className="px-3 py-2">
-                                                    <select 
+                                            <tr key={idx} className="hover:bg-white transition-colors">
+                                                <td className="px-4 py-2.5 text-slate-900 font-semibold">{ledgerName}</td>
+                                                <td className="px-4 py-2.5">
+                                                    <select
                                                         defaultValue=""
                                                         onChange={(e) => {
                                                             if (e.target.value) {
                                                                 handleUpdateLedgerConfig(ledgerName, { sectionCode: e.target.value, isTdsLedger: false });
                                                             }
                                                         }}
-                                                        className="h-7 bg-white border border-slate-300 rounded px-2 text-xs text-indigo-700 font-bold font-medium focus:border-purple-500 outline-none"
+                                                        className="h-7 bg-white border border-slate-300 rounded-lg px-2 text-xs text-indigo-700 font-bold focus:border-indigo-500 outline-none shadow-2xs"
                                                     >
-                                                        <option value="">-- Unmapped (Select Section) --</option>
+                                                        <option value="">-- Select Section --</option>
                                                         {rules.map((r, ri) => (
                                                             <option key={ri} value={r.old_section}>{r.old_section} - {r.nature_of_payment}</option>
                                                         ))}
@@ -1620,274 +2072,243 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                         </div>
                     )}
 
-                    {/* ────── MERGED LEDGER MAPPINGS SECTION ────── */}
-
-                    {/* Auto Map Preview */}
-                    {suggestions.length > 0 && (
-                        <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/60 border border-indigo-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden">
-                            <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                            <h2 className="text-lg font-bold text-slate-900 mb-1.5 flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-indigo-400" /> Suggested Auto-Mappings</h2>
-                            <p className="text-xs text-slate-600 mb-4">Verify these suggested section mappings and confirm to save.</p>
-                            <div className="max-h-[250px] overflow-y-auto border border-slate-200 rounded-xl overflow-hidden mb-4 bg-slate-50">
-                                <table className="w-full text-left text-sm whitespace-nowrap">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
-                                        <tr><th className="px-4 py-2.5 font-medium w-12 text-center">✓</th><th className="px-4 py-2.5 font-medium">Ledger Name</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium">Confidence</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800/50">
-                                        {suggestions.map((s, i) => (
-                                            <tr key={i} className="hover:bg-indigo-900/10 transition-colors">
-                                                <td className="px-4 py-2.5 text-center"><input type="checkbox" checked={!!selectedSuggestions[s.ledgerName]} onChange={(e) => setSelectedSuggestions({ ...selectedSuggestions, [s.ledgerName]: e.target.checked })} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700" /></td>
-                                                <td className="px-4 py-2.5 text-slate-900 font-semibold">{s.ledgerName}</td>
-                                                <td className="px-4 py-2.5"><select value={suggestedSections[s.ledgerName] || s.suggestedSection} onChange={(e) => setSuggestedSections({ ...suggestedSections, [s.ledgerName]: e.target.value })} className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:border-purple-500 outline-none">{rules.map(r => <option key={r.old_section} value={r.old_section}>{r.old_section} - {r.nature_of_payment}</option>)}</select></td>
-                                                <td className="px-4 py-2.5">{s.isProbable ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">HIGH</span> : <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-600 rounded text-[10px] font-bold">LOW</span>}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div className="flex justify-end"><button onClick={handleConfirmAutoMappings} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-900/30 flex items-center gap-2"><Check className="w-4 h-4" /> Confirm Selected</button></div>
-                        </div>
-                    )}
-
-                    {/* Group Hierarchy Mappings - Collapsible */}
-                    <CollapsibleSection title="Group Hierarchy Mappings" subtitle="Define mapping templates for Expense Groups to drive auto-classification" icon={Settings2} defaultOpen={groupMappings.length === 0}
-                        badge={groupMappings.length > 0 ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">{groupMappings.length} templates</span> : undefined}>
-                        <div className="space-y-4 pt-4">
-                            <div className="flex justify-end gap-2 mb-2">
-                                <button onClick={exportGroupMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold"><Download className="w-3 h-3" /> Export</button>
-                                <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importGroupMappings} /></label>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Expense Group</label><input type="text" value={newExpenseGroup} onChange={e => setNewExpenseGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Indirect Expenses" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group</label><input type="text" value={newSubGroup} onChange={e => setNewSubGroup(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="e.g. Professional Fees" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sub-Group 2</label><input type="text" value={newSubGroup2} onChange={e => setNewSubGroup2(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddGroupMapping()} placeholder="Optional" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">TDS Section</label><select value={newGroupSectionCode} onChange={e => setNewGroupSectionCode(e.target.value)} className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
-                                <div className="md:col-span-4 flex justify-end"><button onClick={handleAddGroupMapping} className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors">Add Template</button></div>
-                            </div>
-                            {groupMappings.length > 0 && (
-                                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="px-4 py-2.5 font-medium">Expense Group Path</th><th className="px-4 py-2.5 font-medium text-center">TDS Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
-                                        <tbody className="divide-y divide-slate-800/50">{groupMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-slate-900 font-semibold">{map.expenseGroup}{map.subGroup && ` > ${map.subGroup}`}{map.subGroup2 && ` > ${map.subGroup2}`}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-mono text-xs font-bold text-purple-400">{map.sectionCode}</span></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveGroupMapping(map.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
-                                    </table>
+                    {/* Card 4: Enterprise Hierarchy & Template Customization (Collapsible, closed by default) */}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                        <button
+                            type="button"
+                            onClick={() => setShowEnterpriseMapping(!showEnterpriseMapping)}
+                            className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors group text-left cursor-pointer"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center shrink-0">
+                                    <Settings2 className="w-4 h-4" />
                                 </div>
-                            )}
-                        </div>
-                    </CollapsibleSection>
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                        Enterprise Group Hierarchy & Template Customization
+                                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                            Optional
+                                        </span>
+                                    </h4>
+                                    <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                                        Inspect or override statutory section inheritance across full Tally expense groups and Duties & Taxes.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {showEnterpriseMapping ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                            </div>
+                        </button>
 
-                    {/* Ledger Mappings - Collapsible */}
-                    <CollapsibleSection title="Tally Ledger Mappings" subtitle="Define which expense ledgers attract TDS and under which section" icon={FileSpreadsheet} defaultOpen={ledgerMappings.length === 0}
-                        badge={ledgerMappings.length > 0 ? <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold">{ledgerMappings.length} mapped</span> : undefined}>
-                        <div className="space-y-4 pt-4">
-                            {(() => {
-                                const mappedCount = ledgerMappings.filter(m => !!m.sectionCode || !!m.inheritedSectionCode || m.isTdsLedger).length;
-                                const unmappedCount = ledgerMappings.length - mappedCount;
-                                return (
-                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
-                                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200">
-                                            <button
-                                                type="button"
-                                                onClick={() => setLedgerFilterMode('mapped')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'mapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
-                                            >
-                                                Mapped Only ({mappedCount})
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setLedgerFilterMode('all')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'all' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
-                                            >
-                                                All ({ledgerMappings.length})
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setLedgerFilterMode('unmapped')}
-                                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'unmapped' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-white'}`}
-                                            >
-                                                Unmapped ({unmappedCount})
-                                            </button>
-                                            {importedLedgerNames.size > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setLedgerFilterMode('imported')}
-                                                    className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${ledgerFilterMode === 'imported' ? 'bg-amber-600 text-white shadow-md' : 'text-amber-400 hover:text-white'}`}
-                                                >
-                                                    Imported Sheet ({importedLedgerNames.size})
-                                                </button>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            {unmappedCount > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleRemoveUnmappedLedgers}
-                                                    className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 px-2.5 py-1.5 rounded-lg border border-rose-500/20 transition-colors"
-                                                    title="Remove all unmapped ledgers from database list"
-                                                >
-                                                    <Trash2 className="w-3 h-3" /> Remove Unmapped ({unmappedCount})
-                                                </button>
-                                            )}
-                                            <button onClick={exportLedgerMappings} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold"><Download className="w-3 h-3" /> Export</button>
-                                            <label className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-slate-700 hover:text-slate-900 transition-colors bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs text-slate-700 font-semibold cursor-pointer"><UploadCloud className="w-3 h-3" /> Import<input type="file" accept=".xlsx,.xls" className="hidden" onChange={importLedgerMappings} /></label>
-                                        </div>
+                        {showEnterpriseMapping && (
+                            <div className="p-5 pt-2 border-t border-slate-100 space-y-4">
+                                {/* Sub-Tab Switcher */}
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMappingTreeTab('EXPENSE')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${mappingTreeTab === 'EXPENSE' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
+                                        >
+                                            📁 Expense Groups & Ledgers Tree
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMappingTreeTab('DUTIES')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${mappingTreeTab === 'DUTIES' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
+                                        >
+                                            🧾 Duties & Taxes (TDS Payable Ledgers)
+                                        </button>
                                     </div>
-                                );
-                            })()}
-                            <div className="flex flex-col md:flex-row gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                                <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tally Ledger Name</label><input type="text" value={newLedgerName} onChange={e => setNewLedgerName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddMapping()} placeholder="e.g. Audit Fees" className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none" /></div>
-                                <div className="flex items-center gap-2 md:mt-5 px-2"><input type="checkbox" id="isNewLedgerTds" checked={isNewLedgerTds} onChange={e => setIsNewLedgerTds(e.target.checked)} className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700 cursor-pointer" /><label htmlFor="isNewLedgerTds" className="text-xs font-medium text-slate-700 cursor-pointer select-none whitespace-nowrap">TDS Tax Ledger</label></div>
-                                <div className="w-full md:w-56"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Section</label><select value={newSectionCode} onChange={e => setNewSectionCode(e.target.value)} disabled={isNewLedgerTds} className="w-full h-9 bg-white border border-slate-300 rounded-lg px-3 text-sm text-slate-900 font-medium focus:border-purple-500 outline-none disabled:opacity-40">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></div>
-                                <div className="flex items-end"><button onClick={handleAddMapping} className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-sm transition-colors whitespace-nowrap">Add Ledger</button></div>
-                            </div>
-                            {(() => {
-                                let filteredMappings = ledgerMappings;
-                                if (ledgerFilterMode === 'mapped') {
-                                    filteredMappings = ledgerMappings.filter(m => !!m.sectionCode || !!m.inheritedSectionCode || m.isTdsLedger);
-                                } else if (ledgerFilterMode === 'unmapped') {
-                                    filteredMappings = ledgerMappings.filter(m => !m.sectionCode && !m.inheritedSectionCode && !m.isTdsLedger);
-                                } else if (ledgerFilterMode === 'imported' && importedLedgerNames.size > 0) {
-                                    filteredMappings = ledgerMappings.filter(m => importedLedgerNames.has(m.ledgerName.toLowerCase().trim()));
-                                }
-                                return filteredMappings.length > 0 ? (
-                                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[300px] overflow-y-auto">
-                                    <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium">Tally Ledger</th><th className="px-4 py-2.5 font-medium text-center w-32">TDS Tax?</th><th className="px-4 py-2.5 font-medium">Section</th><th className="px-4 py-2.5 font-medium text-center w-16"></th></tr></thead>
-                                        <tbody className="divide-y divide-slate-800/50">{filteredMappings.map((map, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-slate-900 font-semibold flex items-center gap-2">{map.ledgerName}{map.inheritedGroupName && !map.sectionCode && (<span className="px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[9px] font-bold text-indigo-400 whitespace-nowrap" title={`Inherited from group mapping: ${map.inheritedGroupName}`}>Group: {map.inheritedGroupName}</span>)}</td><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={map.isTdsLedger} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { isTdsLedger: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5"><select value={map.sectionCode || map.inheritedSectionCode || ''} onChange={(e) => handleUpdateLedgerConfig(map.ledgerName, { sectionCode: e.target.value || null })} className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-900 font-medium focus:border-purple-500 outline-none"><option value="">-- Unmapped (Select Section) --</option>{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section} - {sec.nature_of_payment}</option>)}</select></td><td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveMapping(map.ledgerName)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4 mx-auto" /></button></td></tr>))}</tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <div className="p-6 text-center text-xs text-slate-500 border border-slate-200 rounded-xl bg-slate-50">
-                                    No ledgers match current filter mode ({ledgerFilterMode}). Switch tab above or add a ledger.
-                                </div>
-                            );
-                            })()}
-                        </div>
-                    </CollapsibleSection>
 
-                    <div className="flex justify-end pt-2">
-                        <button onClick={() => setActiveStep(1)} disabled={!tallyDirectData} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
+                                    {mappingTreeTab === 'EXPENSE' ? (
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => exportGroupMappings('EXPENSE')} className="text-xs font-bold flex items-center gap-1.5 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer">
+                                                <Download className="w-3.5 h-3.5" /> Export Tree
+                                            </button>
+                                            <label className="text-xs font-bold flex items-center gap-1.5 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs cursor-pointer transition-colors">
+                                                <UploadCloud className="w-3.5 h-3.5" /> Import
+                                                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => importGroupMappings(e, 'EXPENSE')} />
+                                            </label>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={exportTaxTemplate} className="text-xs font-bold flex items-center gap-1.5 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer">
+                                                <Download className="w-3.5 h-3.5" /> Export Taxes
+                                            </button>
+                                            <label className="text-xs font-bold flex items-center gap-1.5 text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs cursor-pointer transition-colors">
+                                                <UploadCloud className="w-3.5 h-3.5" /> Import
+                                                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={importTaxTemplate} />
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {mappingTreeTab === 'EXPENSE' ? (
+                                    <TdsGroupTree
+                                        data={groupTree}
+                                        sections={rules}
+                                        onSetGroupSection={handleSetGroupSection}
+                                        onSetLedgerSection={handleSetLedgerSectionFromTree}
+                                        onClearLedgerOverride={handleClearLedgerOverride}
+                                    />
+                                ) : (
+                                    <TdsGroupTree
+                                        data={taxTree}
+                                        sections={rules}
+                                        onSetGroupSection={handleSetGroupSection}
+                                        onSetLedgerSection={handleSetLedgerSectionFromTree}
+                                        onClearLedgerOverride={handleClearLedgerOverride}
+                                        showTds={true}
+                                        tickOnly={true}
+                                        onSetLedgerTds={handleSetLedgerTds}
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Step 0 Bottom Action Bar */}
+                    <div className="flex items-center justify-between pt-2">
+                        <span className="text-xs font-semibold text-slate-500">
+                            {tallyDirectData ? `Ready: ${tallyDirectData.length} vouchers loaded` : 'Connect Tally and click Fetch Vouchers to begin'}
+                        </span>
+                        <button
+                            onClick={() => setActiveStep(1)}
+                            disabled={!tallyDirectData}
+                            className="h-10 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+                        >
                             Continue to Form 26Q Ingestion <ArrowRight className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ═══════════════ STEP 1: Form 26Q INGESTION ═══════════════ */}
+            {/* ═══════════════ STEP 1: FORM 26Q INGESTION ═══════════════ */}
             {activeStep === 1 && (
-                <div className="space-y-5 animate-pop-in">
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> Form 26Q (TRACES)</h3>
-                            <button onClick={export26QTemplate} className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1.5 rounded-lg border border-emerald-500/20"><Download className="w-3 h-3" /> Template</button>
+                <div className="space-y-4 animate-pop-in">
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Form 26Q (TRACES Return)
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Upload the Form 26Q Excel workbook downloaded from TRACES. Requires columns: <b>PAN, Name, Section, Amount Paid, TDS Deposited</b>.
+                                </p>
+                            </div>
+                            <button
+                                onClick={export26QTemplate}
+                                className="h-8 px-3.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <Download className="w-3.5 h-3.5" /> Download Template
+                            </button>
                         </div>
-                        <p className="text-xs text-slate-600 mb-5">Upload Form 26Q Excel file from TRACES. Must have columns: <b>PAN, Name, Section, Amount Paid, TDS Deposited</b>.</p>
-                        {!form26qFile ? <FileUploadZone onFileSelect={async (f) => { setForm26qFile(f); toast.success('Form 26Q Loaded'); }} label="Upload Form 26Q" description="Accepts Excel (.xlsx)" /> : <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between"><div className="flex items-center gap-3"><CheckCircle2 className="text-emerald-400 w-5 h-5" /><span className="text-emerald-100 font-medium text-sm">{form26qFile.name}</span></div><button onClick={() => setForm26qFile(null)} className="text-emerald-400 hover:text-white"><X className="w-4 h-4" /></button></div>}
+
+                        {!form26qFile ? (
+                            <FileUploadZone
+                                onFileSelect={async (f) => { setForm26qFile(f); toast.success('Form 26Q Loaded'); }}
+                                label="Upload Form 26Q Excel"
+                                description="Drag and drop your .xlsx workbook or click to browse"
+                            />
+                        ) : (
+                            <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <span className="text-xs font-bold text-slate-900 block">{form26qFile.name}</span>
+                                        <span className="text-[11px] text-emerald-700 font-medium">Form 26Q ready for reconciliation</span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setForm26qFile(null)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
+                                    title="Remove file"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
 
-                    <CollapsibleSection title="Alternative Ingestion Methods (ITR JSON / Manual Grid)" subtitle="Upload filed ITR JSON or type transactions manually inside browser grid" icon={Settings2} defaultOpen={false}>
-                        <div className="space-y-5 pt-4">
-                            {/* Channel Tabs */}
-                            <div className="flex border-b border-slate-200 pb-2 gap-4">
-                                {(['ITR_JSON', 'MANUAL'] as const).map(ch => (
-                                    <button key={ch} onClick={() => setTdsIngestChannel(ch === 'ITR_JSON' ? 'ITR_JSON' : 'MANUAL')} className={`pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${tdsIngestChannel === ch ? 'text-purple-400 border-b-2 border-purple-400 font-extrabold' : 'text-slate-500 hover:text-slate-700'}`}>
-                                        {ch === 'ITR_JSON' ? 'ITR JSON Upload' : 'Manual Grid Entry'}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* ITR JSON */}
-                            {tdsIngestChannel === 'ITR_JSON' && (
-                                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
-                                    <h3 className="text-lg font-bold text-slate-900 mb-1.5 flex items-center gap-2"><FileText className="w-5 h-5 text-emerald-400" /> ITR JSON file (TDS Credit)</h3>
-                                    <p className="text-xs text-slate-600 mb-5">Upload filed ITR JSON. Auto-extracts all TDS deductions from Schedule TDS.</p>
-                                    {!itrJsonFile ? (<FileUploadZone onFileSelect={handleItrFileUpload} label="Upload ITR JSON" description="Accepts .json" accepted=".json" />) : (
-                                        <div className="space-y-3">
-                                            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between"><div className="flex items-center gap-3"><CheckCircle2 className="text-emerald-400 w-5 h-5" /><span className="text-emerald-100 font-medium text-sm">{itrJsonFile.name}</span></div><button onClick={() => { setItrJsonFile(null); setItrParsedTdsRecords(null); }} className="text-emerald-400 hover:text-white"><X className="w-4 h-4" /></button></div>
-                                            {itrParsedTdsRecords && (<div className="p-3 bg-slate-50 rounded-xl border border-slate-200"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Parsed {itrParsedTdsRecords.length} TDS Credits</div><div className="max-h-[140px] overflow-y-auto text-[11px] text-slate-600 font-mono space-y-1 divide-y divide-slate-900">{itrParsedTdsRecords.map((r, idx) => (<div key={idx} className="pt-1 first:pt-0 flex justify-between"><span>{r.partyName.slice(0, 15)}.. ({r.partyPan})</span><span className="text-emerald-400 font-bold">₹{r.tdsDeducted.toLocaleString()}</span></div>))}</div></div>)}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Manual Grid */}
-                            {tdsIngestChannel === 'MANUAL' && (
-                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-3">
-                                        <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Database className="w-5 h-5 text-indigo-400" /> Books Transactions</h3><p className="text-xs text-slate-600">Manually insert transactions from books.</p></div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Date</label><input type="date" value={newManualBook.date} onChange={e => setNewManualBook({ ...newManualBook, date: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Party Name</label><input type="text" placeholder="Vendor Name" value={newManualBook.partyName} onChange={e => setNewManualBook({ ...newManualBook, partyName: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN</label><input type="text" placeholder="ABCDE1234F" value={newManualBook.partyPan} onChange={e => setNewManualBook({ ...newManualBook, partyPan: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold font-mono" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Ledger</label><input type="text" placeholder="e.g. Audit Fees" value={newManualBook.ledgerName} onChange={e => setNewManualBook({ ...newManualBook, ledgerName: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Gross Amt (₹)</label><input type="number" placeholder="100000" value={newManualBook.amount} onChange={e => setNewManualBook({ ...newManualBook, amount: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualBookRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Actual TDS (₹)</label><input type="number" placeholder="10000" value={newManualBook.actualTds} onChange={e => setNewManualBook({ ...newManualBook, actualTds: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Voucher No</label><input type="text" placeholder="Optional" value={newManualBook.voucherNo} onChange={e => setNewManualBook({ ...newManualBook, voucherNo: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div className="flex items-end"><button onClick={handleAddManualBookRow} className="w-full h-8 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center justify-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button></div>
-                                        </div>
-                                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[180px] overflow-y-auto">
-                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Party</th><th className="px-3 py-2">Ledger</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
-                                                <tbody className="divide-y divide-slate-800/50">{manualBooksTransactions.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No rows yet. Add transactions above.</td></tr>) : manualBooksTransactions.map(r => (<tr key={r.id} className="hover:bg-slate-50"><td className="px-3 py-1.5 text-slate-700 font-mono">{r.date}</td><td className="px-3 py-1.5 text-slate-900 font-semibold truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-slate-700">{r.ledgerName}</td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amount.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-purple-300 font-mono">₹{r.actualTdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualBookRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-3">
-                                        <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /> TDS / TRACES Records</h3><p className="text-xs text-slate-600">Manually insert TDS declarations from returns or Form 26AS.</p></div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">PAN/TAN</label><input type="text" placeholder="ABCDE1234F" value={newManualTds.partyPan} onChange={e => setNewManualTds({ ...newManualTds, partyPan: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold font-mono" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Name</label><input type="text" placeholder="Deductor Name" value={newManualTds.partyName} onChange={e => setNewManualTds({ ...newManualTds, partyName: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Section</label><select value={newManualTds.section} onChange={e => setNewManualTds({ ...newManualTds, section: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold">{rules.map(sec => <option key={sec.old_section} value={sec.old_section}>{sec.old_section}</option>)}</select></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Amount Paid (₹)</label><input type="number" placeholder="100000" value={newManualTds.amountPaid} onChange={e => setNewManualTds({ ...newManualTds, amountPaid: e.target.value })} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div><label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">TDS Deposited (₹)</label><input type="number" placeholder="10000" value={newManualTds.tdsDeducted} onChange={e => setNewManualTds({ ...newManualTds, tdsDeducted: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddManualTdsRow()} className="w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-900 font-bold" /></div>
-                                            <div className="flex items-end"><button onClick={handleAddManualTdsRow} className="w-full h-8 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center justify-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button></div>
-                                        </div>
-                                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[180px] overflow-y-auto">
-                                            <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0"><tr><th className="px-3 py-2">PAN</th><th className="px-3 py-2">Name</th><th className="px-3 py-2 text-center">Section</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">TDS</th><th className="px-3 py-2 w-8"></th></tr></thead>
-                                                <tbody className="divide-y divide-slate-800/50">{manualTdsRecords.length === 0 ? (<tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">No TDS records yet. Add rows above.</td></tr>) : manualTdsRecords.map(r => (<tr key={r.id} className="hover:bg-slate-50"><td className="px-3 py-1.5 font-mono text-slate-600">{r.partyPan}</td><td className="px-3 py-1.5 text-slate-900 font-semibold truncate max-w-[120px]" title={r.partyName}>{r.partyName}</td><td className="px-3 py-1.5 text-center"><span className="px-1.5 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded font-bold text-[10px] text-purple-400">{r.section}</span></td><td className="px-3 py-1.5 text-right text-white font-mono">₹{r.amountPaid.toLocaleString()}</td><td className="px-3 py-1.5 text-right text-emerald-400 font-mono">₹{r.tdsDeducted.toLocaleString()}</td><td className="px-3 py-1.5 text-center"><button onClick={() => handleDeleteManualTdsRow(r.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td></tr>))}</tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </CollapsibleSection>
-
-                    <div className="flex justify-between pt-2">
-                        <button onClick={() => setActiveStep(0)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
-                            <ArrowLeft className="w-4 h-4" /> Back to Mappings
+                    <div className="flex justify-between items-center pt-2">
+                        <button
+                            onClick={() => setActiveStep(0)}
+                            className="h-10 px-5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Back to Tally Ingestion
                         </button>
-                        <button onClick={() => setActiveStep(2)} disabled={!form26qFile && !itrParsedTdsRecords && manualTdsRecords.length === 0} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-purple-900/20">
+                        <button
+                            onClick={() => setActiveStep(2)}
+                            disabled={!form26qFile && !itrParsedTdsRecords && manualTdsRecords.length === 0}
+                            className="h-10 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+                        >
                             Continue to Vendor Review <ArrowRight className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ═══════════════ STEP 2: VENDOR MASTERS ═══════════════ */}
+            {/* ═══════════════ STEP 2: VENDOR MASTERS REVIEW ═══════════════ */}
             {activeStep === 2 && (
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs animate-pop-in">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs animate-pop-in space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
                         <div>
-                            <h2 className="text-lg font-bold text-slate-900 mb-0.5">Vendor Master Profile</h2>
-                            <p className="text-xs text-slate-600">Review vendor PAN mappings, Entity Types, and <b>Closing Balances</b>. Edit missing records.</p>
+                            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <Users className="w-5 h-5 text-indigo-600" />
+                                Vendor Master Profile & Closing Balances
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                Audit vendor PAN mappings, Entity Types, and live Closing Balances scanned from Tally. Edit missing PANs directly.
+                            </p>
                         </div>
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-2.5 w-full sm:w-auto">
                             {connectionStatus === 'connected' && (
-                                <button onClick={() => fetchBalances()} disabled={isFetchingBalances} className="h-8 px-3 bg-teal-600/20 hover:bg-teal-600/30 text-teal-400 border border-teal-500/20 rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1.5">
-                                    {isFetchingBalances ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wallet className="w-3 h-3" />} Refresh Balances
+                                <button
+                                    onClick={() => fetchBalances()}
+                                    disabled={isFetchingBalances}
+                                    className="h-9 px-3.5 bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                >
+                                    {isFetchingBalances ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
+                                    Refresh Balances
                                 </button>
                             )}
-                            <div className="relative flex-1 sm:w-56">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                <input type="text" value={partySearchTerm} onChange={(e) => setPartySearchTerm(e.target.value)} placeholder="Search vendors, PANs..." className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 text-sm text-white focus:border-purple-500 outline-none" />
+                            <div className="relative flex-1 sm:w-64">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={partySearchTerm}
+                                    onChange={(e) => setPartySearchTerm(e.target.value)}
+                                    placeholder="Search vendors, PANs..."
+                                    className="w-full h-9 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl pl-9 pr-3 text-xs text-slate-900 focus:border-indigo-500 outline-none transition-all"
+                                />
                             </div>
                         </div>
                     </div>
-                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[500px] overflow-y-auto">
-                        <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
-                                <tr><th className="px-4 py-2.5 font-medium">Vendor Name</th><th className="px-4 py-2.5 font-medium">PAN</th><th className="px-4 py-2.5 font-medium">Entity Type</th><th className="px-4 py-2.5 font-medium text-right">Closing Balance</th><th className="px-4 py-2.5 font-medium text-center w-24">Action</th></tr>
+
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-[480px] overflow-y-auto">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 sticky top-0 z-10 font-bold uppercase text-[10px]">
+                                <tr>
+                                    <th className="px-4 py-3">Vendor Name</th>
+                                    <th className="px-4 py-3">PAN</th>
+                                    <th className="px-4 py-3">Entity Type</th>
+                                    <th className="px-4 py-3 text-right">Closing Balance</th>
+                                    <th className="px-4 py-3 text-center w-24">Action</th>
+                                </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800/50">
+                            <tbody className="divide-y divide-slate-100">
                                 {filteredParties.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500"><div className="flex flex-col items-center gap-2"><Users className="w-8 h-8 text-slate-700" /><span>No parties registered. Sync or import Tally books in the Data tab.</span></div></td></tr>
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Users className="w-8 h-8 text-slate-300" />
+                                                <span>No vendor profiles found. Fetch Tally vouchers in Step 1 to extract parties.</span>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 ) : filteredParties.map((p) => {
                                     const isEditing = editingPartyId === p.id;
                                     const pUpper = p.party_name.toUpperCase().trim();
@@ -1895,27 +2316,70 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                     const pAlpha = pUpper.replace(/[^A-Z0-9]/g, '');
                                     const bal = partyBalances.get(pUpper) ?? partyBalances.get(pClean) ?? partyBalances.get(pAlpha) ?? 0;
                                     return (
-                                        <tr key={p.id} className="hover:bg-slate-50">
-                                            <td className="px-4 py-2.5 text-slate-900 font-semibold max-w-[250px] truncate" title={p.party_name}>{p.party_name}</td>
-                                            <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
-                                                {isEditing ? <input type="text" value={editPan} onChange={e => setEditPan(e.target.value)} maxLength={10} onKeyDown={e => e.key === 'Enter' && handleSavePartyEdit(p.id)} className="w-28 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white font-mono focus:border-purple-500 outline-none" /> : (p.pan_number || <span className="text-red-400 italic font-sans">Missing PAN</span>)}
+                                        <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                                            <td className="px-4 py-2.5 text-slate-900 font-semibold max-w-[260px] truncate" title={p.party_name}>{p.party_name}</td>
+                                            <td className="px-4 py-2.5 font-mono text-xs">
+                                                {isEditing ? (
+                                                    <input
+                                                        type="text"
+                                                        value={editPan}
+                                                        onChange={e => setEditPan(e.target.value)}
+                                                        maxLength={10}
+                                                        onKeyDown={e => e.key === 'Enter' && handleSavePartyEdit(p.id)}
+                                                        className="w-28 bg-white border border-slate-300 rounded-lg px-2 py-0.5 text-xs text-slate-900 font-mono font-bold focus:border-indigo-500 outline-none shadow-2xs"
+                                                    />
+                                                ) : (
+                                                    p.pan_number ? (
+                                                        <span className="text-slate-800 font-bold">{p.pan_number}</span>
+                                                    ) : (
+                                                        <span className="text-rose-600 font-medium italic">Missing PAN</span>
+                                                    )
+                                                )}
                                             </td>
                                             <td className="px-4 py-2.5">
                                                 {isEditing ? (
-                                                    <select value={editEntityType} onChange={e => setEditEntityType(e.target.value)} className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white focus:border-purple-500 outline-none"><option value="Individual">P - Individual</option><option value="HUF">H - HUF</option><option value="Company">C - Company</option><option value="Firm">F - Firm / LLP</option><option value="AOP">A - AOP</option><option value="Trust">T - Trust</option><option value="Unknown">Unknown</option></select>
+                                                    <select
+                                                        value={editEntityType}
+                                                        onChange={e => setEditEntityType(e.target.value)}
+                                                        className="bg-white border border-slate-300 rounded-lg px-2 py-0.5 text-xs text-slate-900 focus:border-indigo-500 outline-none shadow-2xs"
+                                                    >
+                                                        <option value="Individual">P - Individual</option>
+                                                        <option value="HUF">H - HUF</option>
+                                                        <option value="Company">C - Company</option>
+                                                        <option value="Firm">F - Firm / LLP</option>
+                                                        <option value="AOP">A - AOP</option>
+                                                        <option value="Trust">T - Trust</option>
+                                                        <option value="Unknown">Unknown</option>
+                                                    </select>
                                                 ) : (
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.entity_type === 'Company' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : p.entity_type === 'Individual' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : p.entity_type === 'Firm' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : p.entity_type === 'HUF' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-600 border border-slate-700'}`}>{p.entity_type}</span>
+                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                        p.entity_type === 'Company' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                                        p.entity_type === 'Individual' ? 'bg-teal-50 text-teal-700 border border-teal-200' :
+                                                        p.entity_type === 'Firm' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                                                        p.entity_type === 'HUF' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                        'bg-slate-100 text-slate-600 border border-slate-200'
+                                                    }`}>
+                                                        {p.entity_type}
+                                                    </span>
                                                 )}
                                             </td>
-                                            <td className={`px-4 py-2.5 text-right font-mono text-xs ${bal < 0 ? 'text-rose-400' : bal > 0 ? 'text-teal-400' : 'text-slate-500'}`}>{fmtBal(bal)}</td>
+                                            <td className={`px-4 py-2.5 text-right font-mono text-xs font-bold ${bal < 0 ? 'text-rose-600' : bal > 0 ? 'text-teal-700' : 'text-slate-400'}`}>
+                                                {fmtBal(bal)}
+                                            </td>
                                             <td className="px-4 py-2.5 text-center">
                                                 {isEditing ? (
-                                                    <div className="flex gap-2 justify-center">
-                                                        <button onClick={() => handleSavePartyEdit(p.id)} className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Save</button>
-                                                        <button onClick={() => setEditingPartyId(null)} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded text-xs font-bold">Cancel</button>
+                                                    <div className="flex gap-1.5 justify-center">
+                                                        <button onClick={() => handleSavePartyEdit(p.id)} className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1 cursor-pointer">
+                                                            <Check className="w-3 h-3" /> Save
+                                                        </button>
+                                                        <button onClick={() => setEditingPartyId(null)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold shadow-2xs cursor-pointer">
+                                                            Cancel
+                                                        </button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => startEditingParty(p)} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-700 hover:text-white rounded text-xs font-semibold flex items-center gap-1 mx-auto"><Edit2 className="w-3 h-3" /> Edit</button>
+                                                    <button onClick={() => startEditingParty(p)} className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-semibold shadow-2xs flex items-center gap-1 mx-auto cursor-pointer">
+                                                        <Edit2 className="w-3 h-3" /> Edit
+                                                    </button>
                                                 )}
                                             </td>
                                         </tr>
@@ -1925,366 +2389,405 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                         </table>
                     </div>
 
-                    {/* Run Engine */}
-                    <div className="flex justify-between items-center gap-4 pt-3">
-                        <button onClick={() => setActiveStep(1)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
+                    {/* Step 2 Action Bar */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-2">
+                        <button
+                            onClick={() => setActiveStep(1)}
+                            className="h-10 px-5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
+                        >
                             <ArrowLeft className="w-4 h-4" /> Back to 26Q Ingestion
                         </button>
-                        <div className="flex gap-3">
-                            <button onClick={handleRunEngine} disabled={isProcessing}
-                                className="h-12 px-8 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-bold transition-all disabled:opacity-40 shadow-lg shadow-purple-900/30 flex items-center gap-2.5 text-sm">
+                        <div className="flex items-center gap-2.5">
+                            {(tallyDirectData || form26qFile) && (
+                                <button
+                                    onClick={handleReset}
+                                    className="h-11 px-4 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 rounded-xl font-bold transition-all border border-rose-200 flex items-center gap-1.5 text-xs uppercase tracking-wider shadow-2xs cursor-pointer"
+                                >
+                                    <Trash2 className="w-4 h-4" /> Clear Data
+                                </button>
+                            )}
+                            <button
+                                onClick={handleRunEngine}
+                                disabled={isProcessing}
+                                className="h-11 px-8 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40 shadow-xs flex items-center gap-2 cursor-pointer"
+                            >
                                 {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                                 {isProcessing ? 'Analyzing Thresholds & Verifying...' : 'Run Reconciliation Engine'}
                             </button>
-                            {(tallyDirectData || form26qFile || itrJsonFile) && (
-                                <button onClick={handleReset} className="h-12 px-5 bg-slate-850 hover:bg-slate-50 text-slate-600 hover:text-white rounded-xl font-bold transition-all border border-slate-200 flex items-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Clear Data</button>
-                            )}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ═══════════════ STEP 3: MULTI-LEDGER PAN AUDIT ═══════════════ */}
-            {activeStep === 3 && (
-                <div className="space-y-5 animate-pop-in">
-                    {/* Header Banner */}
-                    <div className="bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-xl">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div>
-                                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
-                                    <AlertTriangle className="w-4 h-4" /> Multiple Ledger Audit Warning
-                                </div>
-                                <h2 className="text-xl font-extrabold text-slate-900">PANs with Multiple Tally Party Names Detected</h2>
-                                <p className="text-xs text-slate-700 mt-1 max-w-3xl leading-relaxed">
-                                    The following PANs have 2 or more distinct vendor ledger names in Tally (e.g. driver accounts, vehicle prefixes, or branch ledgers). They are presented separately below to preserve book integrity while auditing aggregate TDS liabilities against 26Q.
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')}
-                                className="h-10 px-5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-lg shadow-amber-900/30 shrink-0"
-                            >
-                                <Download className="w-4 h-4" /> Export Split PAN Error Workbook (.xlsx)
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Flagged PANs</span>
-                            <span className="text-3xl font-black text-amber-400">{multiLedgerPans.length}</span>
-                        </div>
-                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Total Split Party Ledgers</span>
-                            <span className="text-3xl font-black text-purple-400">
-                                {multiLedgerPans.reduce((sum, p) => sum + p.ledgers.length, 0)}
-                            </span>
-                        </div>
-                        <div className="bg-white border border-slate-200/80 rounded-xl p-4 text-center">
-                            <span className="text-xs text-slate-600 block mb-1 uppercase tracking-wider font-semibold">Total Spend Across Split PANs</span>
-                            <span className="text-3xl font-black text-emerald-400">
-                                {fmtAmt(multiLedgerPans.reduce((sum, p) => sum + p.totalSpend, 0))}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Split PAN Table */}
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-xl">
-                        <div className="p-4 bg-slate-900/80 border-b border-slate-200 flex justify-between items-center">
-                            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                <Users className="w-4 h-4 text-amber-400" /> Multi-Ledger Party Breakdown
-                            </h3>
-                            <span className="text-xs text-slate-600 font-medium">
-                                Showing {multiLedgerPans.length} PAN groups
-                            </span>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs whitespace-nowrap">
-                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium">PAN Number</th>
-                                        <th className="px-4 py-3 font-medium">Tally Party Name (Books)</th>
-                                        <th className="px-4 py-3 font-medium text-center">Section</th>
-                                        <th className="px-4 py-3 font-medium text-right">Ledger Spend (₹)</th>
-                                        <th className="px-4 py-3 font-medium text-right">Ledger Actual TDS (₹)</th>
-                                        <th className="px-4 py-3 font-medium text-right">Total PAN Spend (₹)</th>
-                                        <th className="px-4 py-3 font-medium text-right">26Q Taxable (₹)</th>
-                                        <th className="px-4 py-3 font-medium text-right">26Q TDS (₹)</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-800/40">
-                                    {multiLedgerPans.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                                                No PANs with multiple ledger names were found.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        multiLedgerPans.map((panGroup, groupIdx) => (
-                                            <React.Fragment key={groupIdx}>
-                                                {panGroup.ledgers.map((l, ledgerIdx) => (
-                                                    <tr key={ledgerIdx} className="hover:bg-slate-50 transition-colors">
-                                                        {ledgerIdx === 0 && (
-                                                            <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 font-mono font-bold text-amber-400 align-top border-r border-slate-200 bg-slate-50">
-                                                                {panGroup.pan}
-                                                                <div className="text-[10px] font-normal text-slate-500 mt-0.5">
-                                                                    {panGroup.ledgers.length} ledgers
-                                                                </div>
-                                                            </td>
-                                                        )}
-                                                        <td className="px-4 py-3 text-slate-900 font-semibold">
-                                                            {l.partyName}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center">
-                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                                                                {l.section}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-700">
-                                                            {fmtAmt(l.spend)}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right font-mono font-bold text-purple-400">
-                                                            {fmtAmt(l.actualTds)}
-                                                        </td>
-                                                        {ledgerIdx === 0 && (
-                                                            <>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-emerald-400 align-top border-l border-slate-200 bg-slate-50">
-                                                                    {fmtAmt(panGroup.totalSpend)}
-                                                                </td>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-slate-700 align-top bg-slate-50">
-                                                                    {fmtAmt(panGroup.tracesTaxable)}
-                                                                </td>
-                                                                <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-teal-400 align-top bg-slate-50">
-                                                                    {fmtAmt(panGroup.tracesTds)}
-                                                                </td>
-                                                            </>
-                                                        )}
-                                                    </tr>
-                                                ))}
-                                            </React.Fragment>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Navigation Footer */}
-                    <div className="flex justify-between items-center pt-3">
-                        <button onClick={() => setActiveStep(2)} className="h-10 px-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2">
-                            <ArrowLeft className="w-4 h-4" /> Back to Vendor Review
-                        </button>
-                        <button onClick={() => setActiveStep(4)} className="h-10 px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-purple-900/30 flex items-center gap-2">
-                            Proceed to Reconciliation Results <ArrowRight className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ═══════════════ STEP 4: RESULTS ═══════════════ */}
-            {activeStep === 4 && reconResults && (
-                <div className="space-y-5 animate-pop-in">
-                    {/* Summary Cards */}
+            {/* ═══════════════ STEP 3: AUDIT & RECONCILIATION RESULTS ═══════════════ */}
+            {activeStep === 3 && reconResults && (
+                <div className="space-y-6 animate-pop-in">
+                    {/* Summary KPI Cards */}
                     {reconSummary && (
-                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                             {[
-                                { label: 'Total', val: reconSummary.total_parties_analyzed, color: 'text-white', bg: 'bg-slate-900/40 border-slate-200' },
-                                { label: 'Matched', val: reconSummary.matched_count, color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/20' },
-                                { label: 'Short', val: reconSummary.short_deducted_count, color: 'text-amber-400', bg: 'bg-amber-500/5 border-amber-500/20' },
-                                { label: 'Excess', val: reconSummary.excess_deducted_count, color: 'text-purple-400', bg: 'bg-purple-500/5 border-purple-500/20' },
-                                { label: 'Missing 26Q', val: reconSummary.missing_in_26q_count, color: 'text-rose-400', bg: 'bg-rose-500/5 border-rose-500/20' },
-                                { label: 'Missing Books', val: reconSummary.missing_in_books_count, color: 'text-blue-400', bg: 'bg-blue-500/5 border-blue-500/20' },
+                                { label: 'Total Parties', val: reconSummary.total_parties_analyzed, color: 'text-slate-900', bg: 'bg-white border-slate-200' },
+                                { label: 'Matched', val: reconSummary.matched_count, color: 'text-emerald-700', bg: 'bg-emerald-50/60 border-emerald-200' },
+                                { label: 'Short Deducted', val: reconSummary.short_deducted_count, color: 'text-amber-700', bg: 'bg-amber-50/60 border-amber-200' },
+                                { label: 'Excess Deducted', val: reconSummary.excess_deducted_count, color: 'text-indigo-700', bg: 'bg-indigo-50/60 border-indigo-200' },
+                                { label: 'Missing in 26Q', val: reconSummary.missing_in_26q_count, color: 'text-rose-700', bg: 'bg-rose-50/60 border-rose-200' },
+                                { label: 'Missing in Books', val: reconSummary.missing_in_books_count, color: 'text-blue-700', bg: 'bg-blue-50/60 border-blue-200' },
                             ].map((c, i) => (
-                                <div key={i} className={`${c.bg} border rounded-xl p-3 text-center`}>
-                                    <span className="text-[10px] text-slate-600 block mb-0.5 uppercase tracking-wider font-medium">{c.label}</span>
+                                <div key={i} className={`${c.bg} border rounded-xl p-3.5 text-center shadow-xs`}>
+                                    <span className="text-[11px] text-slate-500 block mb-1 uppercase tracking-wider font-semibold">{c.label}</span>
                                     <span className={`text-2xl font-black ${c.color}`}>{c.val}</span>
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    {/* Controls Bar & Sub-Tabs */}
+                    {/* Results Container Card */}
                     <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
                         <div className="flex flex-col gap-4 mb-5">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                                {/* Sub-Tab Navigation Bar */}
+                                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
                                     <button
                                         onClick={() => setActiveResultsSubTab('RECONCILIATION')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeResultsSubTab === 'RECONCILIATION' ? 'bg-purple-600 text-white shadow' : 'text-slate-600 hover:text-white'}`}
+                                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                                            activeResultsSubTab === 'RECONCILIATION'
+                                                ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
                                     >
                                         26Q Reconciliation Report
                                     </button>
                                     <button
-                                        onClick={() => setActiveResultsSubTab('ADVANCE_AUDIT')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeResultsSubTab === 'ADVANCE_AUDIT' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:text-white'}`}
+                                        onClick={() => setActiveResultsSubTab('SPLIT_PANS')}
+                                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                                            activeResultsSubTab === 'SPLIT_PANS'
+                                                ? 'bg-white text-amber-700 shadow-xs border border-slate-200'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
                                     >
-                                        <span>Advance TDS Audit (Pay &gt; Exp)</span>
+                                        <span>Multi-Ledger Split PANs</span>
+                                        {multiLedgerPans.length > 0 && (
+                                            <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold">
+                                                {multiLedgerPans.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveResultsSubTab('ADVANCE_AUDIT')}
+                                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                                            activeResultsSubTab === 'ADVANCE_AUDIT'
+                                                ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        <span>Advance TDS Audit</span>
                                         {advanceTdsResults.length > 0 && (
-                                            <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full text-[10px]">
+                                            <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-bold">
                                                 {advanceTdsResults.length}
                                             </span>
                                         )}
                                     </button>
                                 </div>
-                                <div className="flex items-center gap-2 w-full sm:w-auto">
+
+                                {/* Controls & Actions */}
+                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
                                     <div className="relative flex-1 sm:w-56">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search party, PAN..." className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 text-sm text-white focus:border-purple-500 outline-none" />
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            placeholder="Search party, PAN..."
+                                            className="w-full h-9 bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:border-indigo-500 outline-hidden transition-all"
+                                        />
                                     </div>
                                     {multiLedgerPans.length > 0 && (
-                                        <button onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')} className="h-9 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-amber-900/20"><Download className="w-3.5 h-3.5" /> Multi-Ledger PAN Error Workbook</button>
+                                        <button
+                                            onClick={() => exportMultiLedgerPanWorkbook(multiLedgerPans, companyInfo?.name || 'Company')}
+                                            className="h-9 px-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs cursor-pointer"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> Split PAN Workbook
+                                        </button>
                                     )}
-                                    <button onClick={() => exportTdsReport(reconResults, companyInfo?.name || 'TDS_Report', advanceTdsResults)} className="h-9 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg shadow-purple-900/20"><Download className="w-3.5 h-3.5" /> Excel (With Advance TDS)</button>
-                                    <button onClick={handleReset} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded-lg font-bold text-xs flex items-center gap-1.5 border border-slate-700"><Trash2 className="w-3.5 h-3.5" /> Reset</button>
+                                    <button
+                                        onClick={() => exportTdsReport(reconResults, companyInfo?.name || 'TDS_Report', advanceTdsResults)}
+                                        className="h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs cursor-pointer"
+                                    >
+                                        <Download className="w-3.5 h-3.5" /> Export Excel
+                                    </button>
+                                    <button
+                                        onClick={handleReset}
+                                        className="h-9 px-3 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-lg font-bold text-xs flex items-center gap-1.5 border border-slate-300 transition-colors cursor-pointer"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" /> Reset
+                                    </button>
                                 </div>
                             </div>
+
                             {activeResultsSubTab === 'RECONCILIATION' && (
                                 <StatusFilterChips active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
                             )}
                         </div>
 
-                        {/* SUB TAB 1: 26Q Reconciliation Table */}
+                        {/* SUB-TAB 1: 26Q Reconciliation Table */}
                         {activeResultsSubTab === 'RECONCILIATION' && (
-                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 overflow-x-auto">
-                            <table className="w-full text-left text-xs whitespace-nowrap">
-                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                                    <tr>
-                                        <th className="px-2 py-2.5 font-medium w-6"></th>
-                                        <th className="px-3 py-2.5 font-medium">Party Name (Books)</th>
-                                        <th className="px-3 py-2.5 font-medium">Party Name (26Q)</th>
-                                        <th className="px-3 py-2.5 font-medium">PAN (Books)</th>
-                                        <th className="px-3 py-2.5 font-medium">PAN (26Q)</th>
-                                        <th className="px-3 py-2.5 font-medium text-center">Section</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">Req. TDS</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">Actual TDS (Books)</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">TDS (26Q)</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">Books Var (Req - Actual)</th>
-                                        <th className="px-3 py-2.5 font-medium text-right">Return Var (Req - 26Q)</th>
-                                        <th className="px-3 py-2.5 font-medium text-center">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-800/40">
-                                    {filteredResults.length === 0 ? (
-                                        <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-500">No parties match your filter.</td></tr>
-                                    ) : filteredResults.map((r, i) => {
-                                        const isExpanded = expandedRows.has(i);
-                                        return (
-                                            (() => {
-                                                const sectionRule = rules.find(rule => rule.old_section === r.section);
-                                                const applicableRate = getApplicableTdsRate(r.partyPan, r.party_entity_type || 'Unknown', sectionRule);
-                                                const requiredTds = r.booksRequiredTds !== undefined ? r.booksRequiredTds : Math.round(r.booksTaxable * applicableRate);
-                                                const booksTdsVariance = requiredTds - (r.booksActualTds || 0);
-                                                const returnTdsVariance = requiredTds - (r.tracesTds || 0);
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white overflow-x-auto shadow-xs">
+                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="bg-slate-100 border-b border-slate-200 text-slate-700">
+                                        <tr>
+                                            <th className="px-2 py-3 font-semibold w-7"></th>
+                                            <th className="px-3 py-3 font-semibold">Party Name (Books)</th>
+                                            <th className="px-3 py-3 font-semibold">Party Name (26Q)</th>
+                                            <th className="px-3 py-3 font-semibold">PAN (Books)</th>
+                                            <th className="px-3 py-3 font-semibold">PAN (26Q)</th>
+                                            <th className="px-3 py-3 font-semibold text-center">Section</th>
+                                            <th className="px-3 py-3 font-semibold text-right">Req. TDS</th>
+                                            <th className="px-3 py-3 font-semibold text-right">Actual TDS (Books)</th>
+                                            <th className="px-3 py-3 font-semibold text-right">TDS (26Q)</th>
+                                            <th className="px-3 py-3 font-semibold text-right">Books Var (Req - Actual)</th>
+                                            <th className="px-3 py-3 font-semibold text-right">Return Var (Req - 26Q)</th>
+                                            <th className="px-3 py-3 font-semibold text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredResults.length === 0 ? (
+                                            <tr><td colSpan={12} className="px-4 py-12 text-center text-slate-400 font-medium">No parties match your search or filter.</td></tr>
+                                        ) : filteredResults.map((r, i) => {
+                                            const isExpanded = expandedRows.has(i);
+                                            const sectionRule = rules.find(rule => rule.old_section === r.section);
+                                            const applicableRate = getApplicableTdsRate(r.partyPan, r.party_entity_type || 'Unknown', sectionRule);
+                                            const requiredTds = r.booksRequiredTds !== undefined ? r.booksRequiredTds : Math.round(r.booksTaxable * applicableRate);
+                                            const booksTdsVariance = requiredTds - (r.booksActualTds || 0);
+                                            const returnTdsVariance = requiredTds - (r.tracesTds || 0);
 
-                                                return (
-                                                    <React.Fragment key={i}>
-                                                        <tr onClick={() => toggleRowExpand(i)} className={`hover:bg-slate-50 cursor-pointer transition-colors group ${r.isMultiLedgerPan ? 'bg-amber-500/10 hover:bg-amber-500/20 border-l-2 border-amber-500' : ''}`}>
-                                                            <td className="px-2 py-2.5 text-center"><ChevronRight className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} /></td>
-                                                            <td className="px-3 py-2.5 text-slate-900 font-semibold max-w-[200px] truncate" title={r.nameInBooks || r.partyName}>
-                                                                <div className="flex items-center gap-1.5 overflow-hidden">
-                                                                    <span className="truncate">{r.nameInBooks && r.nameInBooks !== '—' ? r.nameInBooks : (r.partyName || '—')}</span>
-                                                                    {r.isMultiLedgerPan && (
-                                                                        <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30" title={`Multi-ledger PAN: Shared by ${r.multiLedgerCount || 2} distinct Tally Party Ledgers`}>
-                                                                            <AlertTriangle className="w-2.5 h-2.5 text-amber-400" /> Split PAN
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-3 py-2.5 text-slate-700 max-w-[180px] truncate" title={r.nameIn26Q}>{r.nameIn26Q || '—'}</td>
-                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">{r.panInBooks === 'PAN-MISSING' ? <span className="text-red-400 italic">Missing</span> : r.panInBooks}</td>
-                                                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">{r.panIn26Q || '—'}</td>
-                                                            <td className="px-3 py-2.5 text-center"><span className="text-[11px] font-bold text-purple-400">{r.section}</span></td>
-                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-rose-400 font-bold">{fmtAmt(requiredTds)}</td>
-                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</td>
-                                                            <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-slate-600'}`}>{booksTdsVariance !== 0 ? fmtAmt(booksTdsVariance) : '—'}</td>
-                                                            <td className={`px-3 py-2.5 text-right font-mono text-[11px] font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-slate-600'}`}>{returnTdsVariance !== 0 ? fmtAmt(returnTdsVariance) : '—'}</td>
-                                                            <td className="px-3 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusStyle(r.status)}`}>{r.status}</span></td>
-                                                        </tr>
-                                                        {isExpanded && (
-                                                            <tr>
-                                                                <td colSpan={12} className="bg-slate-50 px-6 py-4 border-t border-slate-200">
-                                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                                                                        {/* Books */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
-                                                                            <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">📚 Books Data</div>
-                                                                            <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Name in Books</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameInBooks}>{r.nameInBooks}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">PAN in Books</span><span className="text-white font-mono">{r.panInBooks}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Expense Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.ledgers}>{r.ledgers || '—'}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">TDS Ledgers</span><span className="text-white truncate max-w-[160px]" title={r.tdsLedgers}>{r.tdsLedgers || '—'}</span></div>
-                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Total Spend</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksSpend)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable Amount</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksTaxable)}</span></div>
-                                                                                <div className="flex justify-between gap-2"><span className="text-slate-600">Taxable Basis</span><span className="text-indigo-300 font-medium text-right text-[11px] truncate max-w-[220px]" title={r.taxableBasis}>{r.taxableBasis || '—'}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Rate Applied</span><span className="text-white">{applicableRate * 100}%</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Required TDS</span><span className="text-rose-400 font-bold">{fmtAmt(requiredTds)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Actual TDS</span><span className="text-purple-400 font-bold">{fmtAmt(r.booksActualTds)}</span></div>
-                                                                            </div>
+                                            return (
+                                                <React.Fragment key={i}>
+                                                    <tr onClick={() => toggleRowExpand(i)} className={`hover:bg-slate-50 cursor-pointer transition-colors group ${r.isMultiLedgerPan ? 'bg-amber-50/40 hover:bg-amber-50/70 border-l-3 border-amber-500' : ''}`}>
+                                                        <td className="px-2 py-3 text-center"><ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} /></td>
+                                                        <td className="px-3 py-3 text-slate-900 font-semibold max-w-[200px] truncate" title={r.nameInBooks || r.partyName}>
+                                                            <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                <span className="truncate">{r.nameInBooks && r.nameInBooks !== '—' ? r.nameInBooks : (r.partyName || '—')}</span>
+                                                                {r.isMultiLedgerPan && (
+                                                                    <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300" title={`Multi-ledger PAN: Shared by ${r.multiLedgerCount || 2} distinct Tally Party Ledgers`}>
+                                                                        <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> Split PAN
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-3 text-slate-600 max-w-[180px] truncate" title={r.nameIn26Q}>{r.nameIn26Q || '—'}</td>
+                                                        <td className="px-3 py-3 font-mono text-[11px] text-slate-700">{r.panInBooks === 'PAN-MISSING' ? <span className="text-rose-600 font-semibold italic">Missing</span> : r.panInBooks}</td>
+                                                        <td className="px-3 py-3 font-mono text-[11px] text-slate-700">{r.panIn26Q || '—'}</td>
+                                                        <td className="px-3 py-3 text-center"><span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">{r.section}</span></td>
+                                                        <td className="px-3 py-3 text-right font-mono text-[11px] text-slate-900 font-bold">{fmtAmt(requiredTds)}</td>
+                                                        <td className="px-3 py-3 text-right font-mono text-[11px] text-indigo-700 font-bold">{fmtAmt(r.booksActualTds)}</td>
+                                                        <td className="px-3 py-3 text-right font-mono text-[11px] text-emerald-700 font-bold">{fmtAmt(r.tracesTds)}</td>
+                                                        <td className={`px-3 py-3 text-right font-mono text-[11px] font-bold ${booksTdsVariance > 5 ? 'text-amber-700' : booksTdsVariance < -5 ? 'text-indigo-700' : 'text-slate-400'}`}>{booksTdsVariance !== 0 ? fmtAmt(booksTdsVariance) : '—'}</td>
+                                                        <td className={`px-3 py-3 text-right font-mono text-[11px] font-bold ${returnTdsVariance > 5 ? 'text-amber-700' : returnTdsVariance < -5 ? 'text-indigo-700' : 'text-slate-400'}`}>{returnTdsVariance !== 0 ? fmtAmt(returnTdsVariance) : '—'}</td>
+                                                        <td className="px-3 py-3 text-center"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusStyle(r.status)}`}>{r.status}</span></td>
+                                                    </tr>
+                                                    {isExpanded && (
+                                                        <tr>
+                                                            <td colSpan={12} className="bg-slate-50/80 px-6 py-4 border-t border-slate-200">
+                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                                                                    {/* Books Card */}
+                                                                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+                                                                        <div className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                                                                            <Database className="w-3.5 h-3.5" /> Books Data
                                                                         </div>
-                                                                        {/* 26Q */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
-                                                                            <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">📋 Form 26Q / TRACES</div>
-                                                                            <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Name in 26Q</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameIn26Q}>{r.nameIn26Q}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">PAN in 26Q</span><span className="text-white font-mono">{r.panIn26Q}</span></div>
-                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable (26Q)</span><span className="text-slate-900 font-bold">{fmtAmt(r.tracesTaxable)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">TDS (26Q)</span><span className="text-emerald-400 font-bold">{fmtAmt(r.tracesTds)}</span></div>
-                                                                            </div>
+                                                                        <div className="space-y-1.5">
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Name in Books</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameInBooks}>{r.nameInBooks}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">PAN in Books</span><span className="text-slate-800 font-mono font-medium">{r.panInBooks}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Expense Ledgers</span><span className="text-slate-700 truncate max-w-[160px]" title={r.ledgers}>{r.ledgers || '—'}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">TDS Ledgers</span><span className="text-slate-700 truncate max-w-[160px]" title={r.tdsLedgers}>{r.tdsLedgers || '—'}</span></div>
+                                                                            <div className="border-t border-slate-100 pt-1.5 mt-1.5"></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Total Spend</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksSpend)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Taxable Amount</span><span className="text-slate-900 font-bold">{fmtAmt(r.booksTaxable)}</span></div>
+                                                                            <div className="flex justify-between gap-2"><span className="text-slate-500">Taxable Basis</span><span className="text-indigo-700 font-medium text-right text-[11px] truncate max-w-[220px]" title={r.taxableBasis}>{r.taxableBasis || '—'}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Rate Applied</span><span className="text-slate-800 font-medium">{applicableRate * 100}%</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Required TDS</span><span className="text-slate-900 font-bold">{fmtAmt(requiredTds)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Actual TDS</span><span className="text-indigo-700 font-bold">{fmtAmt(r.booksActualTds)}</span></div>
                                                                         </div>
-                                                                        {/* Variance & Reason */}
-                                                                        <div className="bg-slate-900/50 rounded-xl p-3.5 border border-slate-200">
-                                                                            <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">⚖️ Variance & Analysis</div>
-                                                                            <div className="space-y-1.5">
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Taxable Variance</span><span className={`font-bold ${r.taxableVariance > 0 ? 'text-amber-400' : r.taxableVariance < 0 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(r.taxableVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Books TDS Variance</span><span className={`font-bold ${booksTdsVariance > 5 ? 'text-amber-400' : booksTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(booksTdsVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">26Q TDS Variance</span><span className={`font-bold ${returnTdsVariance > 5 ? 'text-amber-400' : returnTdsVariance < -5 ? 'text-purple-400' : 'text-emerald-400'}`}>{fmtAmt(returnTdsVariance)}</span></div>
-                                                                                <div className="flex justify-between"><span className="text-slate-600">Closing Balance</span><span className={`font-bold font-mono ${(r.closingBalance || 0) < 0 ? 'text-rose-400' : 'text-teal-400'}`}>{fmtBal(r.closingBalance || 0)}</span></div>
-                                                                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"></div>
-                                                                                <div><span className="text-slate-600 block mb-1">Reason</span><span className="text-slate-700 text-[11px] leading-relaxed block">{r.reason || '—'}</span></div>
+                                                                    </div>
+                                                                    {/* 26Q Card */}
+                                                                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+                                                                        <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                                                                            <FileText className="w-3.5 h-3.5" /> Form 26Q / TRACES
+                                                                        </div>
+                                                                        <div className="space-y-1.5">
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Name in 26Q</span><span className="text-slate-900 font-semibold truncate max-w-[160px]" title={r.nameIn26Q}>{r.nameIn26Q}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">PAN in 26Q</span><span className="text-slate-800 font-mono font-medium">{r.panIn26Q}</span></div>
+                                                                            <div className="border-t border-slate-100 pt-1.5 mt-1.5"></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Taxable (26Q)</span><span className="text-slate-900 font-bold">{fmtAmt(r.tracesTaxable)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">TDS (26Q)</span><span className="text-emerald-700 font-bold">{fmtAmt(r.tracesTds)}</span></div>
+                                                                        </div>
+                                                                    </div>
+                                                                    {/* Variance & Reason Card */}
+                                                                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+                                                                        <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                                                                            <Activity className="w-3.5 h-3.5" /> Variance & Analysis
+                                                                        </div>
+                                                                        <div className="space-y-1.5">
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Taxable Variance</span><span className={`font-bold ${r.taxableVariance > 0 ? 'text-amber-700' : r.taxableVariance < 0 ? 'text-indigo-700' : 'text-emerald-700'}`}>{fmtAmt(r.taxableVariance)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Books TDS Variance</span><span className={`font-bold ${booksTdsVariance > 5 ? 'text-amber-700' : booksTdsVariance < -5 ? 'text-indigo-700' : 'text-emerald-700'}`}>{fmtAmt(booksTdsVariance)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">26Q TDS Variance</span><span className={`font-bold ${returnTdsVariance > 5 ? 'text-amber-700' : returnTdsVariance < -5 ? 'text-indigo-700' : 'text-emerald-700'}`}>{fmtAmt(returnTdsVariance)}</span></div>
+                                                                            <div className="flex justify-between"><span className="text-slate-500">Closing Balance</span><span className={`font-bold font-mono ${(r.closingBalance || 0) < 0 ? 'text-rose-700' : 'text-teal-700'}`}>{fmtBal(r.closingBalance || 0)}</span></div>
+                                                                            <div className="border-t border-slate-100 pt-1.5 mt-1.5"></div>
+                                                                            <div>
+                                                                                <span className="text-slate-500 block mb-1">Reason / Notes</span>
+                                                                                <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-slate-700 text-[11px] leading-relaxed">
+                                                                                    {r.reason || 'No specific discrepancy remarks recorded.'}
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     </div>
-                                                                </td>
-                                                            </tr>
-                                                        )}
-                                                    </React.Fragment>
-                                                )
-                                            })()
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
 
-                        {/* SUB TAB 2: Advance Payment TDS Audit Table */}
+                        {/* SUB-TAB 2: Multi-Ledger Split PANs Table */}
+                        {activeResultsSubTab === 'SPLIT_PANS' && (
+                            <div className="space-y-4">
+                                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-4">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                        <div>
+                                            <div className="flex items-center gap-1.5 text-amber-800 font-bold text-xs uppercase tracking-wider mb-1">
+                                                <AlertTriangle className="w-4 h-4 text-amber-600" /> Multiple Ledger Audit Warning
+                                            </div>
+                                            <h3 className="text-base font-bold text-slate-900">PANs with Multiple Tally Party Names Detected</h3>
+                                            <p className="text-xs text-slate-600 mt-1 max-w-3xl leading-relaxed">
+                                                The following PANs have 2 or more distinct vendor ledger names in Tally (e.g. driver accounts, vehicle prefixes, or branch ledgers). They are presented separately below to preserve book integrity while auditing aggregate TDS liabilities against 26Q.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Mini KPI Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 text-center shadow-xs">
+                                        <span className="text-xs text-slate-500 block mb-1 uppercase tracking-wider font-semibold">Flagged PANs</span>
+                                        <span className="text-2xl font-black text-amber-600">{multiLedgerPans.length}</span>
+                                    </div>
+                                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 text-center shadow-xs">
+                                        <span className="text-xs text-slate-500 block mb-1 uppercase tracking-wider font-semibold">Total Split Party Ledgers</span>
+                                        <span className="text-2xl font-black text-indigo-600">
+                                            {multiLedgerPans.reduce((sum, p) => sum + p.ledgers.length, 0)}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 text-center shadow-xs">
+                                        <span className="text-xs text-slate-500 block mb-1 uppercase tracking-wider font-semibold">Total Spend Across Split PANs</span>
+                                        <span className="text-2xl font-black text-emerald-600">
+                                            {fmtAmt(multiLedgerPans.reduce((sum, p) => sum + p.totalSpend, 0))}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Table */}
+                                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs overflow-x-auto">
+                                    <table className="w-full text-left text-xs whitespace-nowrap">
+                                        <thead className="bg-slate-100 border-b border-slate-200 text-slate-700">
+                                            <tr>
+                                                <th className="px-4 py-3 font-semibold">PAN Number</th>
+                                                <th className="px-4 py-3 font-semibold">Tally Party Name (Books)</th>
+                                                <th className="px-4 py-3 font-semibold text-center">Section</th>
+                                                <th className="px-4 py-3 font-semibold text-right">Ledger Spend (₹)</th>
+                                                <th className="px-4 py-3 font-semibold text-right">Ledger Actual TDS (₹)</th>
+                                                <th className="px-4 py-3 font-semibold text-right">Total PAN Spend (₹)</th>
+                                                <th className="px-4 py-3 font-semibold text-right">26Q Taxable (₹)</th>
+                                                <th className="px-4 py-3 font-semibold text-right">26Q TDS (₹)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {multiLedgerPans.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400 font-medium">
+                                                        No PANs with multiple ledger names were found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                multiLedgerPans.map((panGroup, groupIdx) => (
+                                                    <React.Fragment key={groupIdx}>
+                                                        {panGroup.ledgers.map((l, ledgerIdx) => (
+                                                            <tr key={ledgerIdx} className="hover:bg-slate-50 transition-colors">
+                                                                {ledgerIdx === 0 && (
+                                                                    <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 font-mono font-bold text-amber-700 align-top border-r border-slate-200 bg-amber-50/20">
+                                                                        {panGroup.pan}
+                                                                        <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                                                                            {panGroup.ledgers.length} ledgers
+                                                                        </div>
+                                                                    </td>
+                                                                )}
+                                                                <td className="px-4 py-3 text-slate-900 font-semibold">
+                                                                    {l.partyName}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-center">
+                                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                                        {l.section}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">
+                                                                    {fmtAmt(l.spend)}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-mono font-bold text-indigo-700">
+                                                                    {fmtAmt(l.actualTds)}
+                                                                </td>
+                                                                {ledgerIdx === 0 && (
+                                                                    <>
+                                                                        <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-emerald-700 align-top border-l border-slate-200 bg-slate-50/50">
+                                                                            {fmtAmt(panGroup.totalSpend)}
+                                                                        </td>
+                                                                        <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-slate-800 align-top bg-slate-50/50">
+                                                                            {fmtAmt(panGroup.tracesTaxable)}
+                                                                        </td>
+                                                                        <td rowSpan={panGroup.ledgers.length} className="px-4 py-3 text-right font-mono font-bold text-teal-700 align-top bg-slate-50/50">
+                                                                            {fmtAmt(panGroup.tracesTds)}
+                                                                        </td>
+                                                                    </>
+                                                                )}
+                                                            </tr>
+                                                        ))}
+                                                    </React.Fragment>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SUB-TAB 3: Advance Payment TDS Audit Table */}
                         {activeResultsSubTab === 'ADVANCE_AUDIT' && (
-                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs overflow-x-auto">
+                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="bg-slate-100 border-b border-slate-200 text-slate-700">
                                         <tr>
-                                            <th className="px-3.5 py-2.5 font-medium">Party Name</th>
-                                            <th className="px-3.5 py-2.5 font-medium">PAN</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-center">Section</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Expenses Credited</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Opening Balance (Cr)</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Payments Made</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Advance (Pay &gt; Exp)</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Req TDS</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Actual TDS</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-right">Shortfall</th>
-                                            <th className="px-3.5 py-2.5 font-medium text-center">Status</th>
+                                            <th className="px-3.5 py-3 font-semibold">Party Name</th>
+                                            <th className="px-3.5 py-3 font-semibold">PAN</th>
+                                            <th className="px-3.5 py-3 font-semibold text-center">Section</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Expenses Credited</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Opening Balance (Cr)</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Payments Made</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Advance (Pay &gt; Exp)</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Req TDS</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Actual TDS</th>
+                                            <th className="px-3.5 py-3 font-semibold text-right">Shortfall</th>
+                                            <th className="px-3.5 py-3 font-semibold text-center">Status</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800/40">
+                                    <tbody className="divide-y divide-slate-100">
                                         {advanceTdsResults.length === 0 ? (
                                             <tr>
                                                 <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
                                                     <div className="flex flex-col items-center gap-2">
-                                                        <CheckCircle2 className="w-8 h-8 text-emerald-500/50" />
-                                                        <span className="text-sm font-medium text-slate-700">No Advance Payment TDS Shortfalls Found!</span>
+                                                        <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                                                        <span className="text-sm font-semibold text-slate-800">No Advance Payment TDS Shortfalls Found!</span>
                                                         <span className="text-xs text-slate-500">Current year payments made to all Sundry Creditors are fully covered by expense bills or TDS.</span>
                                                     </div>
                                                 </td>
@@ -2293,26 +2796,26 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                             .filter(r => !searchTerm || r.partyName.toLowerCase().includes(searchTerm.toLowerCase()) || r.partyPan.toLowerCase().includes(searchTerm.toLowerCase()))
                                             .map((r, i) => {
                                                 const getAdvBadgeStyle = (st: string) => {
-                                                    if (st === 'Un-deducted Advance TDS' || st === 'Short Deducted') return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-                                                    if (st === 'Unmapped Advance Payment') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-                                                    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                                                    if (st === 'Un-deducted Advance TDS' || st === 'Short Deducted') return 'bg-rose-50 text-rose-700 border-rose-200';
+                                                    if (st === 'Unmapped Advance Payment') return 'bg-amber-50 text-amber-700 border-amber-200';
+                                                    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
                                                 };
                                                 return (
                                                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                                                         <td className="px-3.5 py-3 text-slate-900 font-semibold max-w-[220px] truncate" title={r.partyName}>{r.partyName}</td>
-                                                        <td className="px-3.5 py-3 font-mono text-xs text-slate-600">{r.partyPan}</td>
+                                                        <td className="px-3.5 py-3 font-mono text-xs text-slate-700">{r.partyPan}</td>
                                                         <td className="px-3.5 py-3 text-center">
-                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.section === 'UNMAPPED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.section === 'UNMAPPED' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'}`}>
                                                                 {r.section}
                                                             </span>
                                                         </td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-700">{fmtAmt(r.currentYearExpenses)}</td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-teal-300 font-medium">{fmtAmt(r.openingBalanceCr || 0)}</td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-indigo-300 font-bold">{fmtAmt(r.currentYearPayments)}</td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-amber-400 font-bold">{fmtAmt(r.advanceAmount)}</td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-rose-400 font-bold">{fmtAmt(r.requiredTdsOnAdvance)} ({r.rateApplied}%)</td>
-                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-purple-400 font-bold">{fmtAmt(r.actualTdsDeducted)}</td>
-                                                        <td className={`px-3.5 py-3 text-right font-mono text-xs font-black ${r.tdsShortfallOnAdvance > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-800">{fmtAmt(r.currentYearExpenses)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-teal-700 font-medium">{fmtAmt(r.openingBalanceCr || 0)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-indigo-700 font-bold">{fmtAmt(r.currentYearPayments)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-amber-700 font-bold">{fmtAmt(r.advanceAmount)}</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-slate-900 font-bold">{fmtAmt(r.requiredTdsOnAdvance)} ({r.rateApplied}%)</td>
+                                                        <td className="px-3.5 py-3 text-right font-mono text-xs text-indigo-700 font-bold">{fmtAmt(r.actualTdsDeducted)}</td>
+                                                        <td className={`px-3.5 py-3 text-right font-mono text-xs font-black ${r.tdsShortfallOnAdvance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
                                                             {r.tdsShortfallOnAdvance > 0 ? fmtAmt(r.tdsShortfallOnAdvance) : '₹0'}
                                                         </td>
                                                         <td className="px-3.5 py-3 text-center">
@@ -2329,31 +2832,92 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                             </div>
                         )}
                     </div>
+
+                    {/* Navigation Footer */}
+                    <div className="flex justify-between items-center pt-2">
+                        <button
+                            onClick={() => setActiveStep(2)}
+                            className="h-10 px-5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Back to Vendor Review
+                        </button>
+                    </div>
                 </div>
             )}
 
             {/* Fuzzy PAN Matches dialog */}
             {showPanMatchesDialog && (
-                <div className="fixed inset-0 bg-slate-50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-slate-900 border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg"><ShieldAlert className="w-5 h-5" /></div>
-                                <div><h3 className="text-lg font-bold text-slate-900">PAN Mismatch Mappings</h3><p className="text-xs text-slate-600">Confirm matching names from 26Q to map their PANs.</p></div>
+                                <div className="p-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg">
+                                    <ShieldAlert className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900">PAN Mismatch Mappings</h3>
+                                    <p className="text-xs text-slate-500">Confirm matching names from 26Q to map their PANs.</p>
+                                </div>
                             </div>
-                            <button onClick={() => setShowPanMatchesDialog(false)} className="text-slate-600 hover:text-white p-1.5 hover:bg-slate-50 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+                            <button
+                                onClick={() => setShowPanMatchesDialog(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-3 flex-1">
-                            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /><div>These parties have a missing PAN in Tally but exact same names were found in 26Q with valid PANs.</div></div>
-                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[280px] overflow-y-auto">
-                                <table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10"><tr><th className="px-4 py-2.5 font-medium w-12 text-center">✓</th><th className="px-4 py-2.5 font-medium">Party Name</th><th className="px-4 py-2.5 font-medium text-center">PAN (from 26Q)</th><th className="px-4 py-2.5 font-medium text-center">Section</th></tr></thead>
-                                    <tbody className="divide-y divide-slate-800/50">{pendingPanMatches.map((m, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2.5 text-center"><input type="checkbox" checked={!!selectedPanMatches[m.partyName]} onChange={(e) => setSelectedPanMatches({ ...selectedPanMatches, [m.partyName]: e.target.checked })} className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer" /></td><td className="px-4 py-2.5 text-slate-900 font-semibold">{m.partyName}</td><td className="px-4 py-2.5 text-center font-mono text-purple-400 font-bold">{m.suggestedPan}</td><td className="px-4 py-2.5 text-center"><span className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-bold text-[10px] text-slate-600">{m.section}</span></td></tr>))}</tbody>
+                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                                <div>These parties have a missing PAN in Tally but exact same names were found in 26Q with valid PANs.</div>
+                            </div>
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-[280px] overflow-y-auto shadow-xs">
+                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="px-4 py-2.5 font-semibold w-12 text-center">✓</th>
+                                            <th className="px-4 py-2.5 font-semibold">Party Name</th>
+                                            <th className="px-4 py-2.5 font-semibold text-center">PAN (from 26Q)</th>
+                                            <th className="px-4 py-2.5 font-semibold text-center">Section</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {pendingPanMatches.map((m, i) => (
+                                            <tr key={i} className="hover:bg-slate-50">
+                                                <td className="px-4 py-2.5 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!selectedPanMatches[m.partyName]}
+                                                        onChange={(e) => setSelectedPanMatches({ ...selectedPanMatches, [m.partyName]: e.target.checked })}
+                                                        className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2.5 text-slate-900 font-semibold">{m.partyName}</td>
+                                                <td className="px-4 py-2.5 text-center font-mono text-indigo-700 font-bold">{m.suggestedPan}</td>
+                                                <td className="px-4 py-2.5 text-center">
+                                                    <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-[10px] text-slate-700">
+                                                        {m.section}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
                                 </table>
                             </div>
                         </div>
-                        <div className="p-5 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <button onClick={handleSkipPanMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded-lg text-xs font-bold">Skip & Reconcile (Keep Separate)</button>
-                            <button onClick={handleConfirmPanMatches} className="w-full sm:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Confirm & Reconcile</button>
+                        <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <button
+                                onClick={handleSkipPanMatches}
+                                className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold cursor-pointer"
+                            >
+                                Skip & Reconcile (Keep Separate)
+                            </button>
+                            <button
+                                onClick={handleConfirmPanMatches}
+                                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                                <Check className="w-4 h-4" /> Confirm & Reconcile
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2361,37 +2925,44 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
 
             {/* Suggested Name Matches confirmation dialog */}
             {showNameMatchesDialog && (
-                <div className="fixed inset-0 bg-slate-50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-slate-900 border border-slate-200 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-purple-950/50 to-slate-900">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-lg"><GitCompare className="w-5 h-5" /></div>
+                                <div className="p-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg">
+                                    <GitCompare className="w-5 h-5" />
+                                </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-slate-900">Verify Party Linkages (Name-Based)</h3>
-                                    <p className="text-xs text-slate-600 font-medium mt-0.5">Confirm if the following parties matched by name are the same business entity.</p>
+                                    <h3 className="text-base font-bold text-slate-900">Verify Party Linkages (Name-Based)</h3>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5">Confirm if the following parties matched by name are the same business entity.</p>
                                 </div>
                             </div>
-                            <button onClick={() => setShowNameMatchesDialog(false)} className="text-slate-600 hover:text-white p-1.5 hover:bg-slate-50 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+                            <button
+                                onClick={() => setShowNameMatchesDialog(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-3 flex-1">
-                            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300 flex items-start gap-2">
-                                <Activity className="w-4 h-4 shrink-0 mt-0.5" />
+                            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-800 flex items-start gap-2">
+                                <Activity className="w-4 h-4 shrink-0 mt-0.5 text-indigo-600" />
                                 <div>
                                     Unchecked linkages will be treated as separate, distinct entities in the final reconciliation results, preventing incorrect merging (e.g. Rudra Land Developers vs Mauli Land Developers).
                                 </div>
                             </div>
-                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 max-h-[350px] overflow-y-auto">
+                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-[350px] overflow-y-auto shadow-xs">
                                 <table className="w-full text-left text-xs whitespace-nowrap">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
                                         <tr>
-                                            <th className="px-4 py-2.5 font-medium w-12 text-center">Link?</th>
-                                            <th className="px-4 py-2.5 font-medium">Party in Books (Tally)</th>
-                                            <th className="px-4 py-2.5 font-medium">Party in 26Q (TRACES)</th>
-                                            <th className="px-4 py-2.5 font-medium text-center">Match Type</th>
-                                            <th className="px-4 py-2.5 font-medium text-center">Confidence</th>
+                                            <th className="px-4 py-2.5 font-semibold w-12 text-center">Link?</th>
+                                            <th className="px-4 py-2.5 font-semibold">Party in Books (Tally)</th>
+                                            <th className="px-4 py-2.5 font-semibold">Party in 26Q (TRACES)</th>
+                                            <th className="px-4 py-2.5 font-semibold text-center">Match Type</th>
+                                            <th className="px-4 py-2.5 font-semibold text-center">Confidence</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800/50">
+                                    <tbody className="divide-y divide-slate-100">
                                         {suggestedNameMatches.map((m, i) => {
                                             const key = `${m.booksName}_${m.tracesName}`;
                                             const isChecked = !!selectedNameMatches[key];
@@ -2402,13 +2973,13 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                                             type="checkbox"
                                                             checked={isChecked}
                                                             onChange={(e) => setSelectedNameMatches({ ...selectedNameMatches, [key]: e.target.checked })}
-                                                            className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 cursor-pointer"
+                                                            className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
                                                         />
                                                     </td>
                                                     <td className="px-4 py-2.5 text-slate-900 font-semibold max-w-[200px] truncate" title={m.booksName}>{m.booksName}</td>
-                                                    <td className="px-4 py-2.5 text-slate-700 max-w-[200px] truncate" title={m.tracesName}>{m.tracesName}</td>
+                                                    <td className="px-4 py-2.5 text-slate-600 max-w-[200px] truncate" title={m.tracesName}>{m.tracesName}</td>
                                                     <td className="px-4 py-2.5 text-center">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.type === 'Exact Name' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.type === 'Exact Name' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                                                             {m.type}
                                                         </span>
                                                     </td>
@@ -2422,11 +2993,17 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                                 </table>
                             </div>
                         </div>
-                        <div className="p-5 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <button onClick={handleSkipNameMatches} className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-700 rounded-lg text-xs font-bold">
+                        <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <button
+                                onClick={handleSkipNameMatches}
+                                className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold cursor-pointer"
+                            >
                                 Keep All Separate & Reconcile
                             </button>
-                            <button onClick={handleConfirmNameMatches} className="w-full sm:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2">
+                            <button
+                                onClick={handleConfirmNameMatches}
+                                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
                                 <Check className="w-4 h-4" /> Confirm Linkages & Reconcile
                             </button>
                         </div>

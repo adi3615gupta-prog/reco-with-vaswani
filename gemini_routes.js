@@ -278,11 +278,12 @@ export function sanitizeGeminiHistory(rawHistory) {
  * @returns {Promise<{ apiKey: string|null, origin: 'cloud_office'|'cloud_global'|null }>}
  */
 export async function fetchCloudGeminiKey(firestore, officeId) {
-  const licenseApiUrl = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
+  const licenseApiUrl = (process.env.LICENSE_API_URL || (process.env.NODE_ENV === 'test' ? '' : 'https://vaswani-license-gateway.vercel.app')).replace(/\/+$/, '');
+  const licenseGatewayToken = process.env.LICENSE_GATEWAY_TOKEN || (process.env.NODE_ENV === 'test' ? '' : '20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e');
   if (licenseApiUrl) {
     try {
       const headers = { 'Content-Type': 'application/json' };
-      if (process.env.LICENSE_GATEWAY_TOKEN) headers['x-license-token'] = process.env.LICENSE_GATEWAY_TOKEN;
+      if (licenseGatewayToken) headers['x-license-token'] = licenseGatewayToken;
       const res = await fetch(`${licenseApiUrl}/geminiKeySync`, {
         method: 'POST',
         headers,
@@ -291,9 +292,11 @@ export async function fetchCloudGeminiKey(firestore, officeId) {
       if (res.ok) {
         const data = await res.json();
         if (data && data.apiKey) return { apiKey: data.apiKey, origin: data.origin || 'cloud_office' };
+        return { apiKey: null, origin: null };
       }
     } catch (e) {
       console.warn('[AI Cloud Sync] Gateway fetch warning:', e.message);
+      return { apiKey: null, origin: null };
     }
   }
 
@@ -527,14 +530,19 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
   // POST /api/gemini/push-cloud — Admin push of AI key to Firebase Firestore
   app.post('/api/gemini/push-cloud', authMiddleware, requireAdminIfAuthenticated, async (req, res) => {
     try {
-      const licenseApiUrl = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
-      if (!firestore && !licenseApiUrl) {
-        return res.status(503).json({ ok: false, error: 'Firebase Firestore is not initialized on this server' });
-      }
-
       const { apiKey, scope = 'office' } = req.body;
       if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
         return res.status(400).json({ error: 'Valid apiKey string is required' });
+      }
+
+      if (!['office', 'global'].includes(scope)) {
+        return res.status(400).json({ error: "Invalid scope parameter. Must be 'office' or 'global'." });
+      }
+
+      const licenseApiUrl = (process.env.LICENSE_API_URL || (process.env.NODE_ENV === 'test' ? '' : 'https://vaswani-license-gateway.vercel.app')).replace(/\/+$/, '');
+      const licenseGatewayToken = process.env.LICENSE_GATEWAY_TOKEN || (process.env.NODE_ENV === 'test' ? '' : '20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e');
+      if (!firestore && !licenseApiUrl) {
+        return res.status(503).json({ ok: false, error: 'Firebase Firestore is not initialized on this server' });
       }
 
       const trimmedKey = apiKey.trim();
@@ -547,7 +555,7 @@ export default function setupGeminiRoutes(app, db, firestore = null, authenticat
           return res.status(400).json({ error: 'This installation does not have an active office_id assigned.' });
         }
         const headers = { 'Content-Type': 'application/json' };
-        if (process.env.LICENSE_GATEWAY_TOKEN) headers['x-license-token'] = process.env.LICENSE_GATEWAY_TOKEN;
+        if (licenseGatewayToken) headers['x-license-token'] = licenseGatewayToken;
         const gwRes = await fetch(`${licenseApiUrl}/geminiKeySync`, {
           method: 'POST',
           headers,

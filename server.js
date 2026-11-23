@@ -916,8 +916,8 @@ app.post('/api/network/stop-global', authenticateToken, async (req, res) => {
     res.json({ success: true });
 });
 
-const LICENSE_API_URL = (process.env.LICENSE_API_URL || '').replace(/\/+$/, '');
-const LICENSE_GATEWAY_TOKEN = process.env.LICENSE_GATEWAY_TOKEN || '';
+const LICENSE_API_URL = (process.env.LICENSE_API_URL || 'https://vaswani-license-gateway.vercel.app').replace(/\/+$/, '');
+const LICENSE_GATEWAY_TOKEN = process.env.LICENSE_GATEWAY_TOKEN || '20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e';
 
 async function callLicenseGateway(endpoint, body) {
     if (!LICENSE_API_URL) return null;

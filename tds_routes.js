@@ -82,6 +82,10 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
             mapped_section_code TEXT NOT NULL,
             created_at TEXT NOT NULL
         )`);
+        // Additive migrations (ignored when the column already exists)
+        db.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN full_path TEXT`, () => {});
+        db.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN source TEXT DEFAULT 'manual'`, () => {});
+        db.run(`ALTER TABLE Tally_Ledgers ADD COLUMN side TEXT DEFAULT 'EXPENSE'`, () => {});
 
         // 7. Local PC Snapshots table
         db.run(`CREATE TABLE IF NOT EXISTS Local_Snapshots (
@@ -193,55 +197,444 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
         return path;
     }
 
-    function matchesGroupMapping(hierarchy, m) {
-        const normalize = (s) => (s || '').toUpperCase().trim();
-        const g1 = normalize(m.expense_group);
-        const g2 = m.sub_group ? normalize(m.sub_group) : null;
-        const g3 = m.sub_group_2 ? normalize(m.sub_group_2) : null;
+    // ─── Scope: expense side of the P&L only ────────────────
+    // Direct Expenses, Indirect Expenses and Purchase Accounts (and everything beneath them).
+    const TDS_EXPENSE_ROOTS = new Set(['DIRECT EXPENSES', 'INDIRECT EXPENSES', 'PURCHASE ACCOUNTS']);
+    const isExpenseChain = (chainUpper) => chainUpper.some(g => TDS_EXPENSE_ROOTS.has(g));
+    // Special section value: the ledger (or every ledger under a group) is excluded from TDS
+    const EXCLUDE_SECTION = 'EXCLUDE';
+    const EXCLUDED_BUCKET = 'Excluded from TDS';
+    // Duties & Taxes side (TDS payable ledgers). Kept apart from the expense tree.
+    const TAX_ROOT_GROUPS = new Set(['DUTIES AND TAXES', 'DUTIES & TAXES']);
+    const isTaxChain = (chainUpper) => chainUpper.some(g => TAX_ROOT_GROUPS.has(g));
+    const sideOfChain = (chainUpper) => (isExpenseChain(chainUpper) ? 'EXPENSE' : (isTaxChain(chainUpper) ? 'TAX' : null));
+    // A ledger belongs to one side only. Legacy rows (no side) are expense-side.
+    const isVisibleFor = (side, r, chainUpper) => {
+        if (side === 'TAX') return r.side === 'TAX' || r.is_tds_ledger === 1;
+        return r.side !== 'TAX' && isVisibleLedger(r, chainUpper);
+    };
+    // Ledgers are visible when they sit on the expense side, or were touched by the user / already mapped
+    const isVisibleLedger = (r, chainUpper) =>
+        isExpenseChain(chainUpper) || r.user_validated === 1 || !!r.mapped_section_code || r.is_tds_ledger === 1;
 
-        if (!hierarchy.includes(g1)) return false;
-        if (g2 && !hierarchy.includes(g2)) return false;
-        if (g3 && !hierarchy.includes(g3)) return false;
-        return true;
+    // ─── Group mapping model ─────────────────────────────────
+    // A mapping row applies to a Tally group PATH (root → group, any depth) stored in full_path (JSON array).
+    // A ledger inherits a row when its own root→leaf chain starts with that path (deepest match wins).
+    // Legacy rows (full_path NULL) keep the older 3-level "all groups appear in the chain" semantics.
+    const groupKeyOf = (groups) => groups.map(g => normalizeGroupName(g).toUpperCase()).join('\u001f');
+
+    function rowPathTopDown(m) {
+        if (m.full_path) {
+            try {
+                const parsed = JSON.parse(m.full_path);
+                if (Array.isArray(parsed) && parsed.length) return parsed.map(normalizeGroupName);
+            } catch (e) { /* fall through to legacy columns */ }
+        }
+        return [m.expense_group, m.sub_group, m.sub_group_2].map(normalizeGroupName).filter(Boolean);
     }
 
+    // hierarchy: ancestor chain, nearest parent first
     function findInheritedSection(hierarchy, groupMappings) {
         if (!groupMappings || groupMappings.length === 0) return null;
-        const sorted = [...groupMappings].sort((a, b) => {
-            const scoreA = (a.sub_group_2 ? 2 : 0) + (a.sub_group ? 1 : 0);
-            const scoreB = (b.sub_group_2 ? 2 : 0) + (b.sub_group ? 1 : 0);
-            return scoreB - scoreA;
-        });
-        for (const m of sorted) {
-            if (matchesGroupMapping(hierarchy, m)) {
-                return {
-                    sectionCode: m.mapped_section_code,
-                    mappingName: m.sub_group_2 || m.sub_group || m.expense_group
-                };
+        const nearest = (hierarchy || []).map(g => normalizeGroupName(g).toUpperCase());
+        const topDown = [...nearest].reverse();
+        let best = null;
+        let bestScore = -1;
+        for (const m of groupMappings) {
+            if (!m.mapped_section_code) continue;
+            const path = rowPathTopDown(m).map(g => g.toUpperCase());
+            if (path.length === 0) continue;
+            if (m.full_path) {
+                if (path.length > topDown.length) continue;
+                if (!path.every((g, i) => topDown[i] === g)) continue;
+            } else {
+                if (!path.every(g => nearest.includes(g))) continue;
             }
+            if (path.length > bestScore) {
+                best = m;
+                bestScore = path.length;
+            }
+        }
+        if (!best) return null;
+        const path = rowPathTopDown(best);
+        return {
+            sectionCode: best.mapped_section_code,
+            mappingName: path[path.length - 1],
+            mappingPath: path
+        };
+    }
+
+    // ─── Tally group hierarchy auto-discovery ────────────────
+    const GROUP_SECTION_KEYWORDS = [
+        { section: '194J(b)', words: ['PROFESSIONAL', 'LEGAL', 'CONSULT', 'AUDIT', 'TECHNICAL', 'DIRECTOR'] },
+        { section: '194I', words: ['RENT', 'LEASE', 'HIRE'] }, // resolved to 194I(a)/194I(b) below
+        { section: '194C', words: ['CONTRACT', 'TRANSPORT', 'COURIER', 'FREIGHT', 'LABOUR', 'MAINTENANCE', 'REPAIR', 'SECURITY', 'ADVERTIS'] },
+        { section: '194H', words: ['COMMISSION', 'BROKERAGE'] },
+        { section: '194Q', words: ['PURCHASE', 'RAW MATERIAL', 'GOODS'] }
+    ];
+    const PLANT_EQUIPMENT_WORDS = ['PLANT', 'MACHIN', 'VEHICLE', 'EQUIPMENT'];
+
+    // Tally can return control-character entities in names (e.g. "&#4; Primary"): strip them
+    const normalizeGroupName = (s) => (s || '')
+        .replace(/&#\d+;/g, ' ')
+        .replace(/[\u0000-\u001F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    // Word-start match: 'RENT' hits 'RENTAL' but not 'CURRENT' or 'PARENT'
+    const hasGroupWord = (text, word) => new RegExp(`(^|[^A-Z])${word}`).test(text);
+
+    // Upper-cased ancestor chain of a voucher line (nearest parent first, any depth)
+    function getTxnHierarchy(txn) {
+        const path = [];
+        const push = (g) => {
+            const clean = normalizeGroupName(g).toUpperCase();
+            if (clean && !path.includes(clean)) path.push(clean);
+        };
+        if (Array.isArray(txn.parentGroupHierarchy)) {
+            txn.parentGroupHierarchy.forEach(push);
+        } else {
+            push(txn.parentGroup);
+            if (txn.parentGroupPath) txn.parentGroupPath.split(',').forEach(push);
+        }
+        return path;
+    }
+
+    // Section implied by ONE group's own name (plant/vehicle words anywhere in its path pick 194I(a))
+    function inferOwnSection(pathTopDown) {
+        const all = pathTopDown.map(g => normalizeGroupName(g).toUpperCase());
+        const own = all[all.length - 1];
+        for (const rule of GROUP_SECTION_KEYWORDS) {
+            if (!rule.words.some(w => hasGroupWord(own, w))) continue;
+            if (rule.section === '194I') {
+                const isPlantOrVehicle = all.some(g => PLANT_EQUIPMENT_WORDS.some(w => hasGroupWord(g, w)));
+                return isPlantOrVehicle ? '194I(a)' : '194I(b)';
+            }
+            return rule.section;
         }
         return null;
     }
 
+    // hierarchies: Tally-ordered chains (nearest parent first, root last).
+    // Every distinct group node is considered; only nodes whose own name implies a section become templates.
+    // Descendants keep inheriting through the path rule, so nested ledgers need no extra rows.
+    function discoverGroupTemplates(hierarchies) {
+        const nodes = new Map();
+        for (const h of hierarchies) {
+            if (!Array.isArray(h)) continue;
+            if (!isExpenseChain(h.map(g => normalizeGroupName(g).toUpperCase()))) continue;
+            const topDown = h
+                .map(normalizeGroupName)
+                .filter(g => g && g.toUpperCase() !== 'PRIMARY')
+                .reverse();
+            for (let depth = 1; depth <= topDown.length; depth++) {
+                const path = topDown.slice(0, depth);
+                const key = groupKeyOf(path);
+                if (nodes.has(key)) continue;
+                nodes.set(key, { path, sectionCode: inferOwnSection(path) });
+            }
+        }
+        return [...nodes.values()]
+            .filter(n => n.sectionCode)
+            .map(n => ({
+                path: n.path,
+                sectionCode: n.sectionCode,
+                expenseGroup: n.path[0],
+                subGroup: n.path[1] || null,
+                subGroup2: n.path[2] || null
+            }));
+    }
+
+    // API: Auto-discover group templates from Tally ledger hierarchies (idempotent; never overwrites manual rows)
+    app.post('/api/tds/auto-discover-groups', (req, res) => {
+        const { hierarchies } = req.body || {};
+        if (!Array.isArray(hierarchies)) {
+            return res.status(400).json({ error: "hierarchies array is required" });
+        }
+        const discovered = discoverGroupTemplates(hierarchies);
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, existing) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const existingKeys = new Set(existing.map(r => groupKeyOf(rowPathTopDown(r))));
+            const toInsert = discovered.filter(t => !existingKeys.has(groupKeyOf(t.path)));
+            if (toInsert.length === 0) {
+                return res.json({ success: true, discovered: discovered.length, inserted: 0, templates: [] });
+            }
+            const nowStr = new Date().toISOString();
+            db.serialize(() => {
+                const stmt = db.prepare(`INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, 'auto')`);
+                let insertErr = null;
+                toInsert.forEach(t => {
+                    stmt.run(randomUUID(), t.expenseGroup, t.subGroup, t.subGroup2, t.sectionCode, nowStr, JSON.stringify(t.path), (e) => {
+                        if (e && !insertErr) insertErr = e;
+                    });
+                });
+                stmt.finalize((e) => {
+                    const error = e || insertErr;
+                    if (error) return res.status(500).json({ error: error.message });
+                    res.json({ success: true, discovered: discovered.length, inserted: toInsert.length, templates: toInsert });
+                });
+            });
+        });
+    });
+
+    // ─── Full group tree (every ledger nested under its Tally groups) ───
+    app.get('/api/tds/group-tree', (req, res) => {
+        const side = req.query.side === 'TAX' ? 'TAX' : 'EXPENSE';
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            db.all('SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC', [], (err2, ledgers) => {
+                if (err2) return res.status(500).json({ error: err2.message });
+
+                const explicitByKey = new Map();
+                rows.forEach(r => {
+                    if (r.mapped_section_code) explicitByKey.set(groupKeyOf(rowPathTopDown(r)), r);
+                });
+
+                const rootNode = { name: '', path: [], key: '', children: new Map(), ledgers: [] };
+                const nodeByKey = new Map();
+                const ensureNode = (topDown) => {
+                    let parent = rootNode;
+                    const acc = [];
+                    for (const name of topDown) {
+                        acc.push(name);
+                        const key = groupKeyOf(acc);
+                        let node = nodeByKey.get(key);
+                        if (!node) {
+                            node = { name, path: [...acc], key, children: new Map(), ledgers: [] };
+                            nodeByKey.set(key, node);
+                            parent.children.set(key, node);
+                        }
+                        parent = node;
+                    }
+                    return parent;
+                };
+
+                for (const l of ledgers) {
+                    const chain = []; // nearest parent first, original case, de-duplicated
+                    const push = (g) => {
+                        const c = normalizeGroupName(g);
+                        if (c && !chain.some(x => x.toUpperCase() === c.toUpperCase())) chain.push(c);
+                    };
+                    push(l.parent_group);
+                    if (l.parent_group_path) l.parent_group_path.split(',').forEach(push);
+
+                    if (!isVisibleFor(side, l, chain.map(c => c.toUpperCase()))) continue;
+                    const leaf = l.mapped_section_code === EXCLUDE_SECTION
+                        ? ensureNode([EXCLUDED_BUCKET])
+                        : (chain.length ? ensureNode([...chain].reverse()) : ensureNode(['Ungrouped']));
+                    const inherited = findInheritedSection(chain.map(c => c.toUpperCase()), rows);
+                    leaf.ledgers.push({
+                        id: l.id,
+                        ledgerName: l.ledger_name,
+                        sectionCode: l.mapped_section_code || null,
+                        inheritedSectionCode: inherited ? inherited.sectionCode : null,
+                        inheritedGroupName: inherited ? inherited.mappingName : null,
+                        effectiveSectionCode: l.mapped_section_code || (inherited ? inherited.sectionCode : null),
+                        isTdsLedger: l.is_tds_ledger === 1,
+                        userValidated: l.user_validated === 1
+                    });
+                }
+
+                const build = (node) => {
+                    const children = [...node.children.values()]
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(build);
+                    const explicit = explicitByKey.get(node.key) || null;
+                    const inherited = explicit ? null : findInheritedSection([...node.path].reverse(), rows);
+                    const ledgerCount = node.ledgers.length + children.reduce((s, c) => s + c.ledgerCount, 0);
+                    return {
+                        key: node.key,
+                        name: node.name,
+                        virtual: node.path.length === 1 && node.name === EXCLUDED_BUCKET,
+                        path: node.path,
+                        explicitSectionCode: explicit ? explicit.mapped_section_code : null,
+                        source: explicit ? (explicit.source || 'manual') : null,
+                        effectiveSectionCode: explicit ? explicit.mapped_section_code : (inherited ? inherited.sectionCode : null),
+                        inheritedFromPath: !explicit && inherited ? inherited.mappingPath : null,
+                        ledgerCount,
+                        children,
+                        ledgers: node.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName))
+                    };
+                };
+                const roots = [...rootNode.children.values()]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(build);
+                const totalLedgers = roots.reduce((sum, r) => sum + r.ledgerCount, 0);
+                res.json({ roots, totalLedgers, templateCount: rows.filter(r => r.mapped_section_code).length });
+            });
+        });
+    });
+
+    // Bulk import from the mapping template.
+    // Group rows: upsert by full path; sectionCode null (INHERIT) removes the group's own section.
+    // Ledger rows: set the ledger's own section; sectionCode null (INHERIT) returns it to group inheritance.
+    app.post('/api/tds/group-tree/import', (req, res) => {
+        const groupsIn = req.body && Array.isArray(req.body.items) ? req.body.items : [];
+        const ledgersIn = req.body && Array.isArray(req.body.ledgers) ? req.body.ledgers : [];
+        const groups = groupsIn
+            .map(it => ({
+                path: (Array.isArray(it.path) ? it.path : []).map(normalizeGroupName).filter(Boolean),
+                sectionCode: it.sectionCode ? String(it.sectionCode).trim() : null
+            }))
+            .filter(it => it.path.length > 0);
+        const ledgers = ledgersIn
+            .map(l => ({
+                ledgerName: normalizeGroupName(l.ledgerName),
+                sectionCode: l.sectionCode ? String(l.sectionCode).trim() : null,
+                tds: typeof l.tds === 'boolean' ? l.tds : undefined
+            }))
+            .filter(l => l.ledgerName);
+        const skipped = (groupsIn.length - groups.length) + (ledgersIn.length - ledgers.length);
+
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const idByKey = new Map(rows.map(r => [groupKeyOf(rowPathTopDown(r)), r.id]));
+            const nowStr = new Date().toISOString();
+            let created = 0;
+            let updated = 0;
+            let removed = 0;
+            let ledgersSet = 0;
+            let ledgersCleared = 0;
+            let failure = null;
+            const onErr = (e) => { if (e && !failure) failure = e; };
+
+            db.serialize(() => {
+                for (const g of groups) {
+                    const key = groupKeyOf(g.path);
+                    const existingId = idByKey.get(key);
+                    if (!g.sectionCode) {
+                        if (existingId) {
+                            removed++;
+                            idByKey.delete(key);
+                            db.run('DELETE FROM Tally_Group_Mappings WHERE id = ?', [existingId], onErr);
+                        }
+                    } else if (existingId) {
+                        updated++;
+                        db.run(
+                            `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+                            [g.sectionCode, JSON.stringify(g.path), existingId], onErr
+                        );
+                    } else {
+                        created++;
+                        const id = randomUUID();
+                        idByKey.set(key, id);
+                        db.run(
+                            `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+                            [id, g.path[0], g.path[1] || null, g.path[2] || null, g.sectionCode, nowStr, JSON.stringify(g.path)], onErr
+                        );
+                    }
+                }
+
+                for (const l of ledgers) {
+                    if (l.tds !== undefined) {
+                        // TDS flag only (Duties & Taxes template): the ledger's section is left as it is
+                        db.run(
+                            `UPDATE Tally_Ledgers SET is_tds_ledger = ?, user_validated = 1 WHERE ledger_name = ?`,
+                            [l.tds ? 1 : 0, l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersSet++; }
+                        );
+                        continue;
+                    }
+                    if (!l.sectionCode) {
+                        db.run(
+                            `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+                            [l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersCleared++; }
+                        );
+                    } else {
+                        db.run(
+                            `UPDATE Tally_Ledgers SET mapped_section_code = ?, user_validated = 1 WHERE ledger_name = ?`,
+                            [l.sectionCode, l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersSet++; }
+                        );
+                    }
+                }
+
+                db.run('SELECT 1', [], () => {
+                    if (failure) return res.status(500).json({ error: failure.message });
+                    res.json({ success: true, created, updated, removed, ledgersSet, ledgersCleared, skipped });
+                });
+            });
+        });
+    });
+
+    // Set (or clear, when sectionCode is empty) the TDS section of any group, at any depth
+    app.put('/api/tds/group-tree/section', (req, res) => {
+        const { path: rawPath, sectionCode } = req.body || {};
+        const path = (Array.isArray(rawPath) ? rawPath : []).map(normalizeGroupName).filter(Boolean);
+        if (path.length === 0) return res.status(400).json({ error: "path (array of group names, root first) is required" });
+        const key = groupKeyOf(path);
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const existing = rows.find(r => groupKeyOf(rowPathTopDown(r)) === key) || null;
+
+            if (!sectionCode) {
+                if (!existing) return res.json({ success: true, removed: false });
+                return db.run('DELETE FROM Tally_Group_Mappings WHERE id = ?', [existing.id], (e) => {
+                    if (e) return res.status(500).json({ error: e.message });
+                    res.json({ success: true, removed: true });
+                });
+            }
+            if (existing) {
+                return db.run(
+                    `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+                    [sectionCode.trim(), JSON.stringify(path), existing.id],
+                    (e) => {
+                        if (e) return res.status(500).json({ error: e.message });
+                        res.json({ success: true, updated: true });
+                    }
+                );
+            }
+            db.run(
+                `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+                [randomUUID(), path[0], path[1] || null, path[2] || null, sectionCode.trim(), new Date().toISOString(), JSON.stringify(path)],
+                (e) => {
+                    if (e) return res.status(500).json({ error: e.message });
+                    res.json({ success: true, created: true });
+                }
+            );
+        });
+    });
+
     // API: Step 1: Extract Ledgers (Saves to Tally_Ledgers)
     app.post('/api/tds/extract-ledgers', (req, res) => {
-        const { ledgers } = req.body; // Array of { ledgerName, parentGroup, parentGroupPath }
+        const { ledgers, replaceAuto } = req.body; // Array of { ledgerName, parentGroup, parentGroupPath }
         if (!ledgers || !Array.isArray(ledgers)) {
             return res.status(400).json({ error: "Invalid ledgers array" });
         }
 
+        // Only ledgers on the expense side or the Duties & Taxes side are stored; the side is recorded on the row
+        const accepted = [];
+        for (const l of ledgers) {
+            const chain = [l.parentGroup, ...(l.parentGroupPath || '').split(',')].map(g => normalizeGroupName(g).toUpperCase()).filter(Boolean);
+            const side = sideOfChain(chain);
+            if (side) accepted.push({ ...l, side });
+        }
+
         db.serialize(() => {
-            const stmt = db.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, parent_group_path, is_tds_ledger, user_validated)
-                                     VALUES (?, ?, ?, ?, 0, 0)
-                                     ON CONFLICT(ledger_name) DO UPDATE SET 
+            const stmt = db.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, parent_group_path, is_tds_ledger, user_validated, side)
+                                     VALUES (?, ?, ?, ?, 0, 0, ?)
+                                     ON CONFLICT(ledger_name) DO UPDATE SET
                                         parent_group = excluded.parent_group,
-                                        parent_group_path = excluded.parent_group_path`);
-            ledgers.forEach(l => {
-                stmt.run(randomUUID(), l.ledgerName, l.parentGroup || 'Expense', l.parentGroupPath || '');
+                                        parent_group_path = excluded.parent_group_path,
+                                        side = excluded.side`);
+            // Master sync: auto rows (not user-validated, not mapped, not TDS ledgers) that are no longer in Tally are removed
+            if (replaceAuto === true) {
+                const names = ledgers.map(l => l.ledgerName);
+                const notIn = names.length ? ` AND ledger_name NOT IN (${names.map(() => '?').join(',')})` : '';
+                db.run(
+                    `DELETE FROM Tally_Ledgers WHERE user_validated = 0 AND is_tds_ledger = 0 AND (mapped_section_code IS NULL OR mapped_section_code = '')${notIn}`,
+                    names,
+                    (e) => { if (e) console.error('replaceAuto cleanup failed:', e.message); }
+                );
+            }
+            accepted.forEach(l => {
+                stmt.run(randomUUID(), l.ledgerName, l.parentGroup || 'Expense', l.parentGroupPath || '', l.side);
             });
             stmt.finalize((err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true, count: ledgers.length });
+                res.json({ success: true, count: accepted.length });
             });
         });
     });
@@ -369,7 +762,8 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
             db.all('SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC', [], (err, rows) => {
                 if (err) return res.status(500).json({ error: err.message });
 
-                res.json(rows.map(r => {
+                const sideQ = req.query.side === 'TAX' ? 'TAX' : 'EXPENSE';
+                res.json(rows.filter(r => isVisibleFor(sideQ, r, getLedgerHierarchy(r))).map(r => {
                     const hierarchy = getLedgerHierarchy(r);
                     const inherited = findInheritedSection(hierarchy, groupMappings);
                     return {
@@ -410,6 +804,17 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
         const { ledgerName, sectionCode, isTdsLedger } = req.body;
         if (!ledgerName) {
             return res.status(400).json({ error: "ledgerName is required" });
+        }
+        if (req.body.clearOverride === true) {
+            // Drop the ledger's own section and return it to group inheritance (not an explicit 'unmapped' override)
+            return db.run(
+                `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+                [ledgerName],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true });
+                }
+            );
         }
         db.run(
             `INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, is_tds_ledger, mapped_section_code, user_validated)
@@ -568,7 +973,9 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                             const norm = normalizeLedger(l.ledger_name);
                             if (l.mapped_section_code) {
                                 ledgerMap[norm] = l.mapped_section_code;
-                            } else if (l.is_tds_ledger === 0) {
+                            } else if (l.is_tds_ledger === 0 && l.user_validated === 1) {
+                                // Only a user-validated "no section" is an explicit override that blocks group inheritance.
+                                // Freshly extracted ledgers (user_validated = 0) must still inherit from their group.
                                 unmappedLedgers.add(norm);
                             }
                             if (l.is_tds_ledger === 1) {
@@ -582,19 +989,12 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                             if (ledgerMap[normLedger]) {
                                 return ledgerMap[normLedger];
                             }
-                            if (isStrict || unmappedLedgers.has(normLedger)) {
-                                return null; // In strict mode or explicitly unmapped, do NOT inherit group mapping!
+                            if (unmappedLedgers.has(normLedger)) {
+                                return null; // Explicitly unmapped by the user: do NOT inherit group mapping
                             }
 
-                            // Check inherited group mappings
-                            const hierarchy = [];
-                            if (txn.parentGroup) hierarchy.push(txn.parentGroup.toUpperCase().trim());
-                            if (txn.parentGroupPath) {
-                                txn.parentGroupPath.split(',').forEach(g => {
-                                    const clean = g.trim().toUpperCase();
-                                    if (clean && !hierarchy.includes(clean)) hierarchy.push(clean);
-                                });
-                            }
+                            // Check inherited group mappings across the full ancestor chain (any depth)
+                            const hierarchy = getTxnHierarchy(txn);
                             const inherited = findInheritedSection(hierarchy, groupMappings);
                             if (inherited) {
                                 return inherited.sectionCode;
@@ -622,7 +1022,7 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                         const partySectionMap = {};
                         transactions.forEach(t => {
                             const sectionCode = getSectionForTxn(t);
-                            if (sectionCode) {
+                            if (sectionCode && sectionCode !== EXCLUDE_SECTION) {
                                 const partyKey = t.partyName.toUpperCase().trim();
                                 if (!partySectionMap[partyKey]) {
                                     partySectionMap[partyKey] = new Set();
@@ -653,6 +1053,10 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                         transactions.forEach(t => {
                             const normLedger = normalizeLedger(t.ledgerName);
                             const sectionCode = getSectionForTxn(t);
+                            if (sectionCode === EXCLUDE_SECTION) return; // excluded from TDS: never reconciled
+                            // Strict: an amount only counts toward taxable spend when its own ledger is mapped
+                            // (directly or through its group). Unmapped amounts and placeholder entries are dropped.
+                            if (isStrict && !sectionCode && Math.abs(Number(t.amount) || 0) > 0) return;
 
                             const partyKey = t.partyName.toUpperCase().trim();
                             const dbParty = partyMap[partyKey];
@@ -662,13 +1066,13 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
 
                             let resolvedSection = sectionCode;
 
-                            // Priority 2: Extract section from tdsLedgerName / tds_ledger_name
-                            if (!resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
+                            // Priority 2: Extract section from tdsLedgerName / tds_ledger_name (not in strict mode)
+                            if (!isStrict && !resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
                                 resolvedSection = extractSectionFromName(t.tdsLedgerName || t.tds_ledger_name);
                             }
 
-                            // Priority 3: Extract section from ledgerName
-                            if (!resolvedSection && t.ledgerName) {
+                            // Priority 3: Extract section from ledgerName (not in strict mode)
+                            if (!isStrict && !resolvedSection && t.ledgerName) {
                                 resolvedSection = extractSectionFromName(t.ledgerName);
                             }
 
@@ -685,8 +1089,8 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                                 resolvedSection = dbParty.mapped_section_code || dbParty.section_code;
                             }
 
-                            // Priority 6: Form 26Q (TRACES) section for this party / PAN
-                            if (!resolvedSection) {
+                            // Priority 6: Form 26Q (TRACES) section for this party / PAN (not in strict mode)
+                            if (!isStrict && !resolvedSection) {
                                 let panVal = ((dbParty && dbParty.pan) || t.partyPan || t.pan || '').toUpperCase().trim().replace(/\s+/g, '');
                                 if (panVal && tracesPanSectionMap[panVal]) {
                                     resolvedSection = tracesPanSectionMap[panVal];
@@ -1472,6 +1876,8 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
                 subGroup: r.sub_group,
                 subGroup2: r.sub_group_2,
                 sectionCode: r.mapped_section_code,
+                fullPath: rowPathTopDown(r),
+                source: r.source || 'manual',
                 createdAt: r.created_at
             })));
         });
@@ -1484,10 +1890,11 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
             return res.status(400).json({ error: "expenseGroup and sectionCode are required" });
         }
         const nowStr = new Date().toISOString();
+        const fullPath = [expenseGroup, subGroup, subGroup2].map(normalizeGroupName).filter(Boolean);
         db.run(
-            `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [randomUUID(), expenseGroup.trim(), subGroup ? subGroup.trim() : null, subGroup2 ? subGroup2.trim() : null, sectionCode.trim(), nowStr],
+            `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+            [randomUUID(), expenseGroup.trim(), subGroup ? subGroup.trim() : null, subGroup2 ? subGroup2.trim() : null, sectionCode.trim(), nowStr, JSON.stringify(fullPath)],
             function (err) {
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({ success: true });
@@ -1508,10 +1915,8 @@ export default function setupTdsRoutes(app, db, authenticateToken = null) {
     });
 
     // API: Reset all TDS Module Tables (except TDS Rules) - Admin Only with Confirmation
+    // Any logged-in user may reset TDS data (login is still required by authMiddleware)
     app.post('/api/tds/reset', authMiddleware, (req, res) => {
-        if (!req.user || req.user.role !== 'admin') {
-            return res.status(403).json({ success: false, error: 'Unauthorized: Admin role required to reset TDS data' });
-        }
         if (req.body?.confirm !== 'RESET_ALL_TDS_DATA') {
             return res.status(400).json({ success: false, error: 'Confirmation payload missing. Please provide confirm: "RESET_ALL_TDS_DATA"' });
         }

@@ -2689,10 +2689,6 @@ export default function Index() {
                 </div>
               )}
 
-              {/* FOOTER TEXT */}
-              <div className="text-center pt-8 border-t border-slate-200/80">
-                <p className="text-[9px] font-mono tracking-[0.3em] text-slate-500 uppercase">OFFLINE COMPLIANCE PLATFORM • AUDIT WITH VASWANI • ALL RIGHTS SECURED</p>
-              </div>
             </div>
           )}
 

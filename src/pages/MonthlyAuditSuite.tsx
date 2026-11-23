@@ -417,7 +417,6 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
     const [revisionNotes, setRevisionNotes] = useState('');
     const [releaseModalOpen, setReleaseModalOpen] = useState(false);
     const [releaseChannel, setReleaseChannel] = useState<'Directory' | 'WhatsApp' | 'Email'>('Directory');
-    const [obsModalOpen, setObsModalOpen] = useState(false);
     const [newObs, setNewObs] = useState({
         sectionKey: 'sales',
         title: '',
@@ -3462,13 +3461,12 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                 })
             });
             setObservations(prev => [obsItem, ...prev]);
-            setObsModalOpen(false);
             setNewObs({
-                sectionKey: 'sales',
+                sectionKey: newObs.sectionKey, // retain selected section for fast sequential entry
                 title: '',
                 description: '',
-                severity: 'Medium',
-                riskCategory: 'GST Compliance',
+                severity: newObs.severity, // retain selected severity
+                riskCategory: newObs.riskCategory,
                 financialExposure: 0,
                 voucherRef: '',
                 auditorRecommendation: ''
@@ -3476,6 +3474,34 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
             toast.success('Observation recorded');
         } catch (err: any) {
             toast.error(`Failed to add observation: ${err.message}`);
+        }
+    };
+
+    const handleUpdateObservationResponse = async (obsId: string, responseText: string) => {
+        const targetObs = observations.find(o => o.id === obsId);
+        if (!targetObs || targetObs.managementResponse === responseText) return;
+
+        try {
+            await safeApiFetch(`/api/monthly-audits/${encodeURIComponent(auditHeader.id)}/observations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...targetObs,
+                    obsId: targetObs.id,
+                    client_gstin: selectedClientGstin,
+                    section_key: targetObs.sectionKey,
+                    risk_category: targetObs.riskCategory,
+                    financial_exposure: Number(targetObs.financialExposure) || 0,
+                    voucher_ref: targetObs.voucherRef,
+                    auditor_recommendation: targetObs.auditorRecommendation,
+                    management_response: responseText,
+                    managementResponse: responseText
+                })
+            });
+            setObservations(prev => prev.map(o => o.id === obsId ? { ...o, managementResponse: responseText } : o));
+            toast.success('Management response saved');
+        } catch (err: any) {
+            toast.error(`Failed to update response: ${err.message}`);
         }
     };
 
@@ -10173,30 +10199,185 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                     4. Current Period Audit Observations &amp; Deficiencies
                                 </h2>
                                 <p className="text-xs text-slate-500">
-                                    Categorized audit observations with risk severity and management responses.
+                                    Categorized audit observations with risk severity, financial exposures, and management responses.
                                 </p>
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={() => setObsModalOpen(true)}
-                                disabled={!isJuniorAllowedToEdit}
-                                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
-                                    isJuniorAllowedToEdit
-                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
-                                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                                }`}
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Record Observation</span>
-                            </button>
+                            {/* Observation KPI Badges */}
+                            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                                <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                                    Total: {observations.length}
+                                </span>
+                                {observations.filter(o => o.severity === 'Critical').length > 0 && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-rose-50 text-rose-700 font-bold border border-rose-200">
+                                        Critical: {observations.filter(o => o.severity === 'Critical').length}
+                                    </span>
+                                )}
+                                {observations.filter(o => o.severity === 'High').length > 0 && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-orange-50 text-orange-700 font-bold border border-orange-200">
+                                        High: {observations.filter(o => o.severity === 'High').length}
+                                    </span>
+                                )}
+                                {observations.filter(o => o.severity === 'Medium').length > 0 && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 font-bold border border-amber-200">
+                                        Medium: {observations.filter(o => o.severity === 'Medium').length}
+                                    </span>
+                                )}
+                                {observations.reduce((acc, o) => acc + (Number(o.financialExposure) || 0), 0) > 0 && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-rose-100/70 text-rose-900 font-mono font-bold border border-rose-300">
+                                        Total Exposure: ₹{observations.reduce((acc, o) => acc + (Number(o.financialExposure) || 0), 0).toLocaleString('en-IN')}
+                                    </span>
+                                )}
+                            </div>
                         </div>
+
+                        {/* ─── Horizontal Line Data Entry Bar (No Popup, Direct Inline Input) ─── */}
+                        {isJuniorAllowedToEdit ? (
+                            <div className="bg-white rounded-2xl border-2 border-indigo-200/90 shadow-xs p-3.5 space-y-2.5 transition">
+                                <div className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1 rounded-md bg-indigo-50 text-indigo-700">
+                                            <AlertTriangle className="w-4 h-4" />
+                                        </div>
+                                        <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
+                                            Record Observation (Horizontal Entry Line)
+                                        </span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+                                        Fill details in this horizontal line &amp; press <strong className="text-slate-700">Enter</strong> or click <strong className="text-indigo-600 font-bold">Record</strong>
+                                    </span>
+                                </div>
+
+                                {/* The Horizontal Line Input Form */}
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        handleAddObservation();
+                                    }}
+                                    className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-2 items-end"
+                                >
+                                    {/* 1. Section (lg:col-span-2) */}
+                                    <div className="lg:col-span-2 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Section / Area
+                                        </label>
+                                        <select
+                                            value={newObs.sectionKey}
+                                            onChange={(e) => setNewObs(prev => ({ ...prev, sectionKey: e.target.value }))}
+                                            className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition cursor-pointer"
+                                        >
+                                            <option value="sales">3.1 Sales (Reco R1)</option>
+                                            <option value="purchase">3.2 Purchase (Reco 2B)</option>
+                                            <option value="journal">3.3 TDS Working</option>
+                                            <option value="bank">3.4 Bank &amp; Loans</option>
+                                            <option value="roc">3.5 ROC Charges</option>
+                                            <option value="cash">3.6 Cash &amp; Fixed Assets</option>
+                                            <option value="labor">4.1 Labor Compliances</option>
+                                            <option value="general">4.2 General / Governance</option>
+                                        </select>
+                                    </div>
+
+                                    {/* 2. Severity (lg:col-span-1) */}
+                                    <div className="lg:col-span-1 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Severity
+                                        </label>
+                                        <select
+                                            value={newObs.severity}
+                                            onChange={(e) => setNewObs(prev => ({ ...prev, severity: e.target.value as any }))}
+                                            className={`w-full border rounded-xl px-2 py-2 text-xs font-bold focus:outline-none transition cursor-pointer ${
+                                                newObs.severity === 'Critical' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                                                newObs.severity === 'High' ? 'bg-orange-50 text-orange-700 border-orange-300' :
+                                                newObs.severity === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                                'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                            }`}
+                                        >
+                                            <option value="Critical">Critical</option>
+                                            <option value="High">High</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="Low">Low</option>
+                                        </select>
+                                    </div>
+
+                                    {/* 3. Title (lg:col-span-3) */}
+                                    <div className="lg:col-span-3 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Observation Title <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newObs.title}
+                                            onChange={(e) => setNewObs(prev => ({ ...prev, title: e.target.value }))}
+                                            placeholder="e.g. Ineligible ITC on motor car / Missing GSTIN..."
+                                            className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                                        />
+                                    </div>
+
+                                    {/* 4. Description (lg:col-span-3) */}
+                                    <div className="lg:col-span-3 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Finding Details / Description
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newObs.description}
+                                            onChange={(e) => setNewObs(prev => ({ ...prev, description: e.target.value }))}
+                                            placeholder="Specific voucher, contravention or shortfall detail..."
+                                            className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                                        />
+                                    </div>
+
+                                    {/* 5. Financial Exposure (lg:col-span-1) */}
+                                    <div className="lg:col-span-1 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Exposure (₹)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={newObs.financialExposure || ''}
+                                            onChange={(e) => setNewObs(prev => ({ ...prev, financialExposure: Number(e.target.value) || 0 }))}
+                                            placeholder="0"
+                                            className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs text-slate-900 font-mono text-right focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                    </div>
+
+                                    {/* 6. Recommendation + Add Button (lg:col-span-2) */}
+                                    <div className="lg:col-span-2 space-y-1">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                            Suggested Action / Reco
+                                        </label>
+                                        <div className="flex items-center gap-1.5">
+                                            <input
+                                                type="text"
+                                                value={newObs.auditorRecommendation}
+                                                onChange={(e) => setNewObs(prev => ({ ...prev, auditorRecommendation: e.target.value }))}
+                                                placeholder="Action recommended..."
+                                                className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                                            />
+                                            <button
+                                                type="submit"
+                                                className="shrink-0 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer"
+                                                title="Record Observation (or press Enter)"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                                <span className="hidden sm:inline">Record</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        ) : (
+                            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-3 text-xs text-slate-500 flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-slate-400" />
+                                <span>Observations are locked because this audit period is currently in senior review or has been released.</span>
+                            </div>
+                        )}
 
                         {/* Observations List */}
                         <div className="space-y-3">
                             {observations.length === 0 ? (
                                 <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center text-xs text-slate-500 shadow-xs">
-                                    No observations recorded for this month. Click "Record Observation" or "Auto-Populate" to scan.
+                                    No observations recorded for this month. Use the horizontal line above to record observations.
                                 </div>
                             ) : (
                                 (observations || []).map(obs => (
@@ -10250,7 +10431,22 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                             </div>
                                             <div>
                                                 <span className="text-slate-400 font-semibold block mb-0.5">Management Response</span>
-                                                <span className="text-slate-500 italic">{obs.managementResponse || 'Pending Client Input'}</span>
+                                                {isJuniorAllowedToEdit ? (
+                                                    <input
+                                                        type="text"
+                                                        defaultValue={obs.managementResponse || ''}
+                                                        onBlur={(e) => handleUpdateObservationResponse(obs.id, e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                (e.target as HTMLInputElement).blur();
+                                                            }
+                                                        }}
+                                                        placeholder="Type client / management response..."
+                                                        className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 italic focus:outline-none focus:border-indigo-500 transition text-[11px]"
+                                                    />
+                                                ) : (
+                                                    <span className="text-slate-600 italic">{obs.managementResponse || 'Pending Client Input'}</span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -10943,117 +11139,6 @@ export default function MonthlyAuditSuite({ onBack }: MonthlyAuditSuiteProps) {
                                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-600 text-white text-xs font-bold hover:from-indigo-500 hover:to-indigo-500 shadow-md shadow-indigo-200"
                             >
                                 Confirm &amp; Release
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ─── Modal 3: Add Observation Modal ────────────────────────────────── */}
-            {obsModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                <AlertTriangle className="w-5 h-5 text-indigo-600" />
-                                <span>Record Audit Observation</span>
-                            </h3>
-                            <button type="button" onClick={() => setObsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="space-y-3 text-xs">
-                            <div>
-                                <label className="block text-slate-600 font-semibold mb-1">Section</label>
-                                <select
-                                    value={newObs.sectionKey}
-                                    onChange={(e) => setNewObs(prev => ({ ...prev, sectionKey: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-indigo-500"
-                                >
-                                    <option value="sales">3.1 Sales (Reco R1)</option>
-                                    <option value="purchase">3.2 Purchase (Reco 2B)</option>
-                                    <option value="journal">3.3 TDS Working</option>
-                                    <option value="bank">3.4 Bank &amp; Loans</option>
-                                    <option value="roc">3.5 ROC Charges</option>
-                                    <option value="cash">3.6 Cash &amp; Fixed Assets</option>
-                                    <option value="labor">4.1 Labor Compliances</option>
-                                </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Severity</label>
-                                    <select
-                                        value={newObs.severity}
-                                        onChange={(e) => setNewObs(prev => ({ ...prev, severity: e.target.value as any }))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-indigo-500"
-                                    >
-                                        <option value="Critical">Critical</option>
-                                        <option value="High">High</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="Low">Low</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Financial Exposure (₹)</label>
-                                    <input
-                                        type="number"
-                                        value={newObs.financialExposure}
-                                        onChange={(e) => setNewObs(prev => ({ ...prev, financialExposure: Number(e.target.value) || 0 }))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 font-mono focus:outline-none focus:border-indigo-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-600 font-semibold mb-1">Title</label>
-                                <input
-                                    type="text"
-                                    value={newObs.title}
-                                    onChange={(e) => setNewObs(prev => ({ ...prev, title: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-indigo-500"
-                                    placeholder="Observation title..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-600 font-semibold mb-1">Description</label>
-                                <textarea
-                                    rows={3}
-                                    value={newObs.description}
-                                    onChange={(e) => setNewObs(prev => ({ ...prev, description: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-indigo-500"
-                                    placeholder="Detailed finding..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-600 font-semibold mb-1">Auditor Suggested Action</label>
-                                <input
-                                    type="text"
-                                    value={newObs.auditorRecommendation}
-                                    onChange={(e) => setNewObs(prev => ({ ...prev, auditorRecommendation: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-indigo-500"
-                                    placeholder="Action recommended..."
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-2">
-                            <button
-                                type="button"
-                                onClick={() => setObsModalOpen(false)}
-                                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleAddObservation}
-                                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-sm"
-                            >
-                                Save Observation
                             </button>
                         </div>
                     </div>

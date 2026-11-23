@@ -3,7 +3,7 @@ import { CommandHub } from '@/components/ui/command-hub';
 /** Logged-out preview of the Command Hub with sample numbers. */
 export default function CommandHubPreview() {
   return (
-    <div className="min-h-svh bg-slate-50 p-6 sm:p-10">
+    <div className="h-svh overflow-hidden bg-slate-50">
       <CommandHub
         userName="Sourav Vaswani"
         designation="Partner"
