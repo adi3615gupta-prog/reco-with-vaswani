@@ -238,6 +238,7 @@ export function HelpSupportWidget({ isPinned = false, activeModule = 'hub' }: He
     <>
       {/* 1. FLOATING BOTTOM-LEFT HELP BUTTON (Positioned higher at bottom-20 with compact toggle so toolbars behind are clear) */}
       <div
+        data-floating-widget
         className={`fixed bottom-20 z-40 transition-all duration-300 ${
           isPinned ? 'left-[18.25rem]' : 'left-[5.75rem]'
         }`}

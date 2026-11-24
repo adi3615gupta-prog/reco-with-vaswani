@@ -9,7 +9,7 @@ interface ModeSwitcherProps {
 
 export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ currentMode, onSwitch }) => {
   return (
-    <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200/90 shadow-2xs">
+    <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200/90 shadow-2xs whitespace-nowrap">
       <button
         type="button"
         className={cn(

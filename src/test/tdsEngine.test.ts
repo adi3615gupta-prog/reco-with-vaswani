@@ -229,55 +229,55 @@ describe('TDS Engine', () => {
         expect(XLSX.utils.book_append_sheet).toHaveBeenCalled();
         const ws = (XLSX.utils.book_append_sheet as any).mock.calls[0][1] as XLSX.WorkSheet;
 
-        // J5: Req. TDS (Books)
-        const cellJ5 = ws['J5'];
-        expect(cellJ5).toBeDefined();
-        expect((cellJ5 as any).f).toBe('ROUND(G5*I5/100, 0)');
-        expect((cellJ5 as any).v).toBe(2000);
+        // I5: Req. TDS (Books)
+        const cellI5 = ws['I5'];
+        expect(cellI5).toBeDefined();
+        expect((cellI5 as any).f).toBe('ROUND(H5*F5/100, 0)');
+        expect((cellI5 as any).v).toBe(2000);
 
-        // Col N is Books TDS Variance (J5 - K5)
-        const cellN5 = ws['N5'];
-        expect(cellN5).toBeDefined();
-        expect((cellN5 as any).f).toBe('J5-K5');
-        expect((cellN5 as any).v).toBe(0);
+        // Col K is Books TDS Variance (I5 - J5)
+        const cellK5 = ws['K5'];
+        expect(cellK5).toBeDefined();
+        expect((cellK5 as any).f).toBe('I5-J5');
+        expect((cellK5 as any).v).toBe(0);
 
-        // Col O is 26Q TDS Variance (J5 - M5)
+        // Col N is 26Q TDS Variance (I5 - M5)
+        const cellN5b = ws['N5'];
+        expect(cellN5b).toBeDefined();
+        expect((cellN5b as any).f).toBe('I5-M5');
+        expect((cellN5b as any).v).toBe(400);
+
+        // Col O is Taxable Variance (H5 - L5)
         const cellO5 = ws['O5'];
         expect(cellO5).toBeDefined();
-        expect((cellO5 as any).f).toBe('J5-M5');
-        expect((cellO5 as any).v).toBe(400);
-
-        // Col P is Taxable Variance (G5 - L5)
-        const cellP5 = ws['P5'];
-        expect(cellP5).toBeDefined();
-        expect((cellP5 as any).f).toBe('G5-L5');
-        expect((cellP5 as any).v).toBe(20000);
+        expect((cellO5 as any).f).toBe('H5-L5');
+        expect((cellO5 as any).v).toBe(20000);
 
         // Check GRAND TOTAL formulas (R=5, Excel row 6)
-        const cellF6 = ws['F6']; // GRAND TOTAL for Books Spend
-        expect(cellF6).toBeDefined();
-        expect((cellF6 as any).f).toBe('SUM(F5:F5)');
-        expect((cellF6 as any).v).toBe(100000);
-
-        const cellG6 = ws['G6']; // GRAND TOTAL for Books Taxable
+        const cellG6 = ws['G6']; // GRAND TOTAL for Books Spend
         expect(cellG6).toBeDefined();
         expect((cellG6 as any).f).toBe('SUM(G5:G5)');
         expect((cellG6 as any).v).toBe(100000);
 
-        const cellJ6 = ws['J6']; // GRAND TOTAL for Req TDS
-        expect(cellJ6).toBeDefined();
-        expect((cellJ6 as any).f).toBe('SUM(J5:J5)');
-        expect((cellJ6 as any).v).toBe(2000);
+        const cellH6 = ws['H6']; // GRAND TOTAL for Books Taxable
+        expect(cellH6).toBeDefined();
+        expect((cellH6 as any).f).toBe('SUM(H5:H5)');
+        expect((cellH6 as any).v).toBe(100000);
 
-        const cellO6 = ws['O6']; // GRAND TOTAL for 26Q TDS Variance
+        const cellI6 = ws['I6']; // GRAND TOTAL for Req TDS
+        expect(cellI6).toBeDefined();
+        expect((cellI6 as any).f).toBe('SUM(I5:I5)');
+        expect((cellI6 as any).v).toBe(2000);
+
+        const cellN6 = ws['N6']; // GRAND TOTAL for 26Q TDS Variance
+        expect(cellN6).toBeDefined();
+        expect((cellN6 as any).f).toBe('SUM(N5:N5)');
+        expect((cellN6 as any).v).toBe(400);
+
+        const cellO6 = ws['O6']; // GRAND TOTAL for Taxable Variance
         expect(cellO6).toBeDefined();
         expect((cellO6 as any).f).toBe('SUM(O5:O5)');
-        expect((cellO6 as any).v).toBe(400);
-
-        const cellP6 = ws['P6']; // GRAND TOTAL for Taxable Variance
-        expect(cellP6).toBeDefined();
-        expect((cellP6 as any).f).toBe('SUM(P5:P5)');
-        expect((cellP6 as any).v).toBe(20000);
+        expect((cellO6 as any).v).toBe(20000);
     });
 
     it('should only match by name if the match is in the confirmedMatches list', () => {

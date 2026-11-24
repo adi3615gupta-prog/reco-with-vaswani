@@ -3,7 +3,7 @@ import {
   ArrowRight, ArrowLeft, FileSpreadsheet, CheckCircle2, ShieldCheck, Plus,
   RotateCcw, CloudDownload, ChevronRight, ChevronDown, GitCompare, Database,
   Server, Settings, Activity, X, Star, Sparkles, Building2, Lightbulb,
-  Cloud, History, UploadCloud, HardDrive, Receipt
+  Cloud, History, UploadCloud, HardDrive, Receipt, HelpCircle,
 } from 'lucide-react';
 import { ModeSelector } from '../components/ModeSelector';
 import { FileUploadZone } from '../components/FileUploadZone';
@@ -30,6 +30,10 @@ type Step = 'upload' | 'map' | 'review' | 'results';
 
 export default function Reconciliation(props: any) {
   const [showQuickGuide, setShowQuickGuide] = React.useState(false);
+  React.useEffect(() => {
+    document.body.classList.add('hide-floating-widgets');
+    return () => document.body.classList.remove('hide-floating-widgets');
+  }, []);
   const [auditLedgerCollapsed, setAuditLedgerCollapsed] = React.useState(false);
   const [isGDriveConnectOpen, setIsGDriveConnectOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
@@ -247,117 +251,48 @@ export default function Reconciliation(props: any) {
 
       {/* Hub Navigation Bridge */}
       {/* ─── TOP ELEVATED HEADER BAR (Suite 02 · Live) ─── */}
-      <header className="mb-3 bg-white/95 backdrop-blur-xl shadow-xs rounded-2xl px-5 py-2.5 flex flex-wrap items-center justify-between gap-4 border border-slate-200/80">
+      <header className="mb-3 relative overflow-hidden bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 shadow-md rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-4 border border-indigo-500/40">
         <div className="flex items-center gap-3">
           <button
             onClick={() => { setAppRoute('hub'); setMode(null); }}
-            className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs group"
+            className="w-10 h-10 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white flex items-center justify-center transition-all shadow-sm group"
             title="Return to Master Central Hub"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
           </button>
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/70 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+          <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-white shrink-0 shadow-sm">
             <GitCompare className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900 leading-tight">
+              <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-white leading-tight">
                 GST Reconciliation Engine
               </h1>
-              <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 uppercase tracking-wider">
+              <span className="text-[10px] font-mono font-bold bg-white/20 text-white px-2 py-0.5 rounded-md border border-white/30 uppercase tracking-wider">
                 Suite 02 · Live
               </span>
             </div>
-            <p className="text-xs text-slate-500 font-mono">
+            <p className="text-xs text-indigo-100 font-mono">
               Purchase Register & Journals vs GSTR-2B · Section 16(2)(aa) Multi-Tier Audit Engine
             </p>
           </div>
         </div>
 
-        {mode && (
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              "text-xs font-bold font-mono px-3 py-1.5 rounded-xl border",
-              mode === 'input'
-                ? "bg-indigo-50 text-indigo-700 border-indigo-200/80"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
-            )}>
-              {mode === 'input' ? 'Input Reco (2B vs Books)' : 'Output Reco (Sales vs GSTR-1)'}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setMode(null);
-                safeRemoveItem('np_reco_mode');
-                toast.info('Returned to Mode Selection.');
-              }}
-              className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
-              title="Return to Mode Selection Screen"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> Change Stream
-            </button>
-          </div>
-        )}
-      </header>
-
-      {/* Collapsible Quick Guide */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 text-slate-700 shadow-xs max-w-6xl mb-6">
-        <button
-          onClick={() => setShowQuickGuide(!showQuickGuide)}
-          className="flex items-center justify-between w-full text-slate-800 hover:text-slate-900 transition-colors"
-        >
-          <span className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-slate-800">
-            <Lightbulb className="w-4 h-4 text-amber-500" />
-            Quick GST Reconciliation User Guide
-          </span>
-          <span className="text-xs text-indigo-600 font-bold hover:underline">{showQuickGuide ? 'Hide' : 'Show Instructions'}</span>
-        </button>
-        {showQuickGuide && (
-          <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 space-y-4 animate-in fade-in slide-in-from-top-1 duration-350">
-            <p><strong>Overview:</strong> Flawlessly audit your company accounting books against government filings (GSTR-2B or GSTR-1) to claim maximum Input Tax Credit (ITC) or verify sales liability.</p>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <p className="font-bold text-slate-800 mb-1.5">Step-by-step Steps:</p>
-                <ol className="space-y-1.5 pl-4 list-decimal">
-                  <li><strong>Select Mode:</strong> Choose "Input Tax Credit" (PR vs 2B) or "Output Tax Liability" (SR vs GSTR-1).</li>
-                  <li><strong>Drop Files:</strong> Upload your Books Register and Government Portal sheets. Select role names (Primary, Journal, etc.).</li>
-                  <li><strong>Map Fields:</strong> Map document columns to core fields (CGST, SGST, GSTIN, Invoice number, Date).</li>
-                  <li><strong>Audit & Export:</strong> Correct wrong GSTIN conflicts on-screen, then download summary reports or party-wise comparisons.</li>
-                </ol>
-              </div>
-              <div>
-                <p className="font-bold text-slate-800 mb-1.5">Settings & Tips:</p>
-                <ul className="space-y-1.5 pl-4 list-disc">
-                  <li><strong>Fuzzy strictness:</strong> High checks exact values; Medium ignores corporate suffixes; Low uses vowel/space root parsing.</li>
-                  <li><strong>Debit Notes & Journals:</strong> Include supplemental books in Step 1 to deduct adjustment values and record journal entries.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </header>
 
       {!mode ? (
         <ModeSelector onSelect={setMode} />
       ) : (
-        <div className="space-y-12">
-          <div className="relative bg-white border border-slate-200/80 rounded-2xl shadow-xs px-5 py-3 mb-6">
+        <div className="space-y-4">
+          <div className="relative bg-white border border-slate-200/80 rounded-2xl shadow-sm px-4 py-2.5 mb-3">
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
               {/* Left: Engine Mode Badge & Stream Switcher */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={cn(
-                  "text-xs font-bold uppercase tracking-widest font-mono px-3 py-1.5 rounded-xl border",
-                  mode === 'input'
-                    ? "bg-indigo-50 text-indigo-700 border-indigo-200/80"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
-                )}>
-                  {mode === 'input' ? 'Purchase Engine' : 'Sales Engine'}
-                </span>
-                <ModeSwitcher currentMode={mode} onSwitch={handleSwitchMode} />
+              <div className="flex items-center gap-2 flex-nowrap">
+                                <ModeSwitcher currentMode={mode} onSwitch={handleSwitchMode} />
               </div>
 
               {/* Center: 4 Stepper Navigation Pills */}
-              <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-nowrap">
                 {(['upload', 'map', 'review', 'results'] as Step[]).map((s, idx) => {
                   const isActive = s === step;
                   const stepName = s === 'upload' ? 'Source' : s === 'map' ? 'Pipeline' : s === 'review' ? 'Verify' : 'Dashboard';
@@ -370,7 +305,7 @@ export default function Reconciliation(props: any) {
                         safeSetItem('np_reco_step', s);
                       }}
                       className={cn(
-                        'px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-2xs',
+                        'px-2.5 py-1.5 whitespace-nowrap rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-2xs',
                         isActive
                           ? (mode === 'output' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-indigo-600 text-white shadow-xs')
                           : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300'
@@ -388,58 +323,21 @@ export default function Reconciliation(props: any) {
                 })}
               </div>
 
-              {/* Right: Cloud History, Google Drive, and Reset Actions */}
-              <div className="flex items-center justify-end gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setIsHistoryOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-200 text-slate-700 hover:text-purple-700 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="View & restore past reconciliation sessions from Google Drive or Local PC"
-                >
-                  <History className="w-3.5 h-3.5 text-purple-600" /> Cloud History
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsGDriveConnectOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-200 text-slate-700 hover:text-sky-700 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Configure Google Drive Cloud Storage Settings"
-                >
-                  <Cloud className="w-3.5 h-3.5 text-sky-600" /> Google Drive
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleReset(false);
-                    toast.info('Session reset to Source step.');
-                  }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-600 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Clear loaded session and reset to initial upload step"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-rose-500" /> Reset
-                </button>
-              </div>
             </div>
           </div>
 
           {step === 'upload' && (
             <>
-              <div className="w-full max-w-[85rem] mx-auto pt-4 pb-12 silk-reveal relative z-10">
+              <div className="w-full max-w-[85rem] mx-auto pt-2 pb-6 silk-reveal relative z-10">
 
-                <div className="mb-4 text-center md:text-left md:px-2">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold uppercase tracking-wider mb-2">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Pipeline Initialization</span>
-                  </div>
-                  <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 mb-2">
+                <div className="mb-2 text-center md:text-left md:px-2">
+                                    <h2 className="text-lg sm:text-xl font-bold tracking-wide uppercase text-slate-900 mb-0.5">
                     Synchronize Data Streams
                   </h2>
-                  <p className="text-slate-600 max-w-2xl text-xs sm:text-sm font-medium">
-                    Connect your internal books and government portal downloads to execute automated, high-precision reconciliation.
-                  </p>
-                </div>
+                                  </div>
 
                 {/* SESSION CONFIG TOP BAR */}
-                <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-4 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
+                <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-3 mb-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
                   <div className="flex items-center gap-3 shrink-0 px-2">
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-600">
                       <Settings className="w-4 h-4" />
@@ -451,11 +349,10 @@ export default function Reconciliation(props: any) {
                   </div>
 
                   <div className="flex-1 flex flex-col sm:flex-row items-center gap-4 w-full md:max-w-2xl px-2">
-                    <div className="relative group flex-1 w-full">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
-                      <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Organization Name..." className="w-full h-10 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400" />
-                    </div>
-                    <div className="relative group w-full sm:w-36 shrink-0">
+                    <div className="relative w-full sm:flex-1 min-w-0">
+<input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Organisation name *" required aria-required="true" className={`w-full h-10 px-3 rounded-xl text-sm font-semibold text-slate-900 outline-none transition-all border ${companyName.trim() ? 'bg-slate-50 border-slate-200 focus:border-indigo-500 focus:bg-white' : 'bg-rose-50/60 border-rose-300 focus:border-rose-500'}`} />
+</div>
+<div className="relative group w-full sm:w-36 shrink-0">
                       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 group-focus-within:text-indigo-600 transition-colors font-bold">₹</div>
                       <input type="number" min="0" step="0.5" value={tolerance} onChange={(e) => setTolerance(parseFloat(e.target.value) || 0)} className="w-full h-10 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-7 pr-3 text-sm font-mono text-slate-900 outline-none transition-all" title="Match Tolerance (Amount Difference in ₹)" />
                     </div>
@@ -513,11 +410,11 @@ export default function Reconciliation(props: any) {
                 )}
 
                 {/* 2-COLUMN UPLOAD & MAP QUEUES */}
-                <div className="grid lg:grid-cols-2 gap-6 pb-12">
+                <div className="grid lg:grid-cols-2 gap-4 pb-4">
 
                   {/* COL 1: Books */}
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
-                    <div className="flex items-center gap-3 mb-2">
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-2xs">
                         <Database className="w-5 h-5" />
                       </div>
@@ -533,7 +430,7 @@ export default function Reconciliation(props: any) {
                       onDragLeave={handleBooksDragLeave}
                       onDrop={handleBooksDrop}
                       className={cn(
-                        "border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 group",
+                        "border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 group",
                         booksDrag ? "border-emerald-500 bg-emerald-50/50 scale-[1.01]" : "border-slate-300 hover:border-emerald-500 bg-slate-50/50 hover:bg-emerald-50/20"
                       )}
                     >
@@ -578,8 +475,8 @@ export default function Reconciliation(props: any) {
                   </div>
 
                   {/* COL 2: Portal */}
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
-                    <div className="flex items-center gap-3 mb-2">
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-600 shadow-2xs">
                         <Server className="w-5 h-5" />
                       </div>
@@ -595,7 +492,7 @@ export default function Reconciliation(props: any) {
                       onDragLeave={handlePortalDragLeave}
                       onDrop={handlePortalDrop}
                       className={cn(
-                        "border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 group",
+                        "border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 group",
                         portalDrag ? "border-indigo-500 bg-indigo-50/50 scale-[1.01]" : "border-slate-300 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20"
                       )}
                     >
@@ -1276,6 +1173,42 @@ export default function Reconciliation(props: any) {
             )
           )}
 
+          {/* Session tools: Cloud History, Google Drive, Reset */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-end gap-2 flex-wrap">
+            <button type="button" onClick={() => window.dispatchEvent(new Event('open-sourav-ai'))} className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1.5 cursor-pointer">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" /> Sourav AI
+            </button>
+            <button type="button" onClick={() => window.dispatchEvent(new Event('open-help-support'))} className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 flex items-center gap-1.5 cursor-pointer">
+              <HelpCircle className="w-3.5 h-3.5 text-slate-600" /> Help
+            </button>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-200 text-slate-700 hover:text-purple-700 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="View & restore past reconciliation sessions from Google Drive or Local PC"
+                >
+                  <History className="w-3.5 h-3.5 text-purple-600" /> Cloud History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsGDriveConnectOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-200 text-slate-700 hover:text-sky-700 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Configure Google Drive Cloud Storage Settings"
+                >
+                  <Cloud className="w-3.5 h-3.5 text-sky-600" /> Google Drive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleReset(false);
+                    toast.info('Session reset to Source step.');
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-600 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Clear loaded session and reset to initial upload step"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-500" /> Reset
+                </button>
+              </div>
         </div>
       )}
 

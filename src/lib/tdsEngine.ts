@@ -37,6 +37,7 @@ export function resolveLedgerSection(m: LedgerSectionMapping): string | null {
 }
 
 export interface AdvanceTdsResult {
+    openingBalanceDr?: number;
     partyName: string;
     partyPan: string;
     section: string;
@@ -445,7 +446,8 @@ export function computeAdvanceTdsAudit(
     mappings: LedgerSectionMapping[],
     sectionsMaster: TdsSection[],
     partyMasterSectionMap?: Map<string, string>,
-    partyOpeningBalances?: Map<string, number>
+    partyOpeningBalances?: Map<string, number>,
+    partyOpeningDr?: Map<string, number>
 ): AdvanceTdsResult[] {
     const cleanLedgerStr = (s: string) => (s || '').replace(/\u00A0/g, ' ').replace(/["']/g, '').toLowerCase().trim();
     const ledgerToSectionMap = new Map<string, string>();
@@ -463,12 +465,15 @@ export function computeAdvanceTdsAudit(
         actualTdsDeducted: number;
         maxSingleBill: number;
         openingBalanceCr: number;
+        openingBalanceDr: number;
         sectionsUsed: Set<string>;
     }
 
     const partySummaryMap = new Map<string, PartySummary>();
 
     for (const txn of transactions) {
+        // Strict: an expense line only counts (amount and its TDS) when its ledger is mapped, directly or via its group
+        if (!txn.isPayment && !ledgerToSectionMap.has(cleanLedgerStr(txn.ledgerName))) continue;
         const partyKey = txn.partyName.toUpperCase().trim();
         if (!partySummaryMap.has(partyKey)) {
             let opCr = 0;
@@ -487,6 +492,7 @@ export function computeAdvanceTdsAudit(
                 actualTdsDeducted: 0,
                 maxSingleBill: 0,
                 openingBalanceCr: opCr,
+                openingBalanceDr: partyOpeningDr?.get(partyKey) ?? 0,
                 sectionsUsed: new Set<string>()
             });
         }
@@ -527,8 +533,9 @@ export function computeAdvanceTdsAudit(
         if (summary.currentYearPayments === 0 && summary.currentYearExpenses === 0) continue;
 
         const openingCr = Math.max(0, summary.openingBalanceCr);
-        // Advance Amount = MAX(0, Payments Made (FY) - (Expenses Credited (FY) + Opening Balance (Cr)))
-        const advanceAmount = Math.max(0, summary.currentYearPayments - (summary.currentYearExpenses + openingCr));
+        // Opening Cr (unpaid bill) is cleared by payments first; opening Dr (advance held) absorbs expenses first
+        const openingDr = Math.max(0, summary.openingBalanceDr);
+        const advanceAmount = Math.max(0, Math.max(0, summary.currentYearPayments - openingCr) - Math.max(0, summary.currentYearExpenses - openingDr));
         if (advanceAmount <= 0) continue; // Only process parties where Payments > (Expenses + Opening Balance Cr)
 
         // Resolve Section Code: Priority 1 (Expense Ledgers) -> Priority 2 (Party Master) -> Priority 3 (UNMAPPED)
@@ -584,6 +591,7 @@ export function computeAdvanceTdsAudit(
 
         const expPlusOpeningStr = openingCr > 0 ? `Expenses (₹${summary.currentYearExpenses.toLocaleString('en-IN')}) + Opening Cr (₹${openingCr.toLocaleString('en-IN')})` : `Expenses (₹${summary.currentYearExpenses.toLocaleString('en-IN')})`;
         let reason = `Payments (₹${summary.currentYearPayments.toLocaleString('en-IN')}) > ${expPlusOpeningStr} by ₹${advanceAmount.toLocaleString('en-IN')}.`;
+        if (openingDr > 0) reason += ` Opening Dr ₹${openingDr.toLocaleString('en-IN')} absorbed expenses first.`;
         if (resolvedSection === 'UNMAPPED') {
             reason += ' Section unmapped — assign TDS section in Party Master.';
         } else if (!isTaxable) {
@@ -600,6 +608,7 @@ export function computeAdvanceTdsAudit(
             section: resolvedSection,
             currentYearExpenses: Math.round(summary.currentYearExpenses),
             openingBalanceCr: Math.round(openingCr),
+            openingBalanceDr: Math.round(openingDr),
             currentYearPayments: Math.round(summary.currentYearPayments),
             advanceAmount: Math.round(advanceAmount),
             rateApplied: isTaxable ? rate : 0,
@@ -1146,24 +1155,27 @@ export function reconcileTds(
 }
 
 function createSheet(results: TdsReconciliationResult[], title: string, companyName: string) {
+    // Column order: A Party (Books) | B Party (26Q) | C PAN (Books) | D PAN (26Q) | E Section | F TDS Rate
+    // G Total Spend | H Taxable | I Req. TDS | J Actual TDS | K Books Var | L Taxable (26Q) | M TDS (26Q) | N 26Q Var
+    // O Taxable Variance | P Status | Q Taxable Calculation Basis | R Closing | S Ledgers & Payments | T TDS Ledgers | U Reason
     const headers = [
         'Party Name (Books)',
         'Party Name (26Q)',
         'PAN (Books)',
         'PAN (26Q)',
         'Section',
+        'TDS Rate (%)',
         'Total Spend (Books)',
         'Taxable (Books)',
-        'Taxable Calculation Basis',
-        'TDS Rate (%)',
         'Req. TDS (Books)',
         'Actual TDS (Books)',
+        'Books TDS Variance (Req - Actual)',
         'Taxable (26Q)',
         'TDS (26Q)',
-        'Books TDS Variance (Req - Actual)',
         '26Q TDS Variance (Req - 26Q)',
         'Taxable Variance',
         'Status',
+        'Taxable Calculation Basis',
         'Closing Balance',
         'Ledgers & Payments',
         'TDS Ledgers',
@@ -1180,18 +1192,18 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
             r.panInBooks || '',
             r.panIn26Q || '',
             r.section || '',
+            r.rateApplied || 0,
             r.booksSpend || 0,
             r.booksTaxable || 0,
-            r.taxableBasis || '',
-            r.rateApplied || 0,
-            { t: 'n', f: `ROUND(G${rowNum}*I${rowNum}/100, 0)`, v: r.booksRequiredTds },
+            { t: 'n', f: `ROUND(H${rowNum}*F${rowNum}/100, 0)`, v: r.booksRequiredTds },
             r.booksActualTds || 0,
+            { t: 'n', f: `I${rowNum}-J${rowNum}`, v: booksVariance },
             r.tracesTaxable || 0,
             r.tracesTds || 0,
-            { t: 'n', f: `J${rowNum}-K${rowNum}`, v: booksVariance },
-            { t: 'n', f: `J${rowNum}-M${rowNum}`, v: returnVariance },
-            { t: 'n', f: `G${rowNum}-L${rowNum}`, v: r.taxableVariance },
+            { t: 'n', f: `I${rowNum}-M${rowNum}`, v: returnVariance },
+            { t: 'n', f: `H${rowNum}-L${rowNum}`, v: r.taxableVariance },
             r.status || '',
+            r.taxableBasis || '',
             r.closingBalance || 0,
             r.ledgers || '',
             r.tdsLedgers || '',
@@ -1201,20 +1213,23 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
 
     const startRow = 5;
     const endRow = 4 + results.length;
+    const sum = (col: string, key: (r: TdsReconciliationResult) => number) =>
+        results.length > 0 ? { t: 'n', f: `SUM(${col}${startRow}:${col}${endRow})`, v: results.reduce((acc, r) => acc + key(r), 0) } : 0;
     const totals = [
         'GRAND TOTAL', '', '', '', '',
-        results.length > 0 ? { t: 'n', f: `SUM(F${startRow}:F${endRow})`, v: results.reduce((sum, r) => sum + r.booksSpend, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(G${startRow}:G${endRow})`, v: results.reduce((sum, r) => sum + r.booksTaxable, 0) } : 0,
-        '', '', // Basis & Rate empty
-        results.length > 0 ? { t: 'n', f: `SUM(J${startRow}:J${endRow})`, v: results.reduce((sum, r) => sum + r.booksRequiredTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(K${startRow}:K${endRow})`, v: results.reduce((sum, r) => sum + r.booksActualTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(L${startRow}:L${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTaxable, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(M${startRow}:M${endRow})`, v: results.reduce((sum, r) => sum + r.tracesTds, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(N${startRow}:N${endRow})`, v: results.reduce((sum, r) => sum + (r.booksRequiredTds - r.booksActualTds), 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(O${startRow}:O${endRow})`, v: results.reduce((sum, r) => sum + (r.booksRequiredTds - r.tracesTds), 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(P${startRow}:P${endRow})`, v: results.reduce((sum, r) => sum + r.taxableVariance, 0) } : 0,
+        '',
+        sum('G', r => r.booksSpend),
+        sum('H', r => r.booksTaxable),
+        sum('I', r => r.booksRequiredTds),
+        sum('J', r => r.booksActualTds),
+        sum('K', r => r.booksRequiredTds - r.booksActualTds),
+        sum('L', r => r.tracesTaxable),
+        sum('M', r => r.tracesTds),
+        sum('N', r => r.booksRequiredTds - r.tracesTds),
+        sum('O', r => r.taxableVariance),
         '', // Status empty
-        results.length > 0 ? { t: 'n', f: `SUM(R${startRow}:R${endRow})`, v: results.reduce((sum, r) => sum + (r.closingBalance || 0), 0) } : 0,
+        '', // Basis empty
+        sum('R', r => r.closingBalance || 0),
         '', '', ''
     ];
 
@@ -1230,36 +1245,39 @@ function createSheet(results: TdsReconciliationResult[], title: string, companyN
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
     ws['!cols'] = [
-        { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
-        { wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 16 },
-        { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 24 },
-        { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 25 }, { wch: 20 },
-        { wch: 45 }
+        { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, // A-E
+        { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, // F-J
+        { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 16 }, // K-O
+        { wch: 18 }, { wch: 30 }, { wch: 16 }, { wch: 25 }, { wch: 20 }, // P-T
+        { wch: 45 } // U
     ];
 
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:U10');
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: range.e.c } }, { s: { r: 1, c: 0 }, e: { r: 1, c: range.e.c } }];
 
     for (let R = 0; R <= range.e.r; R++) {
         for (let C = 0; C <= range.e.c; C++) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
             if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
 
-            const isNumCol = (C === 5 || C === 6 || C === 9 || C === 10 || C === 11 || C === 12 || C === 13 || C === 14 || C === 15 || C === 17);
-            const isRateCol = C === 8;
+            const isNumCol = (C === 6 || C === 7 || C === 8 || C === 9 || C === 10 || C === 11 || C === 12 || C === 13 || C === 14 || C === 17);
+            const isRateCol = C === 5;
             const isTotalRow = R === range.e.r;
 
             if (R === 0) {
+                if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the title run across
                 ws[cellAddress].s = {
                     font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
                     fill: { fgColor: { rgb: '0F172A' } },
-                    alignment: { horizontal: 'center', vertical: 'center' }
+                    alignment: { horizontal: 'left', vertical: 'center' }
                 };
             } else if (R === 1) {
                 // Subtitle
+                if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the subtitle run across
                 ws[cellAddress].s = {
                     font: { italic: true, sz: 10, color: { rgb: '94A3B8' } },
                     fill: { fgColor: { rgb: '1E293B' } },
-                    alignment: { horizontal: 'center', vertical: 'center' }
+                    alignment: { horizontal: 'left', vertical: 'center' }
                 };
             } else if (R === 3) {
                 // Table Header Row - Category Group Banding
@@ -1352,8 +1370,9 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
         'Status',
         'Expenses Credited (FY)',
         'Opening Balance (Cr)',
+        'Opening Balance (Dr)',
         'Payments Made (FY)',
-        'Advance Amount (Pay - Exp - OpBal)',
+        'Advance Amount (Cleared Cr; Dr absorbs exp.)',
         'TDS Rate (%)',
         'Req. TDS on Advance',
         'Actual Book TDS',
@@ -1361,6 +1380,7 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
         'Audit Remarks'
     ];
 
+    // Advance = MAX(0, MAX(0, Payments - OpCr) - MAX(0, Expenses - OpDr))
     const data = results.map((r, i) => {
         const rowNum = 5 + i; // Excel 1-based row index starting at row 5
         return [
@@ -1370,28 +1390,32 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
             r.status || '',
             r.currentYearExpenses || 0,
             r.openingBalanceCr || 0,
+            r.openingBalanceDr || 0,
             r.currentYearPayments || 0,
-            { t: 'n', f: `MAX(0, G${rowNum}-(E${rowNum}+F${rowNum}))`, v: r.advanceAmount },
+            { t: 'n', f: `MAX(0, MAX(0, H${rowNum}-F${rowNum})-MAX(0, E${rowNum}-G${rowNum}))`, v: r.advanceAmount },
             r.rateApplied || 0,
-            { t: 'n', f: `ROUND(H${rowNum}*I${rowNum}/100, 0)`, v: r.requiredTdsOnAdvance },
+            { t: 'n', f: `ROUND(I${rowNum}*J${rowNum}/100, 0)`, v: r.requiredTdsOnAdvance },
             r.actualTdsDeducted || 0,
-            { t: 'n', f: `MAX(0, J${rowNum}-K${rowNum})`, v: r.tdsShortfallOnAdvance },
+            { t: 'n', f: `MAX(0, K${rowNum}-L${rowNum})`, v: r.tdsShortfallOnAdvance },
             r.reason || ''
         ];
     });
 
     const startRow = 5;
     const endRow = 4 + results.length;
+    const sum = (col: string, key: (r: AdvanceTdsResult) => number) =>
+        results.length > 0 ? { t: 'n', f: `SUM(${col}${startRow}:${col}${endRow})`, v: results.reduce((acc, r) => acc + key(r), 0) } : 0;
     const totals = [
         'GRAND TOTAL', '', '', '',
-        results.length > 0 ? { t: 'n', f: `SUM(E${startRow}:E${endRow})`, v: results.reduce((sum, r) => sum + r.currentYearExpenses, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(F${startRow}:F${endRow})`, v: results.reduce((sum, r) => sum + (r.openingBalanceCr || 0), 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(G${startRow}:G${endRow})`, v: results.reduce((sum, r) => sum + r.currentYearPayments, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(H${startRow}:H${endRow})`, v: results.reduce((sum, r) => sum + r.advanceAmount, 0) } : 0,
+        sum('E', r => r.currentYearExpenses),
+        sum('F', r => r.openingBalanceCr || 0),
+        sum('G', r => r.openingBalanceDr || 0),
+        sum('H', r => r.currentYearPayments),
+        sum('I', r => r.advanceAmount),
         '', // Rate empty
-        results.length > 0 ? { t: 'n', f: `SUM(J${startRow}:J${endRow})`, v: results.reduce((sum, r) => sum + r.requiredTdsOnAdvance, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(K${startRow}:K${endRow})`, v: results.reduce((sum, r) => sum + r.actualTdsDeducted, 0) } : 0,
-        results.length > 0 ? { t: 'n', f: `SUM(L${startRow}:L${endRow})`, v: results.reduce((sum, r) => sum + r.tdsShortfallOnAdvance, 0) } : 0,
+        sum('K', r => r.requiredTdsOnAdvance),
+        sum('L', r => r.actualTdsDeducted),
+        sum('M', r => r.tdsShortfallOnAdvance),
         ''
     ];
 
@@ -1423,6 +1447,7 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
     ];
 
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:M10');
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: range.e.c } }, { s: { r: 1, c: 0 }, e: { r: 1, c: range.e.c } }];
 
     for (let R = 0; R <= range.e.r; R++) {
         for (let C = 0; C <= range.e.c; C++) {
@@ -1434,16 +1459,18 @@ function createAdvanceSheet(results: AdvanceTdsResult[], title: string, companyN
             const isTotalRow = R === range.e.r;
 
             if (R === 0) {
+                if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the title run across
                 ws[cellAddress].s = {
                     font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
                     fill: { fgColor: { rgb: '4338CA' } }, // Indigo Header Banner
-                    alignment: { horizontal: 'center', vertical: 'center' }
+                    alignment: { horizontal: 'left', vertical: 'center' }
                 };
             } else if (R === 1) {
+                if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the subtitle run across
                 ws[cellAddress].s = {
                     font: { italic: true, sz: 10, color: { rgb: 'E0E7FF' } },
                     fill: { fgColor: { rgb: '312E81' } },
-                    alignment: { horizontal: 'center', vertical: 'center' }
+                    alignment: { horizontal: 'left', vertical: 'center' }
                 };
             } else if (R === 3) {
                 ws[cellAddress].s = {
@@ -1532,13 +1559,20 @@ export function exportTdsReport(
     XLSX.utils.book_append_sheet(wb, wsPanReq, 'PAN Required');
 
     if (advanceResults && advanceResults.length > 0) {
-        const wsAdv = createAdvanceSheet(advanceResults, 'Advance Payment TDS Audit (Payment > Expense)', companyName);
-        XLSX.utils.book_append_sheet(wb, wsAdv, 'Advance TDS (Payment > Expense)');
+        const mappedAdv = advanceResults.filter(r => r.section !== 'UNMAPPED');
+        const unmappedAdv = advanceResults.filter(r => r.section === 'UNMAPPED');
+        if (mappedAdv.length > 0) {
+            const wsAdv = createAdvanceSheet(mappedAdv, 'Advance Payment TDS Audit (Payment > Expense)', companyName);
+            XLSX.utils.book_append_sheet(wb, wsAdv, 'Advance TDS (Payment > Expense)');
+        }
+        if (unmappedAdv.length > 0) {
+            const wsUnm = createAdvanceSheet(unmappedAdv, 'Advance Payments - Unmapped Parties (no TDS section)', companyName);
+            XLSX.utils.book_append_sheet(wb, wsUnm, 'Advance - Unmapped');
+        }
     }
 
     if (wb && wb.SheetNames && wb.Sheets) {
         for (const name of wb.SheetNames) {
-            if (wb.Sheets[name]) delete wb.Sheets[name]['!merges'];
         }
     }
     XLSX.writeFile(wb, `TDS_Reconciliation_${new Date().getTime()}.xlsx`);
@@ -1672,6 +1706,7 @@ export function exportMultiLedgerPanWorkbook(
 
         // Styling
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:J10');
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: range.e.c } }, { s: { r: 1, c: 0 }, e: { r: 1, c: range.e.c } }];
         for (let R = 0; R <= range.e.r; R++) {
             for (let C = 0; C <= range.e.c; C++) {
                 const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -1680,16 +1715,18 @@ export function exportMultiLedgerPanWorkbook(
                 const isNumCol = [3, 4, 5, 6, 7, 8].includes(C);
 
                 if (R === 0) {
+                    if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the title run across
                     ws[cellAddress].s = {
                         font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
                         fill: { fgColor: { rgb: '4338CA' } },
-                        alignment: { horizontal: 'center', vertical: 'center' }
+                        alignment: { horizontal: 'left', vertical: 'center' }
                     };
                 } else if (R === 1) {
+                    if (C > 0) ws[cellAddress] = { t: 'z' }; // blank: lets the subtitle run across
                     ws[cellAddress].s = {
                         font: { italic: true, sz: 10, color: { rgb: 'E0E7FF' } },
                         fill: { fgColor: { rgb: '312E81' } },
-                        alignment: { horizontal: 'center', vertical: 'center' }
+                        alignment: { horizontal: 'left', vertical: 'center' }
                     };
                 } else if (R === 3) {
                     ws[cellAddress].s = {
@@ -1732,7 +1769,6 @@ export function exportMultiLedgerPanWorkbook(
         const filename = `Multi_Ledger_PAN_Audit_Report_${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_FY25-26.xlsx`;
         if (wb && wb.SheetNames && wb.Sheets) {
             for (const name of wb.SheetNames) {
-                if (wb.Sheets[name]) delete wb.Sheets[name]['!merges'];
             }
         }
         XLSX.writeFile(wb, filename);

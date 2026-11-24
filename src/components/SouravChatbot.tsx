@@ -168,13 +168,8 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
   // Hover expand & auto-shrink timer
   const shrinkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isMouseOverRef = useRef(false);
-  const [isCompact, setIsCompact] = useState(() => {
-    try {
-      return localStorage.getItem('np_sourav_compact') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Icon-only launcher by default on every screen, so it never covers action buttons
+  const [isCompact, setIsCompact] = useState(true);
 
   // Listen for global toggle / open events (e.g. from top header)
   useEffect(() => {
@@ -480,6 +475,7 @@ export const SouravChatbot: React.FC<SouravChatbotProps> = ({
 
   return (
     <div
+      data-floating-widget
       className={`fixed bottom-20 right-6 z-50 flex flex-col items-end transition-all duration-300 ${
         isOpen ? 'w-[410px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-5rem)]' : 'w-auto h-auto'
       }`}

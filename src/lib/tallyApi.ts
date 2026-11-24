@@ -1960,6 +1960,7 @@ export async function fetchPartyBalances(
 
   const balanceMap = new Map<string, number>();
   const openingBalanceCrMap = new Map<string, number>();
+  const openingBalanceDrMap = new Map<string, number>();
 
   // Parse using regex for robustness
   const ledgerBlockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
@@ -2001,11 +2002,18 @@ export async function fetchPartyBalances(
       const opStr = opMatch[1].replace(/[₹,\s]/g, '').replace(/Dr|Cr/gi, '').trim();
       let opBal = parseFloat(opStr);
       if (isNaN(opBal)) opBal = 0;
-      const isOpCredit = opMatch[1].toUpperCase().includes('CR') || parseFloat(opStr) < 0;
+      // Tally exports the amount without a Dr/Cr tag: for creditors a positive opening is a credit, otherwise negative is
+      const parentOp = (block.match(/<PARENT[^>]*>([^<]*)<\/PARENT>/i) || [])[1] || '';
+      const isCreditorLedger = /SUNDRY CREDITOR/i.test(parentOp);
+      const isOpCredit = opMatch[1].toUpperCase().includes('CR') || (isCreditorLedger ? parseFloat(opStr) > 0 : parseFloat(opStr) < 0);
       const nameUpper = ledgerName.toUpperCase().trim();
       const cleanName = nameUpper.replace(/\s*\([^)]*\)/g, '').trim();
       const alphaKey = nameUpper.replace(/[^A-Z0-9]/g, '');
       const opVal = isOpCredit ? Math.abs(opBal) : 0;
+      const opDrVal = isOpCredit ? 0 : Math.abs(opBal);
+      openingBalanceDrMap.set(nameUpper, opDrVal);
+      if (cleanName && !openingBalanceDrMap.has(cleanName)) openingBalanceDrMap.set(cleanName, opDrVal);
+      if (alphaKey && !openingBalanceDrMap.has(alphaKey)) openingBalanceDrMap.set(alphaKey, opDrVal);
 
       openingBalanceCrMap.set(nameUpper, opVal);
       if (cleanName && !openingBalanceCrMap.has(cleanName)) openingBalanceCrMap.set(cleanName, opVal);
@@ -2014,6 +2022,7 @@ export async function fetchPartyBalances(
   }
 
   (balanceMap as any).openingBalancesCr = openingBalanceCrMap;
+  (balanceMap as any).openingBalancesDr = openingBalanceDrMap;
 
   console.log(`[TallyAPI] Party balances fetched: ${balanceMap.size} entries (filtered by: ${partyNames ? partyNames.length : 'All Ledgers'})`);
   return balanceMap;

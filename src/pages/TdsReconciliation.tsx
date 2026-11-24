@@ -1606,7 +1606,7 @@ export default function TdsReconciliation({ onBack }: TdsReconciliationProps) {
                     partyMasterSectionMap.set(p.party_name.toUpperCase().trim(), (p as any).mapped_section_code);
                 }
             });
-            const advanceAuditResults = computeAdvanceTdsAudit(tallyTxns, ledgerMappings, rules, partyMasterSectionMap, (partyBalances as any).openingBalancesCr || partyBalances);
+            const advanceAuditResults = computeAdvanceTdsAudit(tallyTxns, ledgerMappings, rules, partyMasterSectionMap, (partyBalances as any).openingBalancesCr || partyBalances, (partyBalances as any).openingBalancesDr);
             setAdvanceTdsResults(advanceAuditResults);
 
             const splitPans = computeMultiLedgerPans(mappedResults);
