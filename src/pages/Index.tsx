@@ -1951,20 +1951,22 @@ export default function Index() {
                 /* SELECTED CATEGORY CARD DRILL-DOWN VIEW */
                 <div className="space-y-6 animate-fadeIn">
 
-                  {/* BACK NAVIGATION BAR */}
-                  <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-                    <button
-                      onClick={() => setActiveCategoryCard(null)}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all border border-slate-200 shadow-xs hover:scale-[1.02]"
-                    >
-                      <ArrowLeft className="w-4 h-4 text-indigo-600" />
-                      <span>← Back to All Suites</span>
-                    </button>
+                  {/* BACK NAVIGATION BAR (Hidden on Suite 01 which has its own Executive Floating Capsule) */}
+                  {activeCategoryCard !== 'reco' && (
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                      <button
+                        onClick={() => setActiveCategoryCard(null)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all border border-slate-200 shadow-xs hover:scale-[1.02]"
+                      >
+                        <ArrowLeft className="w-4 h-4 text-indigo-600" />
+                        <span>← Back to All Suites</span>
+                      </button>
 
-                    <div className="text-xs text-slate-500 font-mono">
-                      Active Suite: <span className="text-indigo-700 font-bold uppercase">{activeCategoryCard}</span>
+                      <div className="text-xs text-slate-500 font-mono">
+                        Active Suite: <span className="text-indigo-700 font-bold uppercase">{activeCategoryCard}</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* RETURNS PREPARATION & FILING SUITE DRILL-DOWN (5 DEDICATED CARDS) */}
                   {activeCategoryCard === 'returns' && (
@@ -2368,102 +2370,329 @@ export default function Index() {
                     </div>
                   )}
 
-                  {/* CARD 1 DRILL-DOWN: RECONCILIATION HUB */}
+                  {/* CARD 1 DRILL-DOWN: EXECUTIVE FROSTED GLASS DECK (SUITE 01) */}
                   {activeCategoryCard === 'reco' && (
-                    <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs p-6 md:p-8 relative overflow-hidden space-y-6">
-                      <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-500"></div>
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-600 shadow-2xs">
-                            <ShieldCheck className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[10px] font-bold uppercase tracking-widest">
-                              Suite 01 • 3 Modules
-                            </div>
-                            <h3 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">Reconciliation Engine Hub</h3>
-                          </div>
-                        </div>
-                        <p className="text-xs text-slate-500 max-w-md leading-relaxed">
-                          High-performance matching engines for GST ledgers, debit note parsing &amp; Form 26Q TDS reconciliation.
-                        </p>
+                    <div className="relative w-full rounded-3xl overflow-hidden border border-slate-200/80 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl p-5 sm:p-7 md:p-8 space-y-7 transition-all">
+                      
+                      {/* Top Gradient Accent Scrim */}
+                      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-indigo-600 to-violet-500 z-10" />
+
+                      {/* 🌐 Subtle Financial Blueprint Grid (Matching Command Hub) */}
+                      <div
+                        className="pointer-events-none absolute inset-0 z-0 [mask-image:radial-gradient(ellipse_at_center,black_45%,transparent_92%)]"
+                        style={{
+                          backgroundImage: `
+                            linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+                            linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+                            radial-gradient(circle, rgba(100, 116, 139, 0.22) 1px, transparent 1px)
+                          `,
+                          backgroundSize: "36px 36px, 36px 36px, 18px 18px",
+                        }}
+                        aria-hidden="true"
+                      />
+
+                      {/* 🔮 Soft Breathing Ambient Glow Backdrops */}
+                      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
+                        <div className="absolute -top-[10%] left-[15%] w-[520px] h-[340px] rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 blur-[130px] animate-pulse" />
+                        <div className="absolute -bottom-[10%] right-[10%] w-[480px] h-[320px] rounded-full bg-indigo-500/10 dark:bg-indigo-500/15 blur-[130px]" />
                       </div>
 
-                      {/* Sub-groups inside Card 1 */}
-                      <div className="space-y-4">
-                        <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-indigo-600"></span> 1.1 — GST Ledger Reconciliation
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                          {/* 01. GST Data Consolidator */}
-                          <div
-                            onClick={() => moduleConfig['Consolidator'] !== 0 && setAppRoute('consolidation')}
-                            className={`p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-indigo-400 hover:bg-white hover:shadow-xs transition-all group ${moduleConfig['Consolidator'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
+                      {/* 1. TOP FLOATING EXECUTIVE CAPSULE */}
+                      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-200/70 dark:border-slate-800/70">
+                        {/* Left: Back Pill + Suite Title */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setActiveCategoryCard(null)}
+                            className="group/back inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/90 dark:bg-slate-800/90 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                           >
-                            {moduleConfig['Consolidator'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                            <div className="flex items-center justify-between">
-                              <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/60 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                <Database className="w-5 h-5" />
-                              </div>
-                              <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/60">Module 1.1.1</span>
-                            </div>
-                            <div className="mt-4">
-                              <h4 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
-                                01. GST Data Consolidator <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-600" />
-                              </h4>
-                              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">Merge decentralized multi-branch sales/purchase ledgers into a clean format.</p>
-                            </div>
+                            <ArrowLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 group-hover/back:-translate-x-0.5 transition-transform" />
+                            <span>Central Hub</span>
+                          </button>
+
+                          <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+
+                          <div className="flex items-center gap-2.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 shadow-2xs">
+                              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Suite 01
+                            </span>
+                            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                              Reconciliation Engine Hub
+                            </h2>
                           </div>
+                        </div>
 
-                          {/* 02. GST Reconciliation Engine */}
-                          <div
-                            onClick={() => { if (moduleConfig['RecoEngine'] !== 0) { setAppRoute('reco'); setMode(null); setStep('upload'); } }}
-                            className={`p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-indigo-400 hover:bg-white hover:shadow-xs transition-all group ${moduleConfig['RecoEngine'] !== 0 ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50 cursor-not-allowed'} flex flex-col justify-between min-h-[170px] relative`}
-                          >
-                            {moduleConfig['RecoEngine'] === 0 && <div className="absolute top-3 right-3"><Lock className="w-3.5 h-3.5 text-slate-500" /></div>}
-                            <div className="flex items-center justify-between">
-                              <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/60 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        {/* Right: Real-time Badges */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50/90 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-semibold shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>±₹2.00 Tol Active</span>
+                          </div>
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50/90 dark:bg-violet-950/60 border border-violet-200/80 dark:border-violet-800/60 text-violet-800 dark:text-violet-300 text-[11px] font-semibold shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
+                            <span>TDS Rules IT Act 2025</span>
+                          </div>
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50/90 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/60 text-indigo-800 dark:text-indigo-300 text-[11px] font-semibold shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                            <span>Audit Trail: Enabled</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. SUBTITLE / 1-LINER EXECUTIVE CONTEXT */}
+                      <p className="relative z-10 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-normal max-w-3xl -mt-2">
+                        Enterprise matching matrix for multi-branch sales/purchase registers, automated GSTR-2B tolerance cascade, Form 26Q TRACES cross-examination, and direct supplier dispute resolution.
+                      </p>
+
+                      {/* 3. 3D DEPTH GLASS CARDS (2x2 BALANCED GRID) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 relative z-10">
+
+                        {/* CARD 01: GST RECONCILIATION ENGINE (EMERALD BEACON • FLAGSHIP) */}
+                        <div
+                          onClick={() => { if (moduleConfig['RecoEngine'] !== 0) { setAppRoute('reco'); setMode(null); setStep('upload'); } }}
+                          className={cn(
+                            "group relative rounded-2xl p-5 sm:p-6 transition-all duration-300 flex flex-col justify-between min-h-[220px] cursor-pointer overflow-hidden border",
+                            "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-2xs hover:shadow-lg",
+                            "border-slate-200/80 dark:border-slate-800/80 hover:border-emerald-500/70 hover:scale-[1.015]"
+                          )}
+                        >
+                          {/* Ambient Glowing Hover Flare */}
+                          <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-emerald-500/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+
+                          <div>
+                            {/* Card Header: Icon + Module Beacon Badge */}
+                            <div className="flex items-center justify-between mb-3.5">
+                              <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform">
                                 <ShieldCheck className="w-5 h-5" />
                               </div>
-                              <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/60">Module 1.1.2</span>
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60 shadow-2xs">
+                                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Module 1.1 • Flagship
+                              </span>
                             </div>
-                            <div className="mt-4">
-                              <h4 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
-                                02. GST Reconciliation Engine <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-600" />
-                              </h4>
-                              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">High-performance matching engine with custom thresholds &amp; debit note parsing.</p>
+
+                            {/* Card Title & Desc */}
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                              01. GST Reconciliation Engine
+                              <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-emerald-600 dark:text-emerald-400" />
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                              High-performance matching engine for GSTR-2B vs Purchase Register with automated rounding tolerance, fuzzy matching &amp; CDNR debit note parsing.
+                            </p>
+
+                            {/* Feature Chips */}
+                            <div className="mt-3.5 flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">±₹2.00 Tolerance</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">PR vs 2B Auto</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">CDNR / Debit Notes</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Rule 88D Ready</span>
                             </div>
                           </div>
 
+                          {/* Action Footer CTA */}
+                          <div className="pt-3.5 mt-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            <span className="flex items-center gap-1.5">
+                              Launch Reco Engine
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">Zero-Loss Inward Match</span>
+                          </div>
                         </div>
 
-                        <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-2 pt-2">
-                          <span className="w-2 h-2 rounded-full bg-indigo-600"></span> 1.2 — TDS Deductions Audit
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* CARD 02: GST DATA CONSOLIDATOR (INDIGO BEACON • SYNTHESIS) */}
+                        <div
+                          onClick={() => moduleConfig['Consolidator'] !== 0 && setAppRoute('consolidation')}
+                          className={cn(
+                            "group relative rounded-2xl p-5 sm:p-6 transition-all duration-300 flex flex-col justify-between min-h-[220px] cursor-pointer overflow-hidden border",
+                            "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-2xs hover:shadow-lg",
+                            "border-slate-200/80 dark:border-slate-800/80 hover:border-indigo-500/70 hover:scale-[1.015]"
+                          )}
+                        >
+                          {/* Ambient Glowing Hover Flare */}
+                          <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-indigo-500/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
 
-                          {/* 03. TDS Reconciliation */}
-                          <div
-                            onClick={() => setAppRoute('tds-reco')}
-                            className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-indigo-400 hover:bg-white hover:shadow-xs transition-all cursor-pointer group hover:scale-[1.02] flex flex-col justify-between min-h-[170px] relative"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/60 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <div>
+                            {/* Card Header: Icon + Module Beacon Badge */}
+                            <div className="flex items-center justify-between mb-3.5">
+                              <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform">
+                                <Database className="w-5 h-5" />
+                              </div>
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 shadow-2xs">
+                                <span className="size-1.5 rounded-full bg-indigo-600 animate-pulse" />
+                                Module 1.2 • Synthesis
+                              </span>
+                            </div>
+
+                            {/* Card Title & Desc */}
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                              02. GST Data Consolidator
+                              <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-600 dark:text-indigo-400" />
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                              Merge decentralized multi-branch sales &amp; purchase registers into a single standardized master compliance sheet with automated header detection.
+                            </p>
+
+                            {/* Feature Chips */}
+                            <div className="mt-3.5 flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">Multi-Branch Merger</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">12-Month Rollup</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Clean Excel</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Head-Office Synthesis</span>
+                            </div>
+                          </div>
+
+                          {/* Action Footer CTA */}
+                          <div className="pt-3.5 mt-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                            <span className="flex items-center gap-1.5">
+                              Start Consolidation
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">Multi-Ledger Standardizer</span>
+                          </div>
+                        </div>
+
+                        {/* CARD 03: TDS FORM 26Q RECONCILIATION (VIOLET BEACON • DIRECT TAX) */}
+                        <div
+                          onClick={() => setAppRoute('tds-reco')}
+                          className={cn(
+                            "group relative rounded-2xl p-5 sm:p-6 transition-all duration-300 flex flex-col justify-between min-h-[220px] cursor-pointer overflow-hidden border",
+                            "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-2xs hover:shadow-lg",
+                            "border-slate-200/80 dark:border-slate-800/80 hover:border-violet-500/70 hover:scale-[1.015]"
+                          )}
+                        >
+                          {/* Ambient Glowing Hover Flare */}
+                          <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-violet-500/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+
+                          <div>
+                            {/* Card Header: Icon + Module Beacon Badge */}
+                            <div className="flex items-center justify-between mb-3.5">
+                              <div className="w-11 h-11 rounded-xl bg-violet-50 dark:bg-violet-950/70 border border-violet-200/80 dark:border-violet-800/60 text-violet-600 dark:text-violet-400 flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform">
                                 <FileSpreadsheet className="w-5 h-5" />
                               </div>
-                              <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/60">Module 1.2.1</span>
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 border border-violet-200/70 dark:border-violet-800/60 shadow-2xs">
+                                <span className="size-1.5 rounded-full bg-violet-600 animate-pulse" />
+                                Module 1.3 • Direct Tax
+                              </span>
                             </div>
-                            <div className="mt-4">
-                              <h4 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
-                                03. TDS Form 26Q Reconciliation <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-indigo-600" />
-                              </h4>
-                              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">Match Tally Books against Form 26Q &amp; detect short deductions automatically.</p>
+
+                            {/* Card Title & Desc */}
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors flex items-center gap-1.5">
+                              03. TDS Form 26Q Reconciliation
+                              <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-violet-600 dark:text-violet-400" />
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                              Cross-verify Tally books expense ledgers against Form 26Q, detect short-deductions, non-deductions, and reconcile TRACES 26AS data automatically.
+                            </p>
+
+                            {/* Feature Chips */}
+                            <div className="mt-3.5 flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/40">Sec 194C / J / I / Q</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Short Deduction Scanner</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">IT Act 2025 Rules V2</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">TRACES Bridge</span>
                             </div>
                           </div>
 
+                          {/* Action Footer CTA */}
+                          <div className="pt-3.5 mt-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-violet-600 dark:text-violet-400">
+                            <span className="flex items-center gap-1.5">
+                              Audit 26Q Deductions
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">Automated Short Check</span>
+                          </div>
+                        </div>
+
+                        {/* CARD 04: PARTY DISPUTE & VENDOR HUB (AMBER BEACON • VENDOR HUB) */}
+                        <div
+                          onClick={() => { setAppRoute('reco'); setMode('input'); }}
+                          className={cn(
+                            "group relative rounded-2xl p-5 sm:p-6 transition-all duration-300 flex flex-col justify-between min-h-[220px] cursor-pointer overflow-hidden border",
+                            "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-2xs hover:shadow-lg",
+                            "border-slate-200/80 dark:border-slate-800/80 hover:border-amber-500/70 hover:scale-[1.015]"
+                          )}
+                        >
+                          {/* Ambient Glowing Hover Flare */}
+                          <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-amber-500/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+
+                          <div>
+                            {/* Card Header: Icon + Module Beacon Badge */}
+                            <div className="flex items-center justify-between mb-3.5">
+                              <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-200/80 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform">
+                                <Send className="w-5 h-5" />
+                              </div>
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/60 shadow-2xs">
+                                <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                Module 1.4 • Vendor Hub
+                              </span>
+                            </div>
+
+                            {/* Card Title & Desc */}
+                            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                              04. Party Dispute &amp; Vendor Hub
+                              <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-amber-600 dark:text-amber-400" />
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                              Auto-generate discrepancy letters, WhatsApp &amp; email notices for mismatched suppliers, and track dispute resolution ledgers.
+                            </p>
+
+                            {/* Feature Chips */}
+                            <div className="mt-3.5 flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">WhatsApp &amp; Mail Dispatch</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Auto Debit Notes</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">GSTIN Active Scan</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Dispute Ledger</span>
+                            </div>
+                          </div>
+
+                          {/* Action Footer CTA */}
+                          <div className="pt-3.5 mt-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
+                            <span className="flex items-center gap-1.5">
+                              Open Dispute Center
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">1-Click Supplier Dispatch</span>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* 4. BOTTOM QUICK BREADCRUMB BAR (SUITE SWITCHER) */}
+                      <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 border-t border-slate-200/70 dark:border-slate-800/70 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">Jump to Suite:</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveCategoryCard('collector')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+                          >
+                            <span>Suite 02 · Tally Connectors</span>
+                            <ArrowRight className="w-3 h-3 text-slate-400" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveCategoryCard('returns')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+                          >
+                            <span>Suite 03 · Returns Prep &amp; 12M</span>
+                            <ArrowRight className="w-3 h-3 text-slate-400" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveCategoryCard('audit')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+                          >
+                            <span>Suite 04 · Statutory Audit</span>
+                            <ArrowRight className="w-3 h-3 text-slate-400" />
+                          </button>
+                        </div>
+
+                        <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+                          VCAN &amp; Associates LLP • Central Reco Deck
                         </div>
                       </div>
+
                     </div>
                   )}
 

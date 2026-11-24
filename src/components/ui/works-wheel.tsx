@@ -207,9 +207,9 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
 
   // The wheel's position, and where it is heading. Only `active` is state -
   // everything else is written to the DOM, so turning the wheel is not a render.
-  // Start at turn = 1 so the wheel opens immediately with Card 1 front-and-center.
-  const turn = React.useRef(1);
-  const target = React.useRef(1);
+  // Start at turn = 0 so the wheel opens immediately with the Grand 8 Suites Ring Overview & Brand Watermark.
+  const turn = React.useRef(0);
+  const target = React.useRef(0);
   const [active, setActive] = React.useState(0);
   const [stage, setStage] = React.useState<Stage>({ w: 0, h: 0 });
   const drag = React.useRef<number | null>(null);
