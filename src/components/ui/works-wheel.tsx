@@ -18,7 +18,7 @@
 //   scrolls through a tall track, and page scroll position turns the wheel.
 //   Nothing is hijacked, so touch, keyboard and the scrollbar all just work.
 import * as React from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ArrowRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -29,7 +29,55 @@ export interface WorksWheelItem {
   image: string;
   /** Where the card links to. Omit for a wheel that only browses. */
   href?: string;
+  /** Suite label, e.g. "Suite 01" */
+  suite?: string;
+  /** Tag label, e.g. "Port 9000 Ready" or "±₹2.00 Tol" */
+  badge?: string;
+  /** Tone for glowing shadow */
+  tone?: "emerald" | "rose" | "indigo" | "blue" | "violet" | "amber" | "slate";
+  /** Description or subtitle */
+  subtitle?: string;
+  /** Sub-modules for quick jump pills */
+  items?: { label: string; badge?: string; route?: string; tone?: string }[];
 }
+
+const TONE_COLORS: Record<string, { glow: string; dot: string; ambient: string }> = {
+  emerald: {
+    glow: "rgba(16, 185, 129, 0.55)",
+    dot: "#10b981",
+    ambient: "rgba(16, 185, 129, 0.18)",
+  },
+  rose: {
+    glow: "rgba(244, 63, 94, 0.55)",
+    dot: "#f43f5e",
+    ambient: "rgba(244, 63, 94, 0.17)",
+  },
+  indigo: {
+    glow: "rgba(99, 102, 241, 0.55)",
+    dot: "#6366f1",
+    ambient: "rgba(99, 102, 241, 0.20)",
+  },
+  amber: {
+    glow: "rgba(245, 158, 11, 0.55)",
+    dot: "#f59e0b",
+    ambient: "rgba(245, 158, 11, 0.18)",
+  },
+  blue: {
+    glow: "rgba(59, 130, 246, 0.55)",
+    dot: "#3b82f6",
+    ambient: "rgba(59, 130, 246, 0.18)",
+  },
+  violet: {
+    glow: "rgba(139, 92, 246, 0.55)",
+    dot: "#8b5cf6",
+    ambient: "rgba(139, 92, 246, 0.18)",
+  },
+  slate: {
+    glow: "rgba(100, 116, 139, 0.40)",
+    dot: "#64748b",
+    ambient: "rgba(100, 116, 139, 0.14)",
+  },
+};
 
 export interface WorksWheelProps extends Omit<
   React.ComponentPropsWithoutRef<"section">,
@@ -43,6 +91,8 @@ export interface WorksWheelProps extends Omit<
   /** Called when a card is clicked (or Enter is pressed on the front card).
       Without it, clicking a card turns it to the front. */
   onItemClick?: (item: WorksWheelItem, index: number) => void;
+  /** Called when a quick-jump sub-module chip is clicked on the left side. */
+  onSubModuleClick?: (route: string) => void;
   /**
    * Explanation panel for the front card. When given, the wheel moves to the
    * left (top on narrow screens) and this panel sits beside it, fading in as
@@ -68,8 +118,8 @@ export interface WorksWheelProps extends Omit<
    swinging on a huge drum. The three that matter are tuned together: STEP
    against DRUM sets how hard the neighbours rotate away, and DRUM against LENS
    decides whether they land inside the frame or run off it. */
-const CARD_H = 0.46; // front card height, of the stage
-const CARD_MAX_W = 0.52; // ... but never wider than this much of the stage
+const CARD_H = 0.35; // front card height, of the stage (compact size)
+const CARD_MAX_W = 0.40; // ... but never wider than this much of the stage
 const CARD_RATIO = 1.45; // card width / height
 const STEP = 40; // degrees between cards on the drum
 const DRUM = 2.22; // drum radius, in card heights - and everything below likewise
@@ -81,8 +131,8 @@ const RING_R = 1.14; // ring radius
    swung back left as well as up and down. BOW is that arc's radius; nothing else
    makes the difference between a stack of cards and a wheel seen side on. */
 const BOW = 1.82;
-const TITLE = 0.085; // ring label and front-card title
-const INDEX = 0.04; // the index down the right-hand side
+const TITLE = 0.095; // ring label and front-card title
+const INDEX = 0.045; // the index down the right-hand side
 /** Items either side of the front still worth drawing. Past this a card is
     edge-on, and further round it would stack up on the vanishing point. */
 const CULL = 1.6;
@@ -137,6 +187,7 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
   label = "Works '26",
   action = "View",
   onItemClick,
+  onSubModuleClick,
   renderDetail,
   scrollLength,
   className,
@@ -151,12 +202,14 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
   const wheelRef = React.useRef<HTMLDivElement>(null);
   const cardRefs = React.useRef<(HTMLElement | null)[]>([]);
   const labelRef = React.useRef<HTMLDivElement>(null);
+  const watermarkRef = React.useRef<HTMLDivElement>(null);
   const titleRef = React.useRef<HTMLDivElement>(null);
 
   // The wheel's position, and where it is heading. Only `active` is state -
   // everything else is written to the DOM, so turning the wheel is not a render.
-  const turn = React.useRef(0);
-  const target = React.useRef(0);
+  // Start at turn = 1 so the wheel opens immediately with Card 1 front-and-center.
+  const turn = React.useRef(1);
+  const target = React.useRef(1);
   const [active, setActive] = React.useState(0);
   const [stage, setStage] = React.useState<Stage>({ w: 0, h: 0 });
   const drag = React.useRef<number | null>(null);
@@ -192,11 +245,12 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
   // With a detail panel the wheel shares the frame: left half on wide screens,
   // top band on narrow ones (where the panel takes the lower part).
   const narrow = stage.w > 0 && stage.w < 768;
-  const wheelX = hasDetail && !narrow ? "28%" : "50%";
-  const wheelY = hasDetail && narrow ? "27%" : "50%";
+  const wheelX = hasDetail && !narrow ? "28%" : "53%";
+  const wheelY = hasDetail && narrow ? "27%" : "52%";
 
   const metrics = React.useMemo(() => {
-    const { w, h } = stage;
+    const w = stage.w || (typeof window !== "undefined" ? window.innerWidth : 1200);
+    const h = stage.h || (typeof window !== "undefined" ? Math.max(480, window.innerHeight - 200) : 600);
     const cardW = hasDetail
       ? narrow
         ? Math.min(h * 0.24 * CARD_RATIO, w * 0.72)
@@ -217,9 +271,9 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
       ringScale,
       drumR,
       bow: cardH * BOW,
-      depth: cardH * LENS,
-      title: cardH * TITLE,
-      index: cardH * INDEX,
+      depth: Math.max(cardH * LENS, 900),
+      title: Math.max(cardH * TITLE, 24),
+      index: Math.max(cardH * INDEX, 13),
     };
   }, [stage, count, hasDetail, narrow]);
 
@@ -259,21 +313,25 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
             bow,
             m,
           );
-          // Culled by distance, not by angle: at a full turn the far side comes
-          // back round to face us, and everything past the neighbours lands on
-          // the vanishing point in a heap.
-          card.style.opacity = m > 0.5 && Math.abs(d) > CULL ? "0" : "1";
-          card.style.zIndex = String(Math.round(100 - Math.abs(d) * 2));
+          // Distance fade: front card (dist=0) is 1.0; distant tilted cards smoothly dissolve
+          const dist = Math.abs(d);
+          const fade = m > 0.5 ? clamp(1 - dist * 0.55, 0, 1) : 1;
+          card.style.opacity = String(fade);
+          card.style.zIndex = String(Math.round(100 - dist * 2));
         }
         const face = card?.firstElementChild as HTMLElement | null;
         if (face) face.style.transform = `scale(${lerp(ringScale, 1, m)})`;
       }
 
-      if (labelRef.current) labelRef.current.style.opacity = String(1 - m);
+      if (watermarkRef.current) watermarkRef.current.style.opacity = String(1 - m);
+      if (labelRef.current) {
+        labelRef.current.style.opacity = String(1 - m);
+        labelRef.current.style.pointerEvents = m < 0.4 ? "auto" : "none";
+      }
       if (titleRef.current) {
         titleRef.current.style.opacity = String(m);
-        // The detail panel holds buttons; only clickable once it is showing.
-        titleRef.current.style.pointerEvents = hasDetail && m > 0.6 ? "auto" : "none";
+        // The panel holds buttons; clickable once it is showing.
+        titleRef.current.style.pointerEvents = m > 0.6 ? "auto" : "none";
       }
       const near = clamp(Math.round(pos), 0, last);
       setActive((prev) => (prev === near ? prev : near));
@@ -373,8 +431,48 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
     };
   }, [to, last, pinned]);
 
+  const activeItem = items[active];
+  const activeToneKey = activeItem?.tone || "indigo";
+  const activeToneConfig = TONE_COLORS[activeToneKey] || TONE_COLORS.indigo;
+
   const body = (
     <>
+      {/* 🌐 1. Subtle Financial Blueprint Grid (Micro-dots + fine ledger lines with 3% Opacity) */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0 [mask-image:radial-gradient(ellipse_at_center,black_45%,transparent_92%)]"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+            radial-gradient(circle, rgba(100, 116, 139, 0.22) 1px, transparent 1px)
+          `,
+          backgroundSize: "36px 36px, 36px 36px, 18px 18px",
+        }}
+        aria-hidden="true"
+      />
+
+      {/* 🔮 2. Breathing Ambient Mesh Light (Gently adapts to active suite tone) */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        {/* Core dynamic ambient bloom centered behind the wheel */}
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[760px] h-[540px] rounded-full blur-[140px] transition-colors duration-1000 ease-in-out animate-pulse"
+          style={{
+            backgroundColor: activeToneConfig.ambient,
+            animationDuration: "5s",
+          }}
+        />
+        {/* Secondary ambient mesh light off-center for depth */}
+        <div
+          className="absolute top-[8%] right-[15%] w-[420px] h-[360px] rounded-full blur-[120px] opacity-70 transition-colors duration-1000 ease-in-out"
+          style={{
+            backgroundColor: activeToneConfig.ambient,
+          }}
+        />
+      </div>
+
       <div
         ref={stageRef}
         tabIndex={0}
@@ -382,7 +480,7 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
         aria-label={label}
         aria-activedescendant={`works-wheel-${active}`}
         className={cn(
-          "focus-visible:outline-foreground absolute inset-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-4",
+          "focus-visible:outline-foreground absolute inset-0 z-10 outline-none focus-visible:outline-2 focus-visible:-outline-offset-4 [mask-image:linear-gradient(to_bottom,transparent_0%,black_14%,black_86%,transparent_100%)]",
           !pinned && "cursor-grab touch-pan-x active:cursor-grabbing",
         )}
         style={{ perspective: `${metrics.depth}px` }}
@@ -437,6 +535,8 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
           {items.map((item, i) => {
             const Tag = (item.href ? "a" : "div") as "a";
             const clickable = Boolean(item.href || onItemClick);
+            const toneKey = item.tone || "indigo";
+            const toneConfig = TONE_COLORS[toneKey] || TONE_COLORS.indigo;
             return (
               <Tag
                 key={item.title}
@@ -444,7 +544,7 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
                 role="option"
                 aria-selected={i === active}
                 href={item.href}
-                onClick={() => (onItemClick ? onItemClick(item, i) : goTo(i + 1))}
+                onClick={() => (onItemClick && i === active ? onItemClick(item, i) : goTo(i + 1))}
                 ref={(node: HTMLElement | null) => {
                   cardRefs.current[i] = node;
                 }}
@@ -456,20 +556,61 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
                   marginTop: -metrics.cardH / 2,
                 }}
               >
-                <span className="bg-muted shadow-foreground/12 relative block size-full overflow-hidden rounded-lg shadow-[0_18px_40px_-18px_var(--tw-shadow-color)]">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    draggable={false}
-                    loading="lazy"
-                    className="size-full object-cover"
+                <span className="relative block size-full [transform-style:preserve-3d]">
+                  {/* 1. Dynamic Colored Ambient Glow behind the card */}
+                  <span
+                    className="absolute -inset-4 rounded-3xl blur-2xl transition-all duration-300 pointer-events-none"
+                    style={{
+                      backgroundColor: toneConfig.glow,
+                      opacity: i === active ? 0.85 : 0.2,
+                    }}
+                    aria-hidden="true"
                   />
-                  {action && clickable ? (
-                    <span className="bg-background/80 text-foreground pointer-events-none absolute right-3 bottom-3 flex translate-y-1 items-center gap-1 rounded-full px-2.5 py-1 text-[0.7rem] opacity-0 backdrop-blur-sm transition group-hover:translate-y-0 group-hover:opacity-100">
-                      <ArrowUpRight className="size-3" aria-hidden="true" />
-                      {action}
+
+                  {/* 2. Main Card Body with rounded-2xl & crisp glass outline */}
+                  <span className="relative block size-full overflow-hidden rounded-2xl border border-white/20 dark:border-white/10 shadow-[0_20px_50px_-15px_rgba(0,0,0,0.35)] transition-transform duration-200 group-hover:scale-[1.02]">
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      draggable={false}
+                      loading="lazy"
+                      className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+
+                    {/* 3. Subtle Bottom Gradient Scrim & Vignette */}
+                    <span
+                      className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none"
+                      aria-hidden="true"
+                    />
+
+                    {/* 4. Floating Frosted Glass Tag (Top-Left) */}
+                    <span className="absolute top-3 left-3 z-20 flex items-center gap-1.5 rounded-full bg-slate-950/70 px-2.5 py-1 text-[10px] font-mono font-medium text-white shadow-lg backdrop-blur-md border border-white/20 pointer-events-none">
+                      <span
+                        className="size-2 rounded-full animate-pulse shrink-0 shadow-[0_0_8px_currentColor]"
+                        style={{ backgroundColor: toneConfig.dot, color: toneConfig.dot }}
+                      />
+                      <span className="tracking-wide">{item.suite || `Suite 0${i + 1}`}</span>
+                      {item.badge ? (
+                        <>
+                          <span className="opacity-40">•</span>
+                          <span className="text-white/90 font-sans text-[9px] font-normal tracking-normal">{item.badge}</span>
+                        </>
+                      ) : null}
                     </span>
-                  ) : null}
+
+                    {/* 5. Bottom Card Title & Action Affordance */}
+                    <span className="absolute bottom-3 left-3.5 right-3.5 z-20 flex items-center justify-between text-white pointer-events-none">
+                      <span className="text-xs sm:text-sm font-bold tracking-tight text-white drop-shadow-md truncate max-w-[70%]">
+                        {item.title}
+                      </span>
+                      {action && clickable ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-md border border-white/25 shadow-xs transition group-hover:bg-white/30">
+                          <span>{action}</span>
+                          <ArrowUpRight className="size-2.5" />
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
                 </span>
               </Tag>
             );
@@ -477,15 +618,21 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
         </div>
       </div>
 
-      {/* Ring title and front-card title trade places across the transition.
-          Type is sized off the measured stage, not vh, so the wheel keeps its
-          proportions inside a card as well as at full bleed. */}
+      {/* Pristine Brand Watermark Logo at the center of the ring (fades out in drum mode) */}
       <div
-        ref={labelRef}
-        className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 tracking-tight whitespace-nowrap"
-        style={{ fontSize: metrics.title, left: wheelX, top: wheelY }}
+        ref={watermarkRef}
+        className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center select-none z-10"
+        style={{ left: wheelX, top: wheelY }}
       >
-        {label}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center -z-10 pointer-events-none">
+          <div className="absolute w-[280px] h-[200px] rounded-full bg-emerald-500/20 dark:bg-emerald-400/25 blur-2xl animate-pulse" />
+          <img
+            src="/logo.png"
+            alt="Brand Watermark Logo"
+            className="w-[210px] sm:w-[240px] md:w-[260px] max-w-none h-auto object-contain opacity-35 dark:opacity-45 filter drop-shadow-[0_10px_28px_rgba(16,185,129,0.3)] select-none transition-all duration-300 pointer-events-none"
+            draggable={false}
+          />
+        </div>
       </div>
       {renderDetail ? (
         <div
@@ -511,34 +658,169 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
           </div>
         </div>
       ) : (
-        <div
-          ref={titleRef}
-          className="pointer-events-none absolute top-1/2 left-[8%] -translate-y-1/2 tracking-tight opacity-0"
-          style={{ fontSize: metrics.title }}
-        >
-          {items[active]?.title}
+        <>
+          {/* 8 Suites Ring Overview Panel on the Left Side */}
+          <div
+            ref={labelRef}
+            className="absolute top-1/2 left-[4%] -translate-y-1/2 max-w-[26rem] z-20 select-none transition-opacity duration-300 pointer-events-auto"
+          >
+            {/* 1. Overview Pill */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Practice Overview
+              </span>
+            </div>
+
+            {/* 2. Title ("8 suites") */}
+            <h2 className="font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-tight drop-shadow-xs text-2xl sm:text-3xl lg:text-4xl">
+              {label}
+            </h2>
+
+            {/* 3. Description */}
+            <p className="mt-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-normal max-w-[22rem]">
+              Unified compliance &amp; audit autopilot. Select any suite to launch GST 2B reconciliation, 12M return filings, statutory audit working papers, or Tally integration.
+            </p>
+
+            {/* 4. Action CTA */}
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => goTo(1)}
+                className="group/cta inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-800 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-2xs hover:shadow-xs transition-all duration-200 text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <span>Launch Suite 01</span>
+                <ArrowRight className="size-3.5 text-slate-400 group-hover/cta:text-indigo-600 dark:group-hover/cta:text-indigo-400 transition-transform group-hover/cta:translate-x-0.5" />
+              </button>
+              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+                or click any card
+              </span>
+            </div>
+          </div>
+
+          {/* Active Suite Detail Panel on the Left Side */}
+          <div
+            ref={titleRef}
+            className="absolute top-1/2 left-[4%] -translate-y-1/2 max-w-[26rem] z-20 opacity-0 select-none transition-opacity duration-300"
+          >
+          {/* 1. Suite Pill */}
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider border shadow-2xs"
+              style={{
+                backgroundColor: `${activeToneConfig.dot}14`,
+                color: activeToneConfig.dot,
+                borderColor: `${activeToneConfig.dot}30`,
+              }}
+            >
+              <span className="size-1.5 rounded-full animate-pulse" style={{ backgroundColor: activeToneConfig.dot }} />
+              {items[active]?.suite || `Suite 0${active + 1}`}
+            </span>
+          </div>
+
+          {/* 2. Suite Title */}
+          <h2 className="font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight drop-shadow-xs text-xl sm:text-2xl lg:text-3xl">
+            {items[active]?.title}
+          </h2>
+
+          {/* 3. Suite Description (1-liner explanation) */}
+          {items[active]?.subtitle ? (
+            <p className="mt-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-normal max-w-[22rem]">
+              {items[active]?.subtitle}
+            </p>
+          ) : null}
+
+          {/* 4. Direct Sub-Module Quick Jump Chips (2-Column Grid Layout) */}
+          {items[active]?.items && items[active]?.items?.length ? (
+            <div className="mt-3.5 grid grid-cols-2 gap-2 max-w-[24rem]">
+              {items[active]?.items?.map((sub) => (
+                <button
+                  key={sub.label}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (sub.route) onSubModuleClick?.(sub.route);
+                  }}
+                  className="group/chip flex items-center justify-between gap-1.5 px-3 py-2 rounded-xl bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-2xs hover:shadow-xs transition-all duration-200 text-left cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <div className="flex flex-col min-w-0 pr-1">
+                    <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 group-hover/chip:text-indigo-600 dark:group-hover/chip:text-indigo-400 truncate transition-colors">
+                      {sub.label}
+                    </span>
+                    {sub.badge ? (
+                      <span
+                        className="text-[9px] font-mono font-medium truncate mt-0.5"
+                        style={{ color: activeToneConfig.dot }}
+                      >
+                        {sub.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <ArrowUpRight className="size-3 text-slate-400 group-hover/chip:text-slate-700 dark:group-hover/chip:text-slate-200 shrink-0 transition-transform group-hover/chip:translate-x-0.5 group-hover/chip:-translate-y-0.5" />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
+        </>
       )}
 
       {!renderDetail && (
       <ol
-        className="text-muted-foreground absolute top-[7.5%] right-[2.5%] text-right leading-[1.75]"
-        style={{ fontSize: metrics.index }}
+        className="absolute top-1/2 -translate-y-1/2 right-4 sm:right-6 text-right z-30 flex flex-col gap-1 pointer-events-auto"
       >
-        {items.map((item, i) => (
-          <li key={item.title}>
-            <button
-              type="button"
-              onClick={() => (onItemClick ? onItemClick(item, i) : goTo(i + 1))}
-              className={cn(
-                "focus-visible:outline-foreground cursor-pointer transition-colors outline-none focus-visible:outline-1",
-                i === active && "text-foreground font-medium",
-              )}
-            >
-              {item.title}
-            </button>
-          </li>
-        ))}
+        {items.map((item, i) => {
+          const isActive = i === active;
+          const toneKey = item.tone || "indigo";
+          const toneConfig = TONE_COLORS[toneKey] || TONE_COLORS.indigo;
+          const numStr = String(i + 1).padStart(2, "0");
+
+          return (
+            <li key={item.title}>
+              <button
+                type="button"
+                onClick={() => goTo(i + 1)}
+                className={cn(
+                  "group relative flex items-center justify-end gap-2.5 px-3 py-1.5 rounded-xl text-xs sm:text-[13px] transition-all duration-200 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                  isActive
+                    ? "text-slate-900 dark:text-white font-semibold bg-white/75 dark:bg-slate-900/75 backdrop-blur-md shadow-xs border border-slate-200/70 dark:border-slate-800/70 translate-x-[-3px]"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 hover:backdrop-blur-xs hover:translate-x-[-2px] font-medium"
+                )}
+              >
+                {/* Suite Number prefix */}
+                <span
+                  className={cn(
+                    "font-mono text-[11px] transition-colors",
+                    isActive
+                      ? "text-slate-700 dark:text-slate-300 font-bold"
+                      : "text-slate-400 dark:text-slate-500 group-hover:text-slate-600"
+                  )}
+                >
+                  {numStr}
+                </span>
+
+                <span className="text-slate-300 dark:text-slate-600 font-light select-none">·</span>
+
+                {/* Suite Title */}
+                <span className="tracking-tight whitespace-nowrap">{item.title}</span>
+
+                {/* Active Accent Pip / Line */}
+                <span
+                  className={cn(
+                    "h-3.5 rounded-full transition-all duration-300 shrink-0",
+                    isActive
+                      ? "w-1.5 opacity-100 scale-100"
+                      : "w-1 opacity-0 scale-50 group-hover:opacity-40"
+                  )}
+                  style={{
+                    backgroundColor: toneConfig.dot,
+                    boxShadow: isActive ? `0 0 10px ${toneConfig.dot}` : undefined,
+                  }}
+                />
+              </button>
+            </li>
+          );
+        })}
       </ol>
       )}
     </>
@@ -572,7 +854,7 @@ export const WorksWheel = React.forwardRef<WorksWheelHandle, WorksWheelProps>(fu
     <section
       aria-label={label}
       className={cn(
-        "bg-background text-foreground relative h-full min-h-[24rem] w-full overflow-hidden select-none",
+        "bg-[#fafbfc] dark:bg-[#090d16] text-foreground relative h-full min-h-[24rem] w-full overflow-hidden select-none transition-colors duration-700",
         className,
       )}
       style={style}

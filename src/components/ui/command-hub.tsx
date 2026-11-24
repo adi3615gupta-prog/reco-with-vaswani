@@ -229,9 +229,25 @@ export function CommandHub({
     { label: "Monthly audits pending", value: counts.monthlyAuditPending, unit: counts.monthlyAuditPending === 1 ? "audit" : "audits", tone: "bg-indigo-400" },
   ];
 
+  const SUITE_BADGES: Record<string, string> = {
+    reco: "±₹2.00 Tol Active",
+    collector: "Port 9000 Ready",
+    returns: "12M Autopilot",
+    audit: "SA 530 Sampling",
+    tax: "115BAC Active",
+    "monthly-audit": "4-Eye Review",
+    "tally-xml": "Port 9000 XML",
+    wip: "342 Clients Active",
+  };
+
   const wheelItems: WorksWheelItem[] = cards.map((card, index) => ({
     title: card.title,
     image: SUITE_PHOTOS[index % SUITE_PHOTOS.length] as string,
+    suite: card.suite,
+    badge: SUITE_BADGES[card.id] || card.items?.[0]?.badge || "Active",
+    tone: card.tone,
+    subtitle: card.description,
+    items: card.items,
   }));
 
   const open = (card: CommandHubCard) => {
@@ -256,23 +272,41 @@ export function CommandHub({
   }, []);
 
   return (
-    <section {...rest} className={cn("relative w-full text-slate-900", className)}>
+    <section {...rest} className={cn("relative w-full text-slate-900 rounded-3xl overflow-hidden border border-slate-200/70 dark:border-slate-800/70 shadow-xs", className)}>
       {/* The wheel fills the rest of the window */}
       <div ref={boxRef} className="relative min-h-[24rem] w-full overflow-hidden" style={{ height: boxH }}>
-        {/* Header in the top-left corner, clear of the wheel */}
-        <div className="pointer-events-none absolute top-4 left-3 z-10 max-w-[16rem] space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Command Hub</p>
-          <h1 className="text-base font-semibold tracking-tight text-slate-900">Welcome back, {userName}</h1>
-          <p className="text-sm text-slate-500">
-            {designation ? `${designation}${department ? ` · ${department}` : ""} · ` : ""}
-            {firm} · Firm Reg {firmReg}
-          </p>
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-            <ShieldCheck className="size-3.5" />
-            Verified
-          </span>
+        {/* Header in top-left corner: 2 compact clean lines to never overlap center cards */}
+        <div className="pointer-events-none absolute top-3.5 left-4 z-20 max-w-[21rem]">
+          <div className="flex flex-col gap-1 px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-slate-200/70 dark:border-slate-800/70 shadow-2xs">
+            {/* Line 1: User name, designation badge & verified tag */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                {userName}
+              </span>
+              {(designation || department) ? (
+                <span className="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60">
+                  {designation}{department ? ` · ${department}` : ""}
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60">
+                <ShieldCheck className="size-3" />
+                Verified
+              </span>
+            </div>
+
+            {/* Line 2: Firm name & Registration number */}
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="truncate max-w-[13.5rem] font-medium text-slate-600 dark:text-slate-300">{firm}</span>
+              {firmReg ? (
+                <>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">Reg {firmReg}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="h-full pl-[6%]">
+        <div className="h-full">
         <WorksWheel
           items={wheelItems}
           label="8 suites"
@@ -280,6 +314,9 @@ export function CommandHub({
           onItemClick={(_item, index) => {
             const card = cards[index];
             if (card) open(card);
+          }}
+          onSubModuleClick={(route) => {
+            onNavigate?.(route);
           }}
         />
         </div>
