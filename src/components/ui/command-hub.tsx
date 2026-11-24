@@ -264,7 +264,7 @@ export function CommandHub({
       const el = boxRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      setBoxH(Math.max(360, window.innerHeight - top - 24));
+      setBoxH(Math.max(360, window.innerHeight - top));
     };
     read();
     window.addEventListener("resize", read);
@@ -272,7 +272,7 @@ export function CommandHub({
   }, []);
 
   return (
-    <section {...rest} className={cn("relative w-full text-slate-900 rounded-3xl overflow-hidden border border-slate-200/70 dark:border-slate-800/70 shadow-xs", className)}>
+    <section {...rest} className={cn("relative w-full text-slate-900 overflow-hidden", className)}>
       {/* The wheel fills the rest of the window */}
       <div ref={boxRef} className="relative min-h-[24rem] w-full overflow-hidden" style={{ height: boxH }}>
         {/* Header in top-left corner: 2 compact clean lines to never overlap center cards */}

@@ -1930,7 +1930,7 @@ export default function Index() {
           </div>
 
           {appRoute === 'hub' && (
-            <div className="space-y-3.5 max-w-7xl mx-auto w-full animate-slow-reveal relative">
+            <div className="w-full animate-slow-reveal relative">
 
               {/* Ambient Luminous Gradient Mesh */}
               <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[920px] h-[280px] bg-gradient-to-b from-blue-100/40 via-slate-100/30 to-transparent blur-3xl pointer-events-none -z-10 rounded-full opacity-70" />
