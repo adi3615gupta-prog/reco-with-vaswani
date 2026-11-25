@@ -38,6 +38,7 @@ import { safeApiFetch, getSessionUserFromToken } from '@/lib/api';
 import { GSTVerification } from '@/components/GSTVerification';
 import { executeOutputReconciliation } from '@/lib/outputReconciliationService';
 import { reconcileDebitNotes, exportDebitNoteReconciliation } from '@/lib/debitNoteEngine';
+import { removeDebitNoteDuplicatesFromPr } from '@/lib/debitNoteDedupe';
 import { saveLocalRecoSnapshot } from '@/lib/gdrive';
 import { idbSet, idbGet, idbRemove } from '@/lib/idbStorage';
 
@@ -793,7 +794,7 @@ export default function Index() {
 
   const handlePrDnUpload = async (f: File, headersOnly = false) => {
     setPrDnFile(f);
-    const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true, sheetName: 'Sheet2' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+    const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
     setPrDnHeaders(headers);
     setPrDnMapping(detectColumnMapping(headers));
   };
@@ -807,7 +808,7 @@ export default function Index() {
 
   const handleTwoBDnUpload = async (f: File, headersOnly = false) => {
     setTwoBDnFile(f);
-    const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true, docType: 'cn', sheetName: 'CDNR' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
+    const { headers } = await parseFileAsync(f, { headersOnly, findHeader: true, docType: 'cn' }, (stage, pct) => { setProgressStage(stage); setProgressValue(pct); });
     setTwoBDnHeaders(headers);
     setTwoBDnMapping(detectColumnMapping(headers));
   };
@@ -851,7 +852,7 @@ export default function Index() {
       }
 
       const prParsed = await parseFileAsync(primaryBookFile, undefined, (stage, pct) => { setProgressStage(stage); setProgressValue(Math.round(pct * 0.25)); });
-      const prRecs = mapToRecords(prParsed.rows, prMapping as ColumnMapping, 'PR', mode === 'input' ? 'Purchase Register' : 'Sales Register');
+      let prRecs = mapToRecords(prParsed.rows, prMapping as ColumnMapping, 'PR', mode === 'input' ? 'Purchase Register' : 'Sales Register');
       setProgressValue(25);
       await new Promise((r) => setTimeout(r, 50));
 
@@ -888,7 +889,7 @@ export default function Index() {
       const parsedTwoBDn: DebitNoteRecord[] = [];
       if (prDnFile) {
         try {
-          const parsed = await parseFileAsync(prDnFile, { findHeader: true, sheetName: 'Sheet2' });
+          const parsed = await parseFileAsync(prDnFile, { findHeader: true });
           const effectivePrDnMapping = { ...detectColumnMapping(parsed.headers), ...(prDnMapping && Object.keys(prDnMapping).length > 0 ? prDnMapping : {}) } as ColumnMapping;
           const recs = mapToRecords(parsed.rows, effectivePrDnMapping, 'PR', 'Purchase Return');
           parsedPrDn.push(...recs.map((r, idx) => ({
@@ -906,32 +907,10 @@ export default function Index() {
         } catch (e) {
           console.warn('Failed to parse Books Debit Note file:', e);
         }
-      } else if (prFile && mode === 'input') {
-        try {
-          const parsed = await parseFileAsync(prFile, { findHeader: true, sheetName: 'Sheet2' });
-          if (parsed && parsed.rows && parsed.rows.length > 0) {
-            const effectivePrDnMapping = { ...detectColumnMapping(parsed.headers), ...(prDnMapping && Object.keys(prDnMapping).length > 0 ? prDnMapping : {}) } as ColumnMapping;
-            const recs = mapToRecords(parsed.rows, effectivePrDnMapping, 'PR', 'Purchase Return');
-            parsedPrDn.push(...recs.map((r, idx) => ({
-              invoiceDate: r.invoiceDate,
-              cgst: r.cgst,
-              sgst: r.sgst,
-              igst: r.igst,
-              gstin: r.gstin || '',
-              supplierName: r.supplierName || '',
-              invoiceNo: r.invoiceNo || '',
-              taxableValue: r.taxableValue,
-              invoiceValue: r.invoiceValue,
-              raw: parsed.rows[idx] || (r as any).raw || r
-            })));
-          }
-        } catch (e) {
-          // Ignore if no Sheet2
-        }
       }
       if (twoBDnFile) {
         try {
-          const parsed = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
+          const parsed = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn' });
           const effectiveTwoBDnMapping = { ...detectColumnMapping(parsed.headers), ...(twoBDnMapping && Object.keys(twoBDnMapping).length > 0 ? twoBDnMapping : {}) } as ColumnMapping;
           const recs = mapToRecords(parsed.rows, effectiveTwoBDnMapping, '2B', 'cn');
           parsedTwoBDn.push(...recs.map((r, idx) => ({
@@ -949,28 +928,15 @@ export default function Index() {
         } catch (e) {
           console.warn('Failed to parse Portal Debit Note file:', e);
         }
-      } else if (primaryPortalFile && mode === 'input') {
-        try {
-          const parsed = await parseFileAsync(primaryPortalFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
-          if (parsed && parsed.rows && parsed.rows.length > 0) {
-            const effectiveTwoBDnMapping = { ...detectColumnMapping(parsed.headers), ...(twoBDnMapping && Object.keys(twoBDnMapping).length > 0 ? twoBDnMapping : {}) } as ColumnMapping;
-            const recs = mapToRecords(parsed.rows, effectiveTwoBDnMapping, '2B', 'cn');
-            parsedTwoBDn.push(...recs.map((r, idx) => ({
-              invoiceDate: r.invoiceDate,
-              cgst: r.cgst,
-              sgst: r.sgst,
-              igst: r.igst,
-              gstin: r.gstin || '',
-              supplierName: r.supplierName || '',
-              invoiceNo: r.invoiceNo || '',
-              taxableValue: r.taxableValue,
-              invoiceValue: r.invoiceValue,
-              raw: parsed.rows[idx] || (r as any).raw || r
-            })));
-          }
-        } catch (e) {
-          // Ignore if no CDNR sheet
+      }
+      // Debit notes present in both the main purchase register and the debit-note sheet
+      // would be reconciled twice. Keep the debit-note engine copy only.
+      if (parsedPrDn.length > 0 && mode === 'input') {
+        const { kept, removed } = removeDebitNoteDuplicatesFromPr(prRecs, parsedPrDn);
+        if (removed.length > 0) {
+          console.info(`[Reco] Removed ${removed.length} debit-note row(s) duplicated in main purchase register`);
         }
+        prRecs = kept;
       }
       setParsedDebitNotes({ pr: parsedPrDn, twoB: parsedTwoBDn });
       setProgressValue(75);
@@ -1019,7 +985,7 @@ export default function Index() {
           booksSales.push(...applyMap(jp.rows, j.mapping));
         }
 
-        const prDnParsed = prDnFile ? await parseFileAsync(prDnFile, { findHeader: true, sheetName: 'Sheet2' }) : null;
+        const prDnParsed = prDnFile ? await parseFileAsync(prDnFile, { findHeader: true }) : null;
         const prCnParsed = prCnFile ? await parseFileAsync(prCnFile) : null;
 
         const booksReturns = prDnParsed ? applyMap(prDnParsed.rows, prDnMapping) : [];
@@ -1070,7 +1036,7 @@ export default function Index() {
           const fileKey = `${twoBDnFile.name}_${twoBDnFile.size}_cn`;
           if (!processedPortalFileKeys.has(fileKey)) {
             processedPortalFileKeys.add(fileKey);
-            const p = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn', sheetName: 'CDNR' });
+            const p = await parseFileAsync(twoBDnFile, { findHeader: true, docType: 'cn' });
             portalCN.push(...applyMap(p.rows, twoBDnMapping));
           }
         }

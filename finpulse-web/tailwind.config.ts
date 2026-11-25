@@ -1,0 +1,144 @@
+import type { Config } from "tailwindcss";
+
+export default {
+  darkMode: ["class"],
+  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  prefix: "",
+  theme: {
+    container: {
+      center: true,
+      padding: "2rem",
+      screens: {
+        "2xl": "1400px",
+      },
+    },
+    extend: {
+      colors: {
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        // Luminous Fluid Enterprise Palette
+        "surface": "#FFFFFF",
+        "canvas": "#F8FAFC",
+        "emerald-gst": "#059669",
+        "amber-practice": "#D97706",
+        "pink-tally": "#DB2777",
+        "indigo-audit": "#4F46E5",
+        "on-surface": "#0F172A",
+        "on-surface-variant": "#475569",
+        "surface-container": "#F1F5F9",
+        "surface-container-high": "#E2E8F0",
+        "surface-container-low": "#F8FAFC",
+        "surface-variant": "#E0E3E5",
+        "outline-variant": "#C6C6CD",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-background))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          primary: "hsl(var(--sidebar-primary))",
+          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--sidebar-ring))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+      },
+      fontSize: {
+        'micro': ['0.625rem', { lineHeight: '0.875rem' }],
+        'caption': ['0.6875rem', { lineHeight: '1rem' }],
+      },
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "pop-in": {
+          "0%": { opacity: "0", transform: "scale(0.95) translateY(10px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+        "tracking-in": {
+          "0%": { letterSpacing: "-0.5em", opacity: "0" },
+          "40%": { opacity: "0.6" },
+          "100%": { letterSpacing: "normal", opacity: "1" },
+        },
+        "signature": {
+          "0%": { opacity: "0", transform: "rotate(-5deg) scale(0.9)" },
+          "100%": { opacity: "1", transform: "rotate(-5deg) scale(1)" },
+        },
+        "slow-reveal": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "progress-fill": {
+          "0%": { width: "0%" },
+          "100%": { width: "100%" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "pop-in": "pop-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        "tracking-in": "tracking-in 1.2s cubic-bezier(0.215, 0.610, 0.355, 1.000) both",
+        "signature": "signature 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        "slow-reveal": "slow-reveal 1.5s ease-out both",
+        "progress-fill": "progress-fill 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
+} satisfies Config;

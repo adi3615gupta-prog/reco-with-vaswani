@@ -1,0 +1,2072 @@
+import { randomUUID } from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+export default function setupTdsRoutes(app, db, authenticateToken = null) {
+    const authMiddleware = typeof authenticateToken === 'function' ? authenticateToken : ((req, res, next) => next());
+    app.use('/api/tds', authMiddleware);
+    // Initialize TDS Tables
+    db.serialize(() => {
+        // 1. TDS rules master table
+        db.run(`CREATE TABLE IF NOT EXISTS TDS_Rules (
+            id TEXT PRIMARY KEY,
+            old_section TEXT,
+            new_section_2025 TEXT,
+            nature_of_payment TEXT,
+            single_bill_threshold REAL,
+            annual_aggregate_threshold REAL,
+            rate_individual_huf REAL,
+            rate_company_others REAL,
+            rate_missing_pan_206AA REAL
+        )`);
+
+        // 2. Tally Ledgers mapping table
+        db.run(`CREATE TABLE IF NOT EXISTS Tally_Ledgers (
+            id TEXT PRIMARY KEY,
+            ledger_name TEXT UNIQUE,
+            parent_group TEXT,
+            parent_group_path TEXT,
+            is_tds_ledger INTEGER DEFAULT 0,
+            mapped_section_code TEXT,
+            user_validated INTEGER DEFAULT 0
+        )`);
+
+        // Safely add parent_group_path column if it doesn't exist on an existing DB
+        db.run(`ALTER TABLE Tally_Ledgers ADD COLUMN parent_group_path TEXT`, (err) => {
+            // Ignore error if column already exists
+        });
+
+        // 3. Party Masters table
+        db.run(`CREATE TABLE IF NOT EXISTS Party_Masters (
+            id TEXT PRIMARY KEY,
+            party_name TEXT UNIQUE,
+            pan_number TEXT,
+            entity_type TEXT,
+            user_edited INTEGER DEFAULT 0
+        )`);
+
+        // 4. Tally Transactions table
+        db.run(`CREATE TABLE IF NOT EXISTS Tally_Transactions (
+            id TEXT PRIMARY KEY,
+            party_id TEXT REFERENCES Party_Masters(id),
+            ledger_name TEXT,
+            voucher_date TEXT,
+            voucher_number TEXT,
+            amount REAL,
+            actual_tds_deducted REAL
+        )`);
+
+        // 5. Reconciliation Results table
+        db.run(`CREATE TABLE IF NOT EXISTS Recon_Results (
+            id TEXT PRIMARY KEY,
+            party_id TEXT REFERENCES Party_Masters(id),
+            section_code TEXT,
+            books_taxable REAL,
+            books_required_tds REAL,
+            books_actual_tds REAL,
+            traces_taxable REAL,
+            traces_tds REAL,
+            taxable_variance REAL,
+            tds_variance REAL,
+            reconciliation_status TEXT,
+            calculated_at TEXT
+        )`);
+
+        // 6. Tally Group Mappings table
+        db.run(`CREATE TABLE IF NOT EXISTS Tally_Group_Mappings (
+            id TEXT PRIMARY KEY,
+            expense_group TEXT NOT NULL,
+            sub_group TEXT,
+            sub_group_2 TEXT,
+            mapped_section_code TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )`);
+        // Additive migrations (ignored when the column already exists)
+        db.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN full_path TEXT`, () => {});
+        db.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN source TEXT DEFAULT 'manual'`, () => {});
+        db.run(`ALTER TABLE Tally_Ledgers ADD COLUMN side TEXT DEFAULT 'EXPENSE'`, () => {});
+
+        // 7. Local PC Snapshots table
+        db.run(`CREATE TABLE IF NOT EXISTS Local_Snapshots (
+            id TEXT PRIMARY KEY,
+            company_name TEXT,
+            financial_year TEXT,
+            created_at TEXT,
+            machine_name TEXT,
+            summary_json TEXT,
+            payload_json TEXT
+        )`);
+
+        // Seed & Sync TDS_Rules with latest IT Act 2025 (V2 Corrected Rules Matrix)
+        const seedData = [
+            { old_section: '192A', new_section_2025: '393(1)_EPF', nature_of_payment: 'EPF Premature Withdrawal', single_bill_threshold: null, annual_aggregate_threshold: 50000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '193', new_section_2025: '393(1)_Securities', nature_of_payment: 'Interest on Securities', single_bill_threshold: null, annual_aggregate_threshold: 10000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194', new_section_2025: '393(1)_Sl_1iii', nature_of_payment: 'Dividend', single_bill_threshold: null, annual_aggregate_threshold: 10000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194A', new_section_2025: '393(1)_Sl_1i', nature_of_payment: 'Interest (Other than Banks)', single_bill_threshold: null, annual_aggregate_threshold: 10000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194A(Bank)', new_section_2025: '393(1)_Sl_1i_Bank', nature_of_payment: 'Interest (Bank/Post Office - Sr Citizen 1L, Others 50k)', single_bill_threshold: null, annual_aggregate_threshold: 50000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194C', new_section_2025: '393(1)_Sl_6i', nature_of_payment: 'Payment to Contractors', single_bill_threshold: 30000, annual_aggregate_threshold: 100000, rate_individual_huf: 1.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194D', new_section_2025: '393(1)_Sl_3i', nature_of_payment: 'Insurance Commission', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 5.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194DA', new_section_2025: '393(1)_Sl_3ii', nature_of_payment: 'Life Insurance Maturity', single_bill_threshold: null, annual_aggregate_threshold: 100000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194G', new_section_2025: '393(1)_Sl_1iv', nature_of_payment: 'Lottery Commission', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194H', new_section_2025: '393(1)_Sl_1ii', nature_of_payment: 'Commission or Brokerage', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194I(a)', new_section_2025: '393(1)_Sl_2ii_Da', nature_of_payment: 'Rent for Plant & Machinery', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194I(b)', new_section_2025: '393(1)_Sl_2ii_Db', nature_of_payment: 'Rent for Land, Building & Furniture', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194IA', new_section_2025: '393(1)_Sl_2ii_E', nature_of_payment: 'Transfer of Immovable Property', single_bill_threshold: null, annual_aggregate_threshold: 5000000, rate_individual_huf: 1.0, rate_company_others: 1.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194IB', new_section_2025: '393(1)_Sl_2ii_F', nature_of_payment: 'Payment of Rent by Individual/HUF (Non-Audit)', single_bill_threshold: 50000, annual_aggregate_threshold: 600000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194IC', new_section_2025: '393(1)_Sl_2ii_G', nature_of_payment: 'Consideration under Development Agreement', single_bill_threshold: null, annual_aggregate_threshold: 0, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194J(a)', new_section_2025: '393(1)_Sl_6iii_a', nature_of_payment: 'Fees for Technical Services / Royalty / Call Centres', single_bill_threshold: null, annual_aggregate_threshold: 50000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194J(b)', new_section_2025: '393(1)_Sl_6iii_b', nature_of_payment: 'Fees for Professional Services', single_bill_threshold: null, annual_aggregate_threshold: 50000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194LA', new_section_2025: '393(1)_Sl_7i', nature_of_payment: 'Compulsory Land Acquisition', single_bill_threshold: null, annual_aggregate_threshold: 500000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194M', new_section_2025: '393(1)_Sl_8iii', nature_of_payment: 'Payments by Individual/HUF (Contract/Prof/Commission)', single_bill_threshold: null, annual_aggregate_threshold: 5000000, rate_individual_huf: 2.0, rate_company_others: 2.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194Q', new_section_2025: '393(1)_Sl_8ii', nature_of_payment: 'Purchase of Goods', single_bill_threshold: null, annual_aggregate_threshold: 5000000, rate_individual_huf: 0.1, rate_company_others: 0.1, rate_missing_pan_206AA: 5.0 },
+            { old_section: '194R', new_section_2025: '393(1)_Sl_8iv', nature_of_payment: 'Benefits or Perquisites of Business', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194S', new_section_2025: '393(1)_Sl_8v', nature_of_payment: 'Virtual Digital Asset (Crypto)', single_bill_threshold: null, annual_aggregate_threshold: 50000, rate_individual_huf: 1.0, rate_company_others: 1.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194T', new_section_2025: '393(3)', nature_of_payment: 'Payments to Partners by Partnership Firm/LLP', single_bill_threshold: null, annual_aggregate_threshold: 20000, rate_individual_huf: 10.0, rate_company_others: 10.0, rate_missing_pan_206AA: 20.0 },
+            { old_section: '194O', new_section_2025: '393(1)_Sl_8i', nature_of_payment: 'Payment by E-Commerce Operator', single_bill_threshold: null, annual_aggregate_threshold: 500000, rate_individual_huf: 0.1, rate_company_others: 0.1, rate_missing_pan_206AA: 5.0 }
+        ];
+
+        // Always refresh TDS_Rules table with latest IT Act 2025 (V2 Corrected Rules Matrix)
+        db.run('DELETE FROM TDS_Rules', [], (err) => {
+            const stmt = db.prepare(`INSERT INTO TDS_Rules (
+                id, old_section, new_section_2025, nature_of_payment, 
+                single_bill_threshold, annual_aggregate_threshold, 
+                rate_individual_huf, rate_company_others, rate_missing_pan_206AA
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+            seedData.forEach(d => {
+                stmt.run(
+                    randomUUID(), d.old_section, d.new_section_2025, d.nature_of_payment,
+                    d.single_bill_threshold, d.annual_aggregate_threshold,
+                    d.rate_individual_huf, d.rate_company_others, d.rate_missing_pan_206AA
+                );
+            });
+            stmt.finalize();
+            console.log("Seeded and synchronized updated TDS Rules V2 from IT Act 2025");
+        });
+    });
+
+    // Get TDS Rules
+    app.get('/api/tds/rules', (req, res) => {
+        db.all('SELECT * FROM TDS_Rules', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
+        });
+    });
+
+    // Helper PAN Regex & Mapping
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i;
+    function getEntityTypeFromPan(pan) {
+        const cleanPan = (pan || '').trim().toUpperCase();
+        if (!PAN_REGEX.test(cleanPan)) {
+            return 'Unknown';
+        }
+        const entityChar = cleanPan.charAt(3);
+        const map = { 'P': 'Individual', 'H': 'HUF', 'C': 'Company', 'F': 'Firm', 'A': 'AOP', 'T': 'Trust' };
+        return map[entityChar] || 'Unknown';
+    }
+
+    function getSectionFromTdsLedgerName(name) {
+        const n = (name || '').toUpperCase();
+        if (n.includes('194C')) return '194C';
+        if (n.includes('194J')) {
+            if (n.includes('PROF') || n.includes('194J(B)') || n.includes('194J-B')) return '194J(b)';
+            return '194J(a)';
+        }
+        if (n.includes('194I')) {
+            const hasMachinery = n.includes('MACHINERY') || n.includes('MACHINE') || n.includes('PLANT') || n.includes('194I(A)') || n.includes('194I-A');
+            if (hasMachinery) return '194I(a)';
+            if (n.includes('RENT') || n.includes('LAND') || n.includes('BLDG') || n.includes('BUILDING') || n.includes('194I(B)') || n.includes('194I-B')) return '194I(b)';
+            return '194I(a)';
+        }
+        if (n.includes('194H')) return '194H';
+        if (n.includes('194Q')) return '194Q';
+        if (n.includes('194R')) return '194R';
+        return null;
+    }
+
+    function getLedgerHierarchy(l) {
+        const path = [];
+        if (l.parent_group) path.push(l.parent_group.toUpperCase().trim());
+        if (l.parent_group_path) {
+            l.parent_group_path.split(',').forEach(g => {
+                const clean = g.trim().toUpperCase();
+                if (clean && !path.includes(clean)) path.push(clean);
+            });
+        }
+        return path;
+    }
+
+    // ─── Scope: expense side of the P&L only ────────────────
+    // Direct Expenses, Indirect Expenses and Purchase Accounts (and everything beneath them).
+    const TDS_EXPENSE_ROOTS = new Set(['DIRECT EXPENSES', 'INDIRECT EXPENSES', 'PURCHASE ACCOUNTS']);
+    const isExpenseChain = (chainUpper) => chainUpper.some(g => TDS_EXPENSE_ROOTS.has(g));
+    // Special section value: the ledger (or every ledger under a group) is excluded from TDS
+    const EXCLUDE_SECTION = 'EXCLUDE';
+    const EXCLUDED_BUCKET = 'Excluded from TDS';
+    // Duties & Taxes side (TDS payable ledgers). Kept apart from the expense tree.
+    const TAX_ROOT_GROUPS = new Set(['DUTIES AND TAXES', 'DUTIES & TAXES']);
+    const isTaxChain = (chainUpper) => chainUpper.some(g => TAX_ROOT_GROUPS.has(g));
+    const sideOfChain = (chainUpper) => (isExpenseChain(chainUpper) ? 'EXPENSE' : (isTaxChain(chainUpper) ? 'TAX' : null));
+    // A ledger belongs to one side only. Legacy rows (no side) are expense-side.
+    const isVisibleFor = (side, r, chainUpper) => {
+        if (side === 'TAX') return r.side === 'TAX' || r.is_tds_ledger === 1;
+        return r.side !== 'TAX' && isVisibleLedger(r, chainUpper);
+    };
+    // Ledgers are visible when they sit on the expense side, or were touched by the user / already mapped
+    const isVisibleLedger = (r, chainUpper) =>
+        isExpenseChain(chainUpper) || r.user_validated === 1 || !!r.mapped_section_code || r.is_tds_ledger === 1;
+
+    // ─── Group mapping model ─────────────────────────────────
+    // A mapping row applies to a Tally group PATH (root → group, any depth) stored in full_path (JSON array).
+    // A ledger inherits a row when its own root→leaf chain starts with that path (deepest match wins).
+    // Legacy rows (full_path NULL) keep the older 3-level "all groups appear in the chain" semantics.
+    const groupKeyOf = (groups) => groups.map(g => normalizeGroupName(g).toUpperCase()).join('\u001f');
+
+    function rowPathTopDown(m) {
+        if (m.full_path) {
+            try {
+                const parsed = JSON.parse(m.full_path);
+                if (Array.isArray(parsed) && parsed.length) return parsed.map(normalizeGroupName);
+            } catch (e) { /* fall through to legacy columns */ }
+        }
+        return [m.expense_group, m.sub_group, m.sub_group_2].map(normalizeGroupName).filter(Boolean);
+    }
+
+    // hierarchy: ancestor chain, nearest parent first
+    function findInheritedSection(hierarchy, groupMappings) {
+        if (!groupMappings || groupMappings.length === 0) return null;
+        const nearest = (hierarchy || []).map(g => normalizeGroupName(g).toUpperCase());
+        const topDown = [...nearest].reverse();
+        let best = null;
+        let bestScore = -1;
+        for (const m of groupMappings) {
+            if (!m.mapped_section_code) continue;
+            const path = rowPathTopDown(m).map(g => g.toUpperCase());
+            if (path.length === 0) continue;
+            if (m.full_path) {
+                if (path.length > topDown.length) continue;
+                if (!path.every((g, i) => topDown[i] === g)) continue;
+            } else {
+                if (!path.every(g => nearest.includes(g))) continue;
+            }
+            if (path.length > bestScore) {
+                best = m;
+                bestScore = path.length;
+            }
+        }
+        if (!best) return null;
+        const path = rowPathTopDown(best);
+        return {
+            sectionCode: best.mapped_section_code,
+            mappingName: path[path.length - 1],
+            mappingPath: path
+        };
+    }
+
+    // ─── Tally group hierarchy auto-discovery ────────────────
+    const GROUP_SECTION_KEYWORDS = [
+        { section: '194J(b)', words: ['PROFESSIONAL', 'LEGAL', 'CONSULT', 'AUDIT', 'TECHNICAL', 'DIRECTOR'] },
+        { section: '194I', words: ['RENT', 'LEASE', 'HIRE'] }, // resolved to 194I(a)/194I(b) below
+        { section: '194C', words: ['CONTRACT', 'TRANSPORT', 'COURIER', 'FREIGHT', 'LABOUR', 'MAINTENANCE', 'REPAIR', 'SECURITY', 'ADVERTIS'] },
+        { section: '194H', words: ['COMMISSION', 'BROKERAGE'] },
+        { section: '194Q', words: ['PURCHASE', 'RAW MATERIAL', 'GOODS'] }
+    ];
+    const PLANT_EQUIPMENT_WORDS = ['PLANT', 'MACHIN', 'VEHICLE', 'EQUIPMENT'];
+
+    // Tally can return control-character entities in names (e.g. "&#4; Primary"): strip them
+    const normalizeGroupName = (s) => (s || '')
+        .replace(/&#\d+;/g, ' ')
+        .replace(/[\u0000-\u001F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    // Word-start match: 'RENT' hits 'RENTAL' but not 'CURRENT' or 'PARENT'
+    const hasGroupWord = (text, word) => new RegExp(`(^|[^A-Z])${word}`).test(text);
+
+    // Upper-cased ancestor chain of a voucher line (nearest parent first, any depth)
+    function getTxnHierarchy(txn) {
+        const path = [];
+        const push = (g) => {
+            const clean = normalizeGroupName(g).toUpperCase();
+            if (clean && !path.includes(clean)) path.push(clean);
+        };
+        if (Array.isArray(txn.parentGroupHierarchy)) {
+            txn.parentGroupHierarchy.forEach(push);
+        } else {
+            push(txn.parentGroup);
+            if (txn.parentGroupPath) txn.parentGroupPath.split(',').forEach(push);
+        }
+        return path;
+    }
+
+    // Section implied by ONE group's own name (plant/vehicle words anywhere in its path pick 194I(a))
+    function inferOwnSection(pathTopDown) {
+        const all = pathTopDown.map(g => normalizeGroupName(g).toUpperCase());
+        const own = all[all.length - 1];
+        for (const rule of GROUP_SECTION_KEYWORDS) {
+            if (!rule.words.some(w => hasGroupWord(own, w))) continue;
+            if (rule.section === '194I') {
+                const isPlantOrVehicle = all.some(g => PLANT_EQUIPMENT_WORDS.some(w => hasGroupWord(g, w)));
+                return isPlantOrVehicle ? '194I(a)' : '194I(b)';
+            }
+            return rule.section;
+        }
+        return null;
+    }
+
+    // hierarchies: Tally-ordered chains (nearest parent first, root last).
+    // Every distinct group node is considered; only nodes whose own name implies a section become templates.
+    // Descendants keep inheriting through the path rule, so nested ledgers need no extra rows.
+    function discoverGroupTemplates(hierarchies) {
+        const nodes = new Map();
+        for (const h of hierarchies) {
+            if (!Array.isArray(h)) continue;
+            if (!isExpenseChain(h.map(g => normalizeGroupName(g).toUpperCase()))) continue;
+            const topDown = h
+                .map(normalizeGroupName)
+                .filter(g => g && g.toUpperCase() !== 'PRIMARY')
+                .reverse();
+            for (let depth = 1; depth <= topDown.length; depth++) {
+                const path = topDown.slice(0, depth);
+                const key = groupKeyOf(path);
+                if (nodes.has(key)) continue;
+                nodes.set(key, { path, sectionCode: inferOwnSection(path) });
+            }
+        }
+        return [...nodes.values()]
+            .filter(n => n.sectionCode)
+            .map(n => ({
+                path: n.path,
+                sectionCode: n.sectionCode,
+                expenseGroup: n.path[0],
+                subGroup: n.path[1] || null,
+                subGroup2: n.path[2] || null
+            }));
+    }
+
+    // API: Auto-discover group templates from Tally ledger hierarchies (idempotent; never overwrites manual rows)
+    app.post('/api/tds/auto-discover-groups', (req, res) => {
+        const { hierarchies } = req.body || {};
+        if (!Array.isArray(hierarchies)) {
+            return res.status(400).json({ error: "hierarchies array is required" });
+        }
+        const discovered = discoverGroupTemplates(hierarchies);
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, existing) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const existingKeys = new Set(existing.map(r => groupKeyOf(rowPathTopDown(r))));
+            const toInsert = discovered.filter(t => !existingKeys.has(groupKeyOf(t.path)));
+            if (toInsert.length === 0) {
+                return res.json({ success: true, discovered: discovered.length, inserted: 0, templates: [] });
+            }
+            const nowStr = new Date().toISOString();
+            db.serialize(() => {
+                const stmt = db.prepare(`INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, 'auto')`);
+                let insertErr = null;
+                toInsert.forEach(t => {
+                    stmt.run(randomUUID(), t.expenseGroup, t.subGroup, t.subGroup2, t.sectionCode, nowStr, JSON.stringify(t.path), (e) => {
+                        if (e && !insertErr) insertErr = e;
+                    });
+                });
+                stmt.finalize((e) => {
+                    const error = e || insertErr;
+                    if (error) return res.status(500).json({ error: error.message });
+                    res.json({ success: true, discovered: discovered.length, inserted: toInsert.length, templates: toInsert });
+                });
+            });
+        });
+    });
+
+    // ─── Full group tree (every ledger nested under its Tally groups) ───
+    app.get('/api/tds/group-tree', (req, res) => {
+        const side = req.query.side === 'TAX' ? 'TAX' : 'EXPENSE';
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            db.all('SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC', [], (err2, ledgers) => {
+                if (err2) return res.status(500).json({ error: err2.message });
+
+                const explicitByKey = new Map();
+                rows.forEach(r => {
+                    if (r.mapped_section_code) explicitByKey.set(groupKeyOf(rowPathTopDown(r)), r);
+                });
+
+                const rootNode = { name: '', path: [], key: '', children: new Map(), ledgers: [] };
+                const nodeByKey = new Map();
+                const ensureNode = (topDown) => {
+                    let parent = rootNode;
+                    const acc = [];
+                    for (const name of topDown) {
+                        acc.push(name);
+                        const key = groupKeyOf(acc);
+                        let node = nodeByKey.get(key);
+                        if (!node) {
+                            node = { name, path: [...acc], key, children: new Map(), ledgers: [] };
+                            nodeByKey.set(key, node);
+                            parent.children.set(key, node);
+                        }
+                        parent = node;
+                    }
+                    return parent;
+                };
+
+                for (const l of ledgers) {
+                    const chain = []; // nearest parent first, original case, de-duplicated
+                    const push = (g) => {
+                        const c = normalizeGroupName(g);
+                        if (c && !chain.some(x => x.toUpperCase() === c.toUpperCase())) chain.push(c);
+                    };
+                    push(l.parent_group);
+                    if (l.parent_group_path) l.parent_group_path.split(',').forEach(push);
+
+                    if (!isVisibleFor(side, l, chain.map(c => c.toUpperCase()))) continue;
+                    const leaf = l.mapped_section_code === EXCLUDE_SECTION
+                        ? ensureNode([EXCLUDED_BUCKET])
+                        : (chain.length ? ensureNode([...chain].reverse()) : ensureNode(['Ungrouped']));
+                    const inherited = findInheritedSection(chain.map(c => c.toUpperCase()), rows);
+                    leaf.ledgers.push({
+                        id: l.id,
+                        ledgerName: l.ledger_name,
+                        sectionCode: l.mapped_section_code || null,
+                        inheritedSectionCode: inherited ? inherited.sectionCode : null,
+                        inheritedGroupName: inherited ? inherited.mappingName : null,
+                        effectiveSectionCode: l.mapped_section_code || (inherited ? inherited.sectionCode : null),
+                        isTdsLedger: l.is_tds_ledger === 1,
+                        userValidated: l.user_validated === 1
+                    });
+                }
+
+                const build = (node) => {
+                    const children = [...node.children.values()]
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(build);
+                    const explicit = explicitByKey.get(node.key) || null;
+                    const inherited = explicit ? null : findInheritedSection([...node.path].reverse(), rows);
+                    const ledgerCount = node.ledgers.length + children.reduce((s, c) => s + c.ledgerCount, 0);
+                    return {
+                        key: node.key,
+                        name: node.name,
+                        virtual: node.path.length === 1 && node.name === EXCLUDED_BUCKET,
+                        path: node.path,
+                        explicitSectionCode: explicit ? explicit.mapped_section_code : null,
+                        source: explicit ? (explicit.source || 'manual') : null,
+                        effectiveSectionCode: explicit ? explicit.mapped_section_code : (inherited ? inherited.sectionCode : null),
+                        inheritedFromPath: !explicit && inherited ? inherited.mappingPath : null,
+                        ledgerCount,
+                        children,
+                        ledgers: node.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName))
+                    };
+                };
+                const roots = [...rootNode.children.values()]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(build);
+                const totalLedgers = roots.reduce((sum, r) => sum + r.ledgerCount, 0);
+                res.json({ roots, totalLedgers, templateCount: rows.filter(r => r.mapped_section_code).length });
+            });
+        });
+    });
+
+    // Bulk import from the mapping template.
+    // Group rows: upsert by full path; sectionCode null (INHERIT) removes the group's own section.
+    // Ledger rows: set the ledger's own section; sectionCode null (INHERIT) returns it to group inheritance.
+    app.post('/api/tds/group-tree/import', (req, res) => {
+        const groupsIn = req.body && Array.isArray(req.body.items) ? req.body.items : [];
+        const ledgersIn = req.body && Array.isArray(req.body.ledgers) ? req.body.ledgers : [];
+        const groups = groupsIn
+            .map(it => ({
+                path: (Array.isArray(it.path) ? it.path : []).map(normalizeGroupName).filter(Boolean),
+                sectionCode: it.sectionCode ? String(it.sectionCode).trim() : null
+            }))
+            .filter(it => it.path.length > 0);
+        const ledgers = ledgersIn
+            .map(l => ({
+                ledgerName: normalizeGroupName(l.ledgerName),
+                sectionCode: l.sectionCode ? String(l.sectionCode).trim() : null,
+                tds: typeof l.tds === 'boolean' ? l.tds : undefined
+            }))
+            .filter(l => l.ledgerName);
+        const skipped = (groupsIn.length - groups.length) + (ledgersIn.length - ledgers.length);
+
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const idByKey = new Map(rows.map(r => [groupKeyOf(rowPathTopDown(r)), r.id]));
+            const nowStr = new Date().toISOString();
+            let created = 0;
+            let updated = 0;
+            let removed = 0;
+            let ledgersSet = 0;
+            let ledgersCleared = 0;
+            let failure = null;
+            const onErr = (e) => { if (e && !failure) failure = e; };
+
+            db.serialize(() => {
+                for (const g of groups) {
+                    const key = groupKeyOf(g.path);
+                    const existingId = idByKey.get(key);
+                    if (!g.sectionCode) {
+                        if (existingId) {
+                            removed++;
+                            idByKey.delete(key);
+                            db.run('DELETE FROM Tally_Group_Mappings WHERE id = ?', [existingId], onErr);
+                        }
+                    } else if (existingId) {
+                        updated++;
+                        db.run(
+                            `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+                            [g.sectionCode, JSON.stringify(g.path), existingId], onErr
+                        );
+                    } else {
+                        created++;
+                        const id = randomUUID();
+                        idByKey.set(key, id);
+                        db.run(
+                            `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+                            [id, g.path[0], g.path[1] || null, g.path[2] || null, g.sectionCode, nowStr, JSON.stringify(g.path)], onErr
+                        );
+                    }
+                }
+
+                for (const l of ledgers) {
+                    if (l.tds !== undefined) {
+                        // TDS flag only (Duties & Taxes template): the ledger's section is left as it is
+                        db.run(
+                            `UPDATE Tally_Ledgers SET is_tds_ledger = ?, user_validated = 1 WHERE ledger_name = ?`,
+                            [l.tds ? 1 : 0, l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersSet++; }
+                        );
+                        continue;
+                    }
+                    if (!l.sectionCode) {
+                        db.run(
+                            `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+                            [l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersCleared++; }
+                        );
+                    } else {
+                        db.run(
+                            `UPDATE Tally_Ledgers SET mapped_section_code = ?, user_validated = 1 WHERE ledger_name = ?`,
+                            [l.sectionCode, l.ledgerName],
+                            function (e) { if (e) onErr(e); else if (this.changes) ledgersSet++; }
+                        );
+                    }
+                }
+
+                db.run('SELECT 1', [], () => {
+                    if (failure) return res.status(500).json({ error: failure.message });
+                    res.json({ success: true, created, updated, removed, ledgersSet, ledgersCleared, skipped });
+                });
+            });
+        });
+    });
+
+    // Set (or clear, when sectionCode is empty) the TDS section of any group, at any depth
+    app.put('/api/tds/group-tree/section', (req, res) => {
+        const { path: rawPath, sectionCode } = req.body || {};
+        const path = (Array.isArray(rawPath) ? rawPath : []).map(normalizeGroupName).filter(Boolean);
+        if (path.length === 0) return res.status(400).json({ error: "path (array of group names, root first) is required" });
+        const key = groupKeyOf(path);
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const existing = rows.find(r => groupKeyOf(rowPathTopDown(r)) === key) || null;
+
+            if (!sectionCode) {
+                if (!existing) return res.json({ success: true, removed: false });
+                return db.run('DELETE FROM Tally_Group_Mappings WHERE id = ?', [existing.id], (e) => {
+                    if (e) return res.status(500).json({ error: e.message });
+                    res.json({ success: true, removed: true });
+                });
+            }
+            if (existing) {
+                return db.run(
+                    `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+                    [sectionCode.trim(), JSON.stringify(path), existing.id],
+                    (e) => {
+                        if (e) return res.status(500).json({ error: e.message });
+                        res.json({ success: true, updated: true });
+                    }
+                );
+            }
+            db.run(
+                `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+                [randomUUID(), path[0], path[1] || null, path[2] || null, sectionCode.trim(), new Date().toISOString(), JSON.stringify(path)],
+                (e) => {
+                    if (e) return res.status(500).json({ error: e.message });
+                    res.json({ success: true, created: true });
+                }
+            );
+        });
+    });
+
+    // API: Step 1: Extract Ledgers (Saves to Tally_Ledgers)
+    app.post('/api/tds/extract-ledgers', (req, res) => {
+        const { ledgers, replaceAuto } = req.body; // Array of { ledgerName, parentGroup, parentGroupPath }
+        if (!ledgers || !Array.isArray(ledgers)) {
+            return res.status(400).json({ error: "Invalid ledgers array" });
+        }
+
+        // Only ledgers on the expense side or the Duties & Taxes side are stored; the side is recorded on the row
+        const accepted = [];
+        for (const l of ledgers) {
+            const chain = [l.parentGroup, ...(l.parentGroupPath || '').split(',')].map(g => normalizeGroupName(g).toUpperCase()).filter(Boolean);
+            const side = sideOfChain(chain);
+            if (side) accepted.push({ ...l, side });
+        }
+
+        db.serialize(() => {
+            const stmt = db.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, parent_group_path, is_tds_ledger, user_validated, side)
+                                     VALUES (?, ?, ?, ?, 0, 0, ?)
+                                     ON CONFLICT(ledger_name) DO UPDATE SET
+                                        parent_group = excluded.parent_group,
+                                        parent_group_path = excluded.parent_group_path,
+                                        side = excluded.side`);
+            // Master sync: auto rows (not user-validated, not mapped, not TDS ledgers) that are no longer in Tally are removed
+            if (replaceAuto === true) {
+                const names = ledgers.map(l => l.ledgerName);
+                const notIn = names.length ? ` AND ledger_name NOT IN (${names.map(() => '?').join(',')})` : '';
+                db.run(
+                    `DELETE FROM Tally_Ledgers WHERE user_validated = 0 AND is_tds_ledger = 0 AND (mapped_section_code IS NULL OR mapped_section_code = '')${notIn}`,
+                    names,
+                    (e) => { if (e) console.error('replaceAuto cleanup failed:', e.message); }
+                );
+            }
+            accepted.forEach(l => {
+                stmt.run(randomUUID(), l.ledgerName, l.parentGroup || 'Expense', l.parentGroupPath || '', l.side);
+            });
+            stmt.finalize((err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, count: accepted.length });
+            });
+        });
+    });
+
+    // API: Step 2: Auto Map Ledgers (Tally ledgers to TDS Rules mapping suggestions - Disabled as requested)
+    app.get('/api/tds/auto-map', (req, res) => {
+        res.json([]);
+    });
+
+    // API: Step 2b: Tally ledgers to TDS Rules mapping suggestions
+    app.get('/api/tds/ledgers/suggestions', (req, res) => {
+        db.all('SELECT * FROM Tally_Ledgers WHERE user_validated = 0 OR mapped_section_code IS NULL', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const suggestions = [];
+
+            rows.forEach(r => {
+                const name = r.ledger_name;
+                const nameUpper = name.toUpperCase().trim();
+                const parent = (r.parent_group || '').toUpperCase().trim();
+                const path = (r.parent_group_path || '').toUpperCase().trim();
+
+                // Determine if it belongs to Direct/Indirect Expenses or Purchase accounts
+                const isExpenseGroup = parent.includes('EXPENSE') || parent.includes('PURCHASE') ||
+                    path.includes('EXPENSE') || path.includes('PURCHASE') ||
+                    parent.includes('DIRECT') || parent.includes('INDIRECT') ||
+                    path.includes('DIRECT') || path.includes('INDIRECT');
+
+                if (!isExpenseGroup) return;
+
+                let suggestedSection = null;
+                let confidence = false; // High confidence = true, Low confidence = false
+
+                // 194I - Rent
+                if (nameUpper.includes('RENT') || nameUpper.includes('LEASE') || nameUpper.includes('HIRE CHARGES') || nameUpper.includes('HECTARE')) {
+                    if (nameUpper.includes('MACHINE') || nameUpper.includes('EQUIP') || nameUpper.includes('PLANT') || nameUpper.includes('VEHICLE') || nameUpper.includes('CAR')) {
+                        suggestedSection = '194I(a)';
+                    } else {
+                        suggestedSection = '194I(b)';
+                    }
+                    confidence = true;
+                }
+                // 194J - Professional / Technical Fees
+                else if (nameUpper.includes('PROFESSIONAL') || nameUpper.includes('LEGAL') || nameUpper.includes('CONSULT') ||
+                    nameUpper.includes('AUDIT') || nameUpper.includes('TECHNICAL') || nameUpper.includes('ROYALTY') ||
+                    nameUpper.includes('SOFTWARE') || nameUpper.includes('DEVELOPMENT') || nameUpper.includes('FEES') ||
+                    nameUpper.includes('DIRECTOR') || nameUpper.includes('ENGINEER')) {
+                    suggestedSection = '194J(b)';
+                    confidence = true;
+                }
+                // 194H - Commission / Brokerage
+                else if (nameUpper.includes('COMMISSION') || nameUpper.includes('BROKER') || nameUpper.includes('BROKERAGE')) {
+                    suggestedSection = '194H';
+                    confidence = true;
+                }
+                // 194Q - Purchase of Goods
+                else if (nameUpper.includes('PURCHASE') || nameUpper.includes('GOODS') || nameUpper.includes('RAW MATERIAL')) {
+                    suggestedSection = '194Q';
+                    confidence = true;
+                }
+                // 194C - Contractor payments (general default for contracts, transport, advertising, security etc.)
+                else if (nameUpper.includes('CONTRACT') || nameUpper.includes('ADVERTIS') || nameUpper.includes('SECURITY') ||
+                    nameUpper.includes('TRANSPORT') || nameUpper.includes('COURIER') || nameUpper.includes('FREIGHT') ||
+                    nameUpper.includes('LABOUR') || nameUpper.includes('MAINTENANCE') || nameUpper.includes('REPAIR') ||
+                    nameUpper.includes('PRINTING') || nameUpper.includes('WORK') || nameUpper.includes('CATERING') ||
+                    nameUpper.includes('SERVICE') || nameUpper.includes('OFFICE EXP') || nameUpper.includes('MISC') ||
+                    nameUpper.includes('GENERAL') || parent.includes('DIRECT') || parent.includes('PURCHASE')) {
+                    suggestedSection = '194C';
+                    confidence = nameUpper.includes('CONTRACT') || nameUpper.includes('SECURITY') || nameUpper.includes('TRANSPORT') || nameUpper.includes('ADVERTIS');
+                }
+
+                if (suggestedSection) {
+                    suggestions.push({
+                        ledgerName: name,
+                        suggestedSection: suggestedSection,
+                        isProbable: confidence
+                    });
+                }
+            });
+
+            res.json(suggestions);
+        });
+    });
+
+    // Confirm Ledger Mapping
+    app.post('/api/tds/confirm-mapping', (req, res) => {
+        const { mappings } = req.body; // Array of { ledgerName, sectionCode, isTdsLedger }
+        if (!mappings || !Array.isArray(mappings)) {
+            return res.status(400).json({ error: "Invalid mappings payload" });
+        }
+
+        db.serialize(() => {
+            let hasError = false;
+            let errorMsg = '';
+
+            const stmt = db.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, is_tds_ledger, mapped_section_code, user_validated)
+                                     VALUES (?, ?, 'Expense', ?, ?, 1)
+                                     ON CONFLICT(ledger_name) DO UPDATE SET 
+                                        mapped_section_code = excluded.mapped_section_code,
+                                        is_tds_ledger = excluded.is_tds_ledger,
+                                        user_validated = 1`);
+            mappings.forEach(m => {
+                if (hasError) return;
+                const isTdsVal = m.isTdsLedger ? 1 : 0;
+                const secVal = m.isTdsLedger ? null : m.sectionCode;
+                stmt.run(randomUUID(), m.ledgerName, isTdsVal, secVal, function (err) {
+                    if (err) {
+                        hasError = true;
+                        errorMsg = err.message;
+                    }
+                });
+            });
+            stmt.finalize((err) => {
+                if (err || hasError) return res.status(500).json({ error: err ? err.message : errorMsg });
+                res.json({ success: true });
+            });
+        });
+    });
+
+    // Get all ledgers (for confirmed list in UI)
+    app.get('/api/tds/ledgers', (req, res) => {
+        db.all('SELECT * FROM Tally_Group_Mappings', [], (err, groupMappings) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            db.all('SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC', [], (err, rows) => {
+                if (err) return res.status(500).json({ error: err.message });
+
+                const sideQ = req.query.side === 'TAX' ? 'TAX' : 'EXPENSE';
+                res.json(rows.filter(r => isVisibleFor(sideQ, r, getLedgerHierarchy(r))).map(r => {
+                    const hierarchy = getLedgerHierarchy(r);
+                    const inherited = findInheritedSection(hierarchy, groupMappings);
+                    return {
+                        id: r.id,
+                        ledgerName: r.ledger_name,
+                        parentGroup: r.parent_group,
+                        isTdsLedger: r.is_tds_ledger === 1,
+                        sectionCode: r.mapped_section_code,
+                        inheritedSectionCode: inherited ? inherited.sectionCode : null,
+                        inheritedGroupName: inherited ? inherited.mappingName : null,
+                        userValidated: r.user_validated === 1
+                    };
+                }));
+            });
+        });
+    });
+
+    // Add manual ledger mapping
+    app.post('/api/tds/ledgers', (req, res) => {
+        const { ledgerName, sectionCode } = req.body;
+        if (!ledgerName || !sectionCode) {
+            return res.status(400).json({ error: "ledgerName and sectionCode are required" });
+        }
+        db.run(
+            `INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, is_tds_ledger, mapped_section_code, user_validated)
+             VALUES (?, ?, 'Expense', 0, ?, 1)
+             ON CONFLICT(ledger_name) DO UPDATE SET mapped_section_code = excluded.mapped_section_code, is_tds_ledger = 0, user_validated = 1`,
+            [randomUUID(), ledgerName, sectionCode],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // Add/Update full ledger configuration
+    app.post('/api/tds/ledgers/update', (req, res) => {
+        const { ledgerName, sectionCode, isTdsLedger } = req.body;
+        if (!ledgerName) {
+            return res.status(400).json({ error: "ledgerName is required" });
+        }
+        if (req.body.clearOverride === true) {
+            // Drop the ledger's own section and return it to group inheritance (not an explicit 'unmapped' override)
+            return db.run(
+                `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+                [ledgerName],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true });
+                }
+            );
+        }
+        db.run(
+            `INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, is_tds_ledger, mapped_section_code, user_validated)
+             VALUES (?, ?, 'Expense', ?, ?, 1)
+             ON CONFLICT(ledger_name) DO UPDATE SET 
+                is_tds_ledger = excluded.is_tds_ledger,
+                mapped_section_code = excluded.mapped_section_code,
+                user_validated = 1`,
+            [randomUUID(), ledgerName, isTdsLedger ? 1 : 0, sectionCode || null],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // Delete manual ledger mapping (removes from database)
+    app.delete('/api/tds/ledgers/:name', (req, res) => {
+        db.run(
+            `DELETE FROM Tally_Ledgers WHERE ledger_name = ?`,
+            [req.params.name],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // Delete all unmapped ledger mappings from database (POST fallback & DELETE)
+    const removeUnmappedHandler = (req, res) => {
+        db.run(
+            `DELETE FROM Tally_Ledgers WHERE (mapped_section_code IS NULL OR mapped_section_code = '') AND (is_tds_ledger = 0 OR is_tds_ledger IS NULL)`,
+            [],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, deletedCount: this.changes });
+            }
+        );
+    };
+    app.delete('/api/tds/ledgers-unmapped', removeUnmappedHandler);
+    app.post('/api/tds/remove-unmapped', removeUnmappedHandler);
+
+    // API: Step 3: Get/Update Party Masters
+    app.post('/api/tds/process-pan', (req, res) => {
+        const { parties } = req.body; // Array of { partyName, pan }
+        if (!parties || !Array.isArray(parties)) {
+            return res.status(400).json({ error: "Invalid parties payload" });
+        }
+
+        db.serialize(() => {
+            const stmt = db.prepare(`INSERT INTO Party_Masters (id, party_name, pan_number, entity_type, user_edited)
+                                     VALUES (?, ?, ?, ?, 0)
+                                     ON CONFLICT(party_name) DO UPDATE SET 
+                                        pan_number = CASE WHEN user_edited = 0 THEN excluded.pan_number ELSE pan_number END,
+                                        entity_type = CASE WHEN user_edited = 0 THEN excluded.entity_type ELSE entity_type END`);
+            parties.forEach(p => {
+                const entityType = getEntityTypeFromPan(p.pan);
+                stmt.run(randomUUID(), p.partyName, p.pan || null, entityType);
+            });
+            stmt.finalize((err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+        });
+    });
+
+    app.get('/api/tds/parties', (req, res) => {
+        db.all('SELECT * FROM Party_Masters ORDER BY party_name ASC', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
+        });
+    });
+
+    app.put('/api/tds/parties/:id', (req, res) => {
+        const { entityType, panNumber } = req.body;
+        db.run(
+            `UPDATE Party_Masters SET entity_type = ?, pan_number = ?, user_edited = 1 WHERE id = ?`,
+            [entityType, panNumber, req.params.id],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // Confirm name-matched PANs
+    app.post('/api/tds/parties/confirm-name-matches', (req, res) => {
+        const { matches } = req.body; // Array of { partyName, panNumber }
+        if (!matches || !Array.isArray(matches)) {
+            return res.status(400).json({ error: "Invalid matches payload" });
+        }
+        db.serialize(() => {
+            const stmt = db.prepare(`UPDATE Party_Masters SET pan_number = ?, user_edited = 1 WHERE party_name = ?`);
+            matches.forEach(m => {
+                stmt.run(m.panNumber.toUpperCase().trim(), m.partyName);
+            });
+            stmt.finalize((err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+        });
+    });
+
+
+    // API: Step 5: Chronological Calculation & Reconciliation Engine (Reconcile Books vs 26Q)
+    app.post('/api/tds/reconcile', (req, res) => {
+        const { transactions, form26qRecords, confirmedMatches, strictMode } = req.body;
+        const isStrict = strictMode !== false; // Default to true for strict mapping mode
+        // transactions: Array of { partyName, pan, ledgerName, date, amount, actualTdsDeducted, voucherNumber }
+        // form26qRecords: Array of { partyPan, partyName, section, amountPaid, tdsDeducted }
+
+        // Diagnostic dumps omitted for production security
+
+        if (!transactions || !Array.isArray(transactions)) {
+            return res.status(400).json({ error: "transactions array is required" });
+        }
+
+        // Fetch all active TDS rules
+        db.all('SELECT * FROM TDS_Rules', [], (err, rules) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const rulesMap = {};
+            rules.forEach(r => {
+                rulesMap[r.old_section] = r;
+                rulesMap[r.new_section_2025] = r;
+            });
+
+            // Fetch validated group mappings first
+            db.all('SELECT * FROM Tally_Group_Mappings', [], (err, groupMappings) => {
+                if (err) return res.status(500).json({ error: err.message });
+
+                // Fetch validated ledgers (mapped expense ledgers OR TDS tax liability ledgers)
+                db.all('SELECT * FROM Tally_Ledgers', [], (err, ledgers) => {
+                    if (err) return res.status(500).json({ error: err.message });
+
+                    // Fetch party masters to resolve user-updated PANs/entity types
+                    db.all('SELECT party_name, pan_number, entity_type FROM Party_Masters', [], (err, parties) => {
+                        if (err) return res.status(500).json({ error: err.message });
+
+                        const partyMap = {};
+                        if (parties) {
+                            parties.forEach(p => {
+                                partyMap[p.party_name.toUpperCase().trim()] = {
+                                    pan: p.pan_number,
+                                    entityType: p.entity_type
+                                };
+                            });
+                        }
+
+                        const normalizeLedger = (name) => (name || '').toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+
+                        const ledgerMap = {};
+                        const unmappedLedgers = new Set();
+                        const tdsTaxLedgers = new Set();
+                        ledgers.forEach(l => {
+                            const norm = normalizeLedger(l.ledger_name);
+                            if (l.mapped_section_code) {
+                                ledgerMap[norm] = l.mapped_section_code;
+                            } else if (l.is_tds_ledger === 0 && l.user_validated === 1) {
+                                // Only a user-validated "no section" is an explicit override that blocks group inheritance.
+                                // Freshly extracted ledgers (user_validated = 0) must still inherit from their group.
+                                unmappedLedgers.add(norm);
+                            }
+                            if (l.is_tds_ledger === 1) {
+                                tdsTaxLedgers.add(norm);
+                            }
+                        });
+
+                        // Resolve section either via direct mapping or inherited group mapping
+                        const getSectionForTxn = (txn) => {
+                            const normLedger = normalizeLedger(txn.ledgerName);
+                            if (ledgerMap[normLedger]) {
+                                return ledgerMap[normLedger];
+                            }
+                            if (unmappedLedgers.has(normLedger)) {
+                                return null; // Explicitly unmapped by the user: do NOT inherit group mapping
+                            }
+
+                            // Check inherited group mappings across the full ancestor chain (any depth)
+                            const hierarchy = getTxnHierarchy(txn);
+                            const inherited = findInheritedSection(hierarchy, groupMappings);
+                            if (inherited) {
+                                return inherited.sectionCode;
+                            }
+                            return null;
+                        };
+
+                        const tracesPanSectionMap = {};
+                        const tracesNameSectionMap = {};
+                        if (form26qRecords && Array.isArray(form26qRecords)) {
+                            form26qRecords.forEach(r => {
+                                let cleanPan = (r.partyPan || '').toUpperCase().trim().replace(/\s+/g, '');
+                                let cleanName = (r.partyName || '').toUpperCase().trim();
+                                let sec = (r.section || '').trim();
+                                const rule = rulesMap[sec];
+                                const sectionCode = rule ? rule.old_section : sec;
+                                if (sectionCode) {
+                                    if (cleanPan && cleanPan !== 'PAN-MISSING') tracesPanSectionMap[cleanPan] = sectionCode;
+                                    if (cleanName) tracesNameSectionMap[cleanName] = sectionCode;
+                                }
+                            });
+                        }
+
+                        // Pre-scan transactions to build a map of party name to its resolved section codes
+                        const partySectionMap = {};
+                        transactions.forEach(t => {
+                            const sectionCode = getSectionForTxn(t);
+                            if (sectionCode && sectionCode !== EXCLUDE_SECTION) {
+                                const partyKey = t.partyName.toUpperCase().trim();
+                                if (!partySectionMap[partyKey]) {
+                                    partySectionMap[partyKey] = new Set();
+                                }
+                                partySectionMap[partyKey].add(sectionCode);
+                            }
+                        });
+
+                        const extractSectionFromName = (str) => {
+                            if (!str) return null;
+                            const cleanName = str.toUpperCase();
+                            if (cleanName.includes('194C') || cleanName.includes('194-C')) return '194C';
+                            if (cleanName.includes('194I') || cleanName.includes('194-I')) {
+                                return (cleanName.includes('MACHINERY') || cleanName.includes('HIRE') || cleanName.includes('PLANT')) ? '194I(a)' : '194I(b)';
+                            }
+                            if (cleanName.includes('194J') || cleanName.includes('194-J')) {
+                                return (cleanName.includes('PROF') || cleanName.includes('SERVICE') || cleanName.includes('FEES')) ? '194J(b)' : '194J(a)';
+                            }
+                            if (cleanName.includes('194H') || cleanName.includes('194-H')) return '194H';
+                            if (cleanName.includes('194Q') || cleanName.includes('194-Q')) return '194Q';
+                            return null;
+                        };
+
+                        // 1. Group transactions by Party & Section
+                        const groupedTxns = {}; // "pan_section" -> []
+                        const partyNameMap = {}; // groupKey -> partyName
+
+                        transactions.forEach(t => {
+                            const normLedger = normalizeLedger(t.ledgerName);
+                            const sectionCode = getSectionForTxn(t);
+                            if (sectionCode === EXCLUDE_SECTION) return; // excluded from TDS: never reconciled
+                            // Strict: an amount only counts toward taxable spend when its own ledger is mapped
+                            // (directly or through its group). Unmapped amounts and placeholder entries are dropped.
+                            if (isStrict && !sectionCode && Math.abs(Number(t.amount) || 0) > 0) return;
+
+                            const partyKey = t.partyName.toUpperCase().trim();
+                            const dbParty = partyMap[partyKey];
+
+                            const cleanLedger = (t.ledgerName || '').toLowerCase().trim();
+                            t.isTdsTax = tdsTaxLedgers.has(normLedger) || cleanLedger.includes('tds') || cleanLedger.includes('tax deducted') || cleanLedger.includes('tax payable');
+
+                            let resolvedSection = sectionCode;
+
+                            // Priority 2: Extract section from tdsLedgerName / tds_ledger_name (not in strict mode)
+                            if (!isStrict && !resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
+                                resolvedSection = extractSectionFromName(t.tdsLedgerName || t.tds_ledger_name);
+                            }
+
+                            // Priority 3: Extract section from ledgerName (not in strict mode)
+                            if (!isStrict && !resolvedSection && t.ledgerName) {
+                                resolvedSection = extractSectionFromName(t.ledgerName);
+                            }
+
+                            // Priority 4: Party Section Map (sections from other resolved vouchers of same party)
+                            if (!resolvedSection) {
+                                const partySections = partySectionMap[partyKey];
+                                if (partySections && partySections.size > 0) {
+                                    resolvedSection = Array.from(partySections)[0];
+                                }
+                            }
+
+                            // Priority 5: Party Master DB mapped section code
+                            if (!resolvedSection && dbParty && (dbParty.mapped_section_code || dbParty.section_code)) {
+                                resolvedSection = dbParty.mapped_section_code || dbParty.section_code;
+                            }
+
+                            // Priority 6: Form 26Q (TRACES) section for this party / PAN (not in strict mode)
+                            if (!isStrict && !resolvedSection) {
+                                let panVal = ((dbParty && dbParty.pan) || t.partyPan || t.pan || '').toUpperCase().trim().replace(/\s+/g, '');
+                                if (panVal && tracesPanSectionMap[panVal]) {
+                                    resolvedSection = tracesPanSectionMap[panVal];
+                                } else if (partyKey && tracesNameSectionMap[partyKey]) {
+                                    resolvedSection = tracesNameSectionMap[partyKey];
+                                }
+                            }
+
+                            // Priority 7: Default fallback to '194C' if not strictly checking mappings
+                            if (!resolvedSection && !isStrict) {
+                                resolvedSection = '194C';
+                            }
+
+                            if (!resolvedSection) return; // In strict mode, drop unmapped that can't be resolved
+
+                            // Lookup database PAN first, then transaction payload
+                            let origPan = (t.partyPan || t.pan || '').toUpperCase().trim();
+                            let rawPan = ((dbParty && dbParty.pan) || t.partyPan || t.pan || '').toUpperCase().trim();
+
+                            // Standardize missing PAN values
+                            if (rawPan === 'PAN-MISSING' || rawPan === 'PAN MISSING' || rawPan === 'UNREGISTERED') {
+                                rawPan = '';
+                            }
+                            if (origPan === 'PAN-MISSING' || origPan === 'PAN MISSING' || origPan === 'UNREGISTERED') {
+                                origPan = '';
+                            }
+
+                            // Strip spaces from valid PANs
+                            rawPan = rawPan.replace(/\s+/g, '');
+                            origPan = origPan.replace(/\s+/g, '');
+
+                            const isPanValid = PAN_REGEX.test(rawPan);
+                            const isOrigPanInvalid = origPan === '' || !PAN_REGEX.test(origPan);
+                            const isNameMatched = isPanValid && isOrigPanInvalid;
+
+                            const cleanName = (t.partyName || 'Unknown').toUpperCase().trim();
+                            const groupKey = isPanValid
+                                ? `${cleanName}_${rawPan}_${resolvedSection}`
+                                : `NOPAN-${cleanName}_${resolvedSection}`;
+
+                            if (!groupedTxns[groupKey]) {
+                                groupedTxns[groupKey] = [];
+                            }
+                            groupedTxns[groupKey].push(t);
+                            partyNameMap[groupKey] = t.partyName;
+                            if (!groupedTxns[groupKey].isNameMatched) {
+                                groupedTxns[groupKey].isNameMatched = false;
+                            }
+                            if (isNameMatched) {
+                                groupedTxns[groupKey].isNameMatched = true;
+                            }
+                        });
+
+                        // 2. Compute Books chronological TDS liability per group
+                        const booksLiability = {}; // "pan_section" -> { booksTaxable, booksRequiredTds, booksActualTds, ledgers, isNameMatched }
+
+                        for (const [groupKey, txns] of Object.entries(groupedTxns)) {
+                            const lastUnderscore = groupKey.lastIndexOf('_');
+                            const sectionCode = groupKey.substring(lastUnderscore + 1);
+                            const prefix = groupKey.substring(0, lastUnderscore);
+                            const secondLastUnderscore = prefix.lastIndexOf('_');
+                            const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
+                            const rule = rulesMap[sectionCode];
+                            if (!rule) continue;
+
+                            // Chronological calculation
+                            txns.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                            // Determine Rate: 20% penalty rate for missing PAN (Section 206AA)!
+                            let isIndividualOrHuf = false;
+                            const isPanValid = PAN_REGEX.test(pan);
+                            const isPanMissing = !isPanValid;
+                            let rate = 0;
+
+                            if (isPanValid) {
+                                const entityChar = pan.charAt(3).toUpperCase();
+                                if (entityChar === 'P' || entityChar === 'H') {
+                                    isIndividualOrHuf = true;
+                                }
+                                rate = isIndividualOrHuf ? rule.rate_individual_huf : rule.rate_company_others;
+                            } else {
+                                rate = rule.rate_missing_pan_206AA !== null && rule.rate_missing_pan_206AA !== undefined
+                                    ? rule.rate_missing_pan_206AA
+                                    : 20.0;
+                            }
+
+                            let cumulativeSpend = 0;
+                            let grossSpend = 0;
+                            let reversalAmount = 0;
+                            let cumulativeTaxable = 0;
+                            let breachedAnnual = false;
+                            let totalActualTds = 0;
+                            const ledgerNames = new Set();
+                            const tdsLedgerNames = new Set();
+                            let breachedSingleCount = 0;
+
+                            txns.forEach(txn => {
+                                cumulativeSpend += txn.amount;
+                                if (txn.amount > 0) {
+                                    grossSpend += txn.amount;
+                                } else {
+                                    reversalAmount += Math.abs(txn.amount);
+                                }
+                                totalActualTds += txn.actualTdsDeducted || 0;
+                                if (txn.tdsLedgerName) {
+                                    tdsLedgerNames.add(txn.tdsLedgerName);
+                                }
+                                if (txn.tds_ledger_name) {
+                                    tdsLedgerNames.add(txn.tds_ledger_name);
+                                }
+                                if (!txn.isTdsTax) {
+                                    ledgerNames.add(txn.ledgerName);
+                                } else {
+                                    tdsLedgerNames.add(txn.ledgerName);
+                                }
+
+                                let isTaxable = false;
+                                let taxableAmountForThisTxn = 0;
+
+                                const breachesSingleBill = rule.single_bill_threshold !== null && txn.amount >= rule.single_bill_threshold;
+                                const breachesAnnualAggregate = cumulativeSpend >= rule.annual_aggregate_threshold;
+
+                                if (breachesAnnualAggregate) {
+                                    isTaxable = true;
+                                    if (!breachedAnnual) {
+                                        taxableAmountForThisTxn = cumulativeSpend - cumulativeTaxable;
+                                        breachedAnnual = true;
+                                    } else {
+                                        taxableAmountForThisTxn = txn.amount;
+                                    }
+                                } else if (breachesSingleBill) {
+                                    // STATUTORY RULE: Once ANY single bill crosses the threshold,
+                                    // ALL cumulative spend for the year becomes taxable (not just this bill).
+                                    isTaxable = true;
+                                    if (breachedSingleCount === 0) {
+                                        // First time a single bill breaches — mark ALL prior spend as taxable too
+                                        taxableAmountForThisTxn = cumulativeSpend - cumulativeTaxable;
+                                    } else {
+                                        taxableAmountForThisTxn = txn.amount;
+                                    }
+                                    breachedSingleCount++;
+                                } else if (breachedSingleCount > 0) {
+                                    // A prior single bill already breached — all subsequent bills are also taxable
+                                    isTaxable = true;
+                                    taxableAmountForThisTxn = txn.amount;
+                                }
+
+                                if (isTaxable) {
+                                    cumulativeTaxable += taxableAmountForThisTxn;
+                                }
+                            });
+
+                            let finalTaxable = cumulativeTaxable;
+                            let finalRequiredTds = Math.round((cumulativeTaxable * rate) / 100);
+                            let reason = '';
+                            let taxableBasis = '';
+
+                            if (sectionCode === '194Q') {
+                                const threshold = rule.annual_aggregate_threshold || 5000000;
+                                finalTaxable = Math.max(0, cumulativeSpend - threshold);
+                                finalRequiredTds = Math.round((finalTaxable * rate) / 100);
+                                const isApp = finalTaxable > 0;
+                                taxableBasis = isApp
+                                    ? `Total Spend (₹${cumulativeSpend.toLocaleString('en-IN')}) - Exempt Limit (₹${threshold.toLocaleString('en-IN')}) = ₹${finalTaxable.toLocaleString('en-IN')}`
+                                    : `₹0 Taxable (Total Spend ₹${cumulativeSpend.toLocaleString('en-IN')} <= Exempt Limit ₹${threshold.toLocaleString('en-IN')})`;
+
+                                let reasonStr = isApp
+                                    ? `TDS Status: Applicable | Total Spend: ₹${cumulativeSpend.toLocaleString('en-IN')} | Exempt Threshold: ₹${threshold.toLocaleString('en-IN')} | Taxable Base: ₹${finalTaxable.toLocaleString('en-IN')} | Book TDS: ₹${totalActualTds.toLocaleString('en-IN')}`
+                                    : `TDS Status: Not Applicable (Below threshold) | Total Spend: ₹${cumulativeSpend.toLocaleString('en-IN')} | Exempt Threshold: ₹${threshold.toLocaleString('en-IN')} | Taxable Base: ₹0 | Book TDS: ₹${totalActualTds.toLocaleString('en-IN')}`;
+
+                                if (isPanMissing) {
+                                    reasonStr += ` | PAN: Missing (${rate}% rate)`;
+                                }
+                                if (reversalAmount > 0) {
+                                    reasonStr += ` | Gross: ₹${grossSpend.toLocaleString('en-IN')} | Reversals: ₹${reversalAmount.toLocaleString('en-IN')}`;
+                                }
+                                reason = reasonStr;
+                            } else {
+                                if (cumulativeTaxable > 0) {
+                                    const breachType = [];
+                                    const breachBasis = [];
+                                    if (breachedAnnual) {
+                                        breachType.push(`Annual spend ₹${cumulativeSpend.toLocaleString('en-IN')} > annual limit ₹${rule.annual_aggregate_threshold.toLocaleString('en-IN')}`);
+                                        breachBasis.push(`Annual Limit ₹${rule.annual_aggregate_threshold.toLocaleString('en-IN')}`);
+                                    }
+                                    if (breachedSingleCount > 0) {
+                                        breachType.push(`${breachedSingleCount} bill(s) > single limit ₹${rule.single_bill_threshold.toLocaleString('en-IN')}`);
+                                        breachBasis.push(`${breachedSingleCount} Bill(s) >= ₹${rule.single_bill_threshold.toLocaleString('en-IN')}`);
+                                    }
+                                    if (breachType.length === 0) {
+                                        breachType.push(`Threshold crossed`);
+                                        breachBasis.push(`Threshold crossed`);
+                                    }
+                                    taxableBasis = `Full Spend (₹${cumulativeSpend.toLocaleString('en-IN')}) taken [${breachBasis.join(' & ')}]`;
+                                    reason = `TDS Status: Applicable (${breachType.join(' or ')})`;
+                                    if (totalActualTds > 0) {
+                                        reason += ` | Book TDS: ₹${totalActualTds.toLocaleString('en-IN')}`;
+                                    }
+                                } else {
+                                    const limitInfo = rule.single_bill_threshold
+                                        ? `Annual Limit ₹${rule.annual_aggregate_threshold.toLocaleString('en-IN')} & Single Bills < ₹${rule.single_bill_threshold.toLocaleString('en-IN')}`
+                                        : `Annual Limit ₹${rule.annual_aggregate_threshold.toLocaleString('en-IN')}`;
+                                    taxableBasis = `₹0 Taxable (Total Spend ₹${cumulativeSpend.toLocaleString('en-IN')} < ${limitInfo})`;
+                                    reason = `TDS Status: Not Applicable (Below threshold)`;
+                                    if (totalActualTds > 0) {
+                                        reason += ` | Voluntary Book TDS: ₹${totalActualTds.toLocaleString('en-IN')}`;
+                                    }
+                                }
+
+                                if (isPanMissing) {
+                                    reason += ` | PAN: Missing (${rate}% rate)`;
+                                }
+
+                                if (reversalAmount > 0) {
+                                    reason += ` | Spend: ₹${cumulativeSpend.toLocaleString('en-IN')} (Gross: ₹${grossSpend.toLocaleString('en-IN')} | Reversals: ₹${reversalAmount.toLocaleString('en-IN')})`;
+                                } else {
+                                    reason += ` | Spend: ₹${cumulativeSpend.toLocaleString('en-IN')}`;
+                                }
+
+                                const limitParts = [`Annual limit ₹${rule.annual_aggregate_threshold.toLocaleString('en-IN')}`];
+                                if (rule.single_bill_threshold) {
+                                    limitParts.push(`Single limit ₹${rule.single_bill_threshold.toLocaleString('en-IN')}`);
+                                }
+                                reason += ` | Limits: ${limitParts.join(' / ')}`;
+                            }
+
+                            booksLiability[groupKey] = {
+                                partyName: partyNameMap[groupKey] || 'Unknown Party',
+                                booksSpend: cumulativeSpend,
+                                booksTaxable: finalTaxable,
+                                taxableBasis: taxableBasis,
+                                booksRequiredTds: finalRequiredTds,
+                                booksActualTds: totalActualTds,
+                                ledgers: Array.from(ledgerNames).join(', '),
+                                tdsLedgers: Array.from(tdsLedgerNames).join(', '),
+                                rateApplied: rate,
+                                reason: reason,
+                                isNameMatched: txns.isNameMatched || false
+                            };
+                        }
+
+                        // 3. Aggregate TRACES (Form 26Q) Data
+                        const tracesLiability = {}; // "pan_section" -> { tracesTaxable, tracesTds, partyName }
+                        if (form26qRecords && Array.isArray(form26qRecords)) {
+                            form26qRecords.forEach(r => {
+                                let cleanPan = (r.partyPan || '').toUpperCase().trim();
+                                if (cleanPan === 'PAN-MISSING' || cleanPan === 'PAN MISSING' || cleanPan === 'UNREGISTERED') {
+                                    cleanPan = '';
+                                }
+                                cleanPan = cleanPan.replace(/\s+/g, '');
+                                const cleanSection = (r.section || '').trim();
+                                const rule = rulesMap[cleanSection];
+                                // Try to align 26Q section code to our system's code (either old or new)
+                                const sectionCode = rule ? rule.old_section : cleanSection;
+                                const groupKey = `${cleanPan}_${sectionCode}`;
+
+                                if (!tracesLiability[groupKey]) {
+                                    tracesLiability[groupKey] = {
+                                        tracesTaxable: 0,
+                                        tracesTds: 0,
+                                        partyName: r.partyName || 'Unknown Party',
+                                        partyPan: cleanPan,
+                                        section: sectionCode
+                                    };
+                                }
+                                tracesLiability[groupKey].tracesTaxable += r.amountPaid || 0;
+                                tracesLiability[groupKey].tracesTds += r.tdsDeducted || 0;
+                            });
+                        }
+
+                        // 4. Perform comparison and variance tagging
+                        const reconciliationResults = [];
+                        const matchedBooks = {};
+                        const matchedTraces = {};
+                        const matchMethods = {};
+                        const unmatchedBooks = new Set(Object.keys(booksLiability));
+                        const unmatchedTraces = new Set(Object.keys(tracesLiability));
+
+                        const LOCAL_PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i;
+                        const isLocalPanValid = (p) => p && LOCAL_PAN_REGEX.test(p);
+
+                        const normalizePartyName = (name) => {
+                            if (!name) return '';
+                            let n = name.toUpperCase()
+                                .replace(/[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,4}[-\s]?\d{1,4}/gi, '')
+                                .replace(/\(.*?\)/g, '')
+                                .replace(/\b(DRIVER|VEHICLE|LORRY|TRUCK|TANKER|CAB|AUTO|TRANSPORTER|TRANSPORT|TEMPO|BUS|TRAILER)\b/gi, '')
+                                .replace(/[-\s\(\)]+(CR|DR)\b$/gi, '')
+                                .replace(/\b(M\/S\.?|MS\.?|MR\.?|MRS\.?|SHREE|SHRI)\b/gi, '')
+                                .replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|INC|CO|COMPANY|CORP|CORPORATION|ENTERPRISES?|TRADERS?|INDUSTRIES|AGENC(?:Y|IES)|BROTHERS|BROS|SONS|ASSOCIATES|AND|&)\b/gi, '')
+                                .replace(/[^A-Z0-9]/g, '')
+                                .trim();
+                            if (n.endsWith('S')) n = n.slice(0, -1);
+                            return n;
+                        };
+
+                        function levenshteinDistance(s1, s2) {
+                            const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
+                            for (let i = 0; i <= s1.length; i += 1) {
+                                track[0][i] = i;
+                            }
+                            for (let j = 0; j <= s2.length; j += 1) {
+                                track[j][0] = j;
+                            }
+                            for (let j = 1; j <= s2.length; j += 1) {
+                                for (let i = 1; i <= s1.length; i += 1) {
+                                    const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+                                    track[j][i] = Math.min(
+                                        track[j][i - 1] + 1, // deletion
+                                        track[j - 1][i] + 1, // insertion
+                                        track[j - 1][i - 1] + indicator // substitution
+                                    );
+                                }
+                            }
+                            return track[s2.length][s1.length];
+                        }
+
+                        // 1. Match by PAN
+                        for (const bKey of unmatchedBooks) {
+                            const books = booksLiability[bKey];
+                            const lastUnderscore = bKey.lastIndexOf('_');
+                            const section = bKey.substring(lastUnderscore + 1);
+                            const prefix = bKey.substring(0, lastUnderscore);
+                            const secondLastUnderscore = prefix.lastIndexOf('_');
+                            const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
+
+                            if (isLocalPanValid(pan)) {
+                                // First try: exact PAN + exact Section
+                                const tKeyExact = `${pan}_${section}`;
+                                if (unmatchedTraces.has(tKeyExact)) {
+                                    matchedBooks[bKey] = tracesLiability[tKeyExact];
+                                    matchedTraces[tKeyExact] = books;
+                                    matchMethods[bKey] = 'PAN';
+                                    unmatchedBooks.delete(bKey);
+                                    unmatchedTraces.delete(tKeyExact);
+                                    continue;
+                                }
+
+                                // Second try: PAN + empty/dash Section
+                                const tKeyEmpty = `${pan}_`;
+                                if (unmatchedTraces.has(tKeyEmpty)) {
+                                    const trace = tracesLiability[tKeyEmpty];
+                                    trace.section = section;
+                                    const newTKey = `${pan}_${section}`;
+                                    tracesLiability[newTKey] = trace;
+                                    delete tracesLiability[tKeyEmpty];
+
+                                    matchedBooks[bKey] = trace;
+                                    matchedTraces[newTKey] = books;
+                                    matchMethods[bKey] = 'PAN';
+                                    unmatchedBooks.delete(bKey);
+                                    unmatchedTraces.delete(tKeyEmpty);
+                                    continue;
+                                }
+
+                                // Third try: PAN + any section (fallback)
+                                let foundTKey = null;
+                                for (const tKey of unmatchedTraces) {
+                                    const lastUnderscoreT = tKey.lastIndexOf('_');
+                                    const tPan = tKey.substring(0, lastUnderscoreT);
+                                    if (tPan === pan) {
+                                        foundTKey = tKey;
+                                        break;
+                                    }
+                                }
+                                if (foundTKey) {
+                                    const trace = tracesLiability[foundTKey];
+                                    if (!trace.section || trace.section === '—' || trace.section === '') {
+                                        trace.section = section;
+                                    }
+                                    matchedBooks[bKey] = trace;
+                                    matchedTraces[foundTKey] = books;
+                                    matchMethods[bKey] = 'PAN';
+                                    unmatchedBooks.delete(bKey);
+                                    unmatchedTraces.delete(foundTKey);
+                                }
+                            }
+                        }
+
+                        // 2. Match by Exact Name
+                        for (const bKey of unmatchedBooks) {
+                            const books = booksLiability[bKey];
+                            const lastUnderscore = bKey.lastIndexOf('_');
+                            const section = bKey.substring(lastUnderscore + 1);
+                            const booksNormName = normalizePartyName(books.partyName);
+
+                            if (booksNormName) {
+                                let foundTKey = null;
+                                // First try: exact Name + exact Section
+                                for (const tKey of unmatchedTraces) {
+                                    const traces = tracesLiability[tKey];
+                                    if (traces.section === section) {
+                                        const tracesNormName = normalizePartyName(traces.partyName);
+                                        if (booksNormName === tracesNormName) {
+                                            let allowed = true;
+                                            if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
+                                                allowed = confirmedMatches.some(cm =>
+                                                    normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                                    normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
+                                                );
+                                            }
+                                            if (allowed) {
+                                                foundTKey = tKey;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                // Second try: exact Name + empty/dash Section
+                                if (!foundTKey) {
+                                    for (const tKey of unmatchedTraces) {
+                                        const traces = tracesLiability[tKey];
+                                        if (!traces.section || traces.section === '—' || traces.section === '') {
+                                            const tracesNormName = normalizePartyName(traces.partyName);
+                                            if (booksNormName === tracesNormName) {
+                                                let allowed = true;
+                                                if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
+                                                    allowed = confirmedMatches.some(cm =>
+                                                        normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                                        normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
+                                                    );
+                                                }
+                                                if (allowed) {
+                                                    foundTKey = tKey;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                // Third try: exact Name + any other Section
+                                if (!foundTKey) {
+                                    for (const tKey of unmatchedTraces) {
+                                        const traces = tracesLiability[tKey];
+                                        const tracesNormName = normalizePartyName(traces.partyName);
+                                        if (booksNormName === tracesNormName) {
+                                            let allowed = true;
+                                            if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
+                                                allowed = confirmedMatches.some(cm =>
+                                                    normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                                    normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
+                                                );
+                                            }
+                                            if (allowed) {
+                                                foundTKey = tKey;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (foundTKey) {
+                                    const trace = tracesLiability[foundTKey];
+                                    if (!trace.section || trace.section === '—' || trace.section === '') {
+                                        trace.section = section;
+                                    }
+                                    matchedBooks[bKey] = trace;
+                                    matchedTraces[foundTKey] = books;
+                                    matchMethods[bKey] = 'Name (Exact)';
+                                    unmatchedBooks.delete(bKey);
+                                    unmatchedTraces.delete(foundTKey);
+                                }
+                            }
+                        }
+
+                        // 3. Match by Fuzzy Name
+                        for (const bKey of unmatchedBooks) {
+                            const books = booksLiability[bKey];
+                            const lastUnderscore = bKey.lastIndexOf('_');
+                            const section = bKey.substring(lastUnderscore + 1);
+                            const booksNormName = normalizePartyName(books.partyName);
+
+                            if (booksNormName) {
+                                let bestTKey = null;
+                                let highestSim = 0.7;
+
+                                // First pass: try fuzzy name with same section
+                                for (const tKey of unmatchedTraces) {
+                                    const traces = tracesLiability[tKey];
+                                    if (traces.section === section) {
+                                        const tracesNormName = normalizePartyName(traces.partyName);
+                                        if (tracesNormName) {
+                                            let sim = 0;
+                                            if (booksNormName.length >= 5 && tracesNormName.length >= 5 &&
+                                                (booksNormName.includes(tracesNormName) || tracesNormName.includes(booksNormName))) {
+                                                sim = 0.9;
+                                            } else {
+                                                const maxLen = Math.max(booksNormName.length, tracesNormName.length);
+                                                if (maxLen >= 4) {
+                                                    const dist = levenshteinDistance(booksNormName, tracesNormName);
+                                                    sim = 1 - dist / maxLen;
+                                                }
+                                            }
+
+                                            if (sim >= highestSim) {
+                                                let allowed = true;
+                                                if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
+                                                    allowed = confirmedMatches.some(cm =>
+                                                        normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                                        normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
+                                                    );
+                                                }
+                                                if (allowed) {
+                                                    highestSim = sim;
+                                                    bestTKey = tKey;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Second pass: if no match, try fuzzy name with any section (fallback)
+                                if (!bestTKey) {
+                                    for (const tKey of unmatchedTraces) {
+                                        const traces = tracesLiability[tKey];
+                                        const tracesNormName = normalizePartyName(traces.partyName);
+                                        if (tracesNormName) {
+                                            let sim = 0;
+                                            if (booksNormName.length >= 5 && tracesNormName.length >= 5 &&
+                                                (booksNormName.includes(tracesNormName) || tracesNormName.includes(booksNormName))) {
+                                                sim = 0.9;
+                                            } else {
+                                                const maxLen = Math.max(booksNormName.length, tracesNormName.length);
+                                                if (maxLen >= 4) {
+                                                    const dist = levenshteinDistance(booksNormName, tracesNormName);
+                                                    sim = 1 - dist / maxLen;
+                                                }
+                                            }
+
+                                            if (sim >= highestSim) {
+                                                let allowed = true;
+                                                if (confirmedMatches && Array.isArray(confirmedMatches) && confirmedMatches.length > 0) {
+                                                    allowed = confirmedMatches.some(cm =>
+                                                        normalizePartyName(cm.booksName) === normalizePartyName(books.partyName) &&
+                                                        normalizePartyName(cm.tracesName) === normalizePartyName(traces.partyName)
+                                                    );
+                                                }
+                                                if (allowed) {
+                                                    highestSim = sim;
+                                                    bestTKey = tKey;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (bestTKey) {
+                                    const trace = tracesLiability[bestTKey];
+                                    if (!trace.section || trace.section === '—' || trace.section === '') {
+                                        trace.section = section;
+                                    }
+                                    matchedBooks[bKey] = trace;
+                                    matchedTraces[bestTKey] = books;
+                                    matchMethods[bKey] = 'Name (Fuzzy)';
+                                    unmatchedBooks.delete(bKey);
+                                    unmatchedTraces.delete(bestTKey);
+                                }
+                            }
+                        }
+
+                        let summary = {
+                            total_parties_analyzed: 0,
+                            matched_count: 0,
+                            short_deducted_count: 0,
+                            excess_deducted_count: 0,
+                            missing_in_26q_count: 0,
+                            missing_in_books_count: 0
+                        };
+
+                        const dbInserts = [];
+
+                        // Construct result records for all Books entries (matched and unmatched)
+                        for (const bKey of Object.keys(booksLiability)) {
+                            const books = booksLiability[bKey];
+                            const lastUnderscore = bKey.lastIndexOf('_');
+                            const section = bKey.substring(lastUnderscore + 1);
+                            const prefix = bKey.substring(0, lastUnderscore);
+                            const secondLastUnderscore = prefix.lastIndexOf('_');
+                            const pan = secondLastUnderscore !== -1 ? prefix.substring(secondLastUnderscore + 1) : prefix;
+                            const rule = rulesMap[section] || {};
+
+                            const matchedTracesGroup = matchedBooks[bKey];
+
+                            let panInBooks = pan.startsWith('NOPAN-') ? 'PAN-MISSING' : pan;
+                            let panIn26Q = (matchedTracesGroup && matchedTracesGroup.partyPan) ? matchedTracesGroup.partyPan : '—';
+
+                            // Rate Determination Hierarchy:
+                            // 1. Use 26Q rate if present (and taxable amount > 0)
+                            // 2. Else use Book PAN if valid
+                            // 3. Else (Book PAN missing/invalid) use individual category rate
+                            let rate = books.rateApplied;
+                            let rateText = "";
+
+                            if (matchedTracesGroup && matchedTracesGroup.tracesTaxable > 0) {
+                                rate = Math.round((matchedTracesGroup.tracesTds / matchedTracesGroup.tracesTaxable) * 10000) / 100;
+                                rateText = `Form 26Q`;
+                            } else if (panInBooks && panInBooks !== 'PAN-MISSING' && PAN_REGEX.test(panInBooks)) {
+                                const entityChar = panInBooks.charAt(3).toUpperCase();
+                                const isIndividualOrHuf = (entityChar === 'P' || entityChar === 'H');
+                                rate = isIndividualOrHuf ? (rule.rate_individual_huf ?? 1.0) : (rule.rate_company_others ?? 2.0);
+                                rateText = `Books PAN`;
+                            } else {
+                                rate = rule.rate_individual_huf ?? 1.0;
+                                rateText = `Individual fallback`;
+                            }
+
+                            // Apply the resolved rate
+                            books.rateApplied = rate;
+                            books.booksRequiredTds = Math.round((books.booksTaxable * rate) / 100);
+
+                            // Clean up explanation message if books PAN was missing
+                            if (panInBooks === 'PAN-MISSING') {
+                                if (books.reason.includes('PAN: Missing')) {
+                                    books.reason = books.reason.replace(/\| PAN: Missing \([^)]+\)/g,
+                                        `| PAN: Missing (${rate}% rate applied: ${rateText})`);
+                                } else {
+                                    books.reason += ` | PAN: Missing (${rate}% rate applied: ${rateText})`;
+                                }
+                            }
+
+                            let nameInBooks = books.partyName;
+                            let nameIn26Q = matchedTracesGroup ? matchedTracesGroup.partyName : '—';
+
+                            let tracesTaxable = matchedTracesGroup ? matchedTracesGroup.tracesTaxable : 0;
+                            let tracesTds = matchedTracesGroup ? matchedTracesGroup.tracesTds : 0;
+
+                            let taxableVariance = books.booksTaxable - tracesTaxable;
+                            let tdsVariance = books.booksRequiredTds - tracesTds;
+
+                            let status = 'Matched';
+                            // Under Threshold: no taxable amount was computed (below annual/single-bill limits)
+                            // This applies even if voluntary TDS was deducted in books
+                            if (books.booksTaxable === 0 && books.booksRequiredTds === 0 && tracesTaxable === 0 && tracesTds === 0) {
+                                status = 'Under Threshold';
+                            } else if (!matchedTracesGroup && books.booksRequiredTds > 0) {
+                                status = 'Missing in 26Q';
+                            } else {
+                                // Primary check: Books vs 26Q variance (the core purpose of reconciliation)
+                                if (tdsVariance > 5) {
+                                    status = 'Short Deducted';   // 26Q has less TDS than books requires
+                                } else if (tdsVariance < -5) {
+                                    status = 'Excess Deducted';  // 26Q has more TDS than books requires
+                                } else {
+                                    status = 'Matched';          // Books and 26Q are in agreement
+                                }
+                            }
+
+                            if (status !== 'Under Threshold') {
+                                summary.total_parties_analyzed++;
+                            }
+                            if (status === 'Matched') summary.matched_count++;
+                            else if (status === 'Short Deducted') summary.short_deducted_count++;
+                            else if (status === 'Excess Deducted') summary.excess_deducted_count++;
+                            else if (status === 'Missing in 26Q') summary.missing_in_26q_count++;
+
+                            const remark = matchedTracesGroup ? (matchMethods[bKey] === 'Name (Exact)' ? "[Name Match] " : matchMethods[bKey] === 'Name (Fuzzy)' ? "[Fuzzy Name Match] " : "") : "";
+                            const reason = remark + books.reason;
+
+                            const resultRecord = {
+                                party_name: nameInBooks,
+                                party_pan: panInBooks,
+                                pan_in_books: panInBooks,
+                                pan_in_26q: panIn26Q,
+                                name_in_books: nameInBooks,
+                                name_in_26q: nameIn26Q,
+                                entity_type: (panInBooks && panInBooks !== 'PAN-MISSING') ? getEntityTypeFromPan(panInBooks) : 'Unknown',
+                                section_code: section,
+                                nature_of_payment: rule.nature_of_payment || 'Unknown Nature',
+                                ledgers: books.ledgers,
+                                tds_ledgers: books.tdsLedgers,
+                                books_spend: books.booksSpend,
+                                books_taxable: books.booksTaxable,
+                                taxable_basis: books.taxableBasis,
+                                books_rate_applied: books.rateApplied,
+                                books_required_tds: books.booksRequiredTds,
+                                books_actual_tds: books.booksActualTds,
+                                traces_taxable: tracesTaxable,
+                                traces_tds: tracesTds,
+                                taxable_variance: taxableVariance,
+                                tds_variance: tdsVariance,
+                                status: status,
+                                reason: reason
+                            };
+
+                            reconciliationResults.push(resultRecord);
+                            dbInserts.push(resultRecord);
+                        }
+
+                        // Construct result records for unmatched TRACES entries
+                        for (const tKey of unmatchedTraces) {
+                            const traces = tracesLiability[tKey];
+                            const rule = rulesMap[traces.section] || {};
+
+                            let panInBooks = '—';
+                            let panIn26Q = traces.partyPan;
+                            let nameInBooks = '—';
+                            let nameIn26Q = traces.partyName;
+
+                            let tracesTaxable = traces.tracesTaxable;
+                            let tracesTds = traces.tracesTds;
+
+                            let taxableVariance = 0 - tracesTaxable;
+                            let tdsVariance = 0 - tracesTds;
+
+                            let status = 'Missing in Books';
+                            summary.total_parties_analyzed++;
+                            summary.missing_in_books_count++;
+
+                            const resultRecord = {
+                                party_name: nameIn26Q,
+                                party_pan: panIn26Q,
+                                pan_in_books: panInBooks,
+                                pan_in_26q: panIn26Q,
+                                name_in_books: nameInBooks,
+                                name_in_26q: nameIn26Q,
+                                entity_type: (panIn26Q && panIn26Q !== 'PAN-MISSING') ? getEntityTypeFromPan(panIn26Q) : 'Unknown',
+                                section_code: traces.section,
+                                nature_of_payment: rule.nature_of_payment || 'Unknown Nature',
+                                ledgers: '',
+                                tds_ledgers: '',
+                                books_spend: 0,
+                                books_taxable: 0,
+                                taxable_basis: `Form 26Q Reported (₹${tracesTaxable.toLocaleString('en-IN')})`,
+                                books_rate_applied: 0,
+                                books_required_tds: 0,
+                                books_actual_tds: 0,
+                                traces_taxable: tracesTaxable,
+                                traces_tds: tracesTds,
+                                taxable_variance: taxableVariance,
+                                tds_variance: tdsVariance,
+                                status: status,
+                                reason: 'No expense entries found in Books (Directly reported in Form 26Q)'
+                            };
+
+                            reconciliationResults.push(resultRecord);
+                            dbInserts.push(resultRecord);
+                        }
+
+
+                        // Save results to DB
+                        db.serialize(() => {
+                            // First clear old Recon_Results
+                            db.run('DELETE FROM Recon_Results', [], (err) => {
+                                if (err) console.error("Error clearing Recon_Results:", err.message);
+
+                                // Save new records
+                                const stmt = db.prepare(`INSERT INTO Recon_Results (
+                                id, party_id, section_code, books_taxable, books_required_tds, 
+                                books_actual_tds, traces_taxable, traces_tds, taxable_variance, 
+                                tds_variance, reconciliation_status, calculated_at
+                            ) VALUES (?, (SELECT id FROM Party_Masters WHERE party_name = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+                                const nowStr = new Date().toISOString();
+                                dbInserts.forEach(r => {
+                                    stmt.run(
+                                        randomUUID(), r.party_name, r.section_code, r.books_taxable,
+                                        r.books_required_tds, r.books_actual_tds, r.traces_taxable,
+                                        r.traces_tds, r.taxable_variance, r.tds_variance, r.status, nowStr
+                                    );
+                                });
+                                stmt.finalize();
+                            });
+                        });
+
+                        res.json({
+                            success: true,
+                            summary,
+                            results: reconciliationResults
+                        });
+                    });
+                });
+            });
+        });
+    });
+
+    // Get all group mappings
+    app.get('/api/tds/group-mappings', (req, res) => {
+        db.all('SELECT * FROM Tally_Group_Mappings ORDER BY created_at DESC', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows.map(r => ({
+                id: r.id,
+                expenseGroup: r.expense_group,
+                subGroup: r.sub_group,
+                subGroup2: r.sub_group_2,
+                sectionCode: r.mapped_section_code,
+                fullPath: rowPathTopDown(r),
+                source: r.source || 'manual',
+                createdAt: r.created_at
+            })));
+        });
+    });
+
+    // Add a group mapping
+    app.post('/api/tds/group-mappings', (req, res) => {
+        const { expenseGroup, subGroup, subGroup2, sectionCode } = req.body;
+        if (!expenseGroup || !sectionCode) {
+            return res.status(400).json({ error: "expenseGroup and sectionCode are required" });
+        }
+        const nowStr = new Date().toISOString();
+        const fullPath = [expenseGroup, subGroup, subGroup2].map(normalizeGroupName).filter(Boolean);
+        db.run(
+            `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+            [randomUUID(), expenseGroup.trim(), subGroup ? subGroup.trim() : null, subGroup2 ? subGroup2.trim() : null, sectionCode.trim(), nowStr, JSON.stringify(fullPath)],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // Delete a group mapping
+    app.delete('/api/tds/group-mappings/:id', (req, res) => {
+        db.run(
+            `DELETE FROM Tally_Group_Mappings WHERE id = ?`,
+            [req.params.id],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            }
+        );
+    });
+
+    // API: Reset all TDS Module Tables (except TDS Rules) - Admin Only with Confirmation
+    // Any logged-in user may reset TDS data (login is still required by authMiddleware)
+    app.post('/api/tds/reset', authMiddleware, (req, res) => {
+        if (req.body?.confirm !== 'RESET_ALL_TDS_DATA') {
+            return res.status(400).json({ success: false, error: 'Confirmation payload missing. Please provide confirm: "RESET_ALL_TDS_DATA"' });
+        }
+        db.serialize(() => {
+            db.run('DELETE FROM Recon_Results', (err) => { if (err) console.error("Reset Recon_Results error:", err); });
+            db.run('DELETE FROM Tally_Transactions', (err) => { if (err) console.error("Reset Tally_Transactions error:", err); });
+            db.run('DELETE FROM Tally_Ledgers', (err) => { if (err) console.error("Reset Tally_Ledgers error:", err); });
+            db.run('DELETE FROM Tally_Group_Mappings', (err) => { if (err) console.error("Reset Tally_Group_Mappings error:", err); });
+            db.run('DELETE FROM Party_Masters', [], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, message: 'All TDS module transaction tables reset successfully' });
+            });
+        });
+    });
+
+    // =========================================================================
+    // LOCAL PC RECONCILIATION SNAPSHOTS (Offline Local Disk & SQLite Storage)
+    // =========================================================================
+
+    // List all saved local sessions (Lazy Loading: Only metadata & summary, payload loaded on-demand)
+    app.get('/api/tds/local-snapshots', (req, res) => {
+        db.all('SELECT id, company_name, financial_year, created_at, machine_name, summary_json FROM Local_Snapshots ORDER BY created_at DESC', [], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows.map(r => {
+                let summaryObj = null;
+                try { summaryObj = r.summary_json ? JSON.parse(r.summary_json) : null; } catch(e) {}
+                const modType = summaryObj?.moduleType || 'gst-reco';
+                const modName = summaryObj?.moduleName || (modType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+                return {
+                    id: r.id,
+                    name: `Snapshot_${(r.company_name || 'Company').replace(/\s+/g, '_')}_${r.financial_year || ''}_${r.created_at ? r.created_at.substring(0,10) : ''}.json`,
+                    companyName: r.company_name,
+                    financialYear: r.financial_year,
+                    createdAt: r.created_at,
+                    machineName: r.machine_name,
+                    moduleType: modType,
+                    moduleName: modName,
+                    summary: summaryObj
+                };
+            }));
+        });
+    });
+
+    // Helper to get active Reco History directory from app_config or fallback
+    function getActiveRecoHistoryDir() {
+        return new Promise((resolve) => {
+            db.get("SELECT value FROM app_config WHERE key = 'reco_history_path'", [], (err, row) => {
+                if (!err && row && row.value) {
+                    const customPath = path.resolve(String(row.value).trim().replace(/^["']|["']$/g, ''));
+                    try {
+                        if (!fs.existsSync(customPath)) fs.mkdirSync(customPath, { recursive: true });
+                        return resolve(customPath);
+                    } catch (e) {}
+                }
+                const defaultPath = path.resolve(process.env.USER_DATA_PATH || '.', 'reco_history');
+                if (!fs.existsSync(defaultPath)) {
+                    try { fs.mkdirSync(defaultPath, { recursive: true }); } catch (e) {}
+                }
+                resolve(defaultPath);
+            });
+        });
+    }
+
+    // Save session snapshot locally to SQLite & disk
+    app.post('/api/tds/local-snapshots/save', async (req, res) => {
+        try {
+            const { payload } = req.body;
+            if (!payload || !payload.companyName) {
+                return res.status(400).json({ error: "Invalid snapshot payload" });
+            }
+            const snapshotId = payload.id || `reco_snapshot_${Date.now()}`;
+            if (!/^[A-Za-z0-9_-]{1,120}$/.test(snapshotId)) return res.status(400).json({ error: "Invalid snapshot id" });
+            const companyName = payload.companyName || 'Company';
+            const fy = payload.financialYear || '2026-27';
+            const createdAt = payload.createdAt || new Date().toISOString();
+            const machineName = payload.machineName || os.hostname();
+            const summaryObj = { ...(payload.summary || {}) };
+            summaryObj.moduleType = payload.moduleType || summaryObj.moduleType || 'gst-reco';
+            summaryObj.moduleName = payload.moduleName || summaryObj.moduleName || (summaryObj.moduleType === 'tds-reco' ? 'TDS Audit & Reco' : 'GST 2B Reco');
+            const summaryJson = JSON.stringify(summaryObj);
+            const payloadJson = JSON.stringify(payload);
+
+            db.run(
+                `INSERT OR REPLACE INTO Local_Snapshots (id, company_name, financial_year, created_at, machine_name, summary_json, payload_json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [snapshotId, companyName, fy, createdAt, machineName, summaryJson, payloadJson],
+                async function (err) {
+                    if (err) {
+                        console.error('Save Local_Snapshot DB error:', err);
+                        return res.status(500).json({ error: err.message });
+                    }
+
+                    try {
+                        const historyDir = await getActiveRecoHistoryDir();
+                        const filePath = path.join(historyDir, `${snapshotId}.json`);
+                        fs.writeFileSync(filePath, payloadJson, 'utf8');
+                    } catch (fsErr) {
+                        console.error('Save Local_Snapshot file error:', fsErr.message);
+                    }
+
+                    res.json({
+                        id: snapshotId,
+                        name: `Reco_${companyName.replace(/\s+/g, '_')}_${fy}_${createdAt.substring(0,10)}.json`,
+                        companyName,
+                        financialYear: fy,
+                        createdAt,
+                        machineName
+                    });
+                }
+            );
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // Get full payload to restore local session
+    app.get('/api/tds/local-snapshots/:id', (req, res) => {
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(req.params.id)) return res.status(400).json({ error: "Invalid snapshot id" });
+        db.get('SELECT payload_json FROM Local_Snapshots WHERE id = ?', [req.params.id], async (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (!row || !row.payload_json) {
+                try {
+                    const historyDir = await getActiveRecoHistoryDir();
+                    const filePath = path.join(historyDir, `${req.params.id}.json`);
+                    if (fs.existsSync(filePath)) {
+                        const fileContent = fs.readFileSync(filePath, 'utf8');
+                        return res.json(JSON.parse(fileContent));
+                    }
+                } catch (fErr) {}
+                return res.status(404).json({ error: "Snapshot not found" });
+            }
+            try {
+                res.json(JSON.parse(row.payload_json));
+            } catch (pErr) {
+                res.status(500).json({ error: "Corrupted snapshot payload" });
+            }
+        });
+    });
+
+    // Delete local snapshot
+    app.delete('/api/tds/local-snapshots/:id', (req, res) => {
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(req.params.id)) return res.status(400).json({ error: "Invalid snapshot id" });
+        db.run('DELETE FROM Local_Snapshots WHERE id = ?', [req.params.id], async function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            try {
+                const historyDir = await getActiveRecoHistoryDir();
+                const filePath = path.join(historyDir, `${req.params.id}.json`);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (fErr) {}
+            res.json({ success: true });
+        });
+    });
+}

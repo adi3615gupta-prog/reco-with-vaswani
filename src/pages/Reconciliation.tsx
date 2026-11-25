@@ -3,7 +3,8 @@ import {
   ArrowRight, ArrowLeft, FileSpreadsheet, CheckCircle2, ShieldCheck, Plus,
   RotateCcw, CloudDownload, ChevronRight, ChevronDown, GitCompare, Database,
   Server, Settings, Activity, X, Star, Sparkles, Building2, Lightbulb,
-  Cloud, History, UploadCloud, HardDrive, Receipt, HelpCircle,
+  Cloud, History, UploadCloud, HardDrive, Receipt, HelpCircle, LayoutDashboard,
+  ListChecks, Users, CalendarRange,
 } from 'lucide-react';
 import { ModeSelector } from '../components/ModeSelector';
 import { FileUploadZone } from '../components/FileUploadZone';
@@ -14,7 +15,8 @@ import { ModeSwitcher } from '../components/ModeSwitcher';
 import { GSTVerification } from '../components/GSTVerification';
 import { OutputDashboard } from '../components/OutputDashboard';
 import { SummaryCards } from '../components/SummaryCards';
-import { ResultsCategoryTabs } from '../components/ResultsCategoryTabs';
+import { ResultsCategoryTabs, type CategoryKey } from '../components/ResultsCategoryTabs';
+import { ReconciliationInsights } from '../components/ReconciliationInsights';
 import { GDriveConnectModal } from '../components/GDriveConnectModal';
 import { RecoHistoryModal } from '../components/RecoHistoryModal';
 import { uploadRecoSnapshotToDrive, checkGDriveStatus, saveLocalRecoSnapshot, type RecoSnapshotPayload } from '../lib/gdrive';
@@ -34,12 +36,19 @@ export default function Reconciliation(props: any) {
     document.body.classList.add('hide-floating-widgets');
     return () => document.body.classList.remove('hide-floating-widgets');
   }, []);
-  const [auditLedgerCollapsed, setAuditLedgerCollapsed] = React.useState(false);
   const [isGDriveConnectOpen, setIsGDriveConnectOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [partyDisputes, setPartyDisputes] = React.useState<Record<string, any>>({});
   const [isSavingRun, setIsSavingRun] = React.useState(false);
   const [lastSavedRun, setLastSavedRun] = React.useState<string | null>(null);
+  // Step 2 (map) workspace: which ingested source is active, and whether all mappers are stacked.
+  const [activeMapperTab, setActiveMapperTab] = React.useState<string>('primary');
+  const [stackedMappers, setStackedMappers] = React.useState(false);
+  // View A = left rail (master-detail); View B = horizontal pill tabs across the top.
+  const [mapperView, setMapperView] = React.useState<'rail' | 'pills'>('rail');
+  // Step 4 (results) structured workspace tab & ledger filter sync
+  const [dashboardTab, setDashboardTab] = React.useState<'overview' | 'ledger' | 'parties' | 'monthly'>('overview');
+  const [ledgerCategory, setLedgerCategory] = React.useState<CategoryKey>('all');
   const {
     setAppRoute, mode, setMode, step, setStep, companyName, setCompanyName,
     tolerance, setTolerance, fuzzyStrictness, setFuzzyStrictness,
@@ -244,6 +253,60 @@ export default function Reconciliation(props: any) {
     setLastSavedRun(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
     toast.success(`Restored session: ${payload.companyName || 'Snapshot'} (${payload.mode === 'output' ? 'Sales Engine' : 'Purchase Engine'})`);
   };
+
+  // Ingested-sources inventory for Step 2: one entry per uploaded mapping source, with readiness.
+  const mapperEntries: { key: string; label: string; sub: string; ready: boolean }[] = [];
+  mapperEntries.push({
+    key: 'primary',
+    label: `${modeTerms.primaryBookLabel} Source`,
+    sub: `${prHeaders?.length ?? 0} columns`,
+    ready: isMappingComplete(prMapping, false),
+  });
+  (journals || []).forEach((j: { file?: { name?: string }; headers?: string[]; mapping: unknown }, idx: number) => mapperEntries.push({
+    key: `journal:${idx}`,
+    label: `Supplemental: ${j.file?.name ?? `Ledger ${idx + 1}`}`,
+    sub: `${j.headers?.length ?? 0} columns`,
+    ready: isMappingComplete(j.mapping, false),
+  }));
+  if (twoBFile) mapperEntries.push({
+    key: 'twob',
+    label: `${modeTerms.govtLabel} Source`,
+    sub: `${twoBHeaders?.length ?? 0} columns`,
+    ready: mode === 'input' ? isMappingComplete(twoBMapping, false) : true,
+  });
+  if (prCnFile) mapperEntries.push({
+    key: 'prcn',
+    label: `${modeTerms.primaryShort} Credit Notes`,
+    sub: `${prCnHeaders?.length ?? 0} columns`,
+    ready: isMappingComplete(prCnMapping, false),
+  });
+  if (prDnFile) mapperEntries.push({
+    key: 'prdn',
+    label: `${modeTerms.primaryShort} Debit Notes`,
+    sub: `${prDnHeaders?.length ?? 0} columns`,
+    ready: isMappingComplete(prDnMapping, false),
+  });
+  if (twoBDnFile) mapperEntries.push({
+    key: 'twobdn',
+    label: `${modeTerms.govtShort} Adjustments`,
+    sub: `${twoBDnHeaders?.length ?? 0} columns`,
+    ready: isMappingComplete(twoBDnMapping, false),
+  });
+  if (mode === 'output') {
+    Object.entries((portalMappings || {}) as Record<string, { docType?: string; mapping: unknown }>).forEach(([id, pMap]) => {
+      const file = (portalQueue || []).find((q: { id: string; file?: { name?: string } }) => q.id === id);
+      if (!file) return;
+      mapperEntries.push({
+        key: `portal:${id}`,
+        label: file.file?.name ?? 'GSTR-1 Portal File',
+        sub: `PORTAL ${String(pMap.docType || '').toUpperCase()}`,
+        ready: isMappingComplete(pMap.mapping, false, pMap.docType),
+      });
+    });
+  }
+  const readyMapperCount = mapperEntries.filter(e => e.ready).length;
+  const resolvedMapperTab = mapperEntries.some(e => e.key === activeMapperTab) ? activeMapperTab : 'primary';
+  const showMapper = (key: string) => stackedMappers || resolvedMapperTab === key;
 
   return (
     <div className="w-full silk-reveal">
@@ -553,14 +616,111 @@ export default function Reconciliation(props: any) {
           )}
 
           {step === 'map' && (
-            <div className="max-w-4xl mx-auto space-y-8 silk-reveal pt-4">
+            <div className="w-full max-w-[1560px] mx-auto px-2 sm:px-4 space-y-8 silk-reveal pt-4">
               <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                 <h2 className="text-xl font-extrabold text-slate-900">Reconciliation Mappings</h2>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Set fields mapping</div>
+                <div className="flex items-center gap-3">
+                  <div role="tablist" aria-label="Source layout" className="inline-flex p-0.5 rounded-xl bg-slate-100 border border-slate-200">
+                    {(['rail', 'pills'] as const).map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        role="tab"
+                        aria-selected={mapperView === v}
+                        onClick={() => setMapperView(v)}
+                        className={cn(
+                          'px-3 h-7 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer',
+                          mapperView === v ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                        )}
+                      >
+                        {v === 'rail' ? 'Side rail' : 'Pill tabs'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Set fields mapping</div>
+                </div>
               </div>
 
+              <div className={cn('grid grid-cols-1 gap-6 items-start', mapperView === 'rail' && 'lg:grid-cols-[280px_minmax(0,1fr)]')}>
+                {/* Ingested sources rail (View A) */}
+                <aside className={cn('bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden lg:sticky lg:top-4', mapperView === 'pills' && 'hidden')}>
+                  <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">Ingested Sources</span>
+                    <span className="text-[10px] font-bold text-slate-500">{readyMapperCount}/{mapperEntries.length} ready</span>
+                  </div>
+                  <div className="p-2 space-y-1.5 max-h-[60vh] overflow-y-auto">
+                    {mapperEntries.map((e) => {
+                      const isActive = !stackedMappers && resolvedMapperTab === e.key;
+                      return (
+                        <button
+                          key={e.key}
+                          type="button"
+                          onClick={() => { setActiveMapperTab(e.key); setStackedMappers(false); }}
+                          className={cn(
+                            'w-full text-left rounded-xl border px-3 py-2.5 transition-all cursor-pointer',
+                            isActive ? 'border-indigo-400 bg-indigo-50/60 shadow-2xs' : 'border-slate-200 bg-white hover:bg-slate-50'
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-900 truncate">{e.label}</span>
+                            <span className={cn('text-[10px] font-bold whitespace-nowrap', e.ready ? 'text-emerald-600' : 'text-amber-600')}>
+                              {e.ready ? '● Ready' : '● Pending'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{e.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="px-3 py-2.5 border-t border-slate-200 flex items-center justify-between cursor-pointer">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">View all stacked</span>
+                    <input
+                      type="checkbox"
+                      checked={stackedMappers}
+                      onChange={(ev) => setStackedMappers(ev.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                  </label>
+                </aside>
+
+                <div className="min-w-0 space-y-8">
+                {/* Horizontal stream pills (View B) */}
+                {mapperView === 'pills' && (
+                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs p-2 sticky top-0 z-10">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      <span className="shrink-0 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest px-2">{readyMapperCount}/{mapperEntries.length} ready</span>
+                      {mapperEntries.map((e) => {
+                        const isActive = !stackedMappers && resolvedMapperTab === e.key;
+                        return (
+                          <button
+                            key={e.key}
+                            type="button"
+                            onClick={() => { setActiveMapperTab(e.key); setStackedMappers(false); }}
+                            className={cn(
+                              'shrink-0 inline-flex items-center gap-2 px-3 h-9 rounded-full border text-xs font-bold transition-all cursor-pointer whitespace-nowrap',
+                              isActive ? 'border-indigo-400 bg-indigo-50 text-indigo-800 shadow-2xs' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            )}
+                          >
+                            <span className={cn('w-1.5 h-1.5 rounded-full', e.ready ? 'bg-emerald-500' : 'bg-amber-400')} />
+                            <span className="max-w-[220px] truncate">{e.label}</span>
+                            <span className="text-[10px] font-semibold text-slate-400">{e.sub}</span>
+                          </button>
+                        );
+                      })}
+                      <label className="shrink-0 ml-auto inline-flex items-center gap-2 px-2 cursor-pointer">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">View all stacked</span>
+                        <input
+                          type="checkbox"
+                          checked={stackedMappers}
+                          onChange={(ev) => setStackedMappers(ev.target.checked)}
+                          className="h-4 w-4 accent-indigo-600"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
               <div className="space-y-8">
-                <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                <div className={cn("bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper('primary') && 'hidden')}>
                   <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{modeTerms.primaryBookLabel} Source</span>
                   </div>
@@ -581,7 +741,7 @@ export default function Reconciliation(props: any) {
                 </div>
 
                 {journals.map((j, idx) => (
-                  <div key={idx} className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div key={idx} className={cn("bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper(`journal:${idx}`) && 'hidden')}>
                     <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
                       <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Supplemental: {j.file.name}</span>
                     </div>
@@ -607,7 +767,7 @@ export default function Reconciliation(props: any) {
                 ))}
 
                 {twoBFile && (
-                  <div className="bg-white border border-indigo-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div className={cn("bg-white border border-indigo-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper('twob') && 'hidden')}>
                     <div className="bg-indigo-50/60 border-b border-indigo-200/60 px-4 py-2.5 flex items-center justify-between">
                       <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">{modeTerms.govtLabel} Source</span>
                     </div>
@@ -629,7 +789,7 @@ export default function Reconciliation(props: any) {
                 )}
 
                 {prCnFile && (
-                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div className={cn("bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper('prcn') && 'hidden')}>
                     <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between"><span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{modeTerms.primaryShort} Credit Notes</span></div>
                     <div className="p-2">
                       <ColumnMapper
@@ -648,7 +808,7 @@ export default function Reconciliation(props: any) {
                 )}
 
                 {prDnFile && (
-                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div className={cn("bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper('prdn') && 'hidden')}>
                     <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between"><span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{modeTerms.primaryShort} Debit Notes</span></div>
                     <div className="p-2">
                       <ColumnMapper
@@ -667,7 +827,7 @@ export default function Reconciliation(props: any) {
                 )}
 
                 {twoBDnFile && (
-                  <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div className={cn("bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper('twobdn') && 'hidden')}>
                     <div className="bg-slate-50/80 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between"><span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">{modeTerms.govtShort} Adjustments</span></div>
                     <div className="p-2">
                       <ColumnMapper
@@ -697,10 +857,11 @@ export default function Reconciliation(props: any) {
                       <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono">GSTR-1 Portal Sheet Mappings</h3>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-6 max-w-4xl">
+                    <div className="grid grid-cols-1 gap-6">
                       {Object.entries(portalMappings as Record<string, any>).map(([id, pMap]) => {
                         const file = portalQueue.find(q => q.id === id);
                         if (!file) return null;
+                        const portalKey = `portal:${id}`;
                         const docTitle = `PORTAL ${pMap.docType.toUpperCase()}`;
 
                         let vFields: any[] | undefined = undefined;
@@ -711,7 +872,7 @@ export default function Reconciliation(props: any) {
                         else if (pMap.docType === 'nil') vFields = ['returnPeriod', 'nilRated'];
 
                         return (
-                          <div key={id} className="bg-white border border-teal-200/80 rounded-2xl shadow-xs overflow-hidden">
+                          <div key={id} className={cn("bg-white border border-teal-200/80 rounded-2xl shadow-xs overflow-hidden", !showMapper(portalKey) && 'hidden')}>
                             <div className="bg-teal-50/60 border-b border-teal-200/60 px-4 py-2.5 flex items-center justify-between">
                               <span className="text-[10px] font-bold text-teal-700 uppercase tracking-widest font-mono">{docTitle}</span>
                             </div>
@@ -754,11 +915,31 @@ export default function Reconciliation(props: any) {
                 )
               )}
 
-              {/* Stick actions */}
-              <div className="relative bg-white border border-slate-200/80 p-5 rounded-2xl flex items-center justify-between shadow-xs mt-8">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Pipeline status</p>
-                  <p className="text-xs font-bold text-emerald-600">All configurations loaded successfully</p>
+                </div>
+              </div>
+
+              {/* Sticky execution bar: back navigation, readiness meter, execute */}
+              <div className="sticky bottom-0 z-20 bg-white/95 backdrop-blur border border-slate-200/80 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setStep('upload')}
+                  className="inline-flex items-center gap-1.5 px-4 h-11 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer whitespace-nowrap"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Upload
+                </button>
+                <div className="flex-1 max-w-md space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest font-mono">
+                    <span className="text-slate-500">Pipeline readiness</span>
+                    <span className={readyMapperCount === mapperEntries.length ? 'text-emerald-600' : 'text-amber-600'}>
+                      {readyMapperCount}/{mapperEntries.length} sources ready
+                    </span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                    <div
+                      className={cn('h-full rounded-full transition-all duration-300', readyMapperCount === mapperEntries.length ? 'bg-emerald-500' : 'bg-amber-400')}
+                      style={{ width: `${mapperEntries.length ? Math.round((readyMapperCount / mapperEntries.length) * 100) : 0}%` }}
+                    />
+                  </div>
                 </div>
                 {processing ? (
                   <div className="w-56 space-y-2">
@@ -811,159 +992,121 @@ export default function Reconciliation(props: any) {
           )}
 
           {step === 'review' && (
-            <div className="max-w-5xl mx-auto space-y-8 silk-reveal pt-4">
-              {gstIssues && (gstIssues.suggested?.length > 0 || gstIssues.conflicts?.length > 0) ? (
-                <GSTVerification
-                issues={gstIssues}
-                onApply={(partyName, gstin) => {
-                  if (!results) return;
-                  const newResults = [...results];
-                  let updated = 0;
-                  for (const r of newResults) {
-                    if (r.prRecord && r.prRecord.supplierName === partyName) {
-                      r.prRecord.gstin = gstin;
-                      updated++;
-                    }
+            <GSTVerification
+              issues={gstIssues || { suggested: [], conflicts: [] }}
+              appliedGstins={appliedGstins || []}
+              totalRecords={results?.length || 0}
+              uniqueGstinsCount={
+                results
+                  ? new Set(
+                      results
+                        .flatMap((r: any) => [r.prRecord?.gstin, r.twoBRecord?.gstin])
+                        .filter(Boolean)
+                    ).size
+                  : 0
+              }
+              hasResults={Boolean((results && results.length > 0) || outputResults)}
+              mode={mode}
+              onBack={() => {
+                setStep('map');
+                safeSetItem('np_reco_step', 'map');
+              }}
+              onApply={(partyName, gstin) => {
+                if (!results) return;
+                const newResults = [...results];
+                let updated = 0;
+                for (const r of newResults) {
+                  if (r.prRecord && r.prRecord.supplierName === partyName) {
+                    r.prRecord.gstin = gstin;
+                    updated++;
                   }
-                  setResults(newResults);
+                }
+                setResults(newResults);
 
-                  const s = gstIssues.suggested.find((x) => x.supplierName === partyName);
-                  if (s) {
-                    const newApplied = [
-                      ...appliedGstins,
-                      {
-                        partyName: s.supplierName,
-                        originalGstin: s.originalGstin || 'Missing',
-                        appliedGstin: gstin,
-                        status: s.issueType || 'Corrected',
-                      }
-                    ];
-                    setAppliedGstins(newApplied);
-                    safeSetItem('np_reco_applied_gstins', JSON.stringify(newApplied));
-                  }
-
-                  const newIssues = {
-                    ...gstIssues,
-                    suggested: gstIssues.suggested.filter((s) => s.supplierName !== partyName)
-                  };
-                  setGstIssues(newIssues);
-                  safeSetItem('np_reco_issues', JSON.stringify(newIssues));
-                  idbSet('np_reco_results', newResults);
-                  safeRemoveItem('np_reco_results');
-                  toast.success(`Applied GSTIN to ${updated} record(s) for ${partyName}`);
-                }}
-                onApplyAll={(updates: Record<string, string> = {}) => {
-                  if (!results) return;
-                  const newResults = [...results];
-                  let updated = 0;
-                  for (const s of gstIssues.suggested) {
-                    const finalGstin = updates[s.supplierName] ?? s.suggestedGstin ?? '';
-                    for (const r of newResults) {
-                      if (r.prRecord && r.prRecord.supplierName === s.supplierName) {
-                        r.prRecord.gstin = finalGstin;
-                        updated++;
-                      }
-                    }
-                  }
-                  setResults(newResults);
-
+                const s = gstIssues?.suggested?.find((x: any) => x.supplierName === partyName);
+                if (s) {
                   const newApplied = [
                     ...appliedGstins,
-                    ...gstIssues.suggested.map((s) => ({
+                    {
                       partyName: s.supplierName,
                       originalGstin: s.originalGstin || 'Missing',
-                      appliedGstin: updates[s.supplierName] ?? s.suggestedGstin ?? '',
+                      appliedGstin: gstin,
                       status: s.issueType || 'Corrected',
-                    }))
+                    },
                   ];
                   setAppliedGstins(newApplied);
                   safeSetItem('np_reco_applied_gstins', JSON.stringify(newApplied));
+                }
 
-                  const newIssues = { ...gstIssues, suggested: [] };
-                  setGstIssues(newIssues);
-                  safeSetItem('np_reco_issues', JSON.stringify(newIssues));
-                  idbSet('np_reco_results', newResults);
-                  safeRemoveItem('np_reco_results');
-                  toast.success(`Successfully applied all ${gstIssues.suggested.length} suggested GSTINs to ${updated} records!`);
-                }}
-                onProceed={() => {
-                  setStep('results');
-                  safeSetItem('np_reco_step', 'results');
-                }}
-              />
-            ) : (
-              <div className="bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xs text-center space-y-5 max-w-2xl mx-auto">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-2xs">
-                  <ShieldCheck className="w-8 h-8" />
-                </div>
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-2">
-                    Verification Clean · 100% Validated
-                  </div>
-                  <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">No GSTIN Conflicts or Format Errors</h3>
-                  <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-                    All party GSTINs, state codes, and invoice tax structures in your uploaded files have passed validation. There are no pending conflicts requiring manual correction.
-                  </p>
-                </div>
+                const newIssues = {
+                  ...(gstIssues || { suggested: [], conflicts: [] }),
+                  suggested: (gstIssues?.suggested || []).filter((item: any) => item.supplierName !== partyName),
+                };
+                setGstIssues(newIssues);
+                safeSetItem('np_reco_issues', JSON.stringify(newIssues));
+                idbSet('np_reco_results', newResults);
+                safeRemoveItem('np_reco_results');
+                toast.success(`Applied GSTIN to ${updated} record(s) for ${partyName}`);
+              }}
+              onApplyAll={(updates: Record<string, string> = {}) => {
+                if (!results || !gstIssues?.suggested) return;
+                const newResults = [...results];
+                let updated = 0;
+                for (const s of gstIssues.suggested) {
+                  const finalGstin = updates[s.id] ?? updates[s.supplierName] ?? s.suggestedGstin ?? '';
+                  for (const r of newResults) {
+                    if (r.prRecord && r.prRecord.supplierName === s.supplierName) {
+                      r.prRecord.gstin = finalGstin;
+                      updated++;
+                    }
+                  }
+                }
+                setResults(newResults);
 
-                {appliedGstins && appliedGstins.length > 0 && (
-                  <div className="text-left bg-slate-50 border border-slate-200 rounded-2xl p-4 max-h-48 overflow-y-auto">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2 font-mono">
-                      Previously Applied Corrections ({appliedGstins.length})
-                    </p>
-                    <div className="space-y-1.5 text-xs text-slate-700">
-                      {appliedGstins.map((item: any, i: number) => (
-                        <div key={i} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0 font-mono text-[11px]">
-                          <span className="font-semibold text-slate-800">{item.partyName}</span>
-                          <span className="text-emerald-600 font-bold">{item.appliedGstin}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                const newApplied = [
+                  ...appliedGstins,
+                  ...gstIssues.suggested.map((s: any) => ({
+                    partyName: s.supplierName,
+                    originalGstin: s.originalGstin || 'Missing',
+                    appliedGstin: updates[s.id] ?? updates[s.supplierName] ?? s.suggestedGstin ?? '',
+                    status: s.issueType || 'Corrected',
+                  })),
+                ];
+                setAppliedGstins(newApplied);
+                safeSetItem('np_reco_applied_gstins', JSON.stringify(newApplied));
 
-                <div className="flex items-center justify-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setStep('map')}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
-                  >
-                    ← Back to Pipeline
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('results');
-                      safeSetItem('np_reco_step', 'results');
-                    }}
-                    className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-all flex items-center gap-2 cursor-pointer"
-                  >
-                    <span>Proceed to 4 Dashboard</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-            </div>
+                const newIssues = { ...gstIssues, suggested: [] };
+                setGstIssues(newIssues);
+                safeSetItem('np_reco_issues', JSON.stringify(newIssues));
+                idbSet('np_reco_results', newResults);
+                safeRemoveItem('np_reco_results');
+                toast.success(`Successfully applied all ${gstIssues.suggested.length} suggested GSTINs to ${updated} records!`);
+              }}
+              onProceed={() => {
+                setStep('results');
+                safeSetItem('np_reco_step', 'results');
+              }}
+            />
           )}
 
           {step === 'results' && mode === 'output' && (
             outputResults ? (
               <OutputDashboard
-              results={outputResults}
-              onDownload={() => {
-                const blob = new Blob([outputResults.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = "GSTR1_Reconciliation_Output.xlsx";
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => window.URL.revokeObjectURL(url), 60000);
-                document.body.removeChild(a);
-                toast.success("Detailed Output Report Downloaded!");
-              }}
-            />
+                results={outputResults}
+                companyName={companyName}
+                onDownload={() => {
+                  const blob = new Blob([outputResults.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = "GSTR1_Reconciliation_Output.xlsx";
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+                  document.body.removeChild(a);
+                  toast.success("Detailed Output Report Downloaded!");
+                }}
+              />
             ) : (
               <div className="bg-white border border-slate-200/80 rounded-3xl p-10 shadow-xs text-center space-y-5 max-w-xl mx-auto my-8">
                 <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-2xs">
@@ -975,7 +1118,7 @@ export default function Reconciliation(props: any) {
                   </div>
                   <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">No Sales Reconciliation Results Yet</h3>
                   <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-                    Upload your Sales Register and GSTR-1 files in Step 1 (Source) and click "Execute Match Engine" in Step 2 (Pipeline), or restore an existing snapshot from Cloud History.
+                    Upload your Sales Register and GSTR-1 files in Step 1 (Source) and click &ldquo;Execute Match Engine&rdquo; in Step 2 (Pipeline), or restore an existing snapshot from Cloud History.
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-3 pt-2">
@@ -984,7 +1127,7 @@ export default function Reconciliation(props: any) {
                     onClick={() => setStep('upload')}
                     className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all flex items-center gap-2 cursor-pointer"
                   >
-                    <CloudDownload className="w-4 h-4" /> Go to 1 Source
+                    <CloudDownload className="w-4 h-4" /> Go to Step 1: Source
                   </button>
                   <button
                     type="button"
@@ -1001,100 +1144,212 @@ export default function Reconciliation(props: any) {
           {step === 'results' && mode === 'input' && (
             (results && summary) ? (
               <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, type: 'spring', bounce: 0.2 }}
-              className="space-y-10 silk-reveal pt-4 max-w-6xl mx-auto w-full"
-            >
-              <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-6 pb-6 border-b border-slate-200">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Audit Complete
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="space-y-6 silk-reveal pt-4 max-w-[1560px] mx-auto px-2 sm:px-4 w-full"
+              >
+                {/* Executive Command Header */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Audit Complete · Input ITC Engine
+                      </span>
+                      <span className="text-[11px] font-mono font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-full">
+                        {results.length.toLocaleString('en-IN')} Records · {new Set(results.map((r: any) => r.prRecord?.gstin || r.twoBRecord?.gstin || r.prRecord?.supplierName || r.twoBRecord?.supplierName).filter(Boolean)).size.toLocaleString('en-IN')} Parties
+                      </span>
+                      {lastSavedRun && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Saved {lastSavedRun}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                      {companyName || 'Reconciliation Summary'}
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Section 16(2)(aa) Purchase Register vs GSTR-2B executive summary, variance ledger, and vendor dispute workspace.
+                    </p>
                   </div>
-                  <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">{companyName || 'Reconciliation Summary'}</h2>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold font-mono">MATCH REPORT GENERATED</p>
+
+                  {/* Cleanly Grouped Action Strips */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto flex-wrap">
+                    {/* Group 1: Session Persistence */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleSaveReconciliationRun}
+                        disabled={isSavingRun}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Save current reconciliation session to SQLite database with vendor disputes"
+                      >
+                        <HardDrive className="w-3.5 h-3.5" /> {isSavingRun ? 'Saving...' : 'Save Run'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsHistoryOpen(true)}
+                        className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                        title="View & restore past reconciliation snapshots"
+                      >
+                        <History className="w-3.5 h-3.5 text-purple-600" /> History
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveToDrive}
+                        className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                        title="Save current reconciliation snapshot to Google Drive"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5" /> Drive
+                      </button>
+                    </div>
+
+                    {/* Group 2: Excel Report Suite */}
+                    <div className="inline-flex items-center flex-wrap gap-1 p-1 rounded-xl bg-slate-50 border border-slate-200">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 font-mono hidden sm:inline">
+                        Excel:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleExportMonthly}
+                        className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-lg font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <CloudDownload className="w-3.5 h-3.5 text-indigo-600" /> Monthly
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleExportMonthlyDiff}
+                        className="px-2.5 py-1.5 bg-white hover:bg-amber-50 border border-slate-200/80 hover:border-amber-200 text-slate-700 hover:text-amber-700 rounded-lg font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <CloudDownload className="w-3.5 h-3.5 text-amber-600" /> Diff Sheets
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleExportParty}
+                        className="px-2.5 py-1.5 bg-white hover:bg-blue-50 border border-slate-200/80 hover:border-blue-200 text-slate-700 hover:text-blue-700 rounded-lg font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <CloudDownload className="w-3.5 h-3.5 text-blue-600" /> Party-Wise
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleExportDebitNotes}
+                        className="px-2.5 py-1.5 bg-white hover:bg-orange-50 border border-slate-200/80 hover:border-orange-200 text-slate-700 hover:text-orange-700 rounded-lg font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Download 5-Sheet Reconciled Debit Notes (GSTR-2B vs Books) Report"
+                      >
+                        <Receipt className="w-3.5 h-3.5 text-orange-600" /> Debit Notes
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap">
-                  {lastSavedRun && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Saved {lastSavedRun}
-                    </span>
-                  )}
-                  <button
-                    onClick={handleSaveReconciliationRun}
-                    disabled={isSavingRun}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                    title="Save current reconciliation session to SQLite database with vendor disputes"
-                  >
-                    <HardDrive className="w-3.5 h-3.5" /> {isSavingRun ? 'Saving...' : 'Save Reco Run'}
-                  </button>
-                  <button
-                    onClick={() => setIsHistoryOpen(true)}
-                    className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-2xs transition-all cursor-pointer"
-                    title="View & restore past reconciliation snapshots (SQLite DB, Local PC & Cloud)"
-                  >
-                    <History className="w-3.5 h-3.5 text-purple-600" /> Saved Reco History
-                  </button>
-                  <button
-                    onClick={handleSaveToDrive}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-                    title="Save current reconciliation snapshot directly to Google Drive"
-                  >
-                    <UploadCloud className="w-3.5 h-3.5" /> Save to Drive
-                  </button>
-                  <button onClick={handleExportMonthly} className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-2xs transition-all">
-                    <CloudDownload className="w-3.5 h-3.5 text-indigo-600" /> Monthly
-                  </button>
-                  <button onClick={handleExportMonthlyDiff} className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-2xs transition-all">
-                    <CloudDownload className="w-3.5 h-3.5 text-amber-600" /> Diff Sheets
-                  </button>
-                  <button onClick={handleExportParty} className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-2xs transition-all">
-                    <CloudDownload className="w-3.5 h-3.5 text-blue-600" /> Party-Wise
-                  </button>
-                  <button onClick={handleExportDebitNotes} className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-2xs transition-all" title="Download 5-Sheet Reconciled Debit Notes (GSTR-2B vs Books) Report">
-                    <Receipt className="w-3.5 h-3.5 text-orange-600" /> Debit Notes
-                  </button>
-                </div>
-              </div>
+                {/* Financial & Status KPI Summary Strip */}
+                <SummaryCards
+                  summary={summary}
+                  results={results}
+                  activeFilter={dashboardTab === 'ledger' ? ledgerCategory : undefined}
+                  onFilterSelect={(key) => {
+                    setLedgerCategory(key as CategoryKey);
+                    setDashboardTab('ledger');
+                  }}
+                />
 
-              {/* Summary card grids */}
-              <SummaryCards summary={summary} />
-
-              {/* Detailed results tabs */}
-              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
-                <div className="bg-slate-50/80 flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></div>
-                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest font-mono">Reconciliation Audit Ledger</span>
+                {/* Workspace Navigation Tabs */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-1.5 shadow-xs flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Reconciliation Dashboard Views">
+                    {([
+                      {
+                        id: 'overview',
+                        label: 'Overview & Insights',
+                        icon: LayoutDashboard,
+                        desc: 'Charts & priorities',
+                      },
+                      {
+                        id: 'ledger',
+                        label: 'Invoice Audit Ledger',
+                        icon: ListChecks,
+                        count: results.length,
+                      },
+                      {
+                        id: 'parties',
+                        label: 'Party-Wise Studio',
+                        icon: Users,
+                        count: new Set(
+                          results
+                            .map((r: any) => r.prRecord?.gstin || r.twoBRecord?.gstin || r.prRecord?.supplierName || r.twoBRecord?.supplierName)
+                            .filter(Boolean)
+                        ).size,
+                      },
+                      {
+                        id: 'monthly',
+                        label: 'Monthly 3-Way Matrix',
+                        icon: CalendarRange,
+                      },
+                    ] as const).map((tab) => {
+                      const active = dashboardTab === tab.id;
+                      const Icon = tab.icon;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setDashboardTab(tab.id)}
+                          className={cn(
+                            'inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer',
+                            active
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                          )}
+                        >
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span>{tab.label}</span>
+                          {'count' in tab && tab.count !== undefined && (
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded-full text-[10px] font-mono font-bold tabular-nums',
+                                active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200/80'
+                              )}
+                            >
+                              {tab.count.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={() => setAuditLedgerCollapsed(!auditLedgerCollapsed)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all border bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-2xs"
-                    title={auditLedgerCollapsed ? "Expand Audit Ledger" : "Collapse Audit Ledger"}
-                  >
-                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", auditLedgerCollapsed && "rotate-180")} />
-                    {auditLedgerCollapsed ? "Expand" : "Collapse"}
-                  </button>
+                  <span className="text-[11px] font-medium text-slate-500 px-3 hidden lg:inline">
+                    Click any KPI card above to jump directly to its filtered invoices
+                  </span>
                 </div>
-                {!auditLedgerCollapsed && (
-                  <div className="p-3">
-                    <ResultsCategoryTabs results={results} summary={summary} companyName={companyName} mode={mode} debitNotes={parsedDebitNotes} />
-                  </div>
-                )}
-              </div>
 
-              {/* Breakdown sections - Full Width for Party-wise Intelligence & Monthly Suite */}
-              <div className="space-y-6">
-                <div className="w-full min-w-0">
-                  <PartyWiseReport
+                {/* Active Workspace Tab Content */}
+                {dashboardTab === 'overview' && (
+                  <ReconciliationInsights
                     results={results}
+                    summary={summary}
+                    debitNotes={parsedDebitNotes}
+                    gstr3bData={gstr3bData}
+                    mode={mode}
+                    onOpenLedger={(categoryKey) => {
+                      if (categoryKey) setLedgerCategory(categoryKey as CategoryKey);
+                      setDashboardTab('ledger');
+                    }}
+                    onOpenPartyStudio={() => setDashboardTab('parties')}
+                    onOpenMonthlyMatrix={() => setDashboardTab('monthly')}
+                  />
+                )}
+
+                {dashboardTab === 'ledger' && (
+                  <ResultsCategoryTabs
+                    results={results}
+                    summary={summary}
                     companyName={companyName}
                     mode={mode}
                     debitNotes={parsedDebitNotes}
-                    partyDisputes={partyDisputes}
-                    onPartyDisputesChange={setPartyDisputes}
+                    activeCategory={ledgerCategory}
+                    onCategoryChange={setLedgerCategory}
                     onResultsChange={(newRes) => {
                       setResults(newRes);
                       setSummary(getSummary(newRes));
@@ -1102,43 +1357,38 @@ export default function Reconciliation(props: any) {
                       safeRemoveItem('np_reco_results');
                     }}
                   />
-                </div>
-                <div className="w-full min-w-0">
-                  <MonthlyBreakdown results={results} debitNotes={parsedDebitNotes} companyName={companyName} gstr3bData={gstr3bData} />
-                </div>
-              </div>
+                )}
 
-              {/* Mini stats cards footer */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-indigo-300 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-600 shadow-2xs"><ShieldCheck className="w-5 h-5" /></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Perfect Matches</p>
-                      <p className="text-2xl font-black font-mono text-slate-900 mt-0.5">{summary.perfectMatch.toLocaleString('en-IN')}</p>
-                    </div>
+                {dashboardTab === 'parties' && (
+                  <div className="w-full min-w-0">
+                    <PartyWiseReport
+                      results={results}
+                      companyName={companyName}
+                      mode={mode}
+                      debitNotes={parsedDebitNotes}
+                      partyDisputes={partyDisputes}
+                      onPartyDisputesChange={setPartyDisputes}
+                      onResultsChange={(newRes) => {
+                        setResults(newRes);
+                        setSummary(getSummary(newRes));
+                        idbSet('np_reco_results', newRes);
+                        safeRemoveItem('np_reco_results');
+                      }}
+                    />
                   </div>
-                </div>
-                <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-rose-300 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200/80 flex items-center justify-center text-rose-600 shadow-2xs"><Plus className="w-5 h-5 transform rotate-45" /></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Value Mismatches</p>
-                      <p className="text-2xl font-black font-mono text-slate-900 mt-0.5">{summary.valueMismatch.toLocaleString('en-IN')}</p>
-                    </div>
+                )}
+
+                {dashboardTab === 'monthly' && (
+                  <div className="w-full min-w-0">
+                    <MonthlyBreakdown
+                      results={results}
+                      debitNotes={parsedDebitNotes}
+                      companyName={companyName}
+                      gstr3bData={gstr3bData}
+                    />
                   </div>
-                </div>
-                <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-2xs"><CheckCircle2 className="w-5 h-5" /></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Accuracy Ratio</p>
-                      <p className="text-2xl font-black font-mono text-slate-900 mt-0.5">{summary.total > 0 ? ((summary.perfectMatch / summary.total) * 100).toFixed(1) : '0.0'}%</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+                )}
+              </motion.div>
             ) : (
               <div className="bg-white border border-slate-200/80 rounded-3xl p-10 shadow-xs text-center space-y-5 max-w-xl mx-auto my-8">
                 <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center mx-auto shadow-2xs">
@@ -1159,7 +1409,7 @@ export default function Reconciliation(props: any) {
                     onClick={() => setStep('upload')}
                     className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-all flex items-center gap-2 cursor-pointer"
                   >
-                    <CloudDownload className="w-4 h-4" /> Go to 1 Source
+                    <CloudDownload className="w-4 h-4" /> Go to Step 1: Source
                   </button>
                   <button
                     type="button"

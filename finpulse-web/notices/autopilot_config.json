@@ -1,0 +1,23 @@
+{
+  "module": "GST Notices Autopilot",
+  "version": "1.0.0",
+  "routes": {
+    "dashboard": "https://services.gst.gov.in/services/auth/dashboard",
+    "view_notices": "https://services.gst.gov.in/services/auth/viewnotices",
+    "additional_notices": "https://services.gst.gov.in/services/auth/viewadditionalnotices"
+  },
+  "selectors": {
+    "nav_services": "a:has-text('Services')",
+    "nav_user_services": "a:has-text('User Services')",
+    "view_notices_menu": "a:has-text('View Notices and Orders')",
+    "additional_notices_menu": "a:has-text('View Additional Notices and Orders')",
+    "notice_table_rows": "table tbody tr",
+    "download_attachment": "a[href*='download'], button:has-text('Download')"
+  },
+  "timeouts": {
+    "navigation_ms": 30000,
+    "download_ms": 15000,
+    "login_wait_ms": 180000
+  }
+}
+

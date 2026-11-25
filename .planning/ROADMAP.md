@@ -2,6 +2,28 @@
 
 ## Milestones
 
+### **Milestone v2.10: Public Website & Web Build** (Phases 42–46) — IN PROGRESS
+
+- [ ] **Phase 42: Web Build Foundation** (WEB-01, WEB-02, WEB-03, WEB-04, WEB-13)
+  - Add `VITE_WEB_BUILD` flag. Hide or replace server/Tally/Playwright features with "Desktop app mein available". Skip login and license screens in web build. Flag off = desktop unchanged.
+  - Success: web build starts with no server; desktop tests still pass.
+
+- [x] **Phase 43: Browser-Only Suites** (WEB-05, WEB-07, WEB-12) — DONE in working tree, not yet committed
+  - GST Reconciliation and Income Tax calculator run in the browser. Server save and 26AS/AIS steps hidden. Income Tax Excel merged cells removed.
+  - TDS moved to Phase 45 (its mapping runs on the server DB).
+
+- [ ] **Phase 44: Website & Download Page** (WEB-08, WEB-09)
+  - Landing page and download page for the desktop `.exe`, plain business language.
+  - Success: both pages render; download link resolves to the latest release.
+
+- [ ] **Phase 45: TDS Web Version** (WEB-06)
+  - Make TDS Reconciliation run in the browser. The ledger/party mapping and reconcile step currently call `/api/tds/*` (server DB). Replace with browser-side mapping (stored in IndexedDB/localStorage) and call `reconcileTds` from `src/lib/tdsEngine.ts`. Until then the route stays "Desktop app mein available" in the web build.
+  - Success: a TDS run from uploaded Tally + 26Q files completes in the web build, zero merged cells in the Excel export.
+
+- [ ] **Phase 46: Cloudflare Pages Deploy** (WEB-10, WEB-11, WEB-14)
+  - Deploy on Cloudflare Pages free tier, point DNS for `finpulse.co.in`, run full Vitest and build gate.
+  - Success: `https://finpulse.co.in` serves the web build over HTTPS.
+
 ### **Milestone v2.9: Architectural Decoupling, Inter-Module Isolation & Scoped Tally Session Management** (Phases 40–41) — SHIPPED (2026-11-15)
 
 - [x] **Phase 40: Comprehensive Inter-Module Decoupling, Standalone Self-Sufficiency & Scoped Tally Session Management (3 Plans: 40-01 .. 40-03)** (completed 2026-11-15)

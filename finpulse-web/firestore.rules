@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All licensing, user, config, audit, and usage collections are server-only
+    // and accessed strictly via Firebase Admin SDK inside Cloud Functions.
+    match /serial_keys/{key} {
+      allow read, write: if false;
+    }
+
+    match /network_users/{user} {
+      allow read, write: if false;
+    }
+
+    match /app_config/{config} {
+      allow read, write: if false;
+    }
+
+    match /system_config/{docId} {
+      allow read, write: if false;
+    }
+
+    match /module_usage/{docId} {
+      allow read, write: if false;
+    }
+
+    match /audit_logs/{docId} {
+      allow read, write: if false;
+    }
+
+    // Default deny-all for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

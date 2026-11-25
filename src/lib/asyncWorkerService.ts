@@ -11,7 +11,7 @@ export type ProgressCallback = (stage: string, percent: number) => void;
  */
 export async function parseFileAsync(
   file: File,
-  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean },
+  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean; strictSheet?: boolean },
   onProgress?: ProgressCallback
 ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   // If options was passed as second param callback (overload convenience)
@@ -79,7 +79,7 @@ export async function parseFileAsync(
 
 async function fallbackParseFile(
   file: File,
-  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean },
+  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; headersOnly?: boolean; strictSheet?: boolean },
   onProgress?: ProgressCallback
 ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   onProgress?.(`Parsing ${file.name} on main thread...`, 50);

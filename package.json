@@ -7,7 +7,7 @@
   "main": "main.cjs",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"node server.js\" \"vite --host\"",
+    "start": "concurrently \"node server.js\" \"wait-on tcp:127.0.0.1:3001 && vite --host\"",
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",

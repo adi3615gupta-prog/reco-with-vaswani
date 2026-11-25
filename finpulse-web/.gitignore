@@ -1,0 +1,68 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+dist-electron
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+t e s t - t a l l y * . c j s  
+credentials.json
+*.db
+*.db-shm
+*.db-wal
+*.bak
+*.log
+.env
+audit_logs.json
+banned_users.json
+network_users.json
+server_config.json
+central_clients_vault.json
+gst_returns_data/
+*.tmp_*
+dist-electron
+dist  
+
+.vault_key
+.integrity_private.pem
+firebase-functions/node_modules/
+firebase-functions/.env
+license-gateway/node_modules/
+license-gateway/.env
+license-gateway/.vercel/
+# Media & Audio/Video renders
+*.mp4
+*.wav
+*.mp3
+*.m4a
+*.pptx
+*.sqlite
+*.sqlite3
+cinematic-projects/
+preview_*.mp4
+_SECRETS_AND_DATABASE_FOR_LAPTOP2/
+
+# Existing ignore rules
+OTHERS/
+notice test/
+19-20/
+reco_history/
+scratch/

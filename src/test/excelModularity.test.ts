@@ -174,4 +174,62 @@ describe('Phase 02 - Excel Modularity & Styles Suite', () => {
       }
     });
   });
+
+  describe('Sheet Selection & First-Sheet-Only Rule', () => {
+    const toMockFile = (wb: any): File => {
+      const raw = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+      const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+      const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+      return { name: 'test.xlsx', arrayBuffer: async () => ab } as unknown as File;
+    };
+
+    it('always reads the 1st sheet for both Books and Portal uploads regardless of docType or extra tabs', async () => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Party Name', 'Invoice No', 'Taxable Value'],
+        ['Sheet1 Party', 'S1-001', 1000],
+      ]), 'Purchase');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Party Name', 'Invoice No', 'Taxable Value'],
+        ['B2B Sheet Party', 'B2B-999', 5000],
+      ]), 'B2B');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Party Name', 'Invoice No', 'Taxable Value'],
+        ['CDNR Sheet Party', 'CN-888', 200],
+      ]), 'CDNR');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Party Name', 'Invoice No', 'Taxable Value'],
+        ['Sheet2 Party', 'S2-777', 300],
+      ]), 'Sheet2');
+
+      const portal2bRes = await FileParser.parseFile(toMockFile(wb), { findHeader: true, docType: '2b' });
+      expect(portal2bRes.rows).toHaveLength(1);
+      expect(portal2bRes.rows[0]['Invoice No']).toBe('S1-001');
+
+      const portalCnRes = await FileParser.parseFile(toMockFile(wb), { findHeader: true, docType: 'cn' });
+      expect(portalCnRes.rows).toHaveLength(1);
+      expect(portalCnRes.rows[0]['Invoice No']).toBe('S1-001');
+
+      const booksRes = await FileParser.parseFile(toMockFile(wb));
+      expect(booksRes.rows).toHaveLength(1);
+      expect(booksRes.rows[0]['Invoice No']).toBe('S1-001');
+    });
+
+    it('returns empty when strictSheet is true and requested sheet is absent', async () => {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([
+        ['Party Name', 'Invoice No', 'Taxable Value'],
+        ['Acme Corp', 'INV-001', 1000],
+      ]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
+
+      const strictRes = await FileParser.parseFile(toMockFile(wb), { sheetName: 'Sheet2', strictSheet: true });
+      expect(strictRes.headers).toEqual([]);
+      expect(strictRes.rows).toEqual([]);
+
+      const fallbackRes = await FileParser.parseFile(toMockFile(wb), { sheetName: 'Sheet2' });
+      expect(fallbackRes.rows).toHaveLength(1);
+      expect(fallbackRes.rows[0]['Invoice No']).toBe('INV-001');
+    });
+  });
 });

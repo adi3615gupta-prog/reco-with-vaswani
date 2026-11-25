@@ -178,8 +178,9 @@ const authenticateToken = (req, res, next) => {
     const getIsLocal = () => {
         // Use the real socket only: x-forwarded-for is client-controlled. Public tunnel traffic also arrives on loopback, so exclude it.
         const sock = String(req.socket.remoteAddress || '').replace('::ffff:', '');
-        const viaTunnel = /loca\.lt/i.test(`${req.headers['host'] || ''} ${req.headers['x-forwarded-host'] || ''}`);
-        return (sock === '127.0.0.1' || sock === '::1') && !viaTunnel;
+        // While a public tunnel is open, all tunnel traffic arrives on loopback and the Host header is client-controlled, so trust nothing on loopback.
+        if (activeTunnel) return false;
+        return sock === '127.0.0.1' || sock === '::1';
     };
 
     if (!token || token === 'null' || token === 'undefined') {
@@ -834,9 +835,12 @@ const TUNNEL_BLOCKED_PREFIXES = ['/activate', '/reset-license', '/keys', '/users
 import localtunnel from 'localtunnel';
 
 const isTunnelRequest = (req) => {
+    if (!activeTunnel) return false;
     const fwdHost = String(req.headers['x-forwarded-host'] || '').toLowerCase();
     const host = String(req.headers['host'] || '').toLowerCase();
-    return Boolean(activeTunnel) && (fwdHost.includes('loca.lt') || host.includes('loca.lt'));
+    const sock = String(req.socket.remoteAddress || '').replace('::ffff:', '');
+    // Tunnel traffic arrives on loopback with a client-chosen Host header, so any loopback request counts as possible tunnel traffic.
+    return sock === '127.0.0.1' || sock === '::1' || fwdHost.includes('loca.lt') || host.includes('loca.lt');
 };
 
 app.use('/api', (req, res, next) => {
@@ -2430,7 +2434,7 @@ app.get('/audit', authenticateToken, (req, res) => {
 });
 let auditWriteQueue = Promise.resolve();
 app.post('/audit', authenticateToken, (req, res) => {
-    auditWriteQueue = auditWriteQueue.then(() => {
+    const write = auditWriteQueue.then(() => {
         const logs = getAuditLogs();
         logs.unshift({
             id: Date.now().toString(),
@@ -2442,7 +2446,9 @@ app.post('/audit', authenticateToken, (req, res) => {
         if (logs.length > 500) logs.pop();
         fs.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
     });
-    auditWriteQueue
+    // Keep the queue alive after a failed write, so one locked-file error doesn't block every later audit write.
+    auditWriteQueue = write.catch(() => {});
+    write
         .then(() => res.json({ success: true }))
         .catch((err) => res.status(500).json({ success: false, error: err.message }));
 });

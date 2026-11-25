@@ -329,16 +329,16 @@ export function MonthlyBreakdown({ results, debitNotes, companyName, gstr3bData 
           {/* Advice warning notice */}
           {gstr3bData ? (
             <div className="p-3.5 bg-indigo-50/40 border-b border-indigo-100 flex items-start gap-2">
-              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-slate-600 leading-relaxed">
-                Comparing <strong className="text-slate-900 font-bold">Books (PR)</strong> vs <strong className="text-slate-900 font-bold">Government (2B)</strong> vs <strong className="text-slate-900 font-bold">Claimed (3B)</strong> month-wise. Variances indicate mismatch gaps.
+              <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-slate-700 leading-relaxed">
+                Comparing <strong className="text-slate-900 font-bold">Books (PR)</strong> vs <strong className="text-slate-900 font-bold">Government (2B)</strong> vs <strong className="text-slate-900 font-bold">Claimed (3B)</strong> month-wise. Positive or negative variances indicate ITC claim or timing gaps.
               </div>
             </div>
           ) : (
             <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-start gap-2">
-              <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-              <div className="text-[9.5px] text-slate-500 leading-relaxed">
-                Upload a GSTR-3B Excel summary file in the upload zone to automatically populate the 3B-related comparison matrices!
+              <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+              <div className="text-xs text-slate-600 leading-relaxed">
+                Showing <strong className="text-slate-800">Books (PR)</strong> vs <strong className="text-slate-800">GSTR-2B</strong> month-wise. Upload a GSTR-3B Excel summary in Step 1 (Source) to unlock 3-way GSTR-3B comparison columns.
               </div>
             </div>
           )}

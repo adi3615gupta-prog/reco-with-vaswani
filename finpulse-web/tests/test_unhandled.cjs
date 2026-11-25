@@ -1,0 +1,1 @@
+const { app, dialog } = require('electron'); app.whenReady().then(() => { Promise.reject(new Error('Unhandled Promise Rejection Test')); });

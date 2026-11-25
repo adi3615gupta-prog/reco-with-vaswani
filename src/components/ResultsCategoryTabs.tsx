@@ -1,8 +1,18 @@
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, CheckCircle2, AlertTriangle, XCircle, FileText, UserX, LayoutGrid, BookOpen, Landmark, Receipt } from 'lucide-react';
+import {
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  FileText,
+  UserX,
+  LayoutGrid,
+  Receipt,
+  ShieldAlert,
+  Search,
+  ListChecks,
+} from 'lucide-react';
 import { ResultsTable } from './ResultsTable';
 import { exportToXlsx, exportWorkbookAsync } from '@/lib/fileParser';
 import {
@@ -13,15 +23,29 @@ import {
 import type { ReconciliationResult, MatchStatus, ReconciliationSummary } from '@/lib/reconciliation';
 import { cn } from '@/lib/utils';
 
+export type CategoryKey =
+  | 'all'
+  | 'perfect'
+  | 'valueMismatch'
+  | 'invoiceMissing'
+  | 'unmatchedVendor'
+  | 'missingPR'
+  | 'debitNotes'
+  | 'taxTypeError'
+  | 'wrongGstin'
+  | 'booksInput'
+  | 'portalInput';
+
 interface ResultsCategoryTabsProps {
   results: ReconciliationResult[];
   summary: ReconciliationSummary;
   companyName: string;
   mode?: 'input' | 'output';
   debitNotes?: { pr?: any[]; twoB?: any[] };
+  activeCategory?: CategoryKey;
+  onCategoryChange?: (category: CategoryKey) => void;
+  onResultsChange?: (newResults: ReconciliationResult[]) => void;
 }
-
-type CategoryKey = 'all' | 'perfect' | 'valueMismatch' | 'invoiceMissing' | 'unmatchedVendor' | 'missingPR' | 'debitNotes' | 'taxTypeError' | 'booksInput' | 'portalInput';
 
 interface Category {
   key: CategoryKey;
@@ -29,8 +53,8 @@ interface Category {
   icon: React.ElementType;
   statuses: MatchStatus[];
   count: number;
-  color: string;
-  activeColor: string;
+  iconColor: string;
+  alwaysVisible?: boolean;
 }
 
 function getExportData(results: ReconciliationResult[]) {
@@ -39,8 +63,14 @@ function getExportData(results: ReconciliationResult[]) {
     const tb = r.twoBRecord;
     const taxablePR = pr?.taxableValue ?? tb?.taxableValue;
     const taxable2B = tb?.taxableValue ?? pr?.taxableValue;
-    const invoiceValuePR = taxablePR !== undefined ? taxablePR + (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0) : '';
-    const invoiceValue2B = taxable2B !== undefined ? taxable2B + (tb?.igst ?? pr?.igst ?? 0) + (tb?.cgst ?? pr?.cgst ?? 0) + (tb?.sgst ?? pr?.sgst ?? 0) : '';
+    const invoiceValuePR =
+      taxablePR !== undefined
+        ? taxablePR + (pr?.igst ?? tb?.igst ?? 0) + (pr?.cgst ?? tb?.cgst ?? 0) + (pr?.sgst ?? tb?.sgst ?? 0)
+        : '';
+    const invoiceValue2B =
+      taxable2B !== undefined
+        ? taxable2B + (tb?.igst ?? pr?.igst ?? 0) + (tb?.cgst ?? pr?.cgst ?? 0) + (tb?.sgst ?? pr?.sgst ?? 0)
+        : '';
     return {
       Status: r.status,
       'GSTIN (PR)': pr?.gstin || '',
@@ -69,8 +99,23 @@ function getExportData(results: ReconciliationResult[]) {
   });
 }
 
-export function ResultsCategoryTabs({ results, summary, companyName, mode = 'input', debitNotes }: ResultsCategoryTabsProps) {
-  const [active, setActive] = useState<CategoryKey>('all');
+export function ResultsCategoryTabs({
+  results,
+  summary,
+  companyName,
+  mode = 'input',
+  debitNotes,
+  activeCategory,
+  onCategoryChange,
+  onResultsChange,
+}: ResultsCategoryTabsProps) {
+  const [internalActive, setInternalActive] = useState<CategoryKey>('all');
+  const [search, setSearch] = useState('');
+  const active = activeCategory ?? internalActive;
+  const setActive = (cat: CategoryKey) => {
+    if (onCategoryChange) onCategoryChange(cat);
+    else setInternalActive(cat);
+  };
 
   const rawBooksData = Array.from(
     new Map(
@@ -79,19 +124,22 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
         .map((r) => {
           const pr = r.prRecord!;
           const key = `${pr.gstin}_${pr.invoiceNo}_${pr.invoiceDate}_${pr.igst}_${pr.cgst}_${pr.sgst}`;
-          return [key, {
-            'Financial Year': pr.financialYear || '',
-            'Supplier Name': pr.supplierName || '',
-            'GSTIN': pr.gstin || '',
-            'Invoice No': pr.invoiceNo || '',
-            'Invoice Date': pr.invoiceDate || '',
-            'Taxable Value': pr.taxableValue ?? 0,
-            'IGST': pr.igst ?? 0,
-            'CGST': pr.cgst ?? 0,
-            'SGST': pr.sgst ?? 0,
-            'Total Amount': (pr.taxableValue ?? 0) + (pr.igst ?? 0) + (pr.cgst ?? 0) + (pr.sgst ?? 0),
-            'Voucher Type / Source': pr.sourceLabel || pr.source || 'Purchase Register & JV'
-          }];
+          return [
+            key,
+            {
+              'Financial Year': pr.financialYear || '',
+              'Supplier Name': pr.supplierName || '',
+              GSTIN: pr.gstin || '',
+              'Invoice No': pr.invoiceNo || '',
+              'Invoice Date': pr.invoiceDate || '',
+              'Taxable Value': pr.taxableValue ?? 0,
+              IGST: pr.igst ?? 0,
+              CGST: pr.cgst ?? 0,
+              SGST: pr.sgst ?? 0,
+              'Total Amount': (pr.taxableValue ?? 0) + (pr.igst ?? 0) + (pr.cgst ?? 0) + (pr.sgst ?? 0),
+              'Voucher Type / Source': pr.sourceLabel || pr.source || 'Purchase Register & JV',
+            },
+          ];
         })
     ).values()
   );
@@ -103,20 +151,23 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
         .map((r) => {
           const tb = r.twoBRecord!;
           const key = `${tb.gstin}_${tb.invoiceNo}_${tb.invoiceDate}_${tb.igst}_${tb.cgst}_${tb.sgst}`;
-          return [key, {
-            'Financial Year': tb.financialYear || '',
-            'Supplier Name': tb.supplierName || '',
-            'GSTIN': tb.gstin || '',
-            'Invoice No': tb.invoiceNo || '',
-            'Invoice Date': tb.invoiceDate || '',
-            'Taxable Value': tb.taxableValue ?? 0,
-            'IGST': tb.igst ?? 0,
-            'CGST': tb.cgst ?? 0,
-            'SGST': tb.sgst ?? 0,
-            'Total Amount': (tb.taxableValue ?? 0) + (tb.igst ?? 0) + (tb.cgst ?? 0) + (tb.sgst ?? 0),
-            'Filing Status': tb.filingStatus || '',
-            'Filing Date': tb.filingDate || ''
-          }];
+          return [
+            key,
+            {
+              'Financial Year': tb.financialYear || '',
+              'Supplier Name': tb.supplierName || '',
+              GSTIN: tb.gstin || '',
+              'Invoice No': tb.invoiceNo || '',
+              'Invoice Date': tb.invoiceDate || '',
+              'Taxable Value': tb.taxableValue ?? 0,
+              IGST: tb.igst ?? 0,
+              CGST: tb.cgst ?? 0,
+              SGST: tb.sgst ?? 0,
+              'Total Amount': (tb.taxableValue ?? 0) + (tb.igst ?? 0) + (tb.cgst ?? 0) + (tb.sgst ?? 0),
+              'Filing Status': tb.filingStatus || '',
+              'Filing Date': tb.filingDate || '',
+            },
+          ];
         })
     ).values()
   );
@@ -126,13 +177,26 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     const tb = r.twoBRecord;
     const status = String(r.status || '').toLowerCase();
     if (status.includes('debit note')) return true;
-    if (r.remark?.toLowerCase().includes('debit note') || r.remark?.toLowerCase().includes('cdnr') || r.remark?.toLowerCase().includes('dn-books') || r.remark?.toLowerCase().includes('dn-2b')) return true;
+    if (
+      r.remark?.toLowerCase().includes('debit note') ||
+      r.remark?.toLowerCase().includes('cdnr') ||
+      r.remark?.toLowerCase().includes('dn-books') ||
+      r.remark?.toLowerCase().includes('dn-2b')
+    )
+      return true;
     if (pr?.sourceLabel?.toLowerCase().includes('debit') || pr?.sourceLabel?.toLowerCase().includes('dn')) return true;
-    if (tb?.sourceLabel?.toLowerCase().includes('debit') || tb?.sourceLabel?.toLowerCase().includes('cdnr') || tb?.sourceLabel?.toLowerCase().includes('dn')) return true;
+    if (tb?.sourceLabel?.toLowerCase().includes('debit') || tb?.sourceLabel?.toLowerCase().includes('cdnr') || tb?.sourceLabel?.toLowerCase().includes('dn'))
+      return true;
 
     const hasNegative =
-      (pr?.igst ?? 0) < 0 || (pr?.cgst ?? 0) < 0 || (pr?.sgst ?? 0) < 0 || (pr?.taxableValue ?? 0) < 0 ||
-      (tb?.igst ?? 0) < 0 || (tb?.cgst ?? 0) < 0 || (tb?.sgst ?? 0) < 0 || (tb?.taxableValue ?? 0) < 0;
+      (pr?.igst ?? 0) < 0 ||
+      (pr?.cgst ?? 0) < 0 ||
+      (pr?.sgst ?? 0) < 0 ||
+      (pr?.taxableValue ?? 0) < 0 ||
+      (tb?.igst ?? 0) < 0 ||
+      (tb?.cgst ?? 0) < 0 ||
+      (tb?.sgst ?? 0) < 0 ||
+      (tb?.taxableValue ?? 0) < 0;
     if (hasNegative) return true;
 
     const dnRegex = /(^|[\/\-_ ])(DN|DBN|DRN|CDNR|DEBIT)(\b|[\/\-_ 0-9])/i;
@@ -142,9 +206,7 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     return false;
   };
 
-  const resultsDebitNotes = useMemo(() => {
-    return results.filter(isDebitNoteResult);
-  }, [results]);
+  const resultsDebitNotes = useMemo(() => results.filter(isDebitNoteResult), [results]);
 
   const dnEngineResult = useMemo(() => {
     if (!debitNotes || (!debitNotes.pr?.length && !debitNotes.twoB?.length)) return null;
@@ -156,43 +218,51 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
     return debitNoteRowsToReconciliationResults(dnEngineResult.reconciledRows);
   }, [dnEngineResult]);
 
-  const allDebitNotes = useMemo(() => {
-    return [...resultsDebitNotes, ...standaloneDebitNotes];
-  }, [resultsDebitNotes, standaloneDebitNotes]);
+  const allDebitNotes = useMemo(() => [...resultsDebitNotes, ...standaloneDebitNotes], [resultsDebitNotes, standaloneDebitNotes]);
 
-  const categories: Category[] = [
-    { key: 'all', label: 'All Records', icon: LayoutGrid, statuses: [], count: summary.total, color: 'text-[var(--np-sky)]', activeColor: 'active' },
-    { key: 'perfect', label: 'Perfect Match', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, color: 'text-[var(--np-green)]', activeColor: 'active' },
-    { key: 'valueMismatch', label: 'Value Mismatch', icon: AlertTriangle, statuses: ['Value Mismatch'], count: summary.valueMismatch, color: 'text-yellow-500', activeColor: 'active' },
-    { key: 'invoiceMissing', label: 'Not in 2B/Govt', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, color: 'text-[var(--np-red)]', activeColor: 'active' },
-    { key: 'unmatchedVendor', label: 'Party Not in 2B', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, color: 'text-[var(--np-red)]', activeColor: 'active' },
-    { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, color: 'text-[#A87EE8]', activeColor: 'active' },
-    { key: 'debitNotes', label: 'Debit Notes (CDNR)', icon: Receipt, statuses: [], count: allDebitNotes.length, color: 'text-amber-400', activeColor: 'active' },
-    { key: 'taxTypeError', label: 'Tax Type Error', icon: AlertTriangle, statuses: ['Tax Type Error'], count: summary.taxTypeError || 0, color: 'text-orange-500', activeColor: 'active' },
-    { key: 'booksInput', label: 'Books Purchase & JV Data', icon: BookOpen, statuses: [], count: rawBooksData.length, color: 'text-cyan-400', activeColor: 'active' },
-    { key: 'portalInput', label: 'Portal GSTR-2B Data', icon: Landmark, statuses: [], count: raw2bData.length, color: 'text-emerald-400', activeColor: 'active' },
+  const primaryCategories: Category[] = [
+    { key: 'all', label: 'All', icon: LayoutGrid, statuses: [], count: summary.total, iconColor: 'text-indigo-600', alwaysVisible: true },
+    { key: 'perfect', label: 'Matched', icon: CheckCircle2, statuses: ['Perfect Match', 'Matched (Diff Date)'], count: summary.perfectMatch, iconColor: 'text-emerald-600', alwaysVisible: true },
+    { key: 'valueMismatch', label: 'Value Mismatch', icon: AlertTriangle, statuses: ['Value Mismatch'], count: summary.valueMismatch, iconColor: 'text-amber-600', alwaysVisible: true },
+    { key: 'invoiceMissing', label: 'Not in 2B', icon: XCircle, statuses: ['Not in 2B'], count: summary.invoiceMissing, iconColor: 'text-rose-600', alwaysVisible: true },
+    { key: 'missingPR', label: 'Not in Books', icon: FileText, statuses: ['Not in Books', 'Missing in PR'], count: summary.missingInPR, iconColor: 'text-purple-600', alwaysVisible: true },
+    { key: 'unmatchedVendor', label: 'Party Not in 2B', icon: UserX, statuses: ['Unmatched Vendor'], count: summary.unmatchedVendor, iconColor: 'text-pink-600' },
+    { key: 'debitNotes', label: 'Debit Notes', icon: Receipt, statuses: [], count: allDebitNotes.length, iconColor: 'text-amber-600' },
+    { key: 'taxTypeError', label: 'Tax Type Error', icon: AlertTriangle, statuses: ['Tax Type Error'], count: summary.taxTypeError || 0, iconColor: 'text-orange-600' },
+    { key: 'wrongGstin', label: 'Wrong GSTIN', icon: ShieldAlert, statuses: ['Wrong GSTIN'], count: summary.wrongGstin || 0, iconColor: 'text-red-600' },
   ];
 
-  const filteredResults = active === 'all'
-    ? results
-    : active === 'debitNotes'
-    ? allDebitNotes
-    : active === 'booksInput'
-    ? results.filter((r) => r.prRecord !== undefined)
-    : active === 'portalInput'
-    ? results.filter((r) => r.twoBRecord !== undefined)
-    : results.filter((r) => categories.find((c) => c.key === active)?.statuses.includes(r.status));
+  // Show core categories always, plus any secondary category that has records or is currently active
+  const visiblePills = primaryCategories.filter((c) => c.alwaysVisible || c.count > 0 || active === c.key);
+
+  const filteredResults = useMemo(() => {
+    if (active === 'all') return results;
+    if (active === 'debitNotes') return allDebitNotes;
+    if (active === 'booksInput') return results.filter((r) => r.prRecord !== undefined);
+    if (active === 'portalInput') return results.filter((r) => r.twoBRecord !== undefined);
+    if (active === 'wrongGstin') {
+      return results.filter((r) => r.remark?.startsWith('Wrong GSTIN') || r.status === 'Wrong GSTIN');
+    }
+    const targetStatuses = primaryCategories.find((c) => c.key === active)?.statuses || [];
+    return results.filter((r) => targetStatuses.includes(r.status));
+  }, [active, results, allDebitNotes]);
 
   const handleExportCategory = () => {
     try {
-      const cat = categories.find((c) => c.key === active);
+      const cat = primaryCategories.find((c) => c.key === active);
       if (active === 'debitNotes' && dnEngineResult) {
         const fileName = 'Reconciled_Debit_Notes_GSTR2B_vs_Books.xlsx';
         exportDebitNoteReconciliation(dnEngineResult, fileName, companyName);
-        toast.success(`Exported Reconciled Debit Notes (GSTR-2B vs Books) successfully!`);
+        toast.success('Exported Reconciled Debit Notes (GSTR-2B vs Books) successfully!');
         return;
       }
-      const fileName = `GST_Reconciliation_${cat?.label.replace(/[^a-zA-Z0-9]/g, '_') || 'All'}.xlsx`;
+      const labelName =
+        active === 'booksInput'
+          ? 'Books_Register'
+          : active === 'portalInput'
+          ? 'Portal_2B'
+          : cat?.label.replace(/[^a-zA-Z0-9]/g, '_') || 'All';
+      const fileName = `GST_Reconciliation_${labelName}.xlsx`;
       exportWorkbookAsync({
         type: 'EXPORT_WORKBOOK',
         exportType: 'MASTER',
@@ -202,8 +272,8 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
           companyName,
           debitNotes,
           rawBooksData,
-          raw2bData
-        }
+          raw2bData,
+        },
       }).catch((err) => {
         console.warn('Async worker export failed, falling back to synchronous:', err);
         exportToXlsx(getExportData(filteredResults), fileName, companyName, undefined, undefined, undefined, debitNotes, rawBooksData, raw2bData);
@@ -215,41 +285,81 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      {/* Horizontal Audit Filters Bar */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden w-full">
-        <div className="flex justify-between items-center px-4 py-2.5 border-b border-slate-200 bg-slate-50/80">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest font-mono">Audit Filter Cockpit</span>
+    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden w-full">
+      {/* Unified Ledger Toolbar */}
+      <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <ListChecks className="w-4 h-4 text-indigo-600 shrink-0" />
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">Invoice Audit Ledger</h3>
+              <p className="text-xs text-slate-500">Search any invoice, vendor, or GSTIN and inspect side-by-side tax differences.</p>
+            </div>
           </div>
-          <button onClick={handleExportCategory} className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg flex items-center gap-1.5 text-[9px] uppercase tracking-widest font-bold transition-all shadow-2xs">
-            <Download className="w-3 h-3" /> Export Filtered
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search invoice, party or GSTIN..."
+                className="w-full h-9 pl-9 pr-3 rounded-xl bg-white border border-slate-200 focus:border-indigo-500 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none"
+              />
+            </div>
+
+            <select
+              value={active === 'booksInput' || active === 'portalInput' ? active : 'reco'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'booksInput' || v === 'portalInput') setActive(v);
+                else setActive('all');
+              }}
+              aria-label="Source dataset view"
+              className="h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="reco">Reconciled View ({summary.total})</option>
+              <option value="booksInput">Books Register Only ({rawBooksData.length})</option>
+              <option value="portalInput">Portal GSTR-2B Only ({raw2bData.length})</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleExportCategory}
+              className="h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export ({filteredResults.length.toLocaleString('en-IN')})</span>
+            </button>
+          </div>
         </div>
 
-        <div className="p-3 flex flex-wrap items-center gap-2 overflow-x-auto">
-          {categories.map((cat) => {
+        {/* Clean Single-Row Status Filter Pills */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {visiblePills.map((cat) => {
             const isActive = active === cat.key;
             const Icon = cat.icon;
             return (
               <button
                 key={cat.key}
+                type="button"
                 onClick={() => setActive(cat.key)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all duration-200 border group shrink-0 text-xs font-semibold',
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all border text-xs font-semibold cursor-pointer',
                   isActive
-                    ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-xs font-bold'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs font-bold'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                 )}
               >
-                <Icon className={cn('w-3.5 h-3.5 transition-transform group-hover:scale-110', !isActive && cat.color)} />
-                <span className="text-[11px] uppercase tracking-wider">{cat.label}</span>
-                <span className={cn(
-                  'text-[10px] font-mono font-bold tabular-nums px-1.5 py-0.5 rounded-full transition-all ml-0.5',
-                  isActive ? 'bg-indigo-600 text-white' : 'bg-slate-200/80 text-slate-600'
-                )}>
-                  {cat.count}
+                <Icon className={cn('w-3.5 h-3.5', isActive ? 'text-white' : cat.iconColor)} />
+                <span>{cat.label}</span>
+                <span
+                  className={cn(
+                    'text-[10px] font-mono font-bold tabular-nums px-1.5 py-0.5 rounded-full',
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                  )}
+                >
+                  {cat.count.toLocaleString('en-IN')}
                 </span>
               </button>
             );
@@ -257,20 +367,25 @@ export function ResultsCategoryTabs({ results, summary, companyName, mode = 'inp
         </div>
       </div>
 
-      {/* Main Table Area */}
-      <div className="flex-1 min-w-0 w-full silk-reveal" style={{ animationDelay: '200ms' }}>
-        {filteredResults.length > 0 ? (
-          <ResultsTable results={filteredResults} companyName={companyName} mode={mode} />
-        ) : (
-          <div className="bg-white border border-slate-200/80 rounded-2xl py-20 px-6 text-center shadow-xs">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center mx-auto mb-4 text-indigo-600 shadow-2xs">
-              <LayoutGrid className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest font-mono">No Audit Trails Found</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">No records match the selected audit filter category.</p>
+      {/* Directly Embedded Virtualized Table (Zero Nested Card Chrome) */}
+      {filteredResults.length > 0 ? (
+        <ResultsTable
+          results={filteredResults}
+          companyName={companyName}
+          mode={mode}
+          embedded={true}
+          externalSearch={search}
+          onResultsChange={onResultsChange}
+        />
+      ) : (
+        <div className="py-16 px-6 text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center mx-auto text-indigo-600">
+            <LayoutGrid className="w-5 h-5" />
           </div>
-        )}
-      </div>
+          <h3 className="text-sm font-bold text-slate-900">No Invoices in This Category</h3>
+          <p className="text-xs text-slate-500">Select &ldquo;All&rdquo; above to view all reconciled invoices.</p>
+        </div>
+      )}
     </div>
   );
 }

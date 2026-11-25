@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit with Vaswani — ElevenLabs Voiceover Studio</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #121826;
+      --card-border: #1f293d;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --cyan: #00f0ff;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --crimson: #ef4444;
+      --purple: #a855f7;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header {
+      background: linear-gradient(135deg, #131b2e 0%, #0d121f 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    header::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--cyan), var(--gold), var(--emerald));
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
+      padding: 16px;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    .setting-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .setting-label {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .setting-val {
+      color: var(--cyan);
+      font-weight: 700;
+      font-size: 14px;
+      margin-top: 2px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover, .tab-btn.active {
+      background: #1b2438;
+      color: #fff;
+      border-color: var(--cyan);
+    }
+    .action-btn {
+      background: linear-gradient(135deg, #00f0ff 0%, #00a8ff 100%);
+      color: #050a14;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .action-btn:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+    }
+    .action-btn:active {
+      transform: translateY(1px);
+    }
+    .take-group {
+      margin-bottom: 28px;
+    }
+    .take-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #101624;
+      border: 1px solid var(--card-border);
+      border-radius: 10px 10px 0 0;
+      border-bottom: none;
+    }
+    .take-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--gold);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .take-copy-btn {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: var(--gold);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .take-copy-btn:hover {
+      background: rgba(245, 158, 11, 0.25);
+    }
+    .line-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 18px 20px;
+      margin-bottom: -1px;
+      position: relative;
+      transition: background 0.15s;
+    }
+    .line-card:last-child {
+      border-radius: 0 0 10px 10px;
+      margin-bottom: 0;
+    }
+    .line-card:hover {
+      background: #141c2d;
+    }
+    .line-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .time-badge {
+      background: #1a2336;
+      border: 1px solid #273550;
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: var(--cyan);
+      font-family: monospace;
+      font-weight: 600;
+    }
+    .dur-badge {
+      color: var(--text-muted);
+      margin-left: 8px;
+    }
+    .tone-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .spoken-box {
+      font-size: 16px;
+      color: #fff;
+      font-weight: 500;
+      background: rgba(0,0,0,0.25);
+      border-left: 3px solid var(--cyan);
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 10px;
+      user-select: all;
+    }
+    .visual-cue {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .visual-cue strong {
+      color: #cbd5e1;
+    }
+    .line-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .copy-line-btn {
+      background: #1f2a42;
+      border: 1px solid #334466;
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .copy-line-btn:hover {
+      background: #2b3a5c;
+      color: #fff;
+    }
+    .copied-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--emerald);
+      color: #052e16;
+      font-weight: 700;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: none;
+      z-index: 999;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">Production Audio Workbench</div>
+      <h1>Audit with Vaswani — ElevenLabs Voiceover Studio</h1>
+      <p class="subtitle">Complete 36-line cue-by-cue narration sheet with exact timecodes, durations, gaps, and 1-click clipboard integration.</p>
+      
+      <div class="settings-grid">
+        <div class="setting-item">
+          <span class="setting-label">Total Duration</span>
+          <span class="setting-val">04:59.10 (36 Beats)</span>
+        </div>
+        <div class="setting-item">
+          <span class="setting-label">Recommended Voice</span>
+          <span class="setting-val">Brian / Marcus / Multilingual v2</span>
+        </div>
+        <div class="setting-item">
+          <span class="setting-label">Stability / Clarity</span>
+          <span class="setting-val">50% / 80%</span>
+        </div>
+        <div class="setting-item">
+          <span class="setting-label">Style Exaggeration</span>
+          <span class="setting-val">15%</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <div class="filter-tabs">
+        <button class="tab-btn active" onclick="filterCategory('all', this)">All (36 Lines)</button>
+        <button class="tab-btn" onclick="filterCategory('intro', this)">Hook & Origin (1-8)</button>
+        <button class="tab-btn" onclick="filterCategory('teaser', this)">Arsenal Teaser (9-12)</button>
+        <button class="tab-btn" onclick="filterCategory('suites_1_4', this)">Suites 01-04 (13-24)</button>
+        <button class="tab-btn" onclick="filterCategory('suites_5_8', this)">Suites 05-08 (25-32)</button>
+        <button class="tab-btn" onclick="filterCategory('closing', this)">Security & Finale (33-36)</button>
+      </div>
+      <div>
+        <button class="action-btn" onclick="copyAllScript()">📋 Copy All 36 Lines</button>
+      </div>
+    </div>
+
+    <div id="scriptContainer"></div>
+  </div>
+
+  <div id="toast" class="copied-toast">Copied to Clipboard! ✓</div>
+
+  <script>
+    const scriptData = [{"id": 1, "take": "T01_hook", "time_str": "00:00.90 -> 00:07.63", "start": 0.9, "end": 7.63, "dur": 6.7, "gap": 0.4, "spoken": "Aaj ke date mein, ek Chartered Accountant ka office sirf accounting nahi karta — it is defending business survival.", "hero": "dark obsidian canvas with three floating 2.5D calendar cards: 11th, 20th, 30th SEPT", "typed": "DEFENDING BUSINESS SURVIVAL", "tone": "High Tension & Urgency", "tone_color": "#ef4444"}, {"id": 2, "take": "T01_hook", "time_str": "00:08.03 -> 00:14.43", "start": 8.03, "end": 14.43, "dur": 6.4, "gap": 0.4, "spoken": "Har mahine ki eleventh, twentieth aur thirtieth September — har CA firm ke liye monthly battlegrounds hain.", "hero": "three massive calendar cards with amber-red warning pulse: 11th GSTR-1, 20th GSTR-3B, 30th SEPT Tax Audit", "typed": "11th · 20th · 30th SEPT", "tone": "High Tension & Urgency", "tone_color": "#ef4444"}, {"id": 3, "take": "T01_hook", "time_str": "00:14.83 -> 00:21.31", "start": 14.83, "end": 21.31, "dur": 6.5, "gap": 0.4, "spoken": "Ek taraf GST department ki automated scrutiny, aur doosri taraf client ka laakhon ka tax credit.", "hero": "floating demand notices ASMT-10 and DRC-01 as chaotic cloud", "typed": "AUTOMATED SCRUTINY ACTIVE", "tone": "High Tension & Urgency", "tone_color": "#ef4444"}, {"id": 4, "take": "T01_hook", "time_str": "00:21.71 -> 00:26.09", "start": 21.71, "end": 26.09, "dur": 4.4, "gap": 0.4, "spoken": "Ek choti si mismatch error, aur heavy interest ke demand notices shuru!", "hero": "red alert ticker flashing demand notice warnings", "typed": "DEMAND NOTICE · INTEREST LIABILITY", "tone": "High Tension & Urgency", "tone_color": "#ef4444"}, {"id": 5, "take": "T01_hook", "time_str": "00:26.48 -> 00:32.90", "start": 26.48, "end": 32.9, "dur": 6.4, "gap": 0.8, "spoken": "Lekin sawaal yeh hai: India ke sabse sharp financial minds clerical fire-fighting mein kyun phanse rahein?", "hero": "question text burning bright on obsidian canvas", "typed": "WHY CLERICAL FIRE-FIGHTING?", "tone": "High Tension & Urgency", "tone_color": "#ef4444"}, {"id": 6, "take": "T02_origin", "time_str": "00:33.70 -> 00:39.69", "start": 33.7, "end": 39.69, "dur": 6.0, "gap": 0.4, "spoken": "Audit with Vaswani kisi corporate boardroom mein nahi, balki audit ke frontline par create hua hai.", "hero": "messy office desktop wireframe transitioning to sleek obsidian command terminal", "typed": "BORN ON THE FRONTLINE", "tone": "Authentic, Inspiring & Confident", "tone_color": "#f59e0b"}, {"id": 7, "take": "T02_origin", "time_str": "00:40.09 -> 00:45.54", "start": 40.09, "end": 45.54, "dur": 5.5, "gap": 0.4, "spoken": "Built by Sourav Vaswani, a CA Article jinhone khud is daily grind ko jiya hai.", "hero": "brushed gold emblem: CONCEPT AND CODE BY SOURAV VASWANI (CA ARTICLE)", "typed": "SOURAV VASWANI · CA ARTICLE", "tone": "Authentic, Inspiring & Confident", "tone_color": "#f59e0b"}, {"id": 8, "take": "T02_origin", "time_str": "00:45.94 -> 00:53.22", "start": 45.94, "end": 53.22, "dur": 7.3, "gap": 0.9, "spoken": "Tab ek Article ke dimag se nikla yeh mission: CAs ko clerical ghulam nahi, super-intelligent defender banana.", "hero": "title reveal: AUDIT WITH VASWANI in brushed gold and white", "typed": "AUDIT WITH VASWANI", "tone": "Authentic, Inspiring & Confident", "tone_color": "#f59e0b"}, {"id": 9, "take": "T03_arsenal_teaser", "time_str": "00:54.12 -> 01:02.15", "start": 54.12, "end": 62.15, "dur": 8.0, "gap": 0.3, "spoken": "Ek single platform, eight specialised suites, jo ek CA firm ke har monthly struggle ko defend karne ke liye banaye gaye hain.", "hero": "8 glowing 2.5D obsidian cards orbiting in circular HUD grid", "typed": "8 SPECIALISED SUITES", "tone": "High-Octane Rapid Fire", "tone_color": "#00f0ff"}, {"id": 10, "take": "T03_arsenal_teaser", "time_str": "01:02.45 -> 01:11.40", "start": 62.45, "end": 71.4, "dur": 8.9, "gap": 0.3, "spoken": "GST Reco Engine. Tally Direct Connect. Automated three-B Matrix. Clause forty-four Bifurcator.", "hero": "cards 1-4 rapidly slotting into place with colored glows", "typed": "01 RECO · 02 TALLY · 03 3B MATRIX · 04 CLAUSE 44", "tone": "High-Octane Rapid Fire", "tone_color": "#00f0ff"}, {"id": 11, "take": "T03_arsenal_teaser", "time_str": "01:11.70 -> 01:20.31", "start": 71.7, "end": 80.31, "dur": 8.6, "gap": 0.3, "spoken": "Twelve-Month Autopilot. Monthly Audit Suite. Tally Entries Maker. GST Notices AI Drafter.", "hero": "cards 5-8 rapidly slotting into place completing the constellation", "typed": "05 AUTOPILOT · 06 AUDIT · 07 ENTRIES · 08 NOTICES", "tone": "High-Octane Rapid Fire", "tone_color": "#00f0ff"}, {"id": 12, "take": "T03_arsenal_teaser", "time_str": "01:20.61 -> 01:26.59", "start": 80.61, "end": 86.59, "dur": 6.0, "gap": 0.6, "spoken": "Aaiye dekhte hain har ek suite kaise ghanto ke clerical torture ko seconds mein khatam karta hai.", "hero": "camera zooming into Card 01 to begin deep-dive", "typed": "DEEP DIVE BEGINS", "tone": "High-Octane Rapid Fire", "tone_color": "#00f0ff"}, {"id": 13, "take": "T04_suite01_reco", "time_str": "01:27.19 -> 01:36.91", "start": 87.19, "end": 96.91, "dur": 9.7, "gap": 0.4, "spoken": "Ek-ek bill ko aankhon se match karo — kaunsa invoice two-B mein missing hai, kaunsa GSTR-one mein chhod diya, kaunsa Books mein miss ho gaya.", "hero": "5000 invoices scattered as chaotic floating red and amber cards: MISSING IN 2B, VLOOKUP N/A", "typed": "MISSING IN 2B · NOT IN BOOKS · GSTR-1 MISMATCH", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 14, "take": "T04_suite01_reco", "time_str": "01:37.31 -> 01:44.88", "start": 97.31, "end": 104.88, "dur": 7.6, "gap": 0.5, "spoken": "Yeh nikaalte nikaalte ghanto aur din nikal jaate the — bill numbers mein slashes, leading zeros, aur fifty paise ka round-off!", "hero": "error badges flashing: ROUND-OFF DIFF, LEADING ZEROS, SLASH MISMATCH", "typed": "HOURS WASTED · DAYS LOST", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 15, "take": "T04_suite01_reco", "time_str": "01:45.38 -> 01:53.75", "start": 105.38, "end": 113.75, "dur": 8.4, "gap": 0.4, "spoken": "Suite one ka eight-Pass Intelligent Engine har invoice ko auto-clean karta hai, Missing in two-B aur Books ke exact buckets nikalta hai.", "hero": "cyan laser sweep across screen, chaos morphing to aligned 2.5D tables", "typed": "8-PASS INTELLIGENT ENGINE", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 16, "take": "T04_suite01_reco", "time_str": "01:54.15 -> 02:02.16", "start": 114.15, "end": 122.16, "dur": 8.0, "gap": 0.6, "spoken": "Cross-state vendor PANs verify karta hai, debit notes pair karta hai — five thousand invoices sirf sixty seconds mein reconciled!", "hero": "emerald stamp slams: PERFECT MATCH. HUD counter: 5000 INVOICES 58.4 SECONDS", "typed": "PERFECT MATCH (±₹2) · 58.4s", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 17, "take": "T05_suite02_tally", "time_str": "02:02.75 -> 02:11.31", "start": 122.75, "end": 131.31, "dur": 8.6, "gap": 0.4, "spoken": "Tally se data nikaalna har accountant ke liye ek manual circus hai — export karo, format theek karo, columns re-arrange karo.", "hero": "slow manual export with error prompts and corrupted files", "typed": "MANUAL EXPORT CIRCUS", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 18, "take": "T05_suite02_tally", "time_str": "02:11.71 -> 02:18.88", "start": 131.71, "end": 138.88, "dur": 7.2, "gap": 0.6, "spoken": "Suite two Tally Prime ke sath directly Port nine thousand par connect hota hai — ek click mein live Daybook aur Ledgers!", "hero": "golden-cyan trim-path laser from Tally icon to software terminal, data packets flowing", "typed": "PORT 9000: CONNECTED · ZERO EXPORT DELAY", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 19, "take": "T06_suite03_3b", "time_str": "02:19.49 -> 02:28.44", "start": 139.49, "end": 148.44, "dur": 9.0, "gap": 0.4, "spoken": "Har mahine three-B file karte waqt tax team four alag sheets mein ulajh jaati hai — ITC, turnover, RCM, blocked credit.", "hero": "four messy overlapping Excel sheets with different data", "typed": "4 SHEETS · MONTHLY CONFUSION", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 20, "take": "T06_suite03_3b", "time_str": "02:28.84 -> 02:36.29", "start": 148.84, "end": 156.29, "dur": 7.5, "gap": 0.4, "spoken": "Autopilot portal se R-one aur two-B download karke local SQLite database mein Base Master File create karta hai.", "hero": "R1 and 2B data streams flowing from portal into glowing SQLite database cube: BASE FILE CREATED", "typed": "R1 + 2B → LOCAL SQLite BASE FILE", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 21, "take": "T06_suite03_3b", "time_str": "02:36.69 -> 02:46.28", "start": 156.69, "end": 166.28, "dur": 9.6, "gap": 0.4, "spoken": "Automatic Table-wise ITC Allocation — All Other ITC, Inward RCM, aur Section seventeen sub-five Blocked Credit bifurcate ho jaate hain.", "hero": "data dividing into 2.5D legal table slots: Table 4A5 ITC, Table 4A3 RCM, Table 4B Ineligible", "typed": "TABLE 4(A)(5) · TABLE 4(A)(3) · TABLE 4(B)", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 22, "take": "T06_suite03_3b", "time_str": "02:46.68 -> 02:53.27", "start": 166.68, "end": 173.27, "dur": 6.6, "gap": 0.6, "spoken": "Working sheet finalize hote hi, one-click mein client ko direct tax summary aur challan email dispatch!", "hero": "2.5D email card flying with cyan trail: DISPATCHED TO CLIENT", "typed": "1-CLICK CLIENT EMAIL DISPATCH ✓", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 23, "take": "T07_suite04_clause44", "time_str": "02:53.87 -> 03:02.85", "start": 173.87, "end": 182.85, "dur": 9.0, "gap": 0.4, "spoken": "September Tax Audit ka sabse bada sir-dard — Form three-C-D ka Clause forty-four! Hazaron vouchers ek-ek classify karo.", "hero": "overwhelming expense ledger pile with Clause 44 deadline warning", "typed": "CLAUSE 44 · WEEKS OF MANUAL WORK", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 24, "take": "T07_suite04_clause44", "time_str": "03:03.25 -> 03:10.25", "start": 183.25, "end": 190.25, "dur": 7.0, "gap": 0.6, "spoken": "Suite four Registered, Unregistered, Composition aur Exempt spends ka flawless bifurcation five seconds mein ready!", "hero": "prism splitting receipts into 4 colored streams: Cyan Registered, Violet Composition, Blue Exempt, Amber Unregistered", "typed": "FORM 3CD CLAUSE 44 VERIFIED · 5 SECONDS", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 25, "take": "T08_suite05_autopilot", "time_str": "03:10.85 -> 03:18.59", "start": 190.85, "end": 198.59, "dur": 7.7, "gap": 0.4, "spoken": "Twelve maheenon ka two-B aur GSTR-one download karna — twelve logins, twelve CAPTCHAs, ghanto ki finger tapping!", "hero": "repetitive CAPTCHA login screens stacking up with frustration indicators", "typed": "12 LOGINS · 12 CAPTCHAs · HOURS WASTED", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 26, "take": "T08_suite05_autopilot", "time_str": "03:18.99 -> 03:26.14", "start": 198.99, "end": 206.14, "dur": 7.1, "gap": 0.6, "spoken": "Ek baar CAPTCHA enter karo — autopilot April se March tak traverse karke consolidated Excel ready kar deta hai!", "hero": "circular orbital ring with 12 checkpoints lighting up green: APR to MAR. Workbook drops: CONSOLIDATED.XLSX", "typed": "12/12 MONTHS SYNCED · 1 SESSION", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 27, "take": "T09_suite06_monthly_audit", "time_str": "03:26.74 -> 03:35.33", "start": 206.74, "end": 215.33, "dur": 8.6, "gap": 0.4, "spoken": "Junior audit karta hai, senior review karta hai, partner sign karta hai — lekin working papers WhatsApp aur Excel mein bikhar jaate hain.", "hero": "scattered unorganized audit sheets across WhatsApp and Excel icons", "typed": "NO AUDIT TRAIL · REVIEW CHAOS", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 28, "take": "T09_suite06_monthly_audit", "time_str": "03:35.73 -> 03:43.96", "start": 215.73, "end": 223.96, "dur": 8.2, "gap": 0.6, "spoken": "Suite six: master checklists, observation tracker, pending queries — full maker-checker audit trail, ICAI compliant!", "hero": "dark slate audit binder with green checkmarks: Bank Reco Verified, TDS Mapped. Badges: MAKER, CHECKER, PARTNER SIGN-OFF", "typed": "MAKER-CHECKER SIGN-OFF · ICAI COMPLIANT", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 29, "take": "T10_suite07_entries_maker", "time_str": "03:44.56 -> 03:52.45", "start": 224.56, "end": 232.45, "dur": 7.9, "gap": 0.4, "spoken": "Client ne five hundred pages ki Bank Statement thama di — ek-ek entry Tally mein manually type karo, two din lag jaate hain!", "hero": "slow manual typing into Tally with error prompts and frustrated accountant indicators", "typed": "500 ENTRIES · 2 DAYS MANUAL TYPING", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 30, "take": "T10_suite07_entries_maker", "time_str": "03:52.85 -> 04:01.00", "start": 232.85, "end": 241.0, "dur": 8.2, "gap": 0.6, "spoken": "Tally Entries Maker: smart grid mein paste karo, one-click mein Tally XML push — five hundred entries seconds mein posted!", "hero": "data streams flowing from grid to Tally via PUSH TO TALLY button. Tally screen: 500 ENTRIES POSTED", "typed": "PUSH TO TALLY PRIME · 500 ENTRIES POSTED", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 31, "take": "T11_suite08_notices", "time_str": "04:01.60 -> 04:11.18", "start": 241.6, "end": 251.18, "dur": 9.6, "gap": 0.4, "spoken": "Department se Section seventy-three ka scrutiny notice aata hai — difference analyze karo, case laws dhoondo, reply draft karo, din nikal jaate hain.", "hero": "red-border notice: SHOW CAUSE NOTICE U/S 73 with alarm drone", "typed": "SCRUTINY NOTICE · BANK FREEZE RISK", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 32, "take": "T11_suite08_notices", "time_str": "04:11.58 -> 04:19.42", "start": 251.58, "end": 259.42, "dur": 7.8, "gap": 0.7, "spoken": "Suite eight demand points ko Books aur two-B se reconcile karta hai, High Court rulings cite karke bulletproof legal reply ready!", "hero": "AI scanner highlighting differences, High Court citations auto-populating. Emerald watermark: LEGAL DEFENSE READY", "typed": "OFFICIAL LEGAL DEFENSE READY", "tone": "Problem-Solution Precision", "tone_color": "#10b981"}, {"id": 33, "take": "T12_security", "time_str": "04:20.12 -> 04:29.93", "start": 260.12, "end": 269.93, "dur": 9.8, "gap": 0.4, "spoken": "Ek CA ke liye sabse badi dharohar hai: Client Confidentiality. Cloud software par aapka data teesre ke servers par chali jaati hai.", "hero": "polished obsidian vault appearing at center", "typed": "CLIENT CONFIDENTIALITY AT RISK", "tone": "Authoritative & Reassuring", "tone_color": "#6366f1"}, {"id": 34, "take": "T12_security", "time_str": "04:30.33 -> 04:41.24", "start": 270.33, "end": 281.24, "dur": 10.9, "gap": 0.8, "spoken": "Audit with Vaswani one hundred percent locally aapke office PC par run hota hai. Tally aur Portal se data seedha local SQLite mein — zero cloud upload!", "hero": "electric cyan hexagonal force-field forming around vault. Three pillars: LOCAL RUNNING, ZERO LEAKAGE, AIR-GAPPED", "typed": "100% LOCAL · ZERO LEAKAGE · AIR-GAPPED", "tone": "Authoritative & Reassuring", "tone_color": "#6366f1"}, {"id": 35, "take": "T13_climax", "time_str": "04:42.04 -> 04:48.04", "start": 282.04, "end": 288.04, "dur": 6.0, "gap": 0.5, "spoken": "Ab clerical fire-fighting chhodiyen. Ban jayiye apne clients ke ultimate financial defender.", "hero": "all 8 suite icons orbiting and converging to center", "typed": "BECOME THE DEFENDER", "tone": "Grand Triumphant Finale", "tone_color": "#eab308"}, {"id": 36, "take": "T13_climax", "time_str": "04:48.54 -> 04:56.11", "start": 288.54, "end": 296.11, "dur": 7.6, "gap": 2.0, "spoken": "Audit with Vaswani — Built by Sourav Vaswani, CA Article. For Every CA and Tax Professional in India.", "hero": "final obsidian and gold title card with full branding and tagline", "typed": "AUDIT WITH VASWANI · BUILT BY SOURAV VASWANI (CA ARTICLE) · FOR EVERY CA & TAX PROFESSIONAL IN INDIA", "tone": "Grand Triumphant Finale", "tone_color": "#eab308"}];
+
+    function renderScript(items) {
+      const container = document.getElementById("scriptContainer");
+      container.innerHTML = "";
+
+      const grouped = {};
+      items.forEach(item => {
+        if (!grouped[item.take]) grouped[item.take] = [];
+        grouped[item.take].push(item);
+      });
+
+      for (const [take, lines] of Object.entries(grouped)) {
+        const groupEl = document.createElement("div");
+        groupEl.className = "take-group";
+        
+        const headerEl = document.createElement("div");
+        headerEl.className = "take-header";
+        headerEl.innerHTML = `
+          <div class="take-title">
+            <span>🎬 TAKE: <code>${take}</code> (${lines.length} lines)</span>
+          </div>
+          <button class="take-copy-btn" onclick="copyTake('${take}')">📋 Copy Entire Take</button>
+        `;
+        groupEl.appendChild(headerEl);
+
+        lines.forEach(line => {
+          const cardEl = document.createElement("div");
+          cardEl.className = "line-card";
+          cardEl.innerHTML = `
+            <div class="line-meta">
+              <div>
+                <span class="time-badge">${line.time_str}</span>
+                <span class="dur-badge">⏱️ ${line.dur}s (Gap: ${line.gap}s)</span>
+              </div>
+              <span class="tone-badge" style="background: ${line.tone_color}22; color: ${line.tone_color}; border: 1px solid ${line.tone_color}55;">
+                ${line.tone}
+              </span>
+            </div>
+            <div class="spoken-box">"${line.spoken}"</div>
+            <div class="visual-cue">
+              <span>👁️ <strong>On-Screen:</strong> ${line.hero}</span>
+              ${line.typed ? `· <strong>Typed:</strong> <code>${line.typed}</code>` : ''}
+            </div>
+            <div class="line-actions">
+              <button class="copy-line-btn" onclick="copyText('${line.spoken.replace(/'/g, "\\\'")}')">📋 Copy Line</button>
+            </div>
+          `;
+          groupEl.appendChild(cardEl);
+        });
+
+        container.appendChild(groupEl);
+      }
+    }
+
+    function filterCategory(cat, btn) {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      let filtered = scriptData;
+      if (cat === "intro") filtered = scriptData.filter(s => s.id >= 1 && s.id <= 8);
+      else if (cat === "teaser") filtered = scriptData.filter(s => s.id >= 9 && s.id <= 12);
+      else if (cat === "suites_1_4") filtered = scriptData.filter(s => s.id >= 13 && s.id <= 24);
+      else if (cat === "suites_5_8") filtered = scriptData.filter(s => s.id >= 25 && s.id <= 32);
+      else if (cat === "closing") filtered = scriptData.filter(s => s.id >= 33 && s.id <= 36);
+
+      renderScript(filtered);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg || "Copied to Clipboard! ✓";
+      toast.style.display = "block";
+      setTimeout(() => {
+        toast.style.display = "none";
+      }, 2000);
+    }
+
+    function copyText(txt) {
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast("Line copied to clipboard! ✓");
+      });
+    }
+
+    function copyTake(takeName) {
+      const takeLines = scriptData.filter(s => s.take === takeName).map(s => s.spoken).join("\n\n");
+      navigator.clipboard.writeText(takeLines).then(() => {
+        showToast(`Take ${takeName} copied! ✓`);
+      });
+    }
+
+    function copyAllScript() {
+      const allText = scriptData.map(s => `[${s.time_str}] ${s.spoken}`).join("\n\n");
+      navigator.clipboard.writeText(allText).then(() => {
+        showToast("All 36 lines copied! ✓");
+      });
+    }
+
+    // Initial render
+    renderScript(scriptData);
+  </script>
+</body>
+</html>

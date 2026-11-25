@@ -55,10 +55,8 @@ Audit-grade, high-precision reconciliation and statutory tax computation that el
 
 ### Active
 
-- [ ] **Milestone v2.10: not yet chosen.** Candidates:
-  - Windows Electron packaging & multi-office LAN deployment (`main.cjs`, electron-builder, `build:exe`, `license-gateway`, `admin-web`)
-  - Suite 09 automated voucher expansion reusing the Phase 41 pattern
-  - Bank statement OCR spike via `LevitateExtract` (Monthly Audit §3.4, Suite 07)
+- [ ] **Milestone v2.10: Public Website & Web Build (`finpulse.co.in`).** Landing page + desktop download page on Cloudflare Pages (free, no card); browser-only suites (GST Reconciliation, TDS, Income Tax calculator) in a web build; server-only features hidden in web build. See [REQUIREMENTS.md](REQUIREMENTS.md).
+  - Deferred candidates (not in v2.10): Windows Electron packaging & multi-office LAN deployment; Suite 09 voucher expansion (Phase 41 pattern); Bank statement OCR spike via `LevitateExtract`.
 
 ### Out of Scope
 

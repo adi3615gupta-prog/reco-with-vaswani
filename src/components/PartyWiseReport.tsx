@@ -1,17 +1,34 @@
-// Party-wise Intelligence & Manual Match Studio component
-import { useMemo, useState, useDeferredValue } from 'react';
-import { createPortal } from 'react-dom';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, Search, ArrowUpDown, Download, Link, Unlink, Sparkles, CheckCircle2, ShieldCheck, Users, Plus, GitMerge, X, Check, ArrowRight } from 'lucide-react';
+import { useMemo, useState, useDeferredValue, useEffect } from 'react';
+import {
+  Search,
+  Download,
+  Link,
+  Unlink,
+  Sparkles,
+  CheckCircle2,
+  ShieldCheck,
+  Users,
+  Plus,
+  GitMerge,
+  X,
+  Check,
+  Copy,
+  SlidersHorizontal,
+  ChevronDown,
+  Building2,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { aggregateByParty, type PartySummary, type PartyInvoiceRow } from '@/lib/partyWise';
 import { exportPartyWise, exportDebitNotes21Col, exportWorkbookAsync } from '@/lib/fileParser';
 import { reconcileDebitNotes } from '@/lib/debitNoteEngine';
-import { BatchBadge } from '@/components/StatusBadge';
+import { BatchBadge, StatusBadge } from '@/components/StatusBadge';
 import type { ReconciliationResult, MatchStatus } from '@/lib/reconciliation';
 import { toast } from 'sonner';
 import { AuditJustificationModal } from '@/components/AuditJustificationModal';
@@ -23,8 +40,6 @@ import {
   findAllSmartMatches,
   applySmartMatch,
   applyBatchSmartMatches,
-  isUnmatchedPrRow,
-  isUnmatchedTwoBRow,
 } from '@/lib/smartMismatchSolver';
 import { AiSmartMatchModal } from '@/components/AiSmartMatchModal';
 
@@ -38,50 +53,108 @@ interface Props {
   onPartyDisputesChange?: (disputes: Record<string, any>) => void;
 }
 
-const fmt = (n: number) =>
-  n === 0 ? '—' : new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-
-function statusBadge(status: PartySummary['overall']) {
-  if (status === 'All Matched') return 'bg-success/10 text-success border-success/20';
-  if (status === 'Has Mismatches') return 'bg-warning/10 text-warning border-warning/20';
-  return 'bg-destructive/10 text-destructive border-destructive/20';
-}
-
-function statusStrip(status: PartySummary['overall']) {
-  if (status === 'All Matched') return 'from-success/40 via-success/20 to-transparent';
-  if (status === 'Has Mismatches') return 'from-warning/40 via-warning/20 to-transparent';
-  return 'from-destructive/40 via-destructive/20 to-transparent';
-}
-
-function rowStatusColor(status: string) {
-  if (status.includes('Debit Note')) return 'text-amber-400 font-bold';
-  if (status === 'Perfect Match' || status === 'Matched' || status === 'Matched (Rounded)' || status === 'Matched (Diff Date)') return 'text-[var(--np-green)]';
-  if (status === 'Value Mismatch' || status === 'Mismatch') return 'text-amber-500 font-semibold';
-  if (status === 'Not in Books' || status === 'Missing in PR') return 'text-indigo-600 dark:text-indigo-400 font-semibold';
-  return 'text-[var(--np-red)]';
-}
-
-export type PartySortOption = 'name_asc' | 'name_desc' | 'var_desc' | 'var_asc' | 'count_desc';
+export type PartySortOption = 'var_desc' | 'name_asc' | 'name_desc' | 'var_asc' | 'count_desc';
 export type PartyStatusFilter = 'all' | 'missing' | 'mismatch' | 'matched' | 'debitNotes';
 
-export function PartyWiseReport({ results, companyName, mode = 'input', debitNotes, onResultsChange, partyDisputes, onPartyDisputesChange }: Props) {
+const fmt = (n: number) =>
+  n === 0 ? '—' : `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n)}`;
+
+const fmtExact = (n: number) =>
+  n === 0 ? '—' : `₹${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+
+function mergeInvoicePair(
+  prRaw: ReconciliationResult,
+  twoBRaw: ReconciliationResult,
+  remark: string
+): ReconciliationResult {
+  const prRec = prRaw.prRecord;
+  const tbRec = twoBRaw.twoBRecord;
+
+  const igstDiff = +((prRec?.igst ?? 0) - (tbRec?.igst ?? 0)).toFixed(2);
+  const cgstDiff = +((prRec?.cgst ?? 0) - (tbRec?.cgst ?? 0)).toFixed(2);
+  const sgstDiff = +((prRec?.sgst ?? 0) - (tbRec?.sgst ?? 0)).toFixed(2);
+  const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
+  const taxableDiff = +((prRec?.taxableValue ?? 0) - (tbRec?.taxableValue ?? 0)).toFixed(2);
+
+  const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
+
+  return {
+    ...prRaw,
+    prRecord: prRec,
+    twoBRecord: tbRec,
+    status: matchStatus,
+    igstDiff,
+    cgstDiff,
+    sgstDiff,
+    gstDiff,
+    taxableDiff,
+    matchMethod: 'Name (Exact)',
+    remark,
+  };
+}
+
+function overallBadgeClass(status: PartySummary['overall']) {
+  if (status === 'All Matched') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (status === 'Has Mismatches') return 'bg-amber-50 text-amber-800 border-amber-200';
+  return 'bg-rose-50 text-rose-700 border-rose-200';
+}
+
+function overallDotClass(status: PartySummary['overall']) {
+  if (status === 'All Matched') return 'bg-emerald-500';
+  if (status === 'Has Mismatches') return 'bg-amber-500';
+  return 'bg-rose-500';
+}
+
+function hasDebitNoteInvoice(p: PartySummary) {
+  return p.invoices.some(
+    (inv) =>
+      String(inv.status || '').toLowerCase().includes('debit note') ||
+      inv.invoiceNoPR?.toLowerCase().includes('dn') ||
+      inv.invoiceNo2B?.toLowerCase().includes('dn') ||
+      inv.remark?.toLowerCase().includes('debit note') ||
+      (inv.taxablePR !== undefined && inv.taxablePR < 0) ||
+      (inv.taxable2B !== undefined && inv.taxable2B < 0)
+  );
+}
+
+export function PartyWiseReport({
+  results,
+  companyName,
+  mode = 'input',
+  debitNotes,
+  onResultsChange,
+  partyDisputes,
+  onPartyDisputesChange,
+}: Props) {
   const [internalDisputes, setInternalDisputes] = useState<Record<string, any>>({});
   const activeDisputes = partyDisputes || internalDisputes;
   const handleDisputesChange = onPartyDisputesChange || setInternalDisputes;
 
   const [groupBy, setGroupBy] = useState<'gstin' | 'name'>('gstin');
   const parties = useMemo(() => aggregateByParty(results, debitNotes, mode, groupBy), [results, debitNotes, mode, groupBy]);
+
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
-  const [sortBy, setSortBy] = useState<PartySortOption>('name_asc');
+  const [sortBy, setSortBy] = useState<PartySortOption>('var_desc');
   const [statusFilter, setStatusFilter] = useState<PartyStatusFilter>('all');
+  const [visiblePartiesCount, setVisiblePartiesCount] = useState<number>(80);
+  const [selectedPartyKey, setSelectedPartyKey] = useState<string>('');
 
-  // Merge mode state: multi-select parties via checkboxes
+  // Detail inspector toggles
+  const [showTaxSplit, setShowTaxSplit] = useState(false);
+  const [pairMode, setPairMode] = useState(false);
+  const [selectedPRIndex, setSelectedPRIndex] = useState<number | null>(null);
+  const [selected2BIndex, setSelected2BIndex] = useState<number | null>(null);
+  const [stagedPairs, setStagedPairs] = useState<Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow; prIndex: number; twoBIndex: number }>>([]);
+
+  // Merge mode state
   const [mergeMode, setMergeMode] = useState(false);
   const [selectedMergeKeys, setSelectedMergeKeys] = useState<Set<string>>(new Set());
-  const [showMergeConfirm, setShowMergeConfirm] = useState(false);
   const [primaryMergeKey, setPrimaryMergeKey] = useState<string>('');
-  const [visiblePartiesCount, setVisiblePartiesCount] = useState<number>(50);
+
+  // Modals
+  const [smartMatchModalOpen, setSmartMatchModalOpen] = useState<boolean>(false);
+  const [smartMatchCandidates, setSmartMatchCandidates] = useState<SmartMatchCandidate[]>([]);
   const [auditModalState, setAuditModalState] = useState<{
     isOpen: boolean;
     actionType: AuditActionType;
@@ -99,9 +172,19 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     targetStatus: 'Perfect Match',
   });
 
-  // AI Smart Match Solver state
-  const [smartMatchModalOpen, setSmartMatchModalOpen] = useState<boolean>(false);
-  const [smartMatchCandidates, setSmartMatchCandidates] = useState<SmartMatchCandidate[]>([]);
+  const statusCounts = useMemo(() => {
+    let missing = 0;
+    let mismatch = 0;
+    let matched = 0;
+    let dn = 0;
+    for (const p of parties) {
+      if (p.overall === 'Has Missing') missing++;
+      else if (p.overall === 'Has Mismatches') mismatch++;
+      else matched++;
+      if (hasDebitNoteInvoice(p)) dn++;
+    }
+    return { all: parties.length, missing, mismatch, matched, dn };
+  }, [parties]);
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -111,146 +194,176 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       if (statusFilter === 'missing') list = list.filter((p) => p.overall === 'Has Missing');
       else if (statusFilter === 'mismatch') list = list.filter((p) => p.overall === 'Has Mismatches');
       else if (statusFilter === 'matched') list = list.filter((p) => p.overall === 'All Matched');
-      else if (statusFilter === 'debitNotes') {
-        list = list.filter((p) =>
-          p.invoices.some(
-            (inv) =>
-              String(inv.status || '').toLowerCase().includes('debit note') ||
-              inv.invoiceNoPR?.toLowerCase().includes('dn') ||
-              inv.invoiceNo2B?.toLowerCase().includes('dn') ||
-              inv.remark?.toLowerCase().includes('debit note') ||
-              (inv.taxablePR !== undefined && inv.taxablePR < 0) ||
-              (inv.taxable2B !== undefined && inv.taxable2B < 0) ||
-              (inv.invoiceValuePR !== undefined && inv.invoiceValuePR < 0) ||
-              (inv.invoiceValue2B !== undefined && inv.invoiceValue2B < 0)
-          )
-        );
-      }
+      else if (statusFilter === 'debitNotes') list = list.filter(hasDebitNoteInvoice);
     }
 
     if (q) {
-      list = list.filter(
-        (p) => p.partyName.toLowerCase().includes(q) || p.gstin.toLowerCase().includes(q)
-      );
+      list = list.filter((p) => p.partyName.toLowerCase().includes(q) || p.gstin.toLowerCase().includes(q));
     }
 
-    list = [...list].sort((a, b) => {
-      if (sortBy === 'name_asc') {
-        return (a.partyName || a.key).localeCompare(b.partyName || b.key);
-      }
-      if (sortBy === 'name_desc') {
-        return (b.partyName || b.key).localeCompare(a.partyName || a.key);
-      }
-      if (sortBy === 'var_desc') {
-        return b.totals.totalDiff - a.totals.totalDiff;
-      }
-      if (sortBy === 'var_asc') {
-        return a.totals.totalDiff - b.totals.totalDiff;
-      }
-      if (sortBy === 'count_desc') {
-        return b.totals.count - a.totals.count;
-      }
+    return [...list].sort((a, b) => {
+      if (sortBy === 'var_desc') return Math.abs(b.totals.totalDiff) - Math.abs(a.totals.totalDiff);
+      if (sortBy === 'var_asc') return Math.abs(a.totals.totalDiff) - Math.abs(b.totals.totalDiff);
+      if (sortBy === 'name_asc') return (a.partyName || a.key).localeCompare(b.partyName || b.key);
+      if (sortBy === 'name_desc') return (b.partyName || b.key).localeCompare(a.partyName || a.key);
+      if (sortBy === 'count_desc') return b.totals.count - a.totals.count;
       return 0;
     });
-
-    return list;
   }, [parties, deferredSearch, sortBy, statusFilter]);
 
+  const activeParty = useMemo(() => {
+    if (filtered.length === 0) return null;
+    return filtered.find((p) => p.key === selectedPartyKey) || filtered[0];
+  }, [filtered, selectedPartyKey]);
+
+  // Reset inline pairing selection when switching parties
+  useEffect(() => {
+    setSelectedPRIndex(null);
+    setSelected2BIndex(null);
+    setStagedPairs([]);
+    setPairMode(false);
+  }, [activeParty?.key]);
+
+  // Matching handlers
   const handleManualMatch = (prInvRow: PartyInvoiceRow, twoBInvRow: PartyInvoiceRow) => {
     if (!onResultsChange || !results) return;
-
     const prRaw = prInvRow.rawResult;
     const twoBRaw = twoBInvRow.rawResult;
     if (!prRaw || !twoBRaw) return;
 
     const newResults = results.filter((r) => r !== twoBRaw);
     const prIndex = newResults.findIndex((r) => r === prRaw);
+    const merged = mergeInvoicePair(prRaw, twoBRaw, 'Manually Matched by User');
 
-    if (prIndex !== -1) {
-      const prRec = prRaw.prRecord;
-      const tbRec = twoBRaw.twoBRecord;
+    if (prIndex !== -1) newResults[prIndex] = merged;
+    else newResults.push(merged);
 
-      const prIgst = prRec?.igst ?? 0;
-      const tbIgst = tbRec?.igst ?? 0;
-      const prCgst = prRec?.cgst ?? 0;
-      const tbCgst = tbRec?.cgst ?? 0;
-      const prSgst = prRec?.sgst ?? 0;
-      const tbSgst = tbRec?.sgst ?? 0;
-      const prTaxable = prRec?.taxableValue ?? 0;
-      const tbTaxable = tbRec?.taxableValue ?? 0;
+    onResultsChange(newResults);
+    toast.success(`Matched #${prRaw.prRecord?.invoiceNo || 'Books'} with #${twoBRaw.twoBRecord?.invoiceNo || '2B'}`);
+  };
 
-      const igstDiff = +(prIgst - tbIgst).toFixed(2);
-      const cgstDiff = +(prCgst - tbCgst).toFixed(2);
-      const sgstDiff = +(prSgst - tbSgst).toFixed(2);
-      const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
-      const taxableDiff = +(prTaxable - tbTaxable).toFixed(2);
+  const handleBatchMatch = (pairs: Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow }>) => {
+    if (!onResultsChange || !results || pairs.length === 0) return;
+    let newResults = [...results];
+    let matchCount = 0;
 
-      const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
+    for (const pair of pairs) {
+      const prRaw = pair.pr.rawResult;
+      const twoBRaw = pair.twoB.rawResult;
+      if (!prRaw || !twoBRaw) continue;
 
-      const mergedResult = {
-        ...prRaw,
-        prRecord: prRec,
-        twoBRecord: tbRec,
-        status: matchStatus,
-        igstDiff,
-        cgstDiff,
-        sgstDiff,
-        gstDiff,
-        taxableDiff,
-        matchMethod: 'Name (Exact)' as const,
-        remark: 'Manually Matched by User',
-      };
-
+      newResults = newResults.filter((r) => r !== twoBRaw);
+      const prIndex = newResults.findIndex((r) => r === prRaw);
       if (prIndex !== -1) {
-        newResults[prIndex] = mergedResult;
-      } else {
-        newResults.push(mergedResult);
+        newResults[prIndex] = mergeInvoicePair(prRaw, twoBRaw, 'Batch Matched by User');
+        matchCount++;
       }
+    }
 
+    if (matchCount > 0) {
       onResultsChange(newResults);
-      toast.success(`Matched PR invoice #${prRec?.invoiceNo || 'N/A'} with 2B invoice #${tbRec?.invoiceNo || 'N/A'}`);
-    } else {
-      const prRec = prRaw.prRecord;
-      const tbRec = twoBRaw.twoBRecord;
-      const prIgst = prRec?.igst ?? 0;
-      const tbIgst = tbRec?.igst ?? 0;
-      const prCgst = prRec?.cgst ?? 0;
-      const tbCgst = tbRec?.cgst ?? 0;
-      const prSgst = prRec?.sgst ?? 0;
-      const tbSgst = tbRec?.sgst ?? 0;
-      const prTaxable = prRec?.taxableValue ?? 0;
-      const tbTaxable = tbRec?.taxableValue ?? 0;
+      toast.success(`Batch matched ${matchCount} invoice pair(s)!`);
+    }
+  };
 
-      const igstDiff = +(prIgst - tbIgst).toFixed(2);
-      const cgstDiff = +(prCgst - tbCgst).toFixed(2);
-      const sgstDiff = +(prSgst - tbSgst).toFixed(2);
-      const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
-      const taxableDiff = +(prTaxable - tbTaxable).toFixed(2);
-      const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
+  const handleAutoMatchParty = (party: PartySummary) => {
+    if (!onResultsChange || !results) return;
+    const unmatchedPR = party.invoices.filter(
+      (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor' || i.status === 'Debit Note (Books)') && i.rawResult?.prRecord
+    );
+    const unmatched2B = party.invoices.filter(
+      (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR' || i.status === 'Debit Note (Portal)') && i.rawResult?.twoBRecord
+    );
 
-      newResults.push({
-        ...prRaw,
-        prRecord: prRec,
-        twoBRecord: tbRec,
-        status: matchStatus,
-        igstDiff,
-        cgstDiff,
-        sgstDiff,
-        gstDiff,
-        taxableDiff,
-        matchMethod: 'Name (Exact)' as const,
-        remark: 'Manually Matched by User',
+    if (unmatchedPR.length === 0 || unmatched2B.length === 0) {
+      toast.info('No unmatched Books & 2B invoice pairs available for this party');
+      return;
+    }
+
+    let matchedCount = 0;
+    let newResults = [...results];
+    const used2B = new Set<ReconciliationResult>();
+
+    for (const prRow of unmatchedPR) {
+      const prRaw = prRow.rawResult!;
+      const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
+      const match2B = unmatched2B.find((bRow) => {
+        if (used2B.has(bRow.rawResult!)) return false;
+        const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
+        const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
+        return Math.abs(prGst - bGst) < 1 || Math.abs(prRow.taxablePR - bRow.taxable2B) < 1 || noMatch;
       });
+
+      if (match2B?.rawResult) {
+        used2B.add(match2B.rawResult);
+        newResults = newResults.filter((r) => r !== match2B.rawResult);
+        const prIndex = newResults.findIndex((r) => r === prRaw);
+        const merged = mergeInvoicePair(prRaw, match2B.rawResult, 'Auto-Matched by System');
+        if (prIndex !== -1) newResults[prIndex] = merged;
+        else newResults.push(merged);
+        matchedCount++;
+      }
+    }
+
+    if (matchedCount > 0) {
       onResultsChange(newResults);
-      toast.success(`Matched PR invoice #${prRec?.invoiceNo || 'N/A'} with 2B invoice #${tbRec?.invoiceNo || 'N/A'}`);
+      toast.success(`Auto-matched ${matchedCount} pair(s) for ${party.partyName}`);
+    } else {
+      toast.info('No matching invoice pairs found for auto-matching');
+    }
+  };
+
+  const handleAutoMatchAll = () => {
+    if (!onResultsChange || !results) return;
+    let totalMatched = 0;
+    let newResults = [...results];
+
+    for (const party of parties) {
+      const unmatchedPR = party.invoices.filter(
+        (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor') && i.rawResult?.prRecord
+      );
+      const unmatched2B = party.invoices.filter(
+        (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR') && i.rawResult?.twoBRecord
+      );
+      if (unmatchedPR.length === 0 || unmatched2B.length === 0) continue;
+
+      const used2B = new Set<ReconciliationResult>();
+      for (const prRow of unmatchedPR) {
+        const prRaw = prRow.rawResult!;
+        const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
+        const match2B = unmatched2B.find((bRow) => {
+          if (used2B.has(bRow.rawResult!)) return false;
+          const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
+          const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
+          return Math.abs(prGst - bGst) < 1 || Math.abs(prRow.taxablePR - bRow.taxable2B) < 1 || noMatch;
+        });
+        if (match2B?.rawResult) {
+          used2B.add(match2B.rawResult);
+          newResults = newResults.filter((r) => r !== match2B.rawResult);
+          const prIndex = newResults.findIndex((r) => r === prRaw);
+          if (prIndex !== -1) {
+            newResults[prIndex] = mergeInvoicePair(prRaw, match2B.rawResult, 'Auto-Matched by System');
+            totalMatched++;
+          }
+        }
+      }
+    }
+
+    if (totalMatched > 0) {
+      onResultsChange(newResults);
+      toast.success(`Auto-matched ${totalMatched} pair(s) across all parties!`);
+    } else {
+      toast.info('No remaining matching invoice pairs found');
     }
   };
 
   const handleForceMatch = (invRow: PartyInvoiceRow) => {
-    if (!onResultsChange || !results) return;
+    if (!onResultsChange || !results || !invRow.rawResult) return;
     const raw = invRow.rawResult;
-    if (!raw) return;
-
     setAuditModalState({
       isOpen: true,
       actionType: 'FORCE_MATCH',
@@ -259,14 +372,14 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       prRecord: raw.prRecord || { invoiceNo: invRow.invoiceNoPR, taxableValue: invRow.taxablePR },
       twoBRecord: raw.twoBRecord || { invoiceNo: invRow.invoiceNo2B, taxableValue: invRow.taxable2B },
       clientGstin: raw.prRecord?.gstin || raw.twoBRecord?.gstin,
-      taxableDiff: raw.taxableDiff ?? (invRow.taxablePR - invRow.taxable2B),
-      gstDiff: raw.gstDiff ?? ((invRow.cgstPR + invRow.sgstPR + invRow.igstPR) - (invRow.cgst2B + invRow.sgst2B + invRow.igst2B)),
+      taxableDiff: raw.taxableDiff ?? invRow.taxablePR - invRow.taxable2B,
+      gstDiff: raw.gstDiff ?? (invRow.cgstPR + invRow.sgstPR + invRow.igstPR) - (invRow.cgst2B + invRow.sgst2B + invRow.igst2B),
       onConfirmOverride: (justification) => {
         const newResults = [...results];
         const idx = newResults.findIndex((r) => r === raw);
-        const forceMatchedItem = {
+        const forced: ReconciliationResult = {
           ...raw,
-          status: 'Perfect Match' as MatchStatus,
+          status: 'Perfect Match',
           gstDiff: 0,
           cgstDiff: 0,
           sgstDiff: 0,
@@ -274,22 +387,17 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
           taxableDiff: 0,
           remark: `Force Matched: ${justification}`,
         };
-        if (idx !== -1) {
-          newResults[idx] = forceMatchedItem;
-        } else {
-          newResults.push(forceMatchedItem);
-        }
+        if (idx !== -1) newResults[idx] = forced;
+        else newResults.push(forced);
         onResultsChange(newResults);
-        toast.success(`Overrode mismatch for invoice #${invRow.invoiceNoPR || invRow.invoiceNo2B} as Perfect Match`);
+        toast.success(`Overrode mismatch for #${invRow.invoiceNoPR || invRow.invoiceNo2B} as Perfect Match`);
       },
     });
   };
 
   const handleUnlinkMatch = (invRow: PartyInvoiceRow) => {
-    if (!onResultsChange || !results) return;
+    if (!onResultsChange || !results || !invRow.rawResult?.prRecord || !invRow.rawResult?.twoBRecord) return;
     const raw = invRow.rawResult;
-    if (!raw || !raw.prRecord || !raw.twoBRecord) return;
-
     setAuditModalState({
       isOpen: true,
       actionType: 'UNLINK',
@@ -302,191 +410,33 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       gstDiff: raw.gstDiff,
       onConfirmOverride: (justification) => {
         const newResults = results.filter((r) => r !== raw);
-        const prRes: ReconciliationResult = {
-          prRecord: raw.prRecord,
-          status: 'Not in 2B',
-          gstDiff: (raw.prRecord.igst || 0) + (raw.prRecord.cgst || 0) + (raw.prRecord.sgst || 0),
-          taxableDiff: raw.prRecord.taxableValue || 0,
-          remark: `Unlinked: ${justification}`,
-        };
-        const twoBRes: ReconciliationResult = {
-          twoBRecord: raw.twoBRecord,
-          status: 'Not in Books',
-          gstDiff: -((raw.twoBRecord.igst || 0) + (raw.twoBRecord.cgst || 0) + (raw.twoBRecord.sgst || 0)),
-          taxableDiff: -(raw.twoBRecord.taxableValue || 0),
-          remark: `Unlinked: ${justification}`,
-        };
-
-        newResults.push(prRes, twoBRes);
+        newResults.push(
+          {
+            prRecord: raw.prRecord,
+            status: 'Not in 2B',
+            gstDiff: (raw.prRecord!.igst || 0) + (raw.prRecord!.cgst || 0) + (raw.prRecord!.sgst || 0),
+            taxableDiff: raw.prRecord!.taxableValue || 0,
+            remark: `Unlinked: ${justification}`,
+          },
+          {
+            twoBRecord: raw.twoBRecord,
+            status: 'Not in Books',
+            gstDiff: -((raw.twoBRecord!.igst || 0) + (raw.twoBRecord!.cgst || 0) + (raw.twoBRecord!.sgst || 0)),
+            taxableDiff: -(raw.twoBRecord!.taxableValue || 0),
+            remark: `Unlinked: ${justification}`,
+          }
+        );
         onResultsChange(newResults);
-        toast.info(`Unlinked invoice #${raw.prRecord.invoiceNo} from 2B invoice #${raw.twoBRecord.invoiceNo}`);
+        toast.info(`Unlinked #${raw.prRecord!.invoiceNo} from #${raw.twoBRecord!.invoiceNo}`);
       },
     });
   };
 
-  const handleAutoMatchParty = (party: PartySummary) => {
-    if (!onResultsChange || !results) return;
-
-    const unmatchedPR = party.invoices.filter(
-      (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor' || i.status === 'Debit Note (Books)') && i.rawResult?.prRecord
-    );
-    const unmatched2B = party.invoices.filter(
-      (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR' || i.status === 'Debit Note (Portal)') && i.rawResult?.twoBRecord
-    );
-
-    if (unmatchedPR.length === 0 || unmatched2B.length === 0) {
-      toast.info('No unmatched PR & 2B invoice pairs available to auto-match');
-      return;
-    }
-
-    let matchedCount = 0;
-    let newResults = [...results];
-    const used2B = new Set<ReconciliationResult>();
-
-    for (const prRow of unmatchedPR) {
-      const prRaw = prRow.rawResult!;
-      const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
-      const prTaxable = prRow.taxablePR;
-
-      const match2B = unmatched2B.find((bRow) => {
-        if (used2B.has(bRow.rawResult!)) return false;
-        const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
-        const bTaxable = bRow.taxable2B;
-        const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
-        return Math.abs(prGst - bGst) < 1 || Math.abs(prTaxable - bTaxable) < 1 || noMatch;
-      });
-
-      if (match2B && match2B.rawResult) {
-        used2B.add(match2B.rawResult);
-        newResults = newResults.filter((r) => r !== match2B.rawResult);
-        const prIndex = newResults.findIndex((r) => r === prRaw);
-
-        const prRec = prRaw.prRecord;
-        const tbRec = match2B.rawResult.twoBRecord;
-
-        const igstDiff = +((prRec?.igst ?? 0) - (tbRec?.igst ?? 0)).toFixed(2);
-        const cgstDiff = +((prRec?.cgst ?? 0) - (tbRec?.cgst ?? 0)).toFixed(2);
-        const sgstDiff = +((prRec?.sgst ?? 0) - (tbRec?.sgst ?? 0)).toFixed(2);
-        const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
-        const taxableDiff = +((prRec?.taxableValue ?? 0) - (tbRec?.taxableValue ?? 0)).toFixed(2);
-
-        const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
-
-        const mergedAutoRes = {
-          ...prRaw,
-          prRecord: prRec,
-          twoBRecord: tbRec,
-          status: matchStatus,
-          igstDiff,
-          cgstDiff,
-          sgstDiff,
-          gstDiff,
-          taxableDiff,
-          matchMethod: 'Name (Exact)' as const,
-          remark: 'Auto-Matched by System',
-        };
-
-        if (prIndex !== -1) {
-          newResults[prIndex] = mergedAutoRes;
-        } else {
-          newResults.push(mergedAutoRes);
-        }
-        matchedCount++;
-      }
-    }
-
-    if (matchedCount > 0) {
-      onResultsChange(newResults);
-      toast.success(`Auto-matched ${matchedCount} invoice pair(s) for ${party.partyName}`);
-    } else {
-      toast.info('No matching invoice pairs found for auto-matching');
-    }
-  };
-
-  const handleAutoMatchAll = () => {
-    if (!onResultsChange || !results) return;
-
-    let totalMatched = 0;
-    let newResults = [...results];
-
-    for (const party of parties) {
-      const unmatchedPR = party.invoices.filter(
-        (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor') && i.rawResult?.prRecord
-      );
-      const unmatched2B = party.invoices.filter(
-        (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR') && i.rawResult?.twoBRecord
-      );
-
-      if (unmatchedPR.length === 0 || unmatched2B.length === 0) continue;
-
-      const used2B = new Set<ReconciliationResult>();
-
-      for (const prRow of unmatchedPR) {
-        const prRaw = prRow.rawResult!;
-        const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
-        const prTaxable = prRow.taxablePR;
-
-        const match2B = unmatched2B.find((bRow) => {
-          if (used2B.has(bRow.rawResult!)) return false;
-          const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
-          const bTaxable = bRow.taxable2B;
-          const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
-          return Math.abs(prGst - bGst) < 1 || Math.abs(prTaxable - bTaxable) < 1 || noMatch;
-        });
-
-        if (match2B && match2B.rawResult) {
-          used2B.add(match2B.rawResult);
-          newResults = newResults.filter((r) => r !== match2B.rawResult);
-          const prIndex = newResults.findIndex((r) => r === prRaw);
-
-          if (prIndex !== -1) {
-            const prRec = prRaw.prRecord;
-            const tbRec = match2B.rawResult.twoBRecord;
-
-            const igstDiff = +((prRec?.igst ?? 0) - (tbRec?.igst ?? 0)).toFixed(2);
-            const cgstDiff = +((prRec?.cgst ?? 0) - (tbRec?.cgst ?? 0)).toFixed(2);
-            const sgstDiff = +((prRec?.sgst ?? 0) - (tbRec?.sgst ?? 0)).toFixed(2);
-            const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
-            const taxableDiff = +((prRec?.taxableValue ?? 0) - (tbRec?.taxableValue ?? 0)).toFixed(2);
-
-            const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
-
-            newResults[prIndex] = {
-              ...prRaw,
-              prRecord: prRec,
-              twoBRecord: tbRec,
-              status: matchStatus,
-              igstDiff,
-              cgstDiff,
-              sgstDiff,
-              gstDiff,
-              taxableDiff,
-              matchMethod: 'Name (Exact)',
-              remark: 'Auto-Matched by System',
-            };
-            totalMatched++;
-          }
-        }
-      }
-    }
-
-    if (totalMatched > 0) {
-      onResultsChange(newResults);
-      toast.success(`Auto-matched ${totalMatched} invoice pair(s) across all counterparties!`);
-    } else {
-      toast.info('No remaining matching invoice pairs found across any party');
-    }
-  };
-
-  // AI Smart Match Handlers
+  // AI Smart Match
   const handleRunSmartMatchParty = (party: PartySummary) => {
     const candidates = findSmartMatchesForParty(party);
     if (candidates.length === 0) {
-      toast.info(`No high-confidence AI smart matches found for ${party.partyName} (70%+ confidence required)`);
+      toast.info(`No high-confidence AI smart matches found for ${party.partyName}`);
       return;
     }
     setSmartMatchCandidates(candidates);
@@ -495,9 +445,8 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
 
   const handleRunSmartMatchInvoice = (targetRow: PartyInvoiceRow, party: PartySummary) => {
     const candidates = findSmartMatchesForInvoice(targetRow, party);
-    const invNo = targetRow.invoiceNoPR || targetRow.invoiceNo2B || 'Invoice';
     if (candidates.length === 0) {
-      toast.info(`No high-confidence AI match candidate found for #${invNo} within counterparty records.`);
+      toast.info(`No AI match candidate found for #${targetRow.invoiceNoPR || targetRow.invoiceNo2B || 'Invoice'}`);
       return;
     }
     setSmartMatchCandidates(candidates);
@@ -507,7 +456,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
   const handleRunSmartMatchAll = () => {
     const candidates = findAllSmartMatches(parties);
     if (candidates.length === 0) {
-      toast.info('No unmatched invoice pairs qualify for AI Smart Matching across counterparties');
+      toast.info('No unmatched pairs qualify for AI Smart Matching');
       return;
     }
     setSmartMatchCandidates(candidates);
@@ -516,9 +465,8 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
 
   const handleApplySingleSmartMatch = (candidate: SmartMatchCandidate) => {
     if (!onResultsChange || !results) return;
-    const newResults = applySmartMatch(results, candidate);
-    onResultsChange(newResults);
-    toast.success(`Matched #${candidate.metrics.prInvoiceNo} with #${candidate.metrics.twoBInvoiceNo} (${candidate.confidence}% AI Confidence)`);
+    onResultsChange(applySmartMatch(results, candidate));
+    toast.success(`Matched #${candidate.metrics.prInvoiceNo} ↔ #${candidate.metrics.twoBInvoiceNo} (${candidate.confidence}%)`);
     setSmartMatchCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
   };
 
@@ -526,120 +474,21 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     if (!onResultsChange || !results || candidatesToApply.length === 0) return;
     const { newResults, appliedCount } = applyBatchSmartMatches(results, candidatesToApply);
     onResultsChange(newResults);
-    toast.success(`AI Smart Match successfully linked ${appliedCount} invoice pair(s)`);
-    setSmartMatchCandidates((prev) =>
-      prev.filter((c) => !candidatesToApply.some((applied) => applied.id === c.id))
-    );
+    toast.success(`AI Smart Match linked ${appliedCount} invoice pair(s)`);
+    setSmartMatchCandidates((prev) => prev.filter((c) => !candidatesToApply.some((a) => a.id === c.id)));
   };
 
-  const handleBatchMatch = (stagedPairs: Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow }>) => {
-    if (!onResultsChange || !results || stagedPairs.length === 0) return;
-
-    let newResults = [...results];
-    let matchCount = 0;
-
-    for (const pair of stagedPairs) {
-      const prRaw = pair.pr.rawResult;
-      const twoBRaw = pair.twoB.rawResult;
-      if (!prRaw || !twoBRaw) continue;
-
-      newResults = newResults.filter((r) => r !== twoBRaw);
-      const prIndex = newResults.findIndex((r) => r === prRaw);
-
-      if (prIndex !== -1) {
-        const prRec = prRaw.prRecord;
-        const tbRec = twoBRaw.twoBRecord;
-
-        const prIgst = prRec?.igst ?? 0;
-        const tbIgst = tbRec?.igst ?? 0;
-        const prCgst = prRec?.cgst ?? 0;
-        const tbCgst = tbRec?.cgst ?? 0;
-        const prSgst = prRec?.sgst ?? 0;
-        const tbSgst = tbRec?.sgst ?? 0;
-        const prTaxable = prRec?.taxableValue ?? 0;
-        const tbTaxable = tbRec?.taxableValue ?? 0;
-
-        const igstDiff = +(prIgst - tbIgst).toFixed(2);
-        const cgstDiff = +(prCgst - tbCgst).toFixed(2);
-        const sgstDiff = +(prSgst - tbSgst).toFixed(2);
-        const gstDiff = +(Math.abs(igstDiff) + Math.abs(cgstDiff) + Math.abs(sgstDiff)).toFixed(2);
-        const taxableDiff = +(prTaxable - tbTaxable).toFixed(2);
-
-        const matchStatus: MatchStatus = gstDiff === 0 && taxableDiff === 0 ? 'Perfect Match' : 'Value Mismatch';
-
-        newResults[prIndex] = {
-          ...prRaw,
-          prRecord: prRec,
-          twoBRecord: tbRec,
-          status: matchStatus,
-          igstDiff,
-          cgstDiff,
-          sgstDiff,
-          gstDiff,
-          taxableDiff,
-          matchMethod: 'Name (Exact)',
-          remark: 'Batch Matched by User',
-        };
-        matchCount++;
-      }
-    }
-
-    if (matchCount > 0) {
-      onResultsChange(newResults);
-      toast.success(`Batch matched ${matchCount} invoice pair(s) successfully!`);
-    }
-  };
-
-  const handleMergeParties = (sourceParty: PartySummary, targetPartyKey: string) => {
-    if (!onResultsChange || !results) return;
-    const targetParty = parties.find((p) => p.key === targetPartyKey);
-    if (!targetParty) return;
-
-    const targetName = targetParty.partyName || targetParty.partyNamePR || targetParty.partyName2B;
-    const targetGstin = targetParty.gstin || targetParty.gstinPR || targetParty.gstin2B;
-
-    const sourceRawResults = new Set(
-      sourceParty.invoices.map((inv) => inv.rawResult).filter((r): r is ReconciliationResult => Boolean(r))
-    );
-
-    const newResults = results.map((r) => {
-      if (!sourceRawResults.has(r)) return r;
-
-      const updated = { ...r };
-      if (updated.prRecord) {
-        updated.prRecord = {
-          ...updated.prRecord,
-          supplierName: targetName,
-          ...(targetGstin && !targetGstin.includes('NO GSTIN') ? { gstin: targetGstin } : {}),
-        };
-      }
-      if (updated.twoBRecord) {
-        updated.twoBRecord = {
-          ...updated.twoBRecord,
-          supplierName: targetName,
-          ...(targetGstin && !targetGstin.includes('NO GSTIN') ? { gstin: targetGstin } : {}),
-        };
-      }
-      return updated;
-    });
-
-    onResultsChange(newResults);
-    toast.success(`Merged '${sourceParty.partyName}' into '${targetName}' successfully!`);
-  };
-
+  // Merge helpers
   const selectedMergeParties = useMemo(
     () => parties.filter((p) => selectedMergeKeys.has(p.key)),
     [parties, selectedMergeKeys]
   );
 
   const activePrimaryMergeKey = useMemo(() => {
-    if (primaryMergeKey && selectedMergeKeys.has(primaryMergeKey)) {
-      return primaryMergeKey;
-    }
+    if (primaryMergeKey && selectedMergeKeys.has(primaryMergeKey)) return primaryMergeKey;
     return selectedMergeParties[0]?.key || '';
   }, [primaryMergeKey, selectedMergeKeys, selectedMergeParties]);
 
-  /** Merge multiple selected parties into the chosen primary party */
   const handleMergeMultipleParties = () => {
     const targetKey = activePrimaryMergeKey;
     if (!onResultsChange || !results || selectedMergeKeys.size < 2 || !targetKey) return;
@@ -649,13 +498,9 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     const targetName = primaryParty.partyName || primaryParty.partyNamePR || primaryParty.partyName2B;
     const targetGstin = primaryParty.gstin || primaryParty.gstinPR || primaryParty.gstin2B;
 
-    // Collect all raw results from non-primary selected parties
     const sourceKeys = new Set([...selectedMergeKeys].filter((k) => k !== targetKey));
-    const sourceParties = parties.filter((p) => sourceKeys.has(p.key));
     const sourceRawResults = new Set<ReconciliationResult>();
-    const mergedNames: string[] = [];
-    for (const sp of sourceParties) {
-      mergedNames.push(sp.partyName || sp.key);
+    for (const sp of parties.filter((p) => sourceKeys.has(p.key))) {
       for (const inv of sp.invoices) {
         if (inv.rawResult) sourceRawResults.add(inv.rawResult);
       }
@@ -682,12 +527,9 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     });
 
     onResultsChange(newResults);
-    toast.success(`Merged ${mergedNames.join(', ')} → '${targetName}' (${sourceRawResults.size} invoices reassigned)`);
-
-    // Reset merge state
+    toast.success(`Merged ${selectedMergeKeys.size} ledgers into '${targetName}'`);
     setMergeMode(false);
     setSelectedMergeKeys(new Set());
-    setShowMergeConfirm(false);
     setPrimaryMergeKey('');
   };
 
@@ -700,6 +542,21 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
     });
   };
 
+  // Exports
+  const handleExportPartyWise = () => {
+    try {
+      const cleanComp = (companyName || 'GST').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanComp}_Party_Wise_Report.xlsx`;
+      exportWorkbookAsync({
+        type: 'EXPORT_WORKBOOK',
+        exportType: 'PARTY_WISE',
+        payload: { parties: filtered, filename, companyName },
+      }).catch(() => exportPartyWise(filtered, filename, companyName));
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to export Party-Wise Excel');
+    }
+  };
+
   const handleExport21ColDebitNotes = () => {
     try {
       const pr = debitNotes?.pr || [];
@@ -709,7 +566,7 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
         return;
       }
       const dnResult = reconcileDebitNotes(pr, twoB);
-      if (!dnResult.reconciledRows || dnResult.reconciledRows.length === 0) {
+      if (!dnResult.reconciledRows?.length) {
         toast.error('No reconciled debit note rows generated.');
         return;
       }
@@ -718,80 +575,136 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
       exportWorkbookAsync({
         type: 'EXPORT_WORKBOOK',
         exportType: 'DEBIT_NOTES',
-        payload: {
-          rows: dnResult.reconciledRows,
-          filename,
-          companyName
-        }
-      }).catch((err) => {
-        console.warn('Async worker export failed, falling back to synchronous:', err);
-        exportDebitNotes21Col(dnResult.reconciledRows, filename, companyName);
-      });
+        payload: { rows: dnResult.reconciledRows, filename, companyName },
+      }).catch(() => exportDebitNotes21Col(dnResult.reconciledRows, filename, companyName));
     } catch (err: any) {
-      console.error('Failed to export 21-col debit notes:', err);
-      toast.error(err?.message || 'Failed to export 21-col Debit Notes Excel');
+      toast.error(err?.message || 'Failed to export Debit Notes Excel');
     }
   };
 
-  const handleExportPartyWise = () => {
-    try {
-      const cleanComp = (companyName || 'GST').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `${cleanComp}_Party_Wise_Report.xlsx`;
-      exportWorkbookAsync({
-        type: 'EXPORT_WORKBOOK',
-        exportType: 'PARTY_WISE',
-        payload: {
-          parties: filtered,
-          filename,
-          companyName
-        }
-      }).catch((err) => {
-        console.warn('Async worker export failed, falling back to synchronous:', err);
-        exportPartyWise(filtered, filename, companyName);
-      });
-    } catch (err: any) {
-      console.error('Failed to export party-wise report:', err);
-      toast.error(err?.message || 'Failed to export Party-Wise Excel');
-    }
-  };
+  const hasDebitNotesData = Boolean(debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0)));
+  const activeHasUnmatchedPR = Boolean(
+    activeParty?.invoices.some((i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor') && i.rawResult?.prRecord)
+  );
+  const activeHasUnmatched2B = Boolean(
+    activeParty?.invoices.some((i) => (i.status === 'Not in Books' || i.status === 'Missing in PR') && i.rawResult?.twoBRecord)
+  );
 
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const booksTaxTotal = activeParty ? activeParty.totals.igstPR + activeParty.totals.cgstPR + activeParty.totals.sgstPR : 0;
+  const twoBTaxTotal = activeParty ? activeParty.totals.igst2B + activeParty.totals.cgst2B + activeParty.totals.sgst2B : 0;
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden" style={{ animationDelay: '300ms' }}>
-      <div className="bg-slate-50/80 border-b border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <div className="dash-dots"><span className="bg-emerald-500"></span><span className="bg-amber-500"></span></div>
-          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest font-mono">Party-wise Intelligence ({filtered.length.toLocaleString('en-IN')})</span>
+    <div className="space-y-4">
+      {/* Clean Slim Top Bar */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h3 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-indigo-600" />
+              Party-Wise Intelligence
+            </h3>
+            <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+              {parties.length.toLocaleString('en-IN')} Counterparties
+            </span>
+            {statusCounts.missing + statusCounts.mismatch > 0 && (
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
+                {statusCounts.missing + statusCounts.mismatch} Need Review
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500">
+            Pick a vendor on the left to inspect their invoices, match missing pairs, or copy a dispute notice.
+          </p>
+        </div>
 
-          <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-xl text-xs font-semibold shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Status Pills */}
+          <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200">
+            {([
+              { key: 'all', label: 'All', count: statusCounts.all },
+              { key: 'missing', label: 'Missing', count: statusCounts.missing },
+              { key: 'mismatch', label: 'Mismatch', count: statusCounts.mismatch },
+              { key: 'matched', label: 'Matched', count: statusCounts.matched },
+              ...(statusCounts.dn > 0 ? [{ key: 'debitNotes' as const, label: 'Debit Notes', count: statusCounts.dn }] : []),
+            ] as const).map((pill) => {
+              const active = statusFilter === pill.key;
+              return (
+                <button
+                  key={pill.key}
+                  type="button"
+                  onClick={() => setStatusFilter(pill.key)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5',
+                    active ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  )}
+                >
+                  <span>{pill.label}</span>
+                  <span className={cn('text-[10px] font-mono', active ? 'text-indigo-600' : 'text-slate-400')}>
+                    {pill.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Grouping Switch */}
+          <div className="flex p-1 rounded-xl bg-slate-100 border border-slate-200">
             <button
+              type="button"
               onClick={() => setGroupBy('gstin')}
               className={cn(
-                "px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition-all font-bold",
-                groupBy === 'gstin' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer',
+                groupBy === 'gstin' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
               )}
-              title="Group strictly by 15-digit GSTIN"
             >
               By GSTIN
             </button>
             <button
+              type="button"
               onClick={() => setGroupBy('name')}
               className={cn(
-                "px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition-all flex items-center gap-1 font-bold",
-                groupBy === 'name' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1',
+                groupBy === 'name' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
               )}
-              title="Merge branch GSTINs by Party Name / PAN"
+              title="Combine branch GSTINs under the same party name"
             >
               <Users className="w-3 h-3" />
-              By Party Name (Merge Branches)
+              By Name
             </button>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
+
+          <button
+            type="button"
+            onClick={handleExportPartyWise}
+            className="h-8 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            Export Excel
+          </button>
+
           {!!onResultsChange && (
-            <>
-              <button
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="h-8 px-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Tools</span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-white border-slate-200 text-slate-900 rounded-xl shadow-xl">
+                <DropdownMenuItem onClick={handleRunSmartMatchAll} className="cursor-pointer gap-2 text-xs font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  AI Smart Match All Parties
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleAutoMatchAll} className="cursor-pointer gap-2 text-xs font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Auto-Match Suggested Pairs
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
                   onClick={() => {
                     if (mergeMode) {
                       setMergeMode(false);
@@ -800,273 +713,616 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
                       setMergeMode(true);
                     }
                   }}
-                  className={cn(
-                    "px-3 py-1 rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all",
-                    mergeMode
-                      ? "bg-rose-600/90 hover:bg-rose-500 text-white ring-1 ring-rose-400/50"
-                      : "bg-purple-700/80 hover:bg-purple-600 text-white"
-                  )}
-                  title={mergeMode ? "Exit merge mode" : "Select parties to merge"}
+                  className="cursor-pointer gap-2 text-xs font-semibold"
                 >
-                  {mergeMode ? (
-                    <>
-                      <X className="w-3.5 h-3.5" />
-                      Exit Merge Mode
-                    </>
-                  ) : (
-                    <>
-                      <GitMerge className="w-3.5 h-3.5 text-purple-200" />
-                      Merge Parties
-                    </>
-                  )}
-                </button>
-
-              <button
-                onClick={handleAutoMatchAll}
-                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
-                title="Auto-match all matching invoice pairs across all parties in 1 click"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                Auto-Match All Parties
-              </button>
-
-              <button
-                onClick={handleRunSmartMatchAll}
-                className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all hover:scale-105 active:scale-95"
-                title="Scan all counterparties and solve mismatches with AI Smart Solver (100% Offline)"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                ✨ AI Smart Match All
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleExportPartyWise}
-            className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
-            title="Export full Party-Wise Intelligence Report Excel"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
-            Export Party Report
-          </button>
-          {debitNotes && ((debitNotes.pr && debitNotes.pr.length > 0) || (debitNotes.twoB && debitNotes.twoB.length > 0)) && (
-            <button
-              onClick={handleExport21ColDebitNotes}
-              className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
-              title="Export 21-Column Zero-Merge Debit Note Reconciliation Excel"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-600" />
-              Export Debit Notes
-            </button>
-          )}
-          <div className="relative w-44 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
-            <input
-              placeholder="Search party..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-3 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition-all shadow-2xs"
-            />
-          </div>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as PartyStatusFilter)}
-            className="h-8 bg-white border border-slate-200 rounded-xl px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all uppercase tracking-wider shadow-2xs"
-            title="Filter parties by status"
-          >
-            <option value="all">All Statuses</option>
-            <option value="missing">Has Missing</option>
-            <option value="mismatch">Has Mismatches</option>
-            <option value="matched">All Matched</option>
-            <option value="debitNotes">Has Debit Notes</option>
-          </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as PartySortOption)}
-            className="h-8 bg-white border border-slate-200 rounded-xl px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition-all uppercase tracking-wider shadow-2xs"
-            title="Sort parties by Name, Variance, or Invoice Count"
-          >
-            <option value="name_asc">Party A → Z</option>
-            <option value="name_desc">Party Z → A</option>
-            <option value="var_desc">Variance: High → Low</option>
-            <option value="var_asc">Variance: Low → High</option>
-            <option value="count_desc">Invoices: High → Low</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Merge mode info banner */}
-      {mergeMode && (
-        <div className="mx-4 mt-3 mb-1 p-3 bg-purple-950/60 border border-purple-500/30 rounded-lg flex items-center gap-3">
-          <GitMerge className="w-5 h-5 text-purple-400 animate-pulse flex-shrink-0" />
-          <div>
-            <p className="text-[11px] font-bold text-purple-200">MERGE MODE ACTIVE — Select 2 or more party cards to merge</p>
-            <p className="text-[10px] text-purple-400/80 mt-0.5">Click the checkboxes next to party names below, then pick which party to keep as primary.</p>
-          </div>
-          <span className="ml-auto text-[11px] font-mono font-bold text-purple-300 bg-purple-900/60 px-2.5 py-0.5 rounded-full">
-            {selectedMergeKeys.size} selected
-          </span>
-        </div>
-      )}
-
-      <div className="divide-y divide-[var(--np-border)]">
-        {filtered.slice(0, visiblePartiesCount).map((p) => (
-          <PartyCard
-            key={p.key}
-            party={p}
-            isOpen={expandedKey === p.key}
-            onToggle={() => setExpandedKey(expandedKey === p.key ? null : p.key)}
-            onManualMatch={handleManualMatch}
-            onBatchMatch={handleBatchMatch}
-            onForceMatch={handleForceMatch}
-            onUnlinkMatch={handleUnlinkMatch}
-            onAutoMatchParty={handleAutoMatchParty}
-            onSmartMatchParty={handleRunSmartMatchParty}
-            onSmartMatchInvoice={handleRunSmartMatchInvoice}
-            onMergeParties={handleMergeParties}
-            allParties={parties}
-            canEdit={!!onResultsChange}
-            groupBy={groupBy}
-            onSetGroupBy={setGroupBy}
-            mergeMode={mergeMode}
-            isMergeSelected={selectedMergeKeys.has(p.key)}
-            onToggleMergeSelect={() => toggleMergeSelection(p.key)}
-            partyDisputes={activeDisputes}
-            onPartyDisputesChange={handleDisputesChange}
-          />
-        ))}
-        {filtered.length === 0 && (
-          <div className="p-24 text-center text-[10px] font-bold text-[var(--np-text3)] uppercase tracking-widest italic">No matches in repository</div>
-        )}
-        {filtered.length > visiblePartiesCount && (
-          <div className="p-4 text-center bg-slate-900/40 border-t border-slate-800">
-            <button
-              onClick={() => setVisiblePartiesCount(prev => prev + 100)}
-              className="px-6 py-2 rounded-xl bg-purple-600/80 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg hover:scale-105"
-            >
-              Load More Counterparties (Showing {visiblePartiesCount} of {filtered.length})
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Screen-Fixed Left Side Margin Floating Merge Controller (Rendered via React Portal into document.body to break out of transformed parent containers) */}
-      {mergeMode &&
-        createPortal(
-          <div className="fixed left-4 top-1/2 -translate-y-1/2 z-[9999] w-56 bg-slate-900/95 border-2 border-purple-500/60 rounded-2xl shadow-[0_0_35px_rgba(168,85,247,0.35)] backdrop-blur-xl p-3.5 flex flex-col gap-3 animate-in slide-in-from-left duration-300 pointer-events-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-purple-500/30 pb-2">
-              <div className="flex items-center gap-2">
-                <GitMerge className="w-4 h-4 text-purple-300 animate-pulse flex-shrink-0" />
-                <span className="text-[11px] font-black text-white uppercase tracking-wider">Merge Panel</span>
-              </div>
-              <button
-                onClick={() => {
-                  setMergeMode(false);
-                  setSelectedMergeKeys(new Set());
-                }}
-                className="w-5 h-5 rounded-full hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 flex items-center justify-center transition-colors"
-                title="Exit merge mode"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Selection counter & Party list pills */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[9.5px] font-bold uppercase tracking-wider text-purple-300">
-                  {selectedMergeKeys.size} {selectedMergeKeys.size === 1 ? 'Party' : 'Parties'} Selected
-                </span>
-                {selectedMergeKeys.size > 0 && (
-                  <button
-                    onClick={() => setSelectedMergeKeys(new Set())}
-                    className="text-[9px] font-bold text-slate-400 hover:text-rose-400 underline transition-colors"
-                  >
-                    Clear
-                  </button>
+                  <GitMerge className="w-3.5 h-3.5 text-purple-600" />
+                  {mergeMode ? 'Exit Merge Mode' : 'Merge Duplicate Parties'}
+                </DropdownMenuItem>
+                {hasDebitNotesData && (
+                  <DropdownMenuItem onClick={handleExport21ColDebitNotes} className="cursor-pointer gap-2 text-xs font-semibold">
+                    <Download className="w-3.5 h-3.5 text-amber-600" />
+                    Export 21-Col Debit Notes
+                  </DropdownMenuItem>
                 )}
-              </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
 
-              {selectedMergeParties.length > 0 ? (
-                <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                  {selectedMergeParties.map((sp) => (
-                    <div
-                      key={sp.key}
-                      className="flex items-center justify-between gap-1 px-2.5 py-1 rounded-lg bg-purple-950/70 border border-purple-500/30 text-[10px] text-purple-200 font-bold shadow-sm"
-                    >
-                      <span className="truncate" title={sp.partyName || sp.key}>{sp.partyName || sp.key}</span>
-                      <button
-                        onClick={() => toggleMergeSelection(sp.key)}
-                        className="text-purple-400 hover:text-rose-400 font-bold text-xs p-0.5 leading-none flex-shrink-0"
-                        title="Remove"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+      {/* Master-Detail Two-Pane Studio */}
+      <div className="grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-4 items-start">
+        {/* LEFT PANE: Clean Counterparty Directory */}
+        <aside className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col">
+          {/* Search + Sort Header */}
+          <div className="p-3 bg-slate-50/80 border-b border-slate-200 space-y-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search party name or GSTIN..."
+                className="w-full h-9 pl-9 pr-3 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 outline-none"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-slate-500">
+                Showing {Math.min(visiblePartiesCount, filtered.length)} of {filtered.length}
+              </span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as PartySortOption)}
+                className="h-7 px-2 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 outline-none cursor-pointer"
+                aria-label="Sort counterparties"
+              >
+                <option value="var_desc">Highest Variance First</option>
+                <option value="name_asc">Name A → Z</option>
+                <option value="name_desc">Name Z → A</option>
+                <option value="count_desc">Most Invoices</option>
+                <option value="var_asc">Lowest Variance First</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Merge Mode Inline Helper */}
+          {mergeMode && (
+            <div className="p-3 bg-purple-50 border-b border-purple-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                  <GitMerge className="w-3.5 h-3.5 text-purple-600" />
+                  Select 2+ parties to merge ({selectedMergeKeys.size})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMergeMode(false);
+                    setSelectedMergeKeys(new Set());
+                  }}
+                  className="text-xs font-bold text-purple-700 hover:text-purple-950 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+              {selectedMergeParties.length >= 2 && (
+                <div className="space-y-1.5 pt-1">
+                  <select
+                    value={activePrimaryMergeKey}
+                    onChange={(e) => setPrimaryMergeKey(e.target.value)}
+                    className="w-full h-8 px-2 rounded-lg bg-white border border-purple-300 text-xs font-semibold text-slate-900"
+                  >
+                    {selectedMergeParties.map((sp) => (
+                      <option key={sp.key} value={sp.key}>
+                        Keep Primary: {sp.partyName || sp.key}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleMergeMultipleParties}
+                    className="w-full h-8 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Merge {selectedMergeKeys.size} Parties Now
+                  </button>
                 </div>
-              ) : (
-                <p className="text-[9.5px] text-slate-400 leading-snug italic bg-slate-950/60 p-2 rounded-lg border border-slate-800">
-                  Check boxes next to parties to merge them.
-                </p>
               )}
             </div>
+          )}
 
-            {/* Dynamic Primary Party Selection & Immediate Merge Button right here in Left Panel */}
-            {selectedMergeKeys.size >= 2 ? (
-              <div className="flex flex-col gap-2 pt-2 border-t border-purple-500/30">
-                <span className="text-[9.5px] font-black text-purple-300 uppercase tracking-wider">
-                  Select Primary Name:
-                </span>
-                <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
-                  {selectedMergeParties.map((sp) => {
-                    const activePrimary = activePrimaryMergeKey === sp.key;
-                    return (
-                      <button
-                        key={sp.key}
-                        onClick={() => setPrimaryMergeKey(sp.key)}
+          {/* Directory Rows */}
+          <div className="max-h-[640px] overflow-y-auto divide-y divide-slate-100">
+            {filtered.slice(0, visiblePartiesCount).map((p) => {
+              const isSelected = activeParty?.key === p.key;
+              const isMergeChecked = selectedMergeKeys.has(p.key);
+              const disputeStatus = activeDisputes?.[p.key]?.status;
+
+              return (
+                <div
+                  key={p.key}
+                  className={cn(
+                    'w-full px-3.5 py-3 transition-colors flex items-start gap-2.5',
+                    isSelected ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                  )}
+                >
+                  {mergeMode ? (
+                    <input
+                      type="checkbox"
+                      checked={isMergeChecked}
+                      onChange={() => toggleMergeSelection(p.key)}
+                      className="w-4 h-4 mt-0.5 rounded border-slate-400 text-purple-600 accent-purple-600 shrink-0 cursor-pointer"
+                      aria-label={`Select ${p.partyName} for merge`}
+                    />
+                  ) : (
+                    <span className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', overallDotClass(p.overall))} />
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPartyKey(p.key)}
+                    className="min-w-0 flex-1 text-left cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={cn('text-xs font-bold truncate', isSelected ? 'text-indigo-950' : 'text-slate-900')}>
+                        {p.partyName || '— Unnamed Counterparty —'}
+                      </span>
+                      <span
                         className={cn(
-                          "w-full text-left p-2 rounded-lg border text-[10px] transition-all flex items-center gap-2",
-                          activePrimary
-                            ? "bg-purple-600/30 border-purple-400 text-purple-100 font-black ring-1 ring-purple-400/40 shadow-sm"
-                            : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-900 hover:border-slate-700"
+                          'text-xs font-mono font-bold shrink-0',
+                          p.totals.totalDiff === 0
+                            ? 'text-emerald-700'
+                            : p.overall === 'Has Missing'
+                            ? 'text-rose-600'
+                            : 'text-amber-700'
                         )}
                       >
-                        <div className={cn(
-                          "w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 transition-all",
-                          activePrimary ? "border-purple-300 bg-purple-500" : "border-slate-600"
-                        )}>
-                          {activePrimary && <Check className="w-2.5 h-2.5 text-white" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-bold" title={sp.partyName || sp.key}>{sp.partyName || sp.key}</p>
-                          <p className="text-[8.5px] text-slate-400 font-mono">{sp.totals.count} inv {sp.gstin && sp.gstin !== 'NO GSTIN' ? `• ${sp.gstin}` : ''}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        {p.totals.totalDiff === 0 ? 'Matched' : fmt(p.totals.totalDiff)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span className="text-[11px] font-mono text-slate-500 truncate">{p.gstin || 'NO GSTIN'}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {disputeStatus && disputeStatus !== 'No Dispute' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold uppercase">
+                            {disputeStatus}
+                          </span>
+                        )}
+                        <span className="text-[11px] font-medium text-slate-500">{p.totals.count} inv</span>
+                      </div>
+                    </div>
+                  </button>
                 </div>
+              );
+            })}
 
-                <button
-                  onClick={handleMergeMultipleParties}
-                  className="w-full py-2.5 px-3 mt-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-black text-[11px] uppercase tracking-wider shadow-[0_0_20px_rgba(168,85,247,0.5)] flex items-center justify-center gap-1.5 border border-purple-300/40 transition-all hover:scale-105 active:scale-95"
-                >
-                  <GitMerge className="w-4 h-4 text-purple-200 animate-pulse" />
-                  <span>CONFIRM & MERGE NOW</span>
-                </button>
-              </div>
-            ) : (
-              <div className="w-full py-2 px-2 bg-purple-950/40 border border-purple-500/20 rounded-xl text-center">
-                <span className="text-[9.5px] font-bold text-purple-300/80">
-                  Select {selectedMergeKeys.size === 0 ? '2' : '1 more'} party to merge
-                </span>
+            {filtered.length === 0 && (
+              <div className="p-10 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-700">No parties found</p>
+                <p className="text-[11px] text-slate-500">Try clearing your search or changing status filter.</p>
               </div>
             )}
-          </div>,
-          document.body
-        )}
+
+            {filtered.length > visiblePartiesCount && (
+              <div className="p-3 text-center bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setVisiblePartiesCount((prev) => prev + 80)}
+                  className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  Load More ({filtered.length - visiblePartiesCount} left)
+                </button>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* RIGHT PANE: Focused Party Inspector */}
+        <section className="min-w-0 bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+          {activeParty ? (
+            <>
+              {/* Selected Party Summary Header */}
+              <div className="p-5 bg-slate-50/70 border-b border-slate-200 space-y-4">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-lg font-extrabold text-slate-900 truncate">{activeParty.partyName || '— Unnamed Counterparty —'}</h4>
+                      <span className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-bold border', overallBadgeClass(activeParty.overall))}>
+                        {activeParty.overall}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-600 font-mono flex-wrap">
+                      <span>GSTIN: <strong className="text-slate-900">{activeParty.gstin || 'NO GSTIN'}</strong></span>
+                      <span>·</span>
+                      <span>{activeParty.totals.count} Total Invoices</span>
+                      {activeParty.totals.perfectMatch > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-emerald-700 font-semibold">{activeParty.totals.perfectMatch} Matched</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Clean 3-Box Financial Strip for Selected Party */}
+                  <div className="grid grid-cols-3 gap-2.5 shrink-0">
+                    <div className="px-3.5 py-2 rounded-xl bg-white border border-slate-200">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Books Tax</div>
+                      <div className="text-sm font-black font-mono text-slate-900 mt-0.5">{fmt(booksTaxTotal)}</div>
+                    </div>
+                    <div className="px-3.5 py-2 rounded-xl bg-white border border-slate-200">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Portal 2B Tax</div>
+                      <div className="text-sm font-black font-mono text-slate-900 mt-0.5">{fmt(twoBTaxTotal)}</div>
+                    </div>
+                    <div className="px-3.5 py-2 rounded-xl bg-white border border-slate-200">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Variance</div>
+                      <div className={cn('text-sm font-black font-mono mt-0.5', activeParty.totals.totalDiff === 0 ? 'text-emerald-700' : 'text-rose-600')}>
+                        {activeParty.totals.totalDiff === 0 ? '₹0' : fmt(activeParty.totals.totalDiff)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contextual Party Actions */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {onResultsChange && activeHasUnmatchedPR && activeHasUnmatched2B && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRunSmartMatchParty(activeParty)}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          AI Smart Match
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAutoMatchParty(activeParty)}
+                          className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Auto-Match
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPairMode((v) => !v);
+                            setSelectedPRIndex(null);
+                            setSelected2BIndex(null);
+                          }}
+                          className={cn(
+                            'px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors',
+                            pairMode
+                              ? 'bg-emerald-600 border-emerald-600 text-white'
+                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                          )}
+                        >
+                          <Link className="w-3.5 h-3.5" />
+                          {pairMode ? 'Done Pairing' : 'Pair Manually'}
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowTaxSplit((v) => !v)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-colors',
+                        showTaxSplit
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600'
+                      )}
+                    >
+                      {showTaxSplit ? 'Hide IGST/CGST/SGST Split' : 'Show IGST/CGST/SGST Split'}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const missingCount = activeParty.invoices.filter((i) => i.status.includes('Missing') || i.status.includes('Not in')).length;
+                      const text = `Notice to ${activeParty.partyName} (GSTIN: ${activeParty.gstin}): You have ${missingCount} invoice differences totalling ${fmtExact(activeParty.totals.totalDiff)} in GSTR-2B reconciliation. Kindly reconcile or amend in GSTR-1.`;
+                      navigator.clipboard?.writeText(text);
+                      const prev = activeDisputes?.[activeParty.key] || { note: '' };
+                      handleDisputesChange({
+                        ...activeDisputes,
+                        [activeParty.key]: {
+                          ...prev,
+                          status: 'Notice Dispatched',
+                          partyName: activeParty.partyName,
+                          gstin: activeParty.gstin,
+                          noticeDispatchedAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString(),
+                        },
+                      });
+                      toast.success(`Dispute notice copied for ${activeParty.partyName}!`);
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy Vendor Notice
+                  </button>
+                </div>
+              </div>
+
+              {/* Contextual Manual Pairing Bar (Only visible when Pair Manually is enabled) */}
+              {pairMode && (
+                <div className="px-5 py-3 bg-emerald-50/80 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-emerald-950 font-medium">
+                    Select <strong>1 Books</strong> invoice and <strong>1 Portal 2B</strong> invoice using the radio buttons below to link them.
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {selectedPRIndex !== null && selected2BIndex !== null && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const prInv = activeParty.invoices[selectedPRIndex];
+                            const twoBInv = activeParty.invoices[selected2BIndex];
+                            if (prInv && twoBInv) {
+                              setStagedPairs([...stagedPairs, { pr: prInv, twoB: twoBInv, prIndex: selectedPRIndex, twoBIndex: selected2BIndex }]);
+                              setSelectedPRIndex(null);
+                              setSelected2BIndex(null);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Stage Pair
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const prInv = activeParty.invoices[selectedPRIndex];
+                            const twoBInv = activeParty.invoices[selected2BIndex];
+                            if (prInv && twoBInv) {
+                              handleManualMatch(prInv, twoBInv);
+                              setSelectedPRIndex(null);
+                              setSelected2BIndex(null);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Link className="w-3.5 h-3.5" /> Match Now
+                        </button>
+                      </>
+                    )}
+                    {stagedPairs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleBatchMatch(stagedPairs.map((p) => ({ pr: p.pr, twoB: p.twoB })));
+                          setStagedPairs([]);
+                        }}
+                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        Apply {stagedPairs.length} Staged Pair(s)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Clean, Focused Invoice Comparison Table */}
+              <div className="overflow-x-auto max-h-[520px]">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-600 font-bold">
+                    <tr>
+                      {pairMode && <th className="py-2.5 px-3 text-center w-12">Pair</th>}
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Books Invoice</th>
+                      <th className="py-2.5 px-3">Portal 2B Invoice</th>
+                      <th className="py-2.5 px-3 text-right">Taxable (PR / 2B)</th>
+                      {!showTaxSplit ? (
+                        <th className="py-2.5 px-3 text-right">Tax (PR / 2B)</th>
+                      ) : (
+                        <>
+                          <th className="py-2.5 px-2.5 text-right">IGST (PR / 2B)</th>
+                          <th className="py-2.5 px-2.5 text-right">CGST (PR / 2B)</th>
+                          <th className="py-2.5 px-2.5 text-right">SGST (PR / 2B)</th>
+                        </>
+                      )}
+                      <th className="py-2.5 px-3 text-right">Tax Diff</th>
+                      {onResultsChange && <th className="py-2.5 px-3 text-center">Action</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {activeParty.invoices.map((inv, i) => {
+                      const isUnmatchedPR = (inv.status === 'Not in 2B' || inv.status === 'Missing in 2B' || inv.status === 'Unmatched Vendor') && !!inv.rawResult?.prRecord;
+                      const isUnmatched2B = (inv.status === 'Not in Books' || inv.status === 'Missing in PR') && !!inv.rawResult?.twoBRecord;
+                      const isMatchedPair = !!inv.rawResult?.prRecord && !!inv.rawResult?.twoBRecord;
+                      const isMismatchPair = isMatchedPair && inv.status === 'Value Mismatch';
+
+                      const prTax = inv.igstPR + inv.cgstPR + inv.sgstPR;
+                      const tbTax = inv.igst2B + inv.cgst2B + inv.sgst2B;
+                      const taxDiff = prTax - tbTax;
+                      const isBatchRow = inv.status?.includes('Consolidated Batch') || !!inv.batchLabel;
+                      const isBatchLead = isBatchRow && !inv.isSubRow;
+                      const isBatchSub = isBatchRow && !!inv.isSubRow;
+
+                      const stagedIdx = stagedPairs.findIndex((p) => p.prIndex === i || p.twoBIndex === i);
+
+                      return (
+                        <tr
+                          key={i}
+                          className={cn(
+                            'hover:bg-slate-50/80 transition-colors',
+                            selectedPRIndex === i && 'bg-emerald-50/70',
+                            selected2BIndex === i && 'bg-purple-50/70',
+                            stagedIdx !== -1 && 'bg-emerald-50/50',
+                            isBatchRow && 'border-l-4 border-l-amber-400 bg-amber-50/40'
+                          )}
+                        >
+                          {pairMode && (
+                            <td className="py-2.5 px-3 text-center">
+                              {stagedIdx !== -1 ? (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                  #{stagedIdx + 1}
+                                </span>
+                              ) : isUnmatchedPR ? (
+                                <input
+                                  type="radio"
+                                  name={`pr_${activeParty.key}`}
+                                  checked={selectedPRIndex === i}
+                                  onChange={() => setSelectedPRIndex(selectedPRIndex === i ? null : i)}
+                                  className="accent-emerald-600 cursor-pointer"
+                                  title="Select Books invoice"
+                                />
+                              ) : isUnmatched2B ? (
+                                <input
+                                  type="radio"
+                                  name={`tb_${activeParty.key}`}
+                                  checked={selected2BIndex === i}
+                                  onChange={() => setSelected2BIndex(selected2BIndex === i ? null : i)}
+                                  className="accent-purple-600 cursor-pointer"
+                                  title="Select Portal 2B invoice"
+                                />
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          )}
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <StatusBadge status={inv.status as MatchStatus} />
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            {isBatchLead ? (
+                              <div className="flex items-center gap-1.5 font-mono font-semibold text-slate-900">
+                                <span>{inv.invoiceNoPR || '—'}</span>
+                                <BatchBadge isLead={true} />
+                              </div>
+                            ) : isBatchSub ? (
+                              <BatchBadge isSubRow={true} />
+                            ) : (
+                              <>
+                                <div className="font-mono font-semibold text-slate-900">{inv.invoiceNoPR || '—'}</div>
+                                <div className="text-[11px] text-slate-500">{inv.invoiceDatePR || ''}</div>
+                              </>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <div className="font-mono font-semibold text-indigo-700">{inv.invoiceNo2B || '—'}</div>
+                            <div className="text-[11px] text-slate-500">{inv.invoiceDate2B || ''}</div>
+                          </td>
+
+                          <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                            <div className="text-slate-900 font-semibold">{fmt(inv.taxablePR)}</div>
+                            <div className="text-[11px] text-slate-500">{fmt(inv.taxable2B)}</div>
+                          </td>
+
+                          {!showTaxSplit ? (
+                            <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                              <div className="text-slate-900 font-semibold">{fmt(prTax)}</div>
+                              <div className="text-[11px] text-slate-500">{fmt(tbTax)}</div>
+                            </td>
+                          ) : (
+                            <>
+                              <td className="py-2.5 px-2.5 text-right font-mono whitespace-nowrap">
+                                <div className="text-slate-900">{fmt(inv.igstPR)}</div>
+                                <div className="text-[11px] text-slate-500">{fmt(inv.igst2B)}</div>
+                              </td>
+                              <td className="py-2.5 px-2.5 text-right font-mono whitespace-nowrap">
+                                <div className="text-slate-900">{fmt(inv.cgstPR)}</div>
+                                <div className="text-[11px] text-slate-500">{fmt(inv.cgst2B)}</div>
+                              </td>
+                              <td className="py-2.5 px-2.5 text-right font-mono whitespace-nowrap">
+                                <div className="text-slate-900">{fmt(inv.sgstPR)}</div>
+                                <div className="text-[11px] text-slate-500">{fmt(inv.sgst2B)}</div>
+                              </td>
+                            </>
+                          )}
+
+                          <td
+                            className={cn(
+                              'py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap',
+                              Math.abs(taxDiff) < 1 ? 'text-emerald-700' : taxDiff > 0 ? 'text-rose-600' : 'text-amber-700'
+                            )}
+                          >
+                            {Math.abs(taxDiff) < 1 ? '₹0' : fmtExact(taxDiff)}
+                          </td>
+
+                          {onResultsChange && (
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                {(isUnmatchedPR || isUnmatched2B) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRunSmartMatchInvoice(inv, activeParty)}
+                                    className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                    title="Find AI match for this invoice"
+                                  >
+                                    <Sparkles className="w-3 h-3" />
+                                    AI
+                                  </button>
+                                )}
+                                {isMismatchPair && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleForceMatch(inv)}
+                                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer"
+                                    title="Force Match with Audit Justification"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {isMatchedPair && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUnlinkMatch(inv)}
+                                    className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer"
+                                    title="Unlink matched pair"
+                                  >
+                                    <Unlink className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Compact Dispute & Resolution Note Bar */}
+              <div className="p-4 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Dispute Status:</span>
+                  <select
+                    value={activeDisputes?.[activeParty.key]?.status || 'No Dispute'}
+                    onChange={(e) => {
+                      const prev = activeDisputes?.[activeParty.key] || { note: '' };
+                      handleDisputesChange({
+                        ...activeDisputes,
+                        [activeParty.key]: {
+                          ...prev,
+                          status: e.target.value,
+                          partyName: activeParty.partyName,
+                          gstin: activeParty.gstin,
+                          updatedAt: new Date().toISOString(),
+                        },
+                      });
+                    }}
+                    className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                  >
+                    <option value="No Dispute">No Dispute</option>
+                    <option value="Under Review">Under Review</option>
+                    <option value="Dispute Raised">Dispute Raised</option>
+                    <option value="Notice Dispatched">Notice Dispatched</option>
+                    <option value="Resolved">Resolved</option>
+                  </select>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Add remark or vendor follow-up note..."
+                  value={activeDisputes?.[activeParty.key]?.note || ''}
+                  onChange={(e) => {
+                    const prev = activeDisputes?.[activeParty.key] || { status: 'Under Review' };
+                    handleDisputesChange({
+                      ...activeDisputes,
+                      [activeParty.key]: {
+                        ...prev,
+                        note: e.target.value,
+                        partyName: activeParty.partyName,
+                        gstin: activeParty.gstin,
+                        updatedAt: new Date().toISOString(),
+                      },
+                    });
+                  }}
+                  className="flex-1 h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 outline-none"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="p-16 text-center space-y-2">
+              <Building2 className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm font-bold text-slate-700">No Party Selected</p>
+              <p className="text-xs text-slate-500">Adjust your search or status filter on the left to view party details.</p>
+            </div>
+          )}
+        </section>
+      </div>
 
       {/* AI Smart Match Solver Modal */}
       <AiSmartMatchModal
@@ -1076,480 +1332,22 @@ export function PartyWiseReport({ results, companyName, mode = 'input', debitNot
         onApplyMatch={handleApplySingleSmartMatch}
         onApplyAllHighConfidence={handleApplyBatchSmartMatches}
       />
+
+      {/* Statutory Override Justification Modal */}
+      <AuditJustificationModal
+        isOpen={auditModalState.isOpen}
+        onClose={() => setAuditModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={(justification, auditRecord) => auditModalState.onConfirmOverride?.(justification, auditRecord)}
+        actionType={auditModalState.actionType}
+        targetStatus={auditModalState.targetStatus}
+        originalStatus={auditModalState.originalStatus}
+        prRecord={auditModalState.prRecord}
+        twoBRecord={auditModalState.twoBRecord}
+        companyName={companyName}
+        clientGstin={auditModalState.clientGstin}
+        taxableDiff={auditModalState.taxableDiff}
+        gstDiff={auditModalState.gstDiff}
+      />
     </div>
   );
 }
-
-function PartyCard({
-  party,
-  isOpen,
-  onToggle,
-  onManualMatch,
-  onBatchMatch,
-  onForceMatch,
-  onUnlinkMatch,
-  onAutoMatchParty,
-  onSmartMatchParty,
-  onSmartMatchInvoice,
-  onMergeParties,
-  allParties,
-  canEdit,
-  groupBy,
-  onSetGroupBy,
-  mergeMode,
-  isMergeSelected,
-  onToggleMergeSelect,
-  partyDisputes,
-  onPartyDisputesChange,
-}: {
-  party: PartySummary;
-  isOpen: boolean;
-  onToggle: () => void;
-  onManualMatch: (pr: PartyInvoiceRow, tb: PartyInvoiceRow) => void;
-  onBatchMatch: (stagedPairs: Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow }>) => void;
-  onForceMatch: (inv: PartyInvoiceRow) => void;
-  onUnlinkMatch: (inv: PartyInvoiceRow) => void;
-  onAutoMatchParty: (p: PartySummary) => void;
-  onSmartMatchParty?: (p: PartySummary) => void;
-  onSmartMatchInvoice?: (inv: PartyInvoiceRow, p: PartySummary) => void;
-  onMergeParties?: (source: PartySummary, targetKey: string) => void;
-  allParties?: PartySummary[];
-  canEdit: boolean;
-  groupBy?: 'gstin' | 'name';
-  onSetGroupBy?: (gb: 'gstin' | 'name') => void;
-  mergeMode?: boolean;
-  isMergeSelected?: boolean;
-  onToggleMergeSelect?: () => void;
-  partyDisputes?: Record<string, any>;
-  onPartyDisputesChange?: (disputes: Record<string, any>) => void;
-}) {
-  const [selectedPRIndex, setSelectedPRIndex] = useState<number | null>(null);
-  const [selected2BIndex, setSelected2BIndex] = useState<number | null>(null);
-  const [stagedPairs, setStagedPairs] = useState<Array<{ pr: PartyInvoiceRow; twoB: PartyInvoiceRow; prIndex: number; twoBIndex: number }>>([]);
-
-  const isPRStaged = (index: number) => stagedPairs.some((p) => p.prIndex === index);
-  const is2BStaged = (index: number) => stagedPairs.some((p) => p.twoBIndex === index);
-  const getStagedPairLabel = (prIndex?: number, twoBIndex?: number) => {
-    const foundIdx = stagedPairs.findIndex((p) => p.prIndex === prIndex || p.twoBIndex === twoBIndex);
-    return foundIdx !== -1 ? `Pair #${foundIdx + 1}` : null;
-  };
-
-  const hasUnmatchedPR = party.invoices.some((i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor') && i.rawResult?.prRecord);
-  const hasUnmatched2B = party.invoices.some((i) => (i.status === 'Not in Books' || i.status === 'Missing in PR') && i.rawResult?.twoBRecord);
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={onToggle}>
-      <CollapsibleTrigger asChild>
-        <button className={cn(
-          "w-full flex items-center justify-between gap-6 px-6 py-5 hover:bg-slate-50/80 border-b border-slate-100 transition-all group text-left",
-          mergeMode && isMergeSelected && "bg-purple-950/30 ring-1 ring-purple-500/30"
-        )}>
-          <div className="min-w-0 flex-1 flex items-center gap-6">
-            {/* Merge checkbox */}
-            {mergeMode && (
-              <div
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleMergeSelect?.(); }}
-                className={cn(
-                  "w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 cursor-pointer transition-all",
-                  isMergeSelected
-                    ? "bg-purple-500 border-purple-400 shadow-sm shadow-purple-500/30"
-                    : "border-slate-600 hover:border-purple-400"
-                )}
-              >
-                {isMergeSelected && <Check className="w-3 h-3 text-white" />}
-              </div>
-            )}
-            <div className={cn("w-2 h-2 rounded-full", party.overall === 'All Matched' ? 'bg-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'bg-yellow-500' : 'bg-[var(--np-red)]')} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-extrabold text-sm text-slate-900 truncate uppercase tracking-wide group-hover:text-indigo-600 transition-colors">{party.partyName || '— UNNAMED COUNTERPARTY —'}</span>
-                <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-bold">{party.gstin || 'NO GSTIN'}</span>
-              </div>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">{party.totals.count} Invoices</span>
-                {party.totals.totalDiff !== 0 && (
-                  <span className="text-xs font-bold text-amber-600 uppercase tracking-widest font-mono">₹{fmt(party.totals.totalDiff)} Variance</span>
-                )}
-                <span className={cn("text-[9px] font-black uppercase tracking-[0.2em]", party.overall === 'All Matched' ? 'text-[var(--np-green)]' : party.overall === 'Has Mismatches' ? 'text-yellow-500' : 'text-[var(--np-red)]')}>
-                  {party.overall}
-                </span>
-                {partyDisputes?.[party.key]?.status && partyDisputes[party.key].status !== 'No Dispute' && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
-                    {partyDisputes[party.key].status}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          <ChevronDown className={cn('w-4 h-4 text-[var(--np-text3)] transition-transform duration-500 group-hover:text-[var(--np-sky)]', isOpen && 'rotate-180')} />
-        </button>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="bg-slate-50/50 border-t border-slate-200 p-3 overflow-hidden">
-          {canEdit && (hasUnmatchedPR || hasUnmatched2B) && (
-            <div className="mb-3 p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs p-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-sky-400 animate-pulse" />
-                <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">Manual Match Studio</span>
-                <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                  (Select 1 Books & 1 2B invoice, add to batch, then click Apply All)
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {selectedPRIndex !== null && selected2BIndex !== null && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const prInv = party.invoices[selectedPRIndex];
-                        const twoBInv = party.invoices[selected2BIndex];
-                        if (prInv && twoBInv) {
-                          setStagedPairs([
-                            ...stagedPairs,
-                            { pr: prInv, twoB: twoBInv, prIndex: selectedPRIndex, twoBIndex: selected2BIndex },
-                          ]);
-                          setSelectedPRIndex(null);
-                          setSelected2BIndex(null);
-                          toast.success(`Staged Pair #${stagedPairs.length + 1}: #${prInv.invoiceNoPR || 'PR'} ↔ #${twoBInv.invoiceNo2B || '2B'}`);
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Pair to Batch Queue
-                    </button>
-                    <button
-                      onClick={() => {
-                        const prInv = party.invoices[selectedPRIndex];
-                        const twoBInv = party.invoices[selected2BIndex];
-                        if (prInv && twoBInv) {
-                          onManualMatch(prInv, twoBInv);
-                          setSelectedPRIndex(null);
-                          setSelected2BIndex(null);
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow transition-all"
-                    >
-                      <Link className="w-3.5 h-3.5" />
-                      Match Immediately
-                    </button>
-                  </>
-                )}
-                {hasUnmatchedPR && hasUnmatched2B && (
-                  <>
-                    <button
-                      onClick={() => onSmartMatchParty?.(party)}
-                      className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg font-black text-[10.5px] uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all hover:scale-105 active:scale-95"
-                      title="Run AI Smart Mismatch Solver on this party (100% Offline)"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                      <span>✨ AI Smart Match</span>
-                    </button>
-                    <button
-                      onClick={() => onAutoMatchParty(party)}
-                      className="px-3 py-1.5 bg-sky-600/80 hover:bg-sky-500 text-white rounded font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      Auto-Match Suggested Pairs
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {stagedPairs.length > 0 && (
-            <div className="mb-3 p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-lg flex flex-col gap-2 shadow-lg">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-pulse" />
-                  <span className="font-bold text-emerald-200 text-xs uppercase tracking-wider">
-                    Batch Queue ({stagedPairs.length} pair{stagedPairs.length > 1 ? 's' : ''} staged)
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setStagedPairs([])}
-                    className="px-2.5 py-1 text-[10px] text-slate-400 hover:text-white uppercase font-bold transition-colors"
-                  >
-                    Clear Queue
-                  </button>
-                  <button
-                    onClick={() => {
-                      onBatchMatch(stagedPairs.map((p) => ({ pr: p.pr, twoB: p.twoB })));
-                      setStagedPairs([]);
-                    }}
-                    className="px-4 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded font-black text-[10.5px] uppercase tracking-wider shadow-lg flex items-center gap-1.5 transition-all animate-bounce"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Apply & Match All Mapped Pairs ({stagedPairs.length})
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-emerald-900/60">
-                {stagedPairs.map((pair, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-emerald-500/40 rounded text-[10px] text-slate-900 font-mono shadow-sm">
-                    <span className="text-emerald-400 font-bold">Pair #{idx + 1}:</span>
-                    <span className="text-sky-400">{pair.pr.invoiceNoPR || 'Books'}</span>
-                    <span className="text-slate-500">↔</span>
-                    <span className="text-purple-400">{pair.twoB.invoiceNo2B || '2B'}</span>
-                    <button
-                      onClick={() => setStagedPairs(stagedPairs.filter((_, i) => i !== idx))}
-                      className="ml-1 text-slate-500 hover:text-rose-400 font-bold text-[12px]"
-                      title="Remove pair from queue"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="w-full max-w-full overflow-x-auto">
-            <table className="w-full !bg-transparent border-none text-left border-collapse table-dense">
-              <thead>
-                <tr className="bg-slate-100/70 border-b border-slate-200">
-                  {canEdit && <th className="!py-2 !px-1 !text-[9px] font-bold text-slate-700 uppercase text-center w-8">Match</th>}
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Date</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Month / FY</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">GSTIN</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Party Name</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Inv (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Inv (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Taxable (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Taxable (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">CGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">CGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">SGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">SGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">IGST PR</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">IGST 2B</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Val (PR)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase text-right whitespace-nowrap">Val (2B)</th>
-                  <th className="!py-2 !px-1.5 !text-[9px] font-bold text-slate-700 uppercase whitespace-nowrap">Status</th>
-                  {canEdit && <th className="!py-2 !px-1 !text-[9px] font-bold text-slate-700 uppercase text-center whitespace-nowrap">Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {party.invoices.map((inv, i) => {
-                  const isUnmatchedPR = (inv.status === 'Not in 2B' || inv.status === 'Missing in 2B' || inv.status === 'Unmatched Vendor') && !!inv.rawResult?.prRecord;
-                  const isUnmatched2B = (inv.status === 'Not in Books' || inv.status === 'Missing in PR') && !!inv.rawResult?.twoBRecord;
-                  const isMatchedPair = !!inv.rawResult?.prRecord && !!inv.rawResult?.twoBRecord;
-                  const isMismatchPair = isMatchedPair && inv.status === 'Value Mismatch';
-
-                  const isBatchRow = inv.status?.includes('Consolidated Batch') || !!inv.batchLabel;
-                  const isBatchLead = isBatchRow && !inv.isSubRow;
-                  const isBatchSub = isBatchRow && !!inv.isSubRow;
-
-                  const prStaged = isPRStaged(i);
-                  const tbStaged = is2BStaged(i);
-                  const stagedLabel = getStagedPairLabel(i, i);
-
-                  const dateVal = inv.invoiceDatePR || inv.invoiceDate2B || '—';
-                  const gstinVal = inv.rawResult?.prRecord?.gstin || inv.rawResult?.twoBRecord?.gstin || party.gstin || '—';
-                  const partyNameVal = inv.rawResult?.prRecord?.supplierName || inv.rawResult?.twoBRecord?.supplierName || party.partyName || '—';
-
-                  return (
-                    <tr
-                      key={i}
-                      className={cn(
-                        'bg-white border-b border-slate-200/60 hover:bg-slate-50 transition-colors',
-                        isBatchRow && 'border-l-4 border-l-amber-500/80 bg-amber-950/15',
-                        isBatchSub && 'opacity-90',
-                        selectedPRIndex === i && 'bg-emerald-950/40 border-emerald-500/50',
-                        selected2BIndex === i && 'bg-purple-950/40 border-purple-500/50',
-                        (prStaged || tbStaged) && 'bg-emerald-950/30 border-emerald-500/30'
-                      )}
-                    >
-                      {canEdit && (
-                        <td className="!py-1.5 !px-1 text-center">
-                          {prStaged || tbStaged ? (
-                            <span className="px-1 bg-emerald-500/20 text-emerald-400 text-[8px] rounded font-mono font-bold" title="Staged in batch queue">
-                              {stagedLabel}
-                            </span>
-                          ) : isUnmatchedPR ? (
-                            <input
-                              type="radio"
-                              name={`pr_select_${party.key}`}
-                              checked={selectedPRIndex === i}
-                              onChange={() => setSelectedPRIndex(selectedPRIndex === i ? null : i)}
-                              className="accent-emerald-500 cursor-pointer w-3.5 h-3.5"
-                              title="Select PR Invoice for manual match"
-                            />
-                          ) : isUnmatched2B ? (
-                            <input
-                              type="radio"
-                              name={`2b_select_${party.key}`}
-                              checked={selected2BIndex === i}
-                              onChange={() => setSelected2BIndex(selected2BIndex === i ? null : i)}
-                              className="accent-purple-500 cursor-pointer w-3.5 h-3.5"
-                              title="Select 2B Invoice for manual match"
-                            />
-                          ) : (
-                            <span className="text-[9px] text-slate-600">—</span>
-                          )}
-                        </td>
-                      )}
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-700 whitespace-nowrap">{dateVal}</td>
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-400 whitespace-nowrap">{inv.financialYear}</td>
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-slate-700 whitespace-nowrap">{gstinVal}</td>
-                      <td className="!py-1.5 !px-1.5 font-bold !text-[9px] text-slate-900 truncate max-w-[130px]" title={partyNameVal}>{partyNameVal}</td>
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-sky-400 whitespace-nowrap">
-                        {isBatchLead ? (
-                          <div className="flex items-center gap-1.5">
-                            <span>{inv.invoiceNoPR || '—'}</span>
-                            <BatchBadge isLead={true} />
-                          </div>
-                        ) : isBatchSub ? (
-                          <div className="flex items-center gap-1 pl-2 text-slate-500">
-                            <BatchBadge isSubRow={true} />
-                          </div>
-                        ) : (
-                          inv.invoiceNoPR || '—'
-                        )}
-                      </td>
-                      <td className="!py-1.5 !px-1.5 font-mono !text-[9px] text-purple-400 whitespace-nowrap">{inv.invoiceNo2B || '—'}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.taxablePR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.taxable2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.cgstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.cgst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.sgstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.sgst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-700")}>{fmt(inv.igstPR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-mono text-slate-700">{fmt(inv.igst2B)}</td>
-                      <td className={cn("!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono", isBatchSub ? "text-slate-500/60" : "text-slate-900")}>{fmt(inv.invoiceValuePR)}</td>
-                      <td className="!py-1.5 !px-1.5 text-right tabular-nums !text-[9px] font-bold font-mono text-slate-900">{fmt(inv.invoiceValue2B)}</td>
-                      <td className={cn('!py-1.5 !px-1.5 font-bold !text-[8.5px] uppercase tracking-wider whitespace-nowrap', rowStatusColor(inv.status))}>{inv.status}</td>
-                      {canEdit && (
-                        <td className="!py-1.5 !px-1 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {(isUnmatchedPR || isUnmatched2B) && (
-                              <button
-                                onClick={() => onSmartMatchInvoice?.(inv, party)}
-                                className="p-1 px-1.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all flex items-center gap-1 shadow-2xs hover:scale-105 active:scale-95"
-                                title="Run AI Smart Match on this invoice (100% Offline)"
-                              >
-                                <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
-                                <span className="text-[8.5px] font-black uppercase tracking-tight">AI</span>
-                              </button>
-                            )}
-                            {isMismatchPair && (
-                              <button
-                                onClick={() => onForceMatch(inv)}
-                                className="p-0.5 hover:bg-emerald-500/20 text-emerald-400 rounded transition-colors"
-                                title="Force Perfect Match (Override Difference)"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {isMatchedPair && (
-                              <button
-                                onClick={() => onUnlinkMatch(inv)}
-                                className="p-0.5 hover:bg-rose-500/20 text-rose-400 rounded transition-colors"
-                                title="Unlink this matched invoice pair"
-                              >
-                                <Unlink className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Vendor Dispute Hub & Audit Communication */}
-          <div className="mt-3 p-3 bg-white border border-slate-200 rounded-xl shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-            <div className="flex-1 w-full space-y-1.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Vendor Dispute Note & Communication:</span>
-                <select
-                  value={partyDisputes?.[party.key]?.status || 'No Dispute'}
-                  onChange={(e) => {
-                    const status = e.target.value;
-                    const prev = partyDisputes?.[party.key] || { note: '' };
-                    onPartyDisputesChange?.({
-                      ...partyDisputes,
-                      [party.key]: {
-                        ...prev,
-                        status,
-                        partyName: party.partyName,
-                        gstin: party.gstin,
-                        updatedAt: new Date().toISOString()
-                      }
-                    });
-                  }}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-800"
-                >
-                  <option value="No Dispute">No Dispute</option>
-                  <option value="Under Review">Under Review</option>
-                  <option value="Dispute Raised">Dispute Raised</option>
-                  <option value="Notice Dispatched">Notice Dispatched</option>
-                  <option value="Resolved">Resolved</option>
-                </select>
-                {partyDisputes?.[party.key]?.updatedAt && (
-                  <span className="text-[9px] text-slate-400 font-mono">
-                    Updated: {new Date(partyDisputes[party.key].updatedAt!).toLocaleDateString('en-IN')}
-                  </span>
-                )}
-              </div>
-              <input
-                type="text"
-                placeholder="Add vendor dispute / resolution note (e.g. Supplier promised GSTR-1 amendment in next return)..."
-                value={partyDisputes?.[party.key]?.note || ''}
-                onChange={(e) => {
-                  const note = e.target.value;
-                  const prev = partyDisputes?.[party.key] || { status: 'Under Review' };
-                  onPartyDisputesChange?.({
-                    ...partyDisputes,
-                    [party.key]: {
-                      ...prev,
-                      note,
-                      partyName: party.partyName,
-                      gstin: party.gstin,
-                      updatedAt: new Date().toISOString()
-                    }
-                  });
-                }}
-                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  const missingCount = party.invoices.filter(i => i.status.includes('Missing') || i.status.includes('Not in')).length;
-                  const text = `Notice to ${party.partyName} (GSTIN: ${party.gstin}): You have ${missingCount} invoice differences totalling ₹${fmt(party.totals.totalDiff)} in GSTR-2B reconciliation. Kindly reconcile or amend in GSTR-1.`;
-                  navigator.clipboard.writeText(text);
-                  const prev = partyDisputes?.[party.key] || { note: '' };
-                  onPartyDisputesChange?.({
-                    ...partyDisputes,
-                    [party.key]: {
-                      ...prev,
-                      status: 'Notice Dispatched',
-                      partyName: party.partyName,
-                      gstin: party.gstin,
-                      noticeDispatchedAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString()
-                    }
-                  });
-                  toast.success(`Dispute notice copied to clipboard for ${party.partyName}! Status set to Notice Dispatched.`);
-                }}
-                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                title="Copy formal reconciliation notice for WhatsApp or Email"
-              >
-                Copy Notice
-              </button>
-            </div>
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-

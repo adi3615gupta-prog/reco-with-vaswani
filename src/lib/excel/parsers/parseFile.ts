@@ -3,37 +3,23 @@ const XLSX: any = (XLSXStyle as any).default || XLSXStyle;
 
 export async function parseFile(
   file: File,
-  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string }
+  options?: { findHeader?: boolean; raw?: boolean; sheetName?: string; docType?: string; strictSheet?: boolean }
 ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
 
-  // 1. Target the right sheet from workbook
+  // 1. Always read the 1st sheet of the workbook unless a specific sheetName is requested
   let targetSheetName = wb.SheetNames[0];
-  let sheetFound = false;
 
-  if (options?.sheetName && wb.Sheets[options.sheetName]) {
-    targetSheetName = options.sheetName;
-    sheetFound = true;
-  }
-  if (!sheetFound && options?.docType && wb.SheetNames.length > 1) {
-    const dt = options.docType.toLowerCase();
-    const matched = wb.SheetNames.find(sn => {
-      const lower = sn.toLowerCase().trim();
-      if ((dt === 'b2b' || dt === '2b') && (lower.includes('b2b') || lower.includes('2b') || lower === 'b2b supplies')) return true;
-      if (dt === 'b2c' && (lower.includes('b2c') || lower.includes('b2cs'))) return true;
-      if (dt === 'b2cl' && lower.includes('b2cl')) return true;
-      if (dt === 'cn' && (lower.includes('cdnr') || lower.includes('cn') || lower.includes('credit'))) return true;
-      if (dt === 'exp' && (lower.includes('exp') || lower.includes('export'))) return true;
-      if (dt === 'nil' && (lower.includes('nil') || lower.includes('exemp'))) return true;
-      return false;
-    });
-    if (matched) targetSheetName = matched;
-  }
-
-  // If initial sheet is a help/readme sheet, skip to first data sheet
-  if (wb.SheetNames.length > 1 && ['help', 'read me', 'readme', 'instructions'].includes(targetSheetName.toLowerCase().trim())) {
-    targetSheetName = wb.SheetNames.find(sn => !['help', 'read me', 'readme', 'instructions'].includes(sn.toLowerCase().trim())) || wb.SheetNames[0];
+  if (options?.sheetName) {
+    const matchedSheet = wb.SheetNames.find(
+      (sn) => sn.toLowerCase().trim() === options.sheetName!.toLowerCase().trim()
+    );
+    if (matchedSheet) {
+      targetSheetName = matchedSheet;
+    } else if (options?.strictSheet) {
+      return { headers: [], rows: [] };
+    }
   }
 
   const sheet = wb.Sheets[targetSheetName] || wb.Sheets[wb.SheetNames[0]];

@@ -1,0 +1,1 @@
+const { app, dialog } = require('electron'); app.whenReady().then(() => { setTimeout(() => { throw new Error('Main Process Error Test'); }, 1000); });
