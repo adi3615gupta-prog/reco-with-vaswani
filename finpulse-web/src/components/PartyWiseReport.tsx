@@ -42,6 +42,14 @@ import {
   applyBatchSmartMatches,
 } from '@/lib/smartMismatchSolver';
 import { AiSmartMatchModal } from '@/components/AiSmartMatchModal';
+import {
+  AutoMatchReviewModal,
+  type AutoMatchPairCandidate,
+} from '@/components/AutoMatchReviewModal';
+import {
+  isPairDismatched,
+  saveBatchLearnedDismatches,
+} from '@/lib/recoLearnedMatches';
 
 interface Props {
   results: ReconciliationResult[];
@@ -155,6 +163,8 @@ export function PartyWiseReport({
   // Modals
   const [smartMatchModalOpen, setSmartMatchModalOpen] = useState<boolean>(false);
   const [smartMatchCandidates, setSmartMatchCandidates] = useState<SmartMatchCandidate[]>([]);
+  const [autoMatchCandidates, setAutoMatchCandidates] = useState<AutoMatchPairCandidate[]>([]);
+  const [isAutoMatchReviewOpen, setIsAutoMatchReviewOpen] = useState<boolean>(false);
   const [auditModalState, setAuditModalState] = useState<{
     isOpen: boolean;
     actionType: AuditActionType;
@@ -266,98 +276,140 @@ export function PartyWiseReport({
     }
   };
 
-  const handleAutoMatchParty = (party: PartySummary) => {
-    if (!onResultsChange || !results) return;
-    const unmatchedPR = party.invoices.filter(
-      (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor' || i.status === 'Debit Note (Books)') && i.rawResult?.prRecord
-    );
-    const unmatched2B = party.invoices.filter(
-      (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR' || i.status === 'Debit Note (Portal)') && i.rawResult?.twoBRecord
-    );
-
-    if (unmatchedPR.length === 0 || unmatched2B.length === 0) {
-      toast.info('No unmatched Books & 2B invoice pairs available for this party');
-      return;
-    }
-
-    let matchedCount = 0;
-    let newResults = [...results];
+  // Collect candidates for safe review and learning
+  const collectAutoMatchCandidates = (targetParties: PartySummary[]): AutoMatchPairCandidate[] => {
+    const candidates: AutoMatchPairCandidate[] = [];
     const used2B = new Set<ReconciliationResult>();
 
-    for (const prRow of unmatchedPR) {
-      const prRaw = prRow.rawResult!;
-      const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
-      const match2B = unmatched2B.find((bRow) => {
-        if (used2B.has(bRow.rawResult!)) return false;
-        const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
-        const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
-        return Math.abs(prGst - bGst) < 1 || Math.abs(prRow.taxablePR - bRow.taxable2B) < 1 || noMatch;
-      });
-
-      if (match2B?.rawResult) {
-        used2B.add(match2B.rawResult);
-        newResults = newResults.filter((r) => r !== match2B.rawResult);
-        const prIndex = newResults.findIndex((r) => r === prRaw);
-        const merged = mergeInvoicePair(prRaw, match2B.rawResult, 'Auto-Matched by System');
-        if (prIndex !== -1) newResults[prIndex] = merged;
-        else newResults.push(merged);
-        matchedCount++;
-      }
-    }
-
-    if (matchedCount > 0) {
-      onResultsChange(newResults);
-      toast.success(`Auto-matched ${matchedCount} pair(s) for ${party.partyName}`);
-    } else {
-      toast.info('No matching invoice pairs found for auto-matching');
-    }
-  };
-
-  const handleAutoMatchAll = () => {
-    if (!onResultsChange || !results) return;
-    let totalMatched = 0;
-    let newResults = [...results];
-
-    for (const party of parties) {
+    for (const party of targetParties) {
       const unmatchedPR = party.invoices.filter(
-        (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor') && i.rawResult?.prRecord
+        (i) => (i.status === 'Not in 2B' || i.status === 'Missing in 2B' || i.status === 'Unmatched Vendor' || i.status === 'Debit Note (Books)') && i.rawResult?.prRecord
       );
       const unmatched2B = party.invoices.filter(
-        (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR') && i.rawResult?.twoBRecord
+        (i) => (i.status === 'Not in Books' || i.status === 'Missing in PR' || i.status === 'Debit Note (Portal)') && i.rawResult?.twoBRecord
       );
       if (unmatchedPR.length === 0 || unmatched2B.length === 0) continue;
 
-      const used2B = new Set<ReconciliationResult>();
       for (const prRow of unmatchedPR) {
         const prRaw = prRow.rawResult!;
         const prGst = prRow.igstPR + prRow.cgstPR + prRow.sgstPR;
+        const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
         const match2B = unmatched2B.find((bRow) => {
           if (used2B.has(bRow.rawResult!)) return false;
+
+          // Check if previously dis-matched/rejected by user
+          if (isPairDismatched(party.gstin, prRow.invoiceNoPR, bRow.invoiceNo2B)) {
+            return false;
+          }
+
           const bGst = bRow.igst2B + bRow.cgst2B + bRow.sgst2B;
-          const prNo = (prRow.invoiceNoPR || '').toLowerCase().replace(/[^a-z0-9]/g, '');
           const bNo = (bRow.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
           const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
           return Math.abs(prGst - bGst) < 1 || Math.abs(prRow.taxablePR - bRow.taxable2B) < 1 || noMatch;
         });
+
         if (match2B?.rawResult) {
           used2B.add(match2B.rawResult);
-          newResults = newResults.filter((r) => r !== match2B.rawResult);
-          const prIndex = newResults.findIndex((r) => r === prRaw);
-          if (prIndex !== -1) {
-            newResults[prIndex] = mergeInvoicePair(prRaw, match2B.rawResult, 'Auto-Matched by System');
-            totalMatched++;
+          const bGst = match2B.igst2B + match2B.cgst2B + match2B.sgst2B;
+          const bNo = (match2B.invoiceNo2B || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const noMatch = prNo.length > 0 && bNo.length > 0 && (bNo.includes(prNo) || prNo.includes(bNo));
+
+          let matchReason = 'Value Match';
+          if (Math.abs(prGst - bGst) < 0.01 && Math.abs(prRow.taxablePR - match2B.taxable2B) < 0.01) {
+            matchReason = 'Exact Taxable & Tax Match';
+          } else if (Math.abs(prGst - bGst) < 1) {
+            matchReason = 'Tax Match (Rounding ≤ ₹1)';
+          } else if (Math.abs(prRow.taxablePR - match2B.taxable2B) < 1) {
+            matchReason = 'Taxable Match (Diff ≤ ₹1)';
+          } else if (noMatch) {
+            matchReason = `Similar Invoice # (${prRow.invoiceNoPR} ↔ ${match2B.invoiceNo2B})`;
           }
+
+          candidates.push({
+            id: `${party.partyKey}_${prRow.invoiceNoPR || 'PR'}_${match2B.invoiceNo2B || '2B'}_${candidates.length}`,
+            partyKey: party.partyKey,
+            partyName: party.partyName,
+            gstin: party.gstin || '',
+            prRow,
+            twoBRow: match2B,
+            prRaw,
+            twoBRaw: match2B.rawResult,
+            matchReason,
+            taxableDiff: +(prRow.taxablePR - match2B.taxable2B).toFixed(2),
+            gstDiff: +(prGst - bGst).toFixed(2),
+          });
         }
       }
     }
 
-    if (totalMatched > 0) {
+    return candidates;
+  };
+
+  const handleAutoMatchParty = (party: PartySummary) => {
+    if (!onResultsChange || !results) return;
+    const candidates = collectAutoMatchCandidates([party]);
+    if (candidates.length === 0) {
+      toast.info(`No matching invoice pairs found for ${party.partyName} (or remaining were dis-matched).`);
+      return;
+    }
+    setAutoMatchCandidates(candidates);
+    setIsAutoMatchReviewOpen(true);
+  };
+
+  const handleAutoMatchAll = () => {
+    if (!onResultsChange || !results) return;
+    const candidates = collectAutoMatchCandidates(parties);
+    if (candidates.length === 0) {
+      toast.info('No remaining matching invoice pairs found (or all remaining were previously dis-matched).');
+      return;
+    }
+    setAutoMatchCandidates(candidates);
+    setIsAutoMatchReviewOpen(true);
+  };
+
+  const handleApplyAutoMatches = (selectedIds: Set<string>, rejectedCandidates: AutoMatchPairCandidate[]) => {
+    if (!onResultsChange || !results) return;
+
+    // 1. Learn from rejected / unchecked candidates
+    if (rejectedCandidates.length > 0) {
+      saveBatchLearnedDismatches(
+        rejectedCandidates.map((c) => ({
+          gstin: c.gstin,
+          prInvoiceNo: c.prRow.invoiceNoPR || '',
+          twoBInvoiceNo: c.twoBRow.invoiceNo2B || '',
+          partyName: c.partyName,
+          prTaxable: c.prRow.taxablePR,
+          twoBTaxable: c.twoBRow.taxable2B,
+          reason: 'Unchecked during Auto-Match Review',
+        }))
+      );
+    }
+
+    // 2. Apply approved matches
+    let newResults = [...results];
+    let appliedCount = 0;
+
+    for (const cand of autoMatchCandidates) {
+      if (!selectedIds.has(cand.id)) continue;
+
+      newResults = newResults.filter((r) => r !== cand.twoBRaw);
+      const prIndex = newResults.findIndex((r) => r === cand.prRaw);
+      const merged = mergeInvoicePair(cand.prRaw, cand.twoBRaw, `Auto-Matched by System (${cand.matchReason})`);
+      if (prIndex !== -1) {
+        newResults[prIndex] = merged;
+      } else {
+        newResults.push(merged);
+      }
+      appliedCount++;
+    }
+
+    if (appliedCount > 0) {
       onResultsChange(newResults);
-      toast.success(`Auto-matched ${totalMatched} pair(s) across all parties!`);
-    } else {
-      toast.info('No remaining matching invoice pairs found');
+      const learnedMsg = rejectedCandidates.length > 0 ? ` Learned ${rejectedCandidates.length} dis-match rule(s).` : '';
+      toast.success(`Successfully matched ${appliedCount} pair(s)!${learnedMsg}`);
+    } else if (rejectedCandidates.length > 0) {
+      toast.info(`Learned ${rejectedCandidates.length} dis-match rule(s). No matches applied.`);
     }
   };
 
@@ -1331,6 +1383,14 @@ export function PartyWiseReport({
         candidates={smartMatchCandidates}
         onApplyMatch={handleApplySingleSmartMatch}
         onApplyAllHighConfidence={handleApplyBatchSmartMatches}
+      />
+
+      {/* Auto-Match Suggested Pairs Review & Learning Modal */}
+      <AutoMatchReviewModal
+        isOpen={isAutoMatchReviewOpen}
+        onClose={() => setIsAutoMatchReviewOpen(false)}
+        candidates={autoMatchCandidates}
+        onApplyMatches={handleApplyAutoMatches}
       />
 
       {/* Statutory Override Justification Modal */}

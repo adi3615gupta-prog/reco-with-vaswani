@@ -198,16 +198,17 @@ export interface CommandHubProps extends React.ComponentProps<"section"> {
   cards?: CommandHubCard[];
 }
 
-/** Landing-page photos, one per suite on the rail. */
+/** One photo per suite on the wheel. Bundled in public/suites so they show
+    offline in the packaged app (remote URLs are blocked there). */
 const SUITE_PHOTOS = [
-  "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&w=600&q=80",
-  "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80",
+  "/suites/suite-01.jpg",
+  "/suites/suite-02.jpg",
+  "/suites/suite-03.jpg",
+  "/suites/suite-04.jpg",
+  "/suites/suite-05.jpg",
+  "/suites/suite-06.jpg",
+  "/suites/suite-07.jpg",
+  "/suites/suite-08.jpg",
 ];
 
 export function CommandHub({

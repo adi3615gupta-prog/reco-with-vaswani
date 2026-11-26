@@ -8799,11 +8799,11 @@ var require_mime_types = __commonJS({
       }
       return exts[0];
     }
-    function lookup(path22) {
-      if (!path22 || typeof path22 !== "string") {
+    function lookup(path23) {
+      if (!path23 || typeof path23 !== "string") {
         return false;
       }
-      var extension2 = extname("x." + path22).toLowerCase().substr(1);
+      var extension2 = extname("x." + path23).toLowerCase().substr(1);
       if (!extension2) {
         return false;
       }
@@ -9318,19 +9318,19 @@ var require_utils = __commonJS({
       if (decode)
         return decode(data, hint);
     }
-    function basename(path22) {
-      if (typeof path22 !== "string")
+    function basename(path23) {
+      if (typeof path23 !== "string")
         return "";
-      for (let i = path22.length - 1; i >= 0; --i) {
-        switch (path22.charCodeAt(i)) {
+      for (let i = path23.length - 1; i >= 0; --i) {
+        switch (path23.charCodeAt(i)) {
           case 47:
           // '/'
           case 92:
-            path22 = path22.slice(i + 1);
-            return path22 === ".." || path22 === "." ? "" : path22;
+            path23 = path23.slice(i + 1);
+            return path23 === ".." || path23 === "." ? "" : path23;
         }
       }
-      return path22 === ".." || path22 === "." ? "" : path22;
+      return path23 === ".." || path23 === "." ? "" : path23;
     }
     var TOKEN = [
       0,
@@ -13313,9 +13313,9 @@ var require_make_middleware = __commonJS({
 // node_modules/multer/storage/disk.js
 var require_disk = __commonJS({
   "node_modules/multer/storage/disk.js"(exports2, module2) {
-    var fs21 = require("fs");
+    var fs22 = require("fs");
     var os13 = require("os");
-    var path22 = require("path");
+    var path23 = require("path");
     var crypto6 = require("crypto");
     var pipeline = require("stream").pipeline;
     var MulterError = require_multer_error();
@@ -13340,7 +13340,7 @@ var require_disk = __commonJS({
       this.getFilename = opts.filename || getFilename;
       this.flush = opts.flush;
       if (typeof opts.destination === "string") {
-        fs21.mkdirSync(opts.destination, { recursive: true });
+        fs22.mkdirSync(opts.destination, { recursive: true });
         this.getDestination = function($0, $1, cb) {
           cb(null, opts.destination);
         };
@@ -13354,9 +13354,9 @@ var require_disk = __commonJS({
         if (err) return cb(err);
         that.getFilename(req, file, function(err2, filename) {
           if (err2) return cb(err2);
-          var finalPath = path22.join(destination, filename);
+          var finalPath = path23.join(destination, filename);
           if (file.stream.destroyed) return cb(new MulterError("STREAM_DESTROYED"));
-          var outStream = fs21.createWriteStream(finalPath);
+          var outStream = fs22.createWriteStream(finalPath);
           file.path = finalPath;
           openStreams.set(file, outStream);
           outStream.once("close", function() {
@@ -13378,13 +13378,13 @@ var require_disk = __commonJS({
               });
             };
             if (!that.flush) return done();
-            fs21.open(finalPath, "r+", function(err4, fd) {
+            fs22.open(finalPath, "r+", function(err4, fd) {
               if (err4) {
                 endFlush(file);
                 return done(err4);
               }
-              fs21.fsync(fd, function(syncErr) {
-                fs21.close(fd, function(closeErr) {
+              fs22.fsync(fd, function(syncErr) {
+                fs22.close(fd, function(closeErr) {
                   endFlush(file);
                   done(syncErr || closeErr);
                 });
@@ -13395,15 +13395,15 @@ var require_disk = __commonJS({
       });
     };
     DiskStorage.prototype._removeFile = function _removeFile(req, file, cb) {
-      var path23 = file.path;
+      var path24 = file.path;
       delete file.destination;
       delete file.filename;
       delete file.path;
       function unlink() {
         var flush = flushingFiles.get(file);
-        if (!flush) return fs21.unlink(path23, cb);
+        if (!flush) return fs22.unlink(path24, cb);
         flush.onClosed = function() {
-          fs21.unlink(path23, cb);
+          fs22.unlink(path24, cb);
         };
       }
       var outStream = openStreams.get(file);
@@ -16457,11 +16457,11 @@ var require_form_data = __commonJS({
     "use strict";
     var CombinedStream = require_combined_stream();
     var util = require("util");
-    var path22 = require("path");
+    var path23 = require("path");
     var http = require("http");
     var https = require("https");
     var parseUrl = require("url").parse;
-    var fs21 = require("fs");
+    var fs22 = require("fs");
     var Stream = require("stream").Stream;
     var crypto6 = require("crypto");
     var mime = require_mime_types();
@@ -16531,7 +16531,7 @@ var require_form_data = __commonJS({
         if (value.end != void 0 && value.end != Infinity && value.start != void 0) {
           callback(null, value.end + 1 - (value.start ? value.start : 0));
         } else {
-          fs21.stat(value.path, function(err, stat) {
+          fs22.stat(value.path, function(err, stat) {
             if (err) {
               callback(err);
               return;
@@ -16588,11 +16588,11 @@ var require_form_data = __commonJS({
     FormData.prototype._getContentDisposition = function(value, options) {
       var filename;
       if (typeof options.filepath === "string") {
-        filename = path22.normalize(options.filepath).replace(/\\/g, "/");
+        filename = path23.normalize(options.filepath).replace(/\\/g, "/");
       } else if (options.filename || value && (value.name || value.path)) {
-        filename = path22.basename(options.filename || value && (value.name || value.path));
+        filename = path23.basename(options.filename || value && (value.name || value.path));
       } else if (value && value.readable && hasOwn(value, "httpVersion")) {
-        filename = path22.basename(value.client._httpMessage.path || "");
+        filename = path23.basename(value.client._httpMessage.path || "");
       }
       if (filename) {
         return 'filename="' + escapeHeaderParam(filename) + '"';
@@ -20033,9 +20033,9 @@ var require_cpexcel = __commonJS({
 var require_xlsx = __commonJS({
   "node_modules/xlsx/xlsx.js"(exports2, module2) {
     /*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
-    var XLSX14 = {};
-    function make_xlsx_lib(XLSX15) {
-      XLSX15.version = "0.18.5";
+    var XLSX15 = {};
+    function make_xlsx_lib(XLSX16) {
+      XLSX16.version = "0.18.5";
       var current_codepage = 1200, current_ansi = 1252;
       var $cptable;
       if (typeof cptable !== "undefined") $cptable = cptable;
@@ -21906,9 +21906,9 @@ var require_xlsx = __commonJS({
           }
           return o;
         }
-        var fs21;
+        var fs22;
         function get_fs() {
-          return fs21 || (fs21 = require("fs"));
+          return fs22 || (fs22 = require("fs"));
         }
         function parse(file, options) {
           if (file[0] == 80 && file[1] == 75) return parse_zip2(file, options);
@@ -22184,7 +22184,7 @@ var require_xlsx = __commonJS({
         }
         function read_file(filename2, options) {
           get_fs();
-          return parse(fs21.readFileSync(filename2), options);
+          return parse(fs22.readFileSync(filename2), options);
         }
         function read(blob, options) {
           var type = options && options.type;
@@ -22461,7 +22461,7 @@ var require_xlsx = __commonJS({
           }
           return o;
         }
-        function find(cfb, path22) {
+        function find(cfb, path23) {
           var UCFullPaths = cfb.FullPaths.map(function(x) {
             return x.toUpperCase();
           });
@@ -22470,11 +22470,11 @@ var require_xlsx = __commonJS({
             return y[y.length - (x.slice(-1) == "/" ? 2 : 1)];
           });
           var k = false;
-          if (path22.charCodeAt(0) === 47) {
+          if (path23.charCodeAt(0) === 47) {
             k = true;
-            path22 = UCFullPaths[0].slice(0, -1) + path22;
-          } else k = path22.indexOf("/") !== -1;
-          var UCPath = path22.toUpperCase();
+            path23 = UCFullPaths[0].slice(0, -1) + path23;
+          } else k = path23.indexOf("/") !== -1;
+          var UCPath = path23.toUpperCase();
           var w = k === true ? UCFullPaths.indexOf(UCPath) : UCPaths.indexOf(UCPath);
           if (w !== -1) return cfb.FileIndex[w];
           var m = !UCPath.match(chr1);
@@ -22510,7 +22510,7 @@ var require_xlsx = __commonJS({
         function write_file(cfb, filename2, options) {
           get_fs();
           var o = _write(cfb, options);
-          fs21.writeFileSync(filename2, o);
+          fs22.writeFileSync(filename2, o);
         }
         function a2s2(o) {
           var out = new Array(o.length);
@@ -22522,7 +22522,7 @@ var require_xlsx = __commonJS({
           switch (options && options.type || "buffer") {
             case "file":
               get_fs();
-              fs21.writeFileSync(options.filename, o);
+              fs22.writeFileSync(options.filename, o);
               return o;
             case "binary":
               return typeof o == "string" ? o : a2s2(o);
@@ -23455,11 +23455,11 @@ var require_xlsx = __commonJS({
         }
         throw new Error("cannot save file " + fname);
       }
-      function read_binary(path22) {
-        if (typeof _fs !== "undefined") return _fs.readFileSync(path22);
-        if (typeof Deno !== "undefined") return Deno.readFileSync(path22);
+      function read_binary(path23) {
+        if (typeof _fs !== "undefined") return _fs.readFileSync(path23);
+        if (typeof Deno !== "undefined") return Deno.readFileSync(path23);
         if (typeof $ !== "undefined" && typeof File !== "undefined" && typeof Folder !== "undefined") try {
-          var infile = File(path22);
+          var infile = File(path23);
           infile.open("r");
           infile.encoding = "binary";
           var data = infile.read();
@@ -23468,7 +23468,7 @@ var require_xlsx = __commonJS({
         } catch (e) {
           if (!e.message || !e.message.match(/onstruct/)) throw e;
         }
-        throw new Error("Cannot access file " + path22);
+        throw new Error("Cannot access file " + path23);
       }
       function keys(o) {
         var ks = Object.keys(o), o2 = [];
@@ -23745,16 +23745,16 @@ var require_xlsx = __commonJS({
         for (var i = 0; i < k.length; ++i) if (k[i].slice(-1) != "/") o.push(k[i].replace(/^Root Entry[\/]/, ""));
         return o.sort();
       }
-      function zip_add_file(zip, path22, content) {
+      function zip_add_file(zip, path23, content) {
         if (zip.FullPaths) {
           if (typeof content == "string") {
             var res;
             if (has_buf) res = Buffer_from(content);
             else res = utf8decode(content);
-            return CFB.utils.cfb_add(zip, path22, res);
+            return CFB.utils.cfb_add(zip, path23, res);
           }
-          CFB.utils.cfb_add(zip, path22, content);
-        } else zip.file(path22, content);
+          CFB.utils.cfb_add(zip, path23, content);
+        } else zip.file(path23, content);
       }
       function zip_new() {
         return CFB.utils.cfb_new();
@@ -23771,11 +23771,11 @@ var require_xlsx = __commonJS({
         }
         throw new Error("Unrecognized type " + o.type);
       }
-      function resolve_path(path22, base) {
-        if (path22.charAt(0) == "/") return path22.slice(1);
+      function resolve_path(path23, base) {
+        if (path23.charAt(0) == "/") return path23.slice(1);
         var result = base.split("/");
         if (base.slice(-1) != "/") result.pop();
-        var target = path22.split("/");
+        var target = path23.split("/");
         while (target.length !== 0) {
           var step = target.shift();
           if (step === "..") result.pop();
@@ -25918,7 +25918,7 @@ var require_xlsx = __commonJS({
         return o.join("");
       }
       function write_meta_ods() {
-        return '<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2"><office:meta><meta:generator>SheetJS ' + XLSX15.version + "</meta:generator></office:meta></office:document-meta>";
+        return '<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2"><office:meta><meta:generator>SheetJS ' + XLSX16.version + "</meta:generator></office:meta></office:document-meta>";
       }
       var CORE_PROPS = [
         ["cp:category", "Category"],
@@ -38296,8 +38296,8 @@ var require_xlsx = __commonJS({
         if (!o) o = new_buf(127);
         for (var i = 0; i != 4; ++i) o.write_shift(4, 0);
         write_XLWideString("SheetJS", o);
-        write_XLWideString(XLSX15.version, o);
-        write_XLWideString(XLSX15.version, o);
+        write_XLWideString(XLSX16.version, o);
+        write_XLWideString(XLSX16.version, o);
         write_XLWideString("7262", o);
         return o.length > o.l ? o.slice(0, o.l) : o;
       }
@@ -48430,19 +48430,19 @@ var require_xlsx = __commonJS({
         }
         return !wbrels || wbrels.length === 0 ? null : wbrels;
       }
-      function safe_parse_sheet(zip, path22, relsPath, sheet, idx, sheetRels, sheets, stype, opts, wb, themes, styles) {
+      function safe_parse_sheet(zip, path23, relsPath, sheet, idx, sheetRels, sheets, stype, opts, wb, themes, styles) {
         try {
-          sheetRels[sheet] = parse_rels(getzipstr(zip, relsPath, true), path22);
-          var data = getzipdata(zip, path22);
+          sheetRels[sheet] = parse_rels(getzipstr(zip, relsPath, true), path23);
+          var data = getzipdata(zip, path23);
           var _ws;
           switch (stype) {
             case "sheet":
-              _ws = parse_ws(data, path22, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ws(data, path23, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             case "chart":
-              _ws = parse_cs(data, path22, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_cs(data, path23, idx, opts, sheetRels[sheet], wb, themes, styles);
               if (!_ws || !_ws["!drawel"]) break;
-              var dfile = resolve_path(_ws["!drawel"].Target, path22);
+              var dfile = resolve_path(_ws["!drawel"].Target, path23);
               var drelsp = get_rels_path(dfile);
               var draw = parse_drawing(getzipstr(zip, dfile, true), parse_rels(getzipstr(zip, drelsp, true), dfile));
               var chartp = resolve_path(draw, dfile);
@@ -48450,10 +48450,10 @@ var require_xlsx = __commonJS({
               _ws = parse_chart(getzipstr(zip, chartp, true), chartp, opts, parse_rels(getzipstr(zip, crelsp, true), chartp), wb, _ws);
               break;
             case "macro":
-              _ws = parse_ms(data, path22, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ms(data, path23, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             case "dialog":
-              _ws = parse_ds(data, path22, idx, opts, sheetRels[sheet], wb, themes, styles);
+              _ws = parse_ds(data, path23, idx, opts, sheetRels[sheet], wb, themes, styles);
               break;
             default:
               throw new Error("Unrecognized sheet type " + stype);
@@ -48463,13 +48463,13 @@ var require_xlsx = __commonJS({
           if (sheetRels && sheetRels[sheet]) keys(sheetRels[sheet]).forEach(function(n) {
             var dfile2 = "";
             if (sheetRels[sheet][n].Type == RELS.CMNT) {
-              dfile2 = resolve_path(sheetRels[sheet][n].Target, path22);
+              dfile2 = resolve_path(sheetRels[sheet][n].Target, path23);
               var comments = parse_cmnt(getzipdata(zip, dfile2, true), dfile2, opts);
               if (!comments || !comments.length) return;
               sheet_insert_comments(_ws, comments, false);
             }
             if (sheetRels[sheet][n].Type == RELS.TCMNT) {
-              dfile2 = resolve_path(sheetRels[sheet][n].Target, path22);
+              dfile2 = resolve_path(sheetRels[sheet][n].Target, path23);
               tcomments = tcomments.concat(parse_tcmnt_xml(getzipdata(zip, dfile2, true), opts));
             }
           });
@@ -48573,7 +48573,7 @@ var require_xlsx = __commonJS({
         if (opts.bookDeps && dir.calcchain) deps = parse_cc(getzipdata(zip, strip_front_slash(dir.calcchain)), dir.calcchain, opts);
         var i = 0;
         var sheetRels = {};
-        var path22, relsPath;
+        var path23, relsPath;
         {
           var wbsheets = wb.Sheets;
           props.Worksheets = wbsheets.length;
@@ -48598,15 +48598,15 @@ var require_xlsx = __commonJS({
         wsloop: for (i = 0; i != props.Worksheets; ++i) {
           var stype = "sheet";
           if (wbrels && wbrels[i]) {
-            path22 = "xl/" + wbrels[i][1].replace(/[\/]?xl\//, "");
-            if (!safegetzipfile(zip, path22)) path22 = wbrels[i][1];
-            if (!safegetzipfile(zip, path22)) path22 = wbrelsfile.replace(/_rels\/.*$/, "") + wbrels[i][1];
+            path23 = "xl/" + wbrels[i][1].replace(/[\/]?xl\//, "");
+            if (!safegetzipfile(zip, path23)) path23 = wbrels[i][1];
+            if (!safegetzipfile(zip, path23)) path23 = wbrelsfile.replace(/_rels\/.*$/, "") + wbrels[i][1];
             stype = wbrels[i][2];
           } else {
-            path22 = "xl/worksheets/sheet" + (i + 1 - nmode) + "." + wbext;
-            path22 = path22.replace(/sheet0\./, "sheet.");
+            path23 = "xl/worksheets/sheet" + (i + 1 - nmode) + "." + wbext;
+            path23 = path23.replace(/sheet0\./, "sheet.");
           }
-          relsPath = path22.replace(/^(.*)(\/)([^\/]*)$/, "$1/_rels/$3.rels");
+          relsPath = path23.replace(/^(.*)(\/)([^\/]*)$/, "$1/_rels/$3.rels");
           if (opts && opts.sheets != null) switch (typeof opts.sheets) {
             case "number":
               if (i != opts.sheets) continue wsloop;
@@ -48624,7 +48624,7 @@ var require_xlsx = __commonJS({
                 if (!snjseen) continue wsloop;
               }
           }
-          safe_parse_sheet(zip, path22, relsPath, props.SheetNames[i], i, sheetRels, sheets, stype, opts, wb, themes, styles);
+          safe_parse_sheet(zip, path23, relsPath, props.SheetNames[i], i, sheetRels, sheets, stype, opts, wb, themes, styles);
         }
         out = {
           Directory: dir,
@@ -49513,7 +49513,7 @@ var require_xlsx = __commonJS({
         return out;
       }
       var qreg = /"/g;
-      function make_csv_row(sheet, r, R, cols, fs21, rs, FS, o) {
+      function make_csv_row(sheet, r, R, cols, fs22, rs, FS, o) {
         var isempty = true;
         var row = [], txt = "", rr = encode_row(R);
         for (var C = r.s.c; C <= r.e.c; ++C) {
@@ -49523,7 +49523,7 @@ var require_xlsx = __commonJS({
           else if (val.v != null) {
             isempty = false;
             txt = "" + (o.rawNumbers && val.t == "n" ? val.v : format_cell(val, null, o));
-            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs21 || cc === rs || cc === 34 || o.forceQuotes) {
+            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs22 || cc === rs || cc === 34 || o.forceQuotes) {
               txt = '"' + txt.replace(qreg, '""') + '"';
               break;
             }
@@ -49543,7 +49543,7 @@ var require_xlsx = __commonJS({
         var o = opts == null ? {} : opts;
         if (sheet == null || sheet["!ref"] == null) return "";
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs21 = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs22 = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -49554,7 +49554,7 @@ var require_xlsx = __commonJS({
         var w = 0;
         for (var R = r.s.r; R <= r.e.r; ++R) {
           if ((rowinfo[R] || {}).hidden) continue;
-          row = make_csv_row(sheet, r, R, cols, fs21, rs, FS, o);
+          row = make_csv_row(sheet, r, R, cols, fs22, rs, FS, o);
           if (row == null) {
             continue;
           }
@@ -49826,7 +49826,7 @@ var require_xlsx = __commonJS({
           return stream;
         }
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs21 = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs22 = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -49844,7 +49844,7 @@ var require_xlsx = __commonJS({
           while (R <= r.e.r) {
             ++R;
             if ((rowinfo[R - 1] || {}).hidden) continue;
-            row = make_csv_row(sheet, r, R - 1, cols, fs21, rs, FS, o);
+            row = make_csv_row(sheet, r, R - 1, cols, fs22, rs, FS, o);
             if (row != null) {
               if (o.strip) row = row.replace(endregex, "");
               if (row || o.blankrows !== false) return stream.push((w++ ? RS : "") + row);
@@ -49965,21 +49965,21 @@ var require_xlsx = __commonJS({
         to_csv: write_csv_stream,
         set_readable
       };
-      if (typeof parse_xlscfb !== "undefined") XLSX15.parse_xlscfb = parse_xlscfb;
-      XLSX15.parse_zip = parse_zip;
-      XLSX15.read = readSync;
-      XLSX15.readFile = readFileSync;
-      XLSX15.readFileSync = readFileSync;
-      XLSX15.write = writeSync;
-      XLSX15.writeFile = writeFileSync;
-      XLSX15.writeFileSync = writeFileSync;
-      XLSX15.writeFileAsync = writeFileAsync;
-      XLSX15.utils = utils2;
-      XLSX15.writeXLSX = writeSyncXLSX;
-      XLSX15.writeFileXLSX = writeFileSyncXLSX;
-      XLSX15.SSF = SSF;
-      if (typeof __stream !== "undefined") XLSX15.stream = __stream;
-      if (typeof CFB !== "undefined") XLSX15.CFB = CFB;
+      if (typeof parse_xlscfb !== "undefined") XLSX16.parse_xlscfb = parse_xlscfb;
+      XLSX16.parse_zip = parse_zip;
+      XLSX16.read = readSync;
+      XLSX16.readFile = readFileSync;
+      XLSX16.readFileSync = readFileSync;
+      XLSX16.write = writeSync;
+      XLSX16.writeFile = writeFileSync;
+      XLSX16.writeFileSync = writeFileSync;
+      XLSX16.writeFileAsync = writeFileAsync;
+      XLSX16.utils = utils2;
+      XLSX16.writeXLSX = writeSyncXLSX;
+      XLSX16.writeFileXLSX = writeFileSyncXLSX;
+      XLSX16.SSF = SSF;
+      if (typeof __stream !== "undefined") XLSX16.stream = __stream;
+      if (typeof CFB !== "undefined") XLSX16.CFB = CFB;
       if (typeof require !== "undefined") {
         var strmod = require("stream");
         if ((strmod || {}).Readable) set_readable(strmod.Readable);
@@ -49988,12 +49988,12 @@ var require_xlsx = __commonJS({
     if (typeof exports2 !== "undefined") make_xlsx_lib(exports2);
     else if (typeof module2 !== "undefined" && module2.exports) make_xlsx_lib(module2.exports);
     else if (typeof define === "function" && define.amd) define("xlsx", function() {
-      if (!XLSX14.version) make_xlsx_lib(XLSX14);
-      return XLSX14;
+      if (!XLSX15.version) make_xlsx_lib(XLSX15);
+      return XLSX15;
     });
-    else make_xlsx_lib(XLSX14);
+    else make_xlsx_lib(XLSX15);
     if (typeof window !== "undefined" && !window.XLSX) try {
-      window.XLSX = XLSX14;
+      window.XLSX = XLSX15;
     } catch (e) {
     }
   }
@@ -52867,8 +52867,8 @@ var require_utils2 = __commonJS({
       var result = transform[inputType][outputType](input);
       return result;
     };
-    exports2.resolve = function(path22) {
-      var parts = path22.split("/");
+    exports2.resolve = function(path23) {
+      var parts = path23.split("/");
       var result = [];
       for (var index = 0; index < parts.length; index++) {
         var part = parts[index];
@@ -58721,18 +58721,18 @@ var require_object = __commonJS({
       var object = new ZipObject(name, zipObjectContent, o);
       this.files[name] = object;
     };
-    var parentFolder = function(path22) {
-      if (path22.slice(-1) === "/") {
-        path22 = path22.substring(0, path22.length - 1);
+    var parentFolder = function(path23) {
+      if (path23.slice(-1) === "/") {
+        path23 = path23.substring(0, path23.length - 1);
       }
-      var lastSlash = path22.lastIndexOf("/");
-      return lastSlash > 0 ? path22.substring(0, lastSlash) : "";
+      var lastSlash = path23.lastIndexOf("/");
+      return lastSlash > 0 ? path23.substring(0, lastSlash) : "";
     };
-    var forceTrailingSlash = function(path22) {
-      if (path22.slice(-1) !== "/") {
-        path22 += "/";
+    var forceTrailingSlash = function(path23) {
+      if (path23.slice(-1) !== "/") {
+        path23 += "/";
       }
-      return path22;
+      return path23;
     };
     var folderAdd = function(name, createFolders) {
       createFolders = typeof createFolders !== "undefined" ? createFolders : defaults.createFolders;
@@ -63068,7 +63068,7 @@ var require_cpexcel2 = __commonJS({
 // node_modules/xlsx-js-style/dist/xlsx.min.js
 var require_xlsx_min = __commonJS({
   "node_modules/xlsx-js-style/dist/xlsx.min.js"(exports2, module2) {
-    var XLSX14 = {};
+    var XLSX15 = {};
     function make_xlsx_lib(a) {
       a.version = "0.18.5", a.style_version = "1.2.0";
       var re, f = 1200, _ = 1252;
@@ -66087,7 +66087,7 @@ var require_xlsx_min = __commonJS({
         e2 = (t2 = e2).read_shift(1), e2 = 1 === t2.read_shift(1) ? e2 : 1 === e2;
         return a2.val = e2, a2.t = true === e2 || false === e2 ? "b" : "e", a2;
       }
-      function fs21(e2, t2, r2) {
+      function fs22(e2, t2, r2) {
         return 0 === t2 ? "" : Bn(e2, 0, r2);
       }
       function hs(e2, t2, r2) {
@@ -71535,7 +71535,7 @@ var require_xlsx_min = __commonJS({
       } }, 636: { T: -1 }, 637: { f: ca }, 638: { T: 1 }, 639: {}, 640: { T: -1 }, 641: { T: 1 }, 642: { T: -1 }, 643: { T: 1 }, 644: {}, 645: { T: -1 }, 646: { T: 1 }, 648: { T: 1 }, 649: {}, 650: { T: -1 }, 651: { f: function(e2, t2) {
         return e2.l += 10, { name: sa(e2) };
       } }, 652: {}, 653: { T: 1 }, 654: { T: -1 }, 655: { T: 1 }, 656: { T: -1 }, 657: { T: 1 }, 658: { T: -1 }, 659: {}, 660: { T: 1 }, 661: {}, 662: { T: -1 }, 663: {}, 664: { T: 1 }, 665: {}, 666: { T: -1 }, 667: {}, 668: {}, 669: {}, 671: { T: 1 }, 672: { T: -1 }, 673: { T: 1 }, 674: { T: -1 }, 675: {}, 676: {}, 677: {}, 678: {}, 679: {}, 680: {}, 681: {}, 1024: {}, 1025: {}, 1026: { T: 1 }, 1027: { T: -1 }, 1028: { T: 1 }, 1029: { T: -1 }, 1030: {}, 1031: { T: 1 }, 1032: { T: -1 }, 1033: { T: 1 }, 1034: { T: -1 }, 1035: {}, 1036: {}, 1037: {}, 1038: { T: 1 }, 1039: { T: -1 }, 1040: {}, 1041: { T: 1 }, 1042: { T: -1 }, 1043: {}, 1044: {}, 1045: {}, 1046: { T: 1 }, 1047: { T: -1 }, 1048: { T: 1 }, 1049: { T: -1 }, 1050: {}, 1051: { T: 1 }, 1052: { T: 1 }, 1053: { f: function() {
-      } }, 1054: { T: 1 }, 1055: {}, 1056: { T: 1 }, 1057: { T: -1 }, 1058: { T: 1 }, 1059: { T: -1 }, 1061: {}, 1062: { T: 1 }, 1063: { T: -1 }, 1064: { T: 1 }, 1065: { T: -1 }, 1066: { T: 1 }, 1067: { T: -1 }, 1068: { T: 1 }, 1069: { T: -1 }, 1070: { T: 1 }, 1071: { T: -1 }, 1072: { T: 1 }, 1073: { T: -1 }, 1075: { T: 1 }, 1076: { T: -1 }, 1077: { T: 1 }, 1078: { T: -1 }, 1079: { T: 1 }, 1080: { T: -1 }, 1081: { T: 1 }, 1082: { T: -1 }, 1083: { T: 1 }, 1084: { T: -1 }, 1085: {}, 1086: { T: 1 }, 1087: { T: -1 }, 1088: { T: 1 }, 1089: { T: -1 }, 1090: { T: 1 }, 1091: { T: -1 }, 1092: { T: 1 }, 1093: { T: -1 }, 1094: { T: 1 }, 1095: { T: -1 }, 1096: {}, 1097: { T: 1 }, 1098: {}, 1099: { T: -1 }, 1100: { T: 1 }, 1101: { T: -1 }, 1102: {}, 1103: {}, 1104: {}, 1105: {}, 1111: {}, 1112: {}, 1113: { T: 1 }, 1114: { T: -1 }, 1115: { T: 1 }, 1116: { T: -1 }, 1117: {}, 1118: { T: 1 }, 1119: { T: -1 }, 1120: { T: 1 }, 1121: { T: -1 }, 1122: { T: 1 }, 1123: { T: -1 }, 1124: { T: 1 }, 1125: { T: -1 }, 1126: {}, 1128: { T: 1 }, 1129: { T: -1 }, 1130: {}, 1131: { T: 1 }, 1132: { T: -1 }, 1133: { T: 1 }, 1134: { T: -1 }, 1135: { T: 1 }, 1136: { T: -1 }, 1137: { T: 1 }, 1138: { T: -1 }, 1139: { T: 1 }, 1140: { T: -1 }, 1141: {}, 1142: { T: 1 }, 1143: { T: -1 }, 1144: { T: 1 }, 1145: { T: -1 }, 1146: {}, 1147: { T: 1 }, 1148: { T: -1 }, 1149: { T: 1 }, 1150: { T: -1 }, 1152: { T: 1 }, 1153: { T: -1 }, 1154: { T: -1 }, 1155: { T: -1 }, 1156: { T: -1 }, 1157: { T: 1 }, 1158: { T: -1 }, 1159: { T: 1 }, 1160: { T: -1 }, 1161: { T: 1 }, 1162: { T: -1 }, 1163: { T: 1 }, 1164: { T: -1 }, 1165: { T: 1 }, 1166: { T: -1 }, 1167: { T: 1 }, 1168: { T: -1 }, 1169: { T: 1 }, 1170: { T: -1 }, 1171: {}, 1172: { T: 1 }, 1173: { T: -1 }, 1177: {}, 1178: { T: 1 }, 1180: {}, 1181: {}, 1182: {}, 2048: { T: 1 }, 2049: { T: -1 }, 2050: {}, 2051: { T: 1 }, 2052: { T: -1 }, 2053: {}, 2054: {}, 2055: { T: 1 }, 2056: { T: -1 }, 2057: { T: 1 }, 2058: { T: -1 }, 2060: {}, 2067: {}, 2068: { T: 1 }, 2069: { T: -1 }, 2070: {}, 2071: {}, 2072: { T: 1 }, 2073: { T: -1 }, 2075: {}, 2076: {}, 2077: { T: 1 }, 2078: { T: -1 }, 2079: {}, 2080: { T: 1 }, 2081: { T: -1 }, 2082: {}, 2083: { T: 1 }, 2084: { T: -1 }, 2085: { T: 1 }, 2086: { T: -1 }, 2087: { T: 1 }, 2088: { T: -1 }, 2089: { T: 1 }, 2090: { T: -1 }, 2091: {}, 2092: {}, 2093: { T: 1 }, 2094: { T: -1 }, 2095: {}, 2096: { T: 1 }, 2097: { T: -1 }, 2098: { T: 1 }, 2099: { T: -1 }, 2100: { T: 1 }, 2101: { T: -1 }, 2102: {}, 2103: { T: 1 }, 2104: { T: -1 }, 2105: {}, 2106: { T: 1 }, 2107: { T: -1 }, 2108: {}, 2109: { T: 1 }, 2110: { T: -1 }, 2111: { T: 1 }, 2112: { T: -1 }, 2113: { T: 1 }, 2114: { T: -1 }, 2115: {}, 2116: {}, 2117: {}, 2118: { T: 1 }, 2119: { T: -1 }, 2120: {}, 2121: { T: 1 }, 2122: { T: -1 }, 2123: { T: 1 }, 2124: { T: -1 }, 2125: {}, 2126: { T: 1 }, 2127: { T: -1 }, 2128: {}, 2129: { T: 1 }, 2130: { T: -1 }, 2131: { T: 1 }, 2132: { T: -1 }, 2133: { T: 1 }, 2134: {}, 2135: {}, 2136: {}, 2137: { T: 1 }, 2138: { T: -1 }, 2139: { T: 1 }, 2140: { T: -1 }, 2141: {}, 3072: {}, 3073: {}, 4096: { T: 1 }, 4097: { T: -1 }, 5002: { T: 1 }, 5003: { T: -1 }, 5081: { T: 1 }, 5082: { T: -1 }, 5083: {}, 5084: { T: 1 }, 5085: { T: -1 }, 5086: { T: 1 }, 5087: { T: -1 }, 5088: {}, 5089: {}, 5090: {}, 5092: { T: 1 }, 5093: { T: -1 }, 5094: {}, 5095: { T: 1 }, 5096: { T: -1 }, 5097: {}, 5099: {}, 65535: { n: "" } }, Pf = { 6: { f: Lc }, 10: { f: Rn }, 12: { f: Nn }, 13: { f: Nn }, 14: { f: On }, 15: { f: On }, 16: { f: xa }, 17: { f: On }, 18: { f: On }, 19: { f: Nn }, 20: { f: fs21 }, 21: { f: fs21 }, 23: { f: ps }, 24: { f: ds }, 25: { f: On }, 26: {}, 27: {}, 28: { f: function(e2, t2, r2) {
+      } }, 1054: { T: 1 }, 1055: {}, 1056: { T: 1 }, 1057: { T: -1 }, 1058: { T: 1 }, 1059: { T: -1 }, 1061: {}, 1062: { T: 1 }, 1063: { T: -1 }, 1064: { T: 1 }, 1065: { T: -1 }, 1066: { T: 1 }, 1067: { T: -1 }, 1068: { T: 1 }, 1069: { T: -1 }, 1070: { T: 1 }, 1071: { T: -1 }, 1072: { T: 1 }, 1073: { T: -1 }, 1075: { T: 1 }, 1076: { T: -1 }, 1077: { T: 1 }, 1078: { T: -1 }, 1079: { T: 1 }, 1080: { T: -1 }, 1081: { T: 1 }, 1082: { T: -1 }, 1083: { T: 1 }, 1084: { T: -1 }, 1085: {}, 1086: { T: 1 }, 1087: { T: -1 }, 1088: { T: 1 }, 1089: { T: -1 }, 1090: { T: 1 }, 1091: { T: -1 }, 1092: { T: 1 }, 1093: { T: -1 }, 1094: { T: 1 }, 1095: { T: -1 }, 1096: {}, 1097: { T: 1 }, 1098: {}, 1099: { T: -1 }, 1100: { T: 1 }, 1101: { T: -1 }, 1102: {}, 1103: {}, 1104: {}, 1105: {}, 1111: {}, 1112: {}, 1113: { T: 1 }, 1114: { T: -1 }, 1115: { T: 1 }, 1116: { T: -1 }, 1117: {}, 1118: { T: 1 }, 1119: { T: -1 }, 1120: { T: 1 }, 1121: { T: -1 }, 1122: { T: 1 }, 1123: { T: -1 }, 1124: { T: 1 }, 1125: { T: -1 }, 1126: {}, 1128: { T: 1 }, 1129: { T: -1 }, 1130: {}, 1131: { T: 1 }, 1132: { T: -1 }, 1133: { T: 1 }, 1134: { T: -1 }, 1135: { T: 1 }, 1136: { T: -1 }, 1137: { T: 1 }, 1138: { T: -1 }, 1139: { T: 1 }, 1140: { T: -1 }, 1141: {}, 1142: { T: 1 }, 1143: { T: -1 }, 1144: { T: 1 }, 1145: { T: -1 }, 1146: {}, 1147: { T: 1 }, 1148: { T: -1 }, 1149: { T: 1 }, 1150: { T: -1 }, 1152: { T: 1 }, 1153: { T: -1 }, 1154: { T: -1 }, 1155: { T: -1 }, 1156: { T: -1 }, 1157: { T: 1 }, 1158: { T: -1 }, 1159: { T: 1 }, 1160: { T: -1 }, 1161: { T: 1 }, 1162: { T: -1 }, 1163: { T: 1 }, 1164: { T: -1 }, 1165: { T: 1 }, 1166: { T: -1 }, 1167: { T: 1 }, 1168: { T: -1 }, 1169: { T: 1 }, 1170: { T: -1 }, 1171: {}, 1172: { T: 1 }, 1173: { T: -1 }, 1177: {}, 1178: { T: 1 }, 1180: {}, 1181: {}, 1182: {}, 2048: { T: 1 }, 2049: { T: -1 }, 2050: {}, 2051: { T: 1 }, 2052: { T: -1 }, 2053: {}, 2054: {}, 2055: { T: 1 }, 2056: { T: -1 }, 2057: { T: 1 }, 2058: { T: -1 }, 2060: {}, 2067: {}, 2068: { T: 1 }, 2069: { T: -1 }, 2070: {}, 2071: {}, 2072: { T: 1 }, 2073: { T: -1 }, 2075: {}, 2076: {}, 2077: { T: 1 }, 2078: { T: -1 }, 2079: {}, 2080: { T: 1 }, 2081: { T: -1 }, 2082: {}, 2083: { T: 1 }, 2084: { T: -1 }, 2085: { T: 1 }, 2086: { T: -1 }, 2087: { T: 1 }, 2088: { T: -1 }, 2089: { T: 1 }, 2090: { T: -1 }, 2091: {}, 2092: {}, 2093: { T: 1 }, 2094: { T: -1 }, 2095: {}, 2096: { T: 1 }, 2097: { T: -1 }, 2098: { T: 1 }, 2099: { T: -1 }, 2100: { T: 1 }, 2101: { T: -1 }, 2102: {}, 2103: { T: 1 }, 2104: { T: -1 }, 2105: {}, 2106: { T: 1 }, 2107: { T: -1 }, 2108: {}, 2109: { T: 1 }, 2110: { T: -1 }, 2111: { T: 1 }, 2112: { T: -1 }, 2113: { T: 1 }, 2114: { T: -1 }, 2115: {}, 2116: {}, 2117: {}, 2118: { T: 1 }, 2119: { T: -1 }, 2120: {}, 2121: { T: 1 }, 2122: { T: -1 }, 2123: { T: 1 }, 2124: { T: -1 }, 2125: {}, 2126: { T: 1 }, 2127: { T: -1 }, 2128: {}, 2129: { T: 1 }, 2130: { T: -1 }, 2131: { T: 1 }, 2132: { T: -1 }, 2133: { T: 1 }, 2134: {}, 2135: {}, 2136: {}, 2137: { T: 1 }, 2138: { T: -1 }, 2139: { T: 1 }, 2140: { T: -1 }, 2141: {}, 3072: {}, 3073: {}, 4096: { T: 1 }, 4097: { T: -1 }, 5002: { T: 1 }, 5003: { T: -1 }, 5081: { T: 1 }, 5082: { T: -1 }, 5083: {}, 5084: { T: 1 }, 5085: { T: -1 }, 5086: { T: 1 }, 5087: { T: -1 }, 5088: {}, 5089: {}, 5090: {}, 5092: { T: 1 }, 5093: { T: -1 }, 5094: {}, 5095: { T: 1 }, 5096: { T: -1 }, 5097: {}, 5099: {}, 65535: { n: "" } }, Pf = { 6: { f: Lc }, 10: { f: Rn }, 12: { f: Nn }, 13: { f: Nn }, 14: { f: On }, 15: { f: On }, 16: { f: xa }, 17: { f: On }, 18: { f: On }, 19: { f: Nn }, 20: { f: fs22 }, 21: { f: fs22 }, 23: { f: ps }, 24: { f: ds }, 25: { f: On }, 26: {}, 27: {}, 28: { f: function(e2, t2, r2) {
         return (function(e3, t3) {
           if (!(t3.biff < 8)) {
             var r3 = e3.read_shift(2), a2 = e3.read_shift(2), n2 = e3.read_shift(2), s2 = e3.read_shift(2), i2 = Bn(e3, 0, t3);
@@ -74169,34 +74169,50 @@ var require_xlsx_min = __commonJS({
       }, a.SSF = e, void 0 !== is && (a.stream = is), void 0 !== xe && (a.CFB = xe), "undefined" == typeof require || ((is = require("stream")) || {}).Readable && bu(is.Readable);
     }
     if ("undefined" != typeof exports2 ? make_xlsx_lib(exports2) : "undefined" != typeof module2 && module2.exports ? make_xlsx_lib(module2.exports) : "function" == typeof define && define.amd ? define("xlsx", function() {
-      return XLSX14.version || make_xlsx_lib(XLSX14), XLSX14;
-    }) : make_xlsx_lib(XLSX14), "undefined" != typeof window && !window.XLSX) try {
-      window.XLSX = XLSX14;
+      return XLSX15.version || make_xlsx_lib(XLSX15), XLSX15;
+    }) : make_xlsx_lib(XLSX15), "undefined" != typeof window && !window.XLSX) try {
+      window.XLSX = XLSX15;
     } catch (e) {
     }
   }
 });
 
 // src/lib/excel/styles/zeroMergeGuard.ts
-function removeAllMergesFromWorkbook3(wb) {
+function titleMerges(ws) {
+  const ref = ws && ws["!ref"];
+  if (!ref) return [];
+  const range = XLSX12.utils.decode_range(ref);
+  if (range.e.c < 1) return [];
+  const merges = [];
+  for (let r = 0; r <= Math.min(1, range.e.r); r++) {
+    let filled = 0;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX12.utils.encode_cell({ r, c })];
+      if (cell && cell.v !== void 0 && cell.v !== null && String(cell.v).trim() !== "") filled++;
+    }
+    const first = ws[XLSX12.utils.encode_cell({ r, c: range.s.c })];
+    if (filled === 1 && first && String(first.v).trim() !== "") {
+      merges.push({ s: { r, c: range.s.c }, e: { r, c: range.e.c } });
+    }
+  }
+  return merges;
+}
+function removeAllMergesFromWorkbook4(wb) {
   if (!wb || !wb.Sheets) return wb;
   const names = Array.isArray(wb.SheetNames) && wb.SheetNames.length > 0 ? wb.SheetNames : Object.keys(wb.Sheets);
   for (const name of names) {
     const ws = wb.Sheets[name];
     if (ws) {
-      if (ws["!merges"]) {
-        delete ws["!merges"];
-      }
-      ws["!merges"] = [];
+      ws["!merges"] = titleMerges(ws);
     }
   }
   return wb;
 }
-var import_xlsx_js_style, XLSX11;
+var import_xlsx_js_style, XLSX12;
 var init_zeroMergeGuard = __esm({
   "src/lib/excel/styles/zeroMergeGuard.ts"() {
     import_xlsx_js_style = __toESM(require_xlsx_min(), 1);
-    XLSX11 = import_xlsx_js_style.default.default || import_xlsx_js_style.default;
+    XLSX12 = import_xlsx_js_style.default.default || import_xlsx_js_style.default;
   }
 });
 
@@ -74214,7 +74230,7 @@ __export(noticeReconciliation_exports, {
   generateDefenseWorkbook: () => generateDefenseWorkbook,
   generateNoticeAnnexureExcel: () => generateNoticeAnnexureExcel,
   reconcileNoticeDiscrepancy: () => reconcileNoticeDiscrepancy,
-  removeAllMergesFromWorkbook: () => removeAllMergesFromWorkbook3
+  removeAllMergesFromWorkbook: () => removeAllMergesFromWorkbook4
 });
 function reconcileNoticeDiscrepancy(input, localReturnsData) {
   const totalDemanded = Math.round(Number(input.totalDemanded) || 0);
@@ -74364,7 +74380,7 @@ function reconcileNoticeDiscrepancy(input, localReturnsData) {
   };
 }
 function generateNoticeAnnexureExcel(reco, meta = {}) {
-  const wb = XLSX12.utils.book_new();
+  const wb = XLSX13.utils.book_new();
   const rows = [];
   rows.push([`${meta.companyName || "TAXPAYER"} \u2014 GST NOTICE RECONCILIATION ANNEXURE`]);
   rows.push([`Notice Ref: ${reco.referenceNo} | GSTIN: ${reco.gstin} | FY: ${reco.financialYear}`]);
@@ -74411,10 +74427,10 @@ function generateNoticeAnnexureExcel(reco, meta = {}) {
       inv.statutoryGround || ""
     ]);
   }
-  const ws = XLSX12.utils.aoa_to_sheet(rows);
+  const ws = XLSX13.utils.aoa_to_sheet(rows);
   ws["!merges"] = [];
-  XLSX12.utils.book_append_sheet(wb, ws, "Notice_Annexure");
-  removeAllMergesFromWorkbook3(wb);
+  XLSX13.utils.book_append_sheet(wb, ws, "Notice_Annexure");
+  removeAllMergesFromWorkbook4(wb);
   return wb;
 }
 function computeRule88BInterest(rows) {
@@ -74584,11 +74600,11 @@ function computeRule37And42AndRefund89(input) {
   return { rule37Reversal, rule42D1, rule42D2, rule42Total: rule42D1 + rule42D2, exportRefund89_4, invertedMax89_5 };
 }
 function generateDefenseWorkbook(bundle) {
-  const wb = XLSX12.utils.book_new();
+  const wb = XLSX13.utils.book_new();
   const addTab = (name, rows) => {
-    const ws = XLSX12.utils.aoa_to_sheet(rows);
+    const ws = XLSX13.utils.aoa_to_sheet(rows);
     ws["!merges"] = [];
-    XLSX12.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+    XLSX13.utils.book_append_sheet(wb, ws, name.slice(0, 31));
   };
   const issues = bundle.issues || [];
   addTab("Case_Summary", [
@@ -74636,13 +74652,13 @@ function generateDefenseWorkbook(bundle) {
       { item: "DRC-03 / DRC-03A Payment Proof & ECrL Extract", status: "CHECK", remarks: "Verify Cash vs ITC offset" }
     ]).map((c) => [c.item, c.status, c.remarks])
   ]);
-  removeAllMergesFromWorkbook3(wb);
+  removeAllMergesFromWorkbook4(wb);
   return wb;
 }
-var XLSX12;
+var XLSX13;
 var init_noticeReconciliation = __esm({
   "src/lib/noticeReconciliation.ts"() {
-    XLSX12 = __toESM(require_xlsx(), 1);
+    XLSX13 = __toESM(require_xlsx(), 1);
     init_zeroMergeGuard();
     init_limitation();
   }
@@ -74651,15 +74667,15 @@ var init_noticeReconciliation = __esm({
 // server.js
 var import_express = __toESM(require("express"), 1);
 var import_cors = __toESM(require("cors"), 1);
-var import_fs20 = __toESM(require("fs"), 1);
-var import_child_process10 = require("child_process");
+var import_fs21 = __toESM(require("fs"), 1);
+var import_child_process11 = require("child_process");
 var import_os12 = __toESM(require("os"), 1);
-var import_path21 = __toESM(require("path"), 1);
+var import_path22 = __toESM(require("path"), 1);
 var import_url2 = require("url");
 var import_sqlite32 = __toESM(require("sqlite3"), 1);
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_crypto13 = __toESM(require("crypto"), 1);
+var import_crypto14 = __toESM(require("crypto"), 1);
 var import_dns = __toESM(require("dns"), 1);
 
 // tds_routes.js
@@ -74731,6 +74747,12 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
             mapped_section_code TEXT NOT NULL,
             created_at TEXT NOT NULL
         )`);
+    db2.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN full_path TEXT`, () => {
+    });
+    db2.run(`ALTER TABLE Tally_Group_Mappings ADD COLUMN source TEXT DEFAULT 'manual'`, () => {
+    });
+    db2.run(`ALTER TABLE Tally_Ledgers ADD COLUMN side TEXT DEFAULT 'EXPENSE'`, () => {
+    });
     db2.run(`CREATE TABLE IF NOT EXISTS Local_Snapshots (
             id TEXT PRIMARY KEY,
             company_name TEXT,
@@ -74824,60 +74846,397 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
     return null;
   }
   function getLedgerHierarchy(l) {
-    const path22 = [];
-    if (l.parent_group) path22.push(l.parent_group.toUpperCase().trim());
+    const path23 = [];
+    if (l.parent_group) path23.push(l.parent_group.toUpperCase().trim());
     if (l.parent_group_path) {
       l.parent_group_path.split(",").forEach((g) => {
         const clean = g.trim().toUpperCase();
-        if (clean && !path22.includes(clean)) path22.push(clean);
+        if (clean && !path23.includes(clean)) path23.push(clean);
       });
     }
-    return path22;
+    return path23;
   }
-  function matchesGroupMapping(hierarchy, m) {
-    const normalize = (s) => (s || "").toUpperCase().trim();
-    const g1 = normalize(m.expense_group);
-    const g2 = m.sub_group ? normalize(m.sub_group) : null;
-    const g3 = m.sub_group_2 ? normalize(m.sub_group_2) : null;
-    if (!hierarchy.includes(g1)) return false;
-    if (g2 && !hierarchy.includes(g2)) return false;
-    if (g3 && !hierarchy.includes(g3)) return false;
-    return true;
+  const TDS_EXPENSE_ROOTS = /* @__PURE__ */ new Set(["DIRECT EXPENSES", "INDIRECT EXPENSES", "PURCHASE ACCOUNTS"]);
+  const isExpenseChain = (chainUpper) => chainUpper.some((g) => TDS_EXPENSE_ROOTS.has(g));
+  const EXCLUDE_SECTION = "EXCLUDE";
+  const EXCLUDED_BUCKET = "Excluded from TDS";
+  const TAX_ROOT_GROUPS = /* @__PURE__ */ new Set(["DUTIES AND TAXES", "DUTIES & TAXES"]);
+  const isTaxChain = (chainUpper) => chainUpper.some((g) => TAX_ROOT_GROUPS.has(g));
+  const sideOfChain = (chainUpper) => isExpenseChain(chainUpper) ? "EXPENSE" : isTaxChain(chainUpper) ? "TAX" : null;
+  const isVisibleFor = (side, r, chainUpper) => {
+    if (side === "TAX") return r.side === "TAX" || r.is_tds_ledger === 1;
+    return r.side !== "TAX" && isVisibleLedger(r, chainUpper);
+  };
+  const isVisibleLedger = (r, chainUpper) => isExpenseChain(chainUpper) || r.user_validated === 1 || !!r.mapped_section_code || r.is_tds_ledger === 1;
+  const groupKeyOf = (groups) => groups.map((g) => normalizeGroupName(g).toUpperCase()).join("");
+  function rowPathTopDown(m) {
+    if (m.full_path) {
+      try {
+        const parsed = JSON.parse(m.full_path);
+        if (Array.isArray(parsed) && parsed.length) return parsed.map(normalizeGroupName);
+      } catch (e) {
+      }
+    }
+    return [m.expense_group, m.sub_group, m.sub_group_2].map(normalizeGroupName).filter(Boolean);
   }
   function findInheritedSection(hierarchy, groupMappings) {
     if (!groupMappings || groupMappings.length === 0) return null;
-    const sorted = [...groupMappings].sort((a, b) => {
-      const scoreA = (a.sub_group_2 ? 2 : 0) + (a.sub_group ? 1 : 0);
-      const scoreB = (b.sub_group_2 ? 2 : 0) + (b.sub_group ? 1 : 0);
-      return scoreB - scoreA;
-    });
-    for (const m of sorted) {
-      if (matchesGroupMapping(hierarchy, m)) {
-        return {
-          sectionCode: m.mapped_section_code,
-          mappingName: m.sub_group_2 || m.sub_group || m.expense_group
-        };
+    const nearest = (hierarchy || []).map((g) => normalizeGroupName(g).toUpperCase());
+    const topDown = [...nearest].reverse();
+    let best = null;
+    let bestScore = -1;
+    for (const m of groupMappings) {
+      if (!m.mapped_section_code) continue;
+      const path24 = rowPathTopDown(m).map((g) => g.toUpperCase());
+      if (path24.length === 0) continue;
+      if (m.full_path) {
+        if (path24.length > topDown.length) continue;
+        if (!path24.every((g, i) => topDown[i] === g)) continue;
+      } else {
+        if (!path24.every((g) => nearest.includes(g))) continue;
       }
+      if (path24.length > bestScore) {
+        best = m;
+        bestScore = path24.length;
+      }
+    }
+    if (!best) return null;
+    const path23 = rowPathTopDown(best);
+    return {
+      sectionCode: best.mapped_section_code,
+      mappingName: path23[path23.length - 1],
+      mappingPath: path23
+    };
+  }
+  const GROUP_SECTION_KEYWORDS = [
+    { section: "194J(b)", words: ["PROFESSIONAL", "LEGAL", "CONSULT", "AUDIT", "TECHNICAL", "DIRECTOR"] },
+    { section: "194I", words: ["RENT", "LEASE", "HIRE"] },
+    // resolved to 194I(a)/194I(b) below
+    { section: "194C", words: ["CONTRACT", "TRANSPORT", "COURIER", "FREIGHT", "LABOUR", "MAINTENANCE", "REPAIR", "SECURITY", "ADVERTIS"] },
+    { section: "194H", words: ["COMMISSION", "BROKERAGE"] },
+    { section: "194Q", words: ["PURCHASE", "RAW MATERIAL", "GOODS"] }
+  ];
+  const PLANT_EQUIPMENT_WORDS = ["PLANT", "MACHIN", "VEHICLE", "EQUIPMENT"];
+  const normalizeGroupName = (s) => (s || "").replace(/&#\d+;/g, " ").replace(/[\u0000-\u001F]/g, " ").replace(/\s+/g, " ").trim();
+  const hasGroupWord = (text, word) => new RegExp(`(^|[^A-Z])${word}`).test(text);
+  function getTxnHierarchy(txn) {
+    const path23 = [];
+    const push = (g) => {
+      const clean = normalizeGroupName(g).toUpperCase();
+      if (clean && !path23.includes(clean)) path23.push(clean);
+    };
+    if (Array.isArray(txn.parentGroupHierarchy)) {
+      txn.parentGroupHierarchy.forEach(push);
+    } else {
+      push(txn.parentGroup);
+      if (txn.parentGroupPath) txn.parentGroupPath.split(",").forEach(push);
+    }
+    return path23;
+  }
+  function inferOwnSection(pathTopDown) {
+    const all = pathTopDown.map((g) => normalizeGroupName(g).toUpperCase());
+    const own = all[all.length - 1];
+    for (const rule of GROUP_SECTION_KEYWORDS) {
+      if (!rule.words.some((w) => hasGroupWord(own, w))) continue;
+      if (rule.section === "194I") {
+        const isPlantOrVehicle = all.some((g) => PLANT_EQUIPMENT_WORDS.some((w) => hasGroupWord(g, w)));
+        return isPlantOrVehicle ? "194I(a)" : "194I(b)";
+      }
+      return rule.section;
     }
     return null;
   }
+  function discoverGroupTemplates(hierarchies) {
+    const nodes = /* @__PURE__ */ new Map();
+    for (const h of hierarchies) {
+      if (!Array.isArray(h)) continue;
+      if (!isExpenseChain(h.map((g) => normalizeGroupName(g).toUpperCase()))) continue;
+      const topDown = h.map(normalizeGroupName).filter((g) => g && g.toUpperCase() !== "PRIMARY").reverse();
+      for (let depth = 1; depth <= topDown.length; depth++) {
+        const path23 = topDown.slice(0, depth);
+        const key = groupKeyOf(path23);
+        if (nodes.has(key)) continue;
+        nodes.set(key, { path: path23, sectionCode: inferOwnSection(path23) });
+      }
+    }
+    return [...nodes.values()].filter((n) => n.sectionCode).map((n) => ({
+      path: n.path,
+      sectionCode: n.sectionCode,
+      expenseGroup: n.path[0],
+      subGroup: n.path[1] || null,
+      subGroup2: n.path[2] || null
+    }));
+  }
+  app2.post("/api/tds/auto-discover-groups", (req, res) => {
+    const { hierarchies } = req.body || {};
+    if (!Array.isArray(hierarchies)) {
+      return res.status(400).json({ error: "hierarchies array is required" });
+    }
+    const discovered = discoverGroupTemplates(hierarchies);
+    db2.all("SELECT * FROM Tally_Group_Mappings", [], (err, existing) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const existingKeys = new Set(existing.map((r) => groupKeyOf(rowPathTopDown(r))));
+      const toInsert = discovered.filter((t) => !existingKeys.has(groupKeyOf(t.path)));
+      if (toInsert.length === 0) {
+        return res.json({ success: true, discovered: discovered.length, inserted: 0, templates: [] });
+      }
+      const nowStr = (/* @__PURE__ */ new Date()).toISOString();
+      db2.serialize(() => {
+        const stmt = db2.prepare(`INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, 'auto')`);
+        let insertErr = null;
+        toInsert.forEach((t) => {
+          stmt.run((0, import_crypto.randomUUID)(), t.expenseGroup, t.subGroup, t.subGroup2, t.sectionCode, nowStr, JSON.stringify(t.path), (e) => {
+            if (e && !insertErr) insertErr = e;
+          });
+        });
+        stmt.finalize((e) => {
+          const error = e || insertErr;
+          if (error) return res.status(500).json({ error: error.message });
+          res.json({ success: true, discovered: discovered.length, inserted: toInsert.length, templates: toInsert });
+        });
+      });
+    });
+  });
+  app2.get("/api/tds/group-tree", (req, res) => {
+    const side = req.query.side === "TAX" ? "TAX" : "EXPENSE";
+    db2.all("SELECT * FROM Tally_Group_Mappings", [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      db2.all("SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC", [], (err2, ledgers) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        const explicitByKey = /* @__PURE__ */ new Map();
+        rows.forEach((r) => {
+          if (r.mapped_section_code) explicitByKey.set(groupKeyOf(rowPathTopDown(r)), r);
+        });
+        const rootNode = { name: "", path: [], key: "", children: /* @__PURE__ */ new Map(), ledgers: [] };
+        const nodeByKey = /* @__PURE__ */ new Map();
+        const ensureNode = (topDown) => {
+          let parent = rootNode;
+          const acc = [];
+          for (const name of topDown) {
+            acc.push(name);
+            const key = groupKeyOf(acc);
+            let node = nodeByKey.get(key);
+            if (!node) {
+              node = { name, path: [...acc], key, children: /* @__PURE__ */ new Map(), ledgers: [] };
+              nodeByKey.set(key, node);
+              parent.children.set(key, node);
+            }
+            parent = node;
+          }
+          return parent;
+        };
+        for (const l of ledgers) {
+          const chain = [];
+          const push = (g) => {
+            const c = normalizeGroupName(g);
+            if (c && !chain.some((x) => x.toUpperCase() === c.toUpperCase())) chain.push(c);
+          };
+          push(l.parent_group);
+          if (l.parent_group_path) l.parent_group_path.split(",").forEach(push);
+          if (!isVisibleFor(side, l, chain.map((c) => c.toUpperCase()))) continue;
+          const leaf = l.mapped_section_code === EXCLUDE_SECTION ? ensureNode([EXCLUDED_BUCKET]) : chain.length ? ensureNode([...chain].reverse()) : ensureNode(["Ungrouped"]);
+          const inherited = findInheritedSection(chain.map((c) => c.toUpperCase()), rows);
+          leaf.ledgers.push({
+            id: l.id,
+            ledgerName: l.ledger_name,
+            sectionCode: l.mapped_section_code || null,
+            inheritedSectionCode: inherited ? inherited.sectionCode : null,
+            inheritedGroupName: inherited ? inherited.mappingName : null,
+            effectiveSectionCode: l.mapped_section_code || (inherited ? inherited.sectionCode : null),
+            isTdsLedger: l.is_tds_ledger === 1,
+            userValidated: l.user_validated === 1
+          });
+        }
+        const build = (node) => {
+          const children = [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name)).map(build);
+          const explicit = explicitByKey.get(node.key) || null;
+          const inherited = explicit ? null : findInheritedSection([...node.path].reverse(), rows);
+          const ledgerCount = node.ledgers.length + children.reduce((s, c) => s + c.ledgerCount, 0);
+          return {
+            key: node.key,
+            name: node.name,
+            virtual: node.path.length === 1 && node.name === EXCLUDED_BUCKET,
+            path: node.path,
+            explicitSectionCode: explicit ? explicit.mapped_section_code : null,
+            source: explicit ? explicit.source || "manual" : null,
+            effectiveSectionCode: explicit ? explicit.mapped_section_code : inherited ? inherited.sectionCode : null,
+            inheritedFromPath: !explicit && inherited ? inherited.mappingPath : null,
+            ledgerCount,
+            children,
+            ledgers: node.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName))
+          };
+        };
+        const roots = [...rootNode.children.values()].sort((a, b) => a.name.localeCompare(b.name)).map(build);
+        const totalLedgers = roots.reduce((sum, r) => sum + r.ledgerCount, 0);
+        res.json({ roots, totalLedgers, templateCount: rows.filter((r) => r.mapped_section_code).length });
+      });
+    });
+  });
+  app2.post("/api/tds/group-tree/import", (req, res) => {
+    const groupsIn = req.body && Array.isArray(req.body.items) ? req.body.items : [];
+    const ledgersIn = req.body && Array.isArray(req.body.ledgers) ? req.body.ledgers : [];
+    const groups = groupsIn.map((it) => ({
+      path: (Array.isArray(it.path) ? it.path : []).map(normalizeGroupName).filter(Boolean),
+      sectionCode: it.sectionCode ? String(it.sectionCode).trim() : null
+    })).filter((it) => it.path.length > 0);
+    const ledgers = ledgersIn.map((l) => ({
+      ledgerName: normalizeGroupName(l.ledgerName),
+      sectionCode: l.sectionCode ? String(l.sectionCode).trim() : null,
+      tds: typeof l.tds === "boolean" ? l.tds : void 0
+    })).filter((l) => l.ledgerName);
+    const skipped = groupsIn.length - groups.length + (ledgersIn.length - ledgers.length);
+    db2.all("SELECT * FROM Tally_Group_Mappings", [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const idByKey = new Map(rows.map((r) => [groupKeyOf(rowPathTopDown(r)), r.id]));
+      const nowStr = (/* @__PURE__ */ new Date()).toISOString();
+      let created = 0;
+      let updated = 0;
+      let removed = 0;
+      let ledgersSet = 0;
+      let ledgersCleared = 0;
+      let failure = null;
+      const onErr = (e) => {
+        if (e && !failure) failure = e;
+      };
+      db2.serialize(() => {
+        for (const g of groups) {
+          const key = groupKeyOf(g.path);
+          const existingId = idByKey.get(key);
+          if (!g.sectionCode) {
+            if (existingId) {
+              removed++;
+              idByKey.delete(key);
+              db2.run("DELETE FROM Tally_Group_Mappings WHERE id = ?", [existingId], onErr);
+            }
+          } else if (existingId) {
+            updated++;
+            db2.run(
+              `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+              [g.sectionCode, JSON.stringify(g.path), existingId],
+              onErr
+            );
+          } else {
+            created++;
+            const id = (0, import_crypto.randomUUID)();
+            idByKey.set(key, id);
+            db2.run(
+              `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+              [id, g.path[0], g.path[1] || null, g.path[2] || null, g.sectionCode, nowStr, JSON.stringify(g.path)],
+              onErr
+            );
+          }
+        }
+        for (const l of ledgers) {
+          if (l.tds !== void 0) {
+            db2.run(
+              `UPDATE Tally_Ledgers SET is_tds_ledger = ?, user_validated = 1 WHERE ledger_name = ?`,
+              [l.tds ? 1 : 0, l.ledgerName],
+              function(e) {
+                if (e) onErr(e);
+                else if (this.changes) ledgersSet++;
+              }
+            );
+            continue;
+          }
+          if (!l.sectionCode) {
+            db2.run(
+              `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+              [l.ledgerName],
+              function(e) {
+                if (e) onErr(e);
+                else if (this.changes) ledgersCleared++;
+              }
+            );
+          } else {
+            db2.run(
+              `UPDATE Tally_Ledgers SET mapped_section_code = ?, user_validated = 1 WHERE ledger_name = ?`,
+              [l.sectionCode, l.ledgerName],
+              function(e) {
+                if (e) onErr(e);
+                else if (this.changes) ledgersSet++;
+              }
+            );
+          }
+        }
+        db2.run("SELECT 1", [], () => {
+          if (failure) return res.status(500).json({ error: failure.message });
+          res.json({ success: true, created, updated, removed, ledgersSet, ledgersCleared, skipped });
+        });
+      });
+    });
+  });
+  app2.put("/api/tds/group-tree/section", (req, res) => {
+    const { path: rawPath, sectionCode } = req.body || {};
+    const path23 = (Array.isArray(rawPath) ? rawPath : []).map(normalizeGroupName).filter(Boolean);
+    if (path23.length === 0) return res.status(400).json({ error: "path (array of group names, root first) is required" });
+    const key = groupKeyOf(path23);
+    db2.all("SELECT * FROM Tally_Group_Mappings", [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const existing = rows.find((r) => groupKeyOf(rowPathTopDown(r)) === key) || null;
+      if (!sectionCode) {
+        if (!existing) return res.json({ success: true, removed: false });
+        return db2.run("DELETE FROM Tally_Group_Mappings WHERE id = ?", [existing.id], (e) => {
+          if (e) return res.status(500).json({ error: e.message });
+          res.json({ success: true, removed: true });
+        });
+      }
+      if (existing) {
+        return db2.run(
+          `UPDATE Tally_Group_Mappings SET mapped_section_code = ?, full_path = ?, source = 'manual' WHERE id = ?`,
+          [sectionCode.trim(), JSON.stringify(path23), existing.id],
+          (e) => {
+            if (e) return res.status(500).json({ error: e.message });
+            res.json({ success: true, updated: true });
+          }
+        );
+      }
+      db2.run(
+        `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+        [(0, import_crypto.randomUUID)(), path23[0], path23[1] || null, path23[2] || null, sectionCode.trim(), (/* @__PURE__ */ new Date()).toISOString(), JSON.stringify(path23)],
+        (e) => {
+          if (e) return res.status(500).json({ error: e.message });
+          res.json({ success: true, created: true });
+        }
+      );
+    });
+  });
   app2.post("/api/tds/extract-ledgers", (req, res) => {
-    const { ledgers } = req.body;
+    const { ledgers, replaceAuto } = req.body;
     if (!ledgers || !Array.isArray(ledgers)) {
       return res.status(400).json({ error: "Invalid ledgers array" });
     }
+    const accepted = [];
+    for (const l of ledgers) {
+      const chain = [l.parentGroup, ...(l.parentGroupPath || "").split(",")].map((g) => normalizeGroupName(g).toUpperCase()).filter(Boolean);
+      const side = sideOfChain(chain);
+      if (side) accepted.push({ ...l, side });
+    }
     db2.serialize(() => {
-      const stmt = db2.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, parent_group_path, is_tds_ledger, user_validated)
-                                     VALUES (?, ?, ?, ?, 0, 0)
-                                     ON CONFLICT(ledger_name) DO UPDATE SET 
+      const stmt = db2.prepare(`INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, parent_group_path, is_tds_ledger, user_validated, side)
+                                     VALUES (?, ?, ?, ?, 0, 0, ?)
+                                     ON CONFLICT(ledger_name) DO UPDATE SET
                                         parent_group = excluded.parent_group,
-                                        parent_group_path = excluded.parent_group_path`);
-      ledgers.forEach((l) => {
-        stmt.run((0, import_crypto.randomUUID)(), l.ledgerName, l.parentGroup || "Expense", l.parentGroupPath || "");
+                                        parent_group_path = excluded.parent_group_path,
+                                        side = excluded.side`);
+      if (replaceAuto === true) {
+        const names = ledgers.map((l) => l.ledgerName);
+        const notIn = names.length ? ` AND ledger_name NOT IN (${names.map(() => "?").join(",")})` : "";
+        db2.run(
+          `DELETE FROM Tally_Ledgers WHERE user_validated = 0 AND is_tds_ledger = 0 AND (mapped_section_code IS NULL OR mapped_section_code = '')${notIn}`,
+          names,
+          (e) => {
+            if (e) console.error("replaceAuto cleanup failed:", e.message);
+          }
+        );
+      }
+      accepted.forEach((l) => {
+        stmt.run((0, import_crypto.randomUUID)(), l.ledgerName, l.parentGroup || "Expense", l.parentGroupPath || "", l.side);
       });
       stmt.finalize((err) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, count: ledgers.length });
+        res.json({ success: true, count: accepted.length });
       });
     });
   });
@@ -74892,8 +75251,8 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
         const name = r.ledger_name;
         const nameUpper = name.toUpperCase().trim();
         const parent = (r.parent_group || "").toUpperCase().trim();
-        const path22 = (r.parent_group_path || "").toUpperCase().trim();
-        const isExpenseGroup = parent.includes("EXPENSE") || parent.includes("PURCHASE") || path22.includes("EXPENSE") || path22.includes("PURCHASE") || parent.includes("DIRECT") || parent.includes("INDIRECT") || path22.includes("DIRECT") || path22.includes("INDIRECT");
+        const path23 = (r.parent_group_path || "").toUpperCase().trim();
+        const isExpenseGroup = parent.includes("EXPENSE") || parent.includes("PURCHASE") || path23.includes("EXPENSE") || path23.includes("PURCHASE") || parent.includes("DIRECT") || parent.includes("INDIRECT") || path23.includes("DIRECT") || path23.includes("INDIRECT");
         if (!isExpenseGroup) return;
         let suggestedSection = null;
         let confidence = false;
@@ -74964,7 +75323,8 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
       if (err) return res.status(500).json({ error: err.message });
       db2.all("SELECT * FROM Tally_Ledgers ORDER BY ledger_name ASC", [], (err2, rows) => {
         if (err2) return res.status(500).json({ error: err2.message });
-        res.json(rows.map((r) => {
+        const sideQ = req.query.side === "TAX" ? "TAX" : "EXPENSE";
+        res.json(rows.filter((r) => isVisibleFor(sideQ, r, getLedgerHierarchy(r))).map((r) => {
           const hierarchy = getLedgerHierarchy(r);
           const inherited = findInheritedSection(hierarchy, groupMappings);
           return {
@@ -75001,6 +75361,16 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
     const { ledgerName, sectionCode, isTdsLedger } = req.body;
     if (!ledgerName) {
       return res.status(400).json({ error: "ledgerName is required" });
+    }
+    if (req.body.clearOverride === true) {
+      return db2.run(
+        `UPDATE Tally_Ledgers SET mapped_section_code = NULL, user_validated = 0 WHERE ledger_name = ?`,
+        [ledgerName],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
     }
     db2.run(
       `INSERT INTO Tally_Ledgers (id, ledger_name, parent_group, is_tds_ledger, mapped_section_code, user_validated)
@@ -75128,7 +75498,7 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
               const norm = normalizeLedger(l.ledger_name);
               if (l.mapped_section_code) {
                 ledgerMap[norm] = l.mapped_section_code;
-              } else if (l.is_tds_ledger === 0) {
+              } else if (l.is_tds_ledger === 0 && l.user_validated === 1) {
                 unmappedLedgers.add(norm);
               }
               if (l.is_tds_ledger === 1) {
@@ -75140,17 +75510,10 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
               if (ledgerMap[normLedger]) {
                 return ledgerMap[normLedger];
               }
-              if (isStrict || unmappedLedgers.has(normLedger)) {
+              if (unmappedLedgers.has(normLedger)) {
                 return null;
               }
-              const hierarchy = [];
-              if (txn.parentGroup) hierarchy.push(txn.parentGroup.toUpperCase().trim());
-              if (txn.parentGroupPath) {
-                txn.parentGroupPath.split(",").forEach((g) => {
-                  const clean = g.trim().toUpperCase();
-                  if (clean && !hierarchy.includes(clean)) hierarchy.push(clean);
-                });
-              }
+              const hierarchy = getTxnHierarchy(txn);
               const inherited = findInheritedSection(hierarchy, groupMappings);
               if (inherited) {
                 return inherited.sectionCode;
@@ -75175,7 +75538,7 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
             const partySectionMap = {};
             transactions.forEach((t) => {
               const sectionCode = getSectionForTxn(t);
-              if (sectionCode) {
+              if (sectionCode && sectionCode !== EXCLUDE_SECTION) {
                 const partyKey = t.partyName.toUpperCase().trim();
                 if (!partySectionMap[partyKey]) {
                   partySectionMap[partyKey] = /* @__PURE__ */ new Set();
@@ -75202,15 +75565,17 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
             transactions.forEach((t) => {
               const normLedger = normalizeLedger(t.ledgerName);
               const sectionCode = getSectionForTxn(t);
+              if (sectionCode === EXCLUDE_SECTION) return;
+              if (isStrict && !sectionCode && Math.abs(Number(t.amount) || 0) > 0) return;
               const partyKey = t.partyName.toUpperCase().trim();
               const dbParty = partyMap[partyKey];
               const cleanLedger = (t.ledgerName || "").toLowerCase().trim();
               t.isTdsTax = tdsTaxLedgers.has(normLedger) || cleanLedger.includes("tds") || cleanLedger.includes("tax deducted") || cleanLedger.includes("tax payable");
               let resolvedSection = sectionCode;
-              if (!resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
+              if (!isStrict && !resolvedSection && (t.tdsLedgerName || t.tds_ledger_name)) {
                 resolvedSection = extractSectionFromName(t.tdsLedgerName || t.tds_ledger_name);
               }
-              if (!resolvedSection && t.ledgerName) {
+              if (!isStrict && !resolvedSection && t.ledgerName) {
                 resolvedSection = extractSectionFromName(t.ledgerName);
               }
               if (!resolvedSection) {
@@ -75222,7 +75587,7 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
               if (!resolvedSection && dbParty && (dbParty.mapped_section_code || dbParty.section_code)) {
                 resolvedSection = dbParty.mapped_section_code || dbParty.section_code;
               }
-              if (!resolvedSection) {
+              if (!isStrict && !resolvedSection) {
                 let panVal = (dbParty && dbParty.pan || t.partyPan || t.pan || "").toUpperCase().trim().replace(/\s+/g, "");
                 if (panVal && tracesPanSectionMap[panVal]) {
                   resolvedSection = tracesPanSectionMap[panVal];
@@ -75879,6 +76244,8 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
         subGroup: r.sub_group,
         subGroup2: r.sub_group_2,
         sectionCode: r.mapped_section_code,
+        fullPath: rowPathTopDown(r),
+        source: r.source || "manual",
         createdAt: r.created_at
       })));
     });
@@ -75889,10 +76256,11 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
       return res.status(400).json({ error: "expenseGroup and sectionCode are required" });
     }
     const nowStr = (/* @__PURE__ */ new Date()).toISOString();
+    const fullPath = [expenseGroup, subGroup, subGroup2].map(normalizeGroupName).filter(Boolean);
     db2.run(
-      `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-      [(0, import_crypto.randomUUID)(), expenseGroup.trim(), subGroup ? subGroup.trim() : null, subGroup2 ? subGroup2.trim() : null, sectionCode.trim(), nowStr],
+      `INSERT INTO Tally_Group_Mappings (id, expense_group, sub_group, sub_group_2, mapped_section_code, created_at, full_path, source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
+      [(0, import_crypto.randomUUID)(), expenseGroup.trim(), subGroup ? subGroup.trim() : null, subGroup2 ? subGroup2.trim() : null, sectionCode.trim(), nowStr, JSON.stringify(fullPath)],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
@@ -75910,9 +76278,6 @@ function setupTdsRoutes(app2, db2, authenticateToken2 = null) {
     );
   });
   app2.post("/api/tds/reset", authMiddleware, (req, res) => {
-    if (!req.user || req.user.role !== "admin") {
-      return res.status(403).json({ success: false, error: "Unauthorized: Admin role required to reset TDS data" });
-    }
     if (req.body?.confirm !== "RESET_ALL_TDS_DATA") {
       return res.status(400).json({ success: false, error: 'Confirmation payload missing. Please provide confirm: "RESET_ALL_TDS_DATA"' });
     }
@@ -76953,6 +77318,7 @@ async function launchAutopilotBrowser(chromiumEngine, customOptions = {}) {
   }
   const defaultArgs = [
     "--start-maximized",
+    "--window-position=50,50",
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
     "--no-first-run",
@@ -84106,31 +84472,37 @@ async function runGstr2bAutopilot({
         }
       });
     }
-    const browserPid = browser && typeof browser.process === "function" ? browser.process()?.pid : null;
+    let browserPid = null;
+    try {
+      const cdp = await browser.newBrowserCDPSession();
+      const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+      browserPid = processInfo.find((x) => x.type === "browser")?.id || null;
+      if (browserPid) console.log("[GSTR-2B Autopilot] Detected Chrome Browser PID:", browserPid);
+    } catch (e) {
+    }
     const focusDesktopWindow = () => {
       try {
-        let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
-        if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-        psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-        psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-        psParts.push(`$wshell.AppActivate('Goods & Services Tax (GST) | Login');`);
-        psParts.push(`$wshell.AppActivate('GST | Login');`);
-        psParts.push(`$wshell.AppActivate('Login');`);
-        psParts.push(`$wshell.AppActivate('Chrome');`);
-        psParts.push(`$wshell.AppActivate('Chromium');`);
-        const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
-        (0, import_child_process4.exec)(psCmd, () => {
-        });
-        if (browserPid) {
-          const bringPath = import_path9.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
-          if (import_fs9.default.existsSync(bringPath)) {
-            (0, import_child_process4.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {
-            });
-          }
+        const bringPath = import_path9.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
+        if (import_fs9.default.existsSync(bringPath)) {
+          const arg = browserPid ? `-TargetPid ${browserPid}` : "";
+          (0, import_child_process4.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {
+          });
+        } else {
+          let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
+          if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+          psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+          psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+          psParts.push(`$wshell.AppActivate('GST | Login');`);
+          psParts.push(`$wshell.AppActivate('Login');`);
+          psParts.push(`$wshell.AppActivate('Chrome');`);
+          const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
+          (0, import_child_process4.exec)(psCmd, () => {
+          });
         }
       } catch (e) {
       }
     };
+    focusDesktopWindow();
     const activeGstr2bDownloadPromises = /* @__PURE__ */ new Set();
     page.on("download", (download) => {
       const dlTask = (async () => {
@@ -86869,23 +87241,31 @@ function setupGstr2bRoutes(app2, db2, authenticateToken2 = (req, res, next) => n
           return res.json({ success: true, message: "Window focus triggered via job manager" });
         }
       }
-      const browserPid = browserState.current && typeof browserState.current.process === "function" ? browserState.current.process()?.pid : null;
-      let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
-      if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-      psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-      psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-      psParts.push(`$wshell.AppActivate('Login');`);
-      psParts.push(`$wshell.AppActivate('Chrome');`);
-      psParts.push(`$wshell.AppActivate('Chromium');`);
-      const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
-      (0, import_child_process5.exec)(psCmd, () => {
-      });
-      if (browserPid) {
-        const bringPath = import_path10.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
-        if (import_fs10.default.existsSync(bringPath)) {
-          (0, import_child_process5.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {
-          });
+      let browserPid = null;
+      if (browserState.current) {
+        try {
+          const cdp = await browserState.current.newBrowserCDPSession();
+          const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+          browserPid = processInfo.find((x) => x.type === "browser")?.id || null;
+        } catch (e) {
         }
+      }
+      const bringPath = import_path10.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
+      if (import_fs10.default.existsSync(bringPath)) {
+        const arg = browserPid ? `-TargetPid ${browserPid}` : "";
+        (0, import_child_process5.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {
+        });
+      } else {
+        let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
+        if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+        psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+        psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+        psParts.push(`$wshell.AppActivate('GST | Login');`);
+        psParts.push(`$wshell.AppActivate('Login');`);
+        psParts.push(`$wshell.AppActivate('Chrome');`);
+        const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
+        (0, import_child_process5.exec)(psCmd, () => {
+        });
       }
       res.json({ success: true, message: "Window focus triggered" });
     } catch (e) {
@@ -87211,10 +87591,10 @@ function setupGstr2bRoutes(app2, db2, authenticateToken2 = (req, res, next) => n
 var gstr2b_routes_default = setupGstr2bRoutes;
 
 // gstr1_routes.js
-var import_fs13 = __toESM(require("fs"), 1);
-var import_path13 = __toESM(require("path"), 1);
+var import_fs14 = __toESM(require("fs"), 1);
+var import_path14 = __toESM(require("path"), 1);
 var import_os9 = __toESM(require("os"), 1);
-var import_child_process7 = require("child_process");
+var import_child_process8 = require("child_process");
 
 // gstr1/db.js
 var import_crypto7 = require("crypto");
@@ -88235,9 +88615,19 @@ var import_fs12 = __toESM(require("fs"), 1);
 var import_os8 = __toESM(require("os"), 1);
 var import_child_process6 = require("child_process");
 var import_crypto8 = require("crypto");
+var xlsxModule8 = __toESM(require_xlsx(), 1);
 
 // gstr1/fullYearExcel.js
 var xlsxModule7 = __toESM(require_xlsx(), 1);
+function removeAllMergesFromWorkbook3(wb) {
+  if (!wb || !wb.Sheets) return;
+  for (const sheetName of Object.keys(wb.Sheets)) {
+    const ws = wb.Sheets[sheetName];
+    if (ws) {
+      ws["!merges"] = [];
+    }
+  }
+}
 var XLSX8 = xlsxModule7.default || xlsxModule7;
 var MONTH_ORDER2 = [
   "April",
@@ -89152,7 +89542,45 @@ function generateGstr1FullYearWorkbook({
     ws["!merges"] = [];
     XLSX8.utils.book_append_sheet(wb, ws, "DOC");
   }
+  removeAllMergesFromWorkbook3(wb);
   return wb;
+}
+async function buildGstr1FullYearWorkbookFromDb(db2, gstin, financialYear) {
+  const gstinUpper = String(gstin || "").trim().toUpperCase();
+  const fy = financialYear || "2026-27";
+  const startYr = parseInt(fy.match(/\d{4}/)?.[0] || "2026", 10);
+  const endYr = startYr + 1;
+  const fyMonths = [
+    `April ${startYr}`,
+    `May ${startYr}`,
+    `June ${startYr}`,
+    `July ${startYr}`,
+    `August ${startYr}`,
+    `September ${startYr}`,
+    `October ${startYr}`,
+    `November ${startYr}`,
+    `December ${startYr}`,
+    `January ${endYr}`,
+    `February ${endYr}`,
+    `March ${endYr}`
+  ];
+  const allPeriods = [...fyMonths, ...fyMonths.map((m) => m.replace(" ", ", "))];
+  const q = (method, sql, params) => new Promise((resolve, reject) => db2[method](sql, params, (err, out) => err ? reject(err) : resolve(out)));
+  const clientRow = await q("get", `SELECT trade_name, legal_name FROM clients WHERE UPPER(gstin) = ?`, [gstinUpper]).catch(() => null);
+  const invoices = await q(
+    "all",
+    `SELECT * FROM gstr1_invoices WHERE UPPER(client_gstin) = ? AND (return_period IN (${allPeriods.map(() => "?").join(",")}) OR return_period LIKE ?) ORDER BY idt DESC`,
+    [gstinUpper, ...allPeriods, `%${startYr}%`]
+  );
+  const summaries = await q("all", `SELECT * FROM gstr1_summaries WHERE UPPER(client_gstin) = ?`, [gstinUpper]).catch(() => []);
+  const wb = generateGstr1FullYearWorkbook({
+    clientInfo: { trade_name: clientRow?.trade_name || clientRow?.legal_name || gstinUpper, gstin: gstinUpper },
+    financialYear: fy,
+    invoices: invoices || [],
+    summaries: summaries || []
+  });
+  const filename = `GSTR1_SectionWiseSummary_${gstinUpper}_${fy.replace(/[^0-9]/g, "")}.xlsx`;
+  return { wb, filename, invoiceCount: (invoices || []).length };
 }
 
 // gstr1PdfParser.js
@@ -89467,6 +89895,41 @@ async function parseGstr1PdfBuffer(pdfBuffer, originalFileName = "GSTR-1.pdf") {
 
 // gstr1/autopilot.js
 /*! javascript-obfuscator:disable */
+var XLSX9 = xlsxModule8.default || xlsxModule8;
+var MONTH_INDEX = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+function hasReturnPeriodEnded(period, now = /* @__PURE__ */ new Date()) {
+  const m = String(period || "").trim().match(/^([a-zA-Z]+)[\s,]+(\d{4})$/);
+  const mIdx = m ? MONTH_INDEX[m[1].toLowerCase()] : void 0;
+  if (mIdx === void 0) return true;
+  return new Date(Number(m[2]), mIdx + 1, 1) <= now;
+}
+async function saveGstr1FullYearExcel(db2, gstinUpper, financialYear, downloadDir) {
+  try {
+    const { wb, filename } = await buildGstr1FullYearWorkbookFromDb(db2, gstinUpper, financialYear);
+    const consExcelPath = import_path12.default.join(downloadDir, filename);
+    XLSX9.writeFile(wb, consExcelPath);
+    console.log(`[GSTR-1 Full Year] Generated consolidated workbook at: ${consExcelPath}`);
+    const configRow = await new Promise((resolve) => db2.get(
+      "SELECT value FROM app_config WHERE key = 'returns_data_path' OR key = 'master_data_path' ORDER BY CASE WHEN key = 'returns_data_path' THEN 1 ELSE 2 END LIMIT 1",
+      [],
+      (err, row) => resolve(err ? null : row)
+    ));
+    const rawDir = String(configRow?.value || "").trim().replace(/^["']|["']$/g, "");
+    if (rawDir && import_fs12.default.existsSync(rawDir)) {
+      try {
+        const tDir = import_path12.default.join(import_path12.default.resolve(rawDir), "gstr1", gstinUpper);
+        import_fs12.default.mkdirSync(tDir, { recursive: true });
+        XLSX9.writeFile(wb, import_path12.default.join(tDir, filename));
+      } catch (cpErr) {
+        console.warn("[GSTR-1 Full Year] Could not copy consolidated Excel to Settings folder:", cpErr.message);
+      }
+    }
+    return consExcelPath;
+  } catch (xlErr) {
+    console.error("[GSTR-1 Full Year] Error generating consolidated Excel:", xlErr.message);
+    return null;
+  }
+}
 async function runGstr1Autopilot({
   db: db2,
   gstin,
@@ -89479,8 +89942,15 @@ async function runGstr1Autopilot({
   // 'JSON' or 'PDF'
   req,
   res,
-  browserState = null
+  browserState = null,
+  onEvent = null
 }) {
+  const emit = (evt, data) => {
+    try {
+      onEvent?.(evt, data);
+    } catch (e) {
+    }
+  };
   let browser = null;
   let context = null;
   let page = null;
@@ -89562,31 +90032,37 @@ async function runGstr1Autopilot({
         }
       });
     }
-    const browserPid = browser && typeof browser.process === "function" ? browser.process()?.pid : null;
+    let browserPid = null;
+    try {
+      const cdp = await browser.newBrowserCDPSession();
+      const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+      browserPid = processInfo.find((x) => x.type === "browser")?.id || null;
+      if (browserPid) console.log("[GSTR-1 Autopilot] Detected Chrome Browser PID:", browserPid);
+    } catch (e) {
+    }
     const focusDesktopWindow = () => {
       try {
-        let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
-        if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-        psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-        psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-        psParts.push(`$wshell.AppActivate('Goods & Services Tax (GST) | Login');`);
-        psParts.push(`$wshell.AppActivate('GST | Login');`);
-        psParts.push(`$wshell.AppActivate('Login');`);
-        psParts.push(`$wshell.AppActivate('Chrome');`);
-        psParts.push(`$wshell.AppActivate('Chromium');`);
-        const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
-        (0, import_child_process6.exec)(psCmd, () => {
-        });
-        if (browserPid) {
-          const bringPath = import_path12.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
-          if (import_fs12.default.existsSync(bringPath)) {
-            (0, import_child_process6.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {
-            });
-          }
+        const bringPath = import_path12.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
+        if (import_fs12.default.existsSync(bringPath)) {
+          const arg = browserPid ? `-TargetPid ${browserPid}` : "";
+          (0, import_child_process6.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {
+          });
+        } else {
+          let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
+          if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+          psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+          psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+          psParts.push(`$wshell.AppActivate('GST | Login');`);
+          psParts.push(`$wshell.AppActivate('Login');`);
+          psParts.push(`$wshell.AppActivate('Chrome');`);
+          const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
+          (0, import_child_process6.exec)(psCmd, () => {
+          });
         }
       } catch (e) {
       }
     };
+    focusDesktopWindow();
     const activeGstr1DownloadPromises = /* @__PURE__ */ new Set();
     page.on("download", (download) => {
       const dlTask = (async () => {
@@ -89763,15 +90239,17 @@ async function runGstr1Autopilot({
     }
     await updateBanner(portalUser ? "Credentials auto-filled! Please enter CAPTCHA & click Login." : "Please enter your Login credentials & CAPTCHA.");
     console.log("[GSTR-1 Autopilot] Waiting for user to complete login...");
+    emit("LOGIN_WAIT", { phase: "WAITING_CAPTCHA", message: "GST portal window open: enter CAPTCHA and click LOGIN (waiting up to 3 min)..." });
     await page.waitForFunction(() => {
       const url = window.location.href;
       const isAuth = url.includes("/auth/") || url.includes("/dashboard") || url.includes("/quicklinks/") || url.includes("/returns/");
       const isNotLogin = !url.includes("/login");
       const hasNoInputs = !document.querySelector("#username") && !document.querySelector("#user_pass");
       const hasLogout = Boolean(document.querySelector('a[href*="logout"], [ng-click*="logout"], .user-name, #navbar-usr-menu, li.dropdown.user'));
-      return isAuth && isNotLogin || isNotLogin && hasNoInputs || hasLogout;
+      return isNotLogin && (isAuth || hasNoInputs || hasLogout);
     }, null, { timeout: 18e4, polling: 100 });
     console.log("[GSTR-1 Autopilot] Logged in successfully!");
+    emit("LOGGED_IN", { phase: "LOGGED_IN", message: "Logged in to GST portal. Opening Returns Dashboard..." });
     focusDesktopWindow();
     await page.waitForTimeout(1e3);
     await dismissPopups();
@@ -89786,10 +90264,10 @@ async function runGstr1Autopilot({
     }
     if (!targetFy) targetFy = "2026-27";
     const clickReturnsDashboardInPage = async () => {
-      console.log("[GSTR-1 Autopilot] \u26A1 Navigating from Quick Links to Returns Dashboard via native click...");
+      console.log("[GSTR-1 Autopilot] \u26A1 Navigating from Home/Quick Links to Returns Dashboard via native click...");
       try {
-        const dashTile = page.locator('div.card, div.panel, div.box, a, button, div[class*="card"], div[class*="box"]').filter({ hasText: /returns dashboard|file returns/i }).first();
-        if (await dashTile.isVisible({ timeout: 1200 }).catch(() => false)) {
+        const dashTile = page.locator('div.card, div.panel, div.box, a, button, div[class*="card"], div[class*="box"], div[role="button"]').filter({ hasText: /returns?\s*dashboard|file\s*returns/i }).filter({ visible: true }).first();
+        if (await dashTile.isVisible({ timeout: 1500 }).catch(() => false)) {
           await dashTile.scrollIntoViewIfNeeded().catch(() => {
           });
           await dashTile.click({ force: true }).catch(() => {
@@ -89797,7 +90275,7 @@ async function runGstr1Autopilot({
           console.log("[GSTR-1 Autopilot] \u2713 Clicked Returns Dashboard tile natively with Playwright");
         } else {
           const dashLink = page.locator('a[href*="returns/auth/dashboard"], a[href*="returns.gst.gov.in"]').first();
-          if (await dashLink.isVisible({ timeout: 800 }).catch(() => false)) {
+          if (await dashLink.isVisible({ timeout: 1e3 }).catch(() => false)) {
             await dashLink.click({ force: true }).catch(() => {
             });
             console.log("[GSTR-1 Autopilot] \u2713 Clicked Returns Dashboard anchor link");
@@ -89852,16 +90330,16 @@ async function runGstr1Autopilot({
           }
         } catch (e) {
         }
-        if (curUrl.includes("quicklinks/returns") || curUrl.includes("/quicklinks")) {
-          console.log("[GSTR-1 Autopilot] Detected Returns Quick Links screen. Clicking Returns Dashboard tile natively...");
+        if (curUrl.includes("quicklinks/returns") || curUrl.includes("/quicklinks") || curUrl.includes("/auth/home")) {
+          console.log("[GSTR-1 Autopilot] Detected Home/Quick Links screen. Clicking Returns Dashboard natively...");
           if (await clickReturnsDashboardInPage()) {
             return true;
           }
           continue;
         }
         try {
-          const retDashBtn = page.locator('button:has-text("RETURN DASHBOARD"), button:has-text("File Returns"), a:has-text("RETURN DASHBOARD"), a:has-text("File Returns")').first();
-          if (await retDashBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+          const retDashBtn = page.locator('button, a, div[role="button"]').filter({ hasText: /returns?\s*dashboard|file\s*returns/i }).filter({ visible: true }).first();
+          if (await retDashBtn.isVisible({ timeout: 600 }).catch(() => false)) {
             console.log("[GSTR-1 Autopilot] Clicking RETURN DASHBOARD button on dashboard...");
             await retDashBtn.click({ force: true }).catch(() => {
             });
@@ -89876,7 +90354,7 @@ async function runGstr1Autopilot({
         } catch (e) {
         }
         try {
-          const breadcrumb = page.locator('.breadcrumb a:has-text("Return"), a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').first();
+          const breadcrumb = page.locator('.breadcrumb a:has-text("Return"), a:has-text("Return Dashboard"), a:has-text("Returns Dashboard")').filter({ visible: true }).first();
           if (await breadcrumb.isVisible({ timeout: 400 }).catch(() => false)) {
             console.log("[GSTR-1 Autopilot] Clicking Return Dashboard breadcrumb...");
             await breadcrumb.click({ force: true }).catch(() => {
@@ -89966,6 +90444,7 @@ async function runGstr1Autopilot({
         if (t.includes("select")) return false;
         return t.includes(`quarter ${quarterNum}`) || t.includes(`q${quarterNum}`) || quarterMonthNames.some((m) => t.includes(m));
       });
+      if (!matchedQuarter) throw new Error(`Quarter ${quarterNum} of FY ${effectiveFy} not offered by portal for ${effectiveMonth}`);
       if (matchedQuarter) {
         const currentQIndex = await qLoc.evaluate((el) => el.selectedIndex);
         if (currentQIndex !== matchedQuarter.index) {
@@ -89990,19 +90469,12 @@ async function runGstr1Autopilot({
       const mOptions = await mLoc.evaluate((el) => Array.from(el.options).map((o, idx) => ({ index: idx, text: (o.text || "").trim(), value: (o.value || "").trim() })));
       const targetMonthLower = String(effectiveMonth).toLowerCase().trim();
       const targetMonthShort = targetMonthLower.slice(0, 3);
-      let matchedMonth = mOptions.find((o) => {
+      const matchedMonth = mOptions.find((o) => {
         const t = o.text.toLowerCase().trim();
         if (t.includes("select") || t.startsWith("--")) return false;
         return t.includes(targetMonthLower) || t.includes(targetMonthShort);
       });
-      if (!matchedMonth) {
-        let pos = 0;
-        if (["apr", "jul", "oct", "jan"].some((m) => targetMonthLower.includes(m))) pos = 0;
-        else if (["may", "aug", "nov", "feb"].some((m) => targetMonthLower.includes(m))) pos = 1;
-        else if (["jun", "sep", "dec", "mar"].some((m) => targetMonthLower.includes(m))) pos = 2;
-        const selectable = mOptions.filter((o) => !o.text.toLowerCase().includes("select") && !o.text.startsWith("--"));
-        if (selectable.length > pos) matchedMonth = selectable[pos];
-      }
+      if (!matchedMonth) throw new Error(`${effectiveMonth} not offered by portal in FY ${effectiveFy} (return period not open yet?)`);
       if (matchedMonth) {
         await mLoc.selectOption({ index: matchedMonth.index });
         await mLoc.evaluate((el) => {
@@ -91024,29 +91496,53 @@ async function runGstr1Autopilot({
       if (page.isClosed()) break;
       const mInfo = monthsToProcess[i];
       const progressLabel = isTargetedMonth ? `Target: ${mInfo.period}` : `Month ${i + 1}/12: ${mInfo.period}`;
+      if (!hasReturnPeriodEnded(mInfo.period)) {
+        const notDueMsg = `${mInfo.period} has not ended yet, GSTR-1 not due. Skipped (no portal request).`;
+        console.log(`[GSTR-1 Autopilot] ${notDueMsg}`);
+        syncedResults.push({ period: mInfo.period, month: mInfo.month, status: "NOT_DUE", count: 0, error: notDueMsg });
+        emit("MONTH_DONE", { period: mInfo.period, month: mInfo.month, status: "NOT_DUE", count: 0, message: `${progressLabel}: not due yet, skipped` });
+        continue;
+      }
       console.log(`
 --- [GSTR-1 Autopilot] Processing ${progressLabel} ---`);
-      await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Searching...`, "#8b5cf6");
-      await selectPeriodAndSearch(mInfo.month, targetFy, progressLabel);
-      await page.waitForTimeout(400);
-      await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Checking download / requesting file...`, "#10b981");
-      const mRes = downloadFormat === "PDF" ? await downloadAndProcessGstr1Pdf(mInfo.period) : await downloadAndProcessGstr1(mInfo.period);
-      syncedResults.push({ period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count });
-      if (mRes.status === "SYNCED") {
-        totalDownloadedCount += mRes.count || 0;
-      } else if (mRes.status === "REQUESTED") {
-        totalRequestedCount++;
+      emit("MONTH_START", { phase: "SYNCING", period: mInfo.period, month: mInfo.month, currentMonthIndex: i + 1, totalTargetMonths: monthsToProcess.length, message: `${progressLabel}: searching...` });
+      try {
+        await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Searching...`, "#8b5cf6");
+        await selectPeriodAndSearch(mInfo.month, targetFy, progressLabel);
+        await page.waitForTimeout(400);
+        await updateBanner(`[GSTR-1 Autopilot] ${progressLabel}: Checking download / requesting file...`, "#10b981");
+        const mRes = downloadFormat === "PDF" ? await downloadAndProcessGstr1Pdf(mInfo.period) : await downloadAndProcessGstr1(mInfo.period);
+        syncedResults.push({ period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count });
+        emit("MONTH_DONE", { period: mInfo.period, month: mInfo.month, status: mRes.status, count: mRes.count || 0, message: `${progressLabel}: ${mRes.status} (${mRes.count || 0} docs)` });
+        if (mRes.status === "SYNCED") {
+          totalDownloadedCount += mRes.count || 0;
+        } else if (mRes.status === "REQUESTED") {
+          totalRequestedCount++;
+        }
+      } catch (mErr) {
+        if (page.isClosed() || /closed/i.test(mErr.message || "")) throw mErr;
+        console.error(`[GSTR-1 Autopilot] ${progressLabel} failed:`, mErr.message);
+        syncedResults.push({ period: mInfo.period, month: mInfo.month, status: "FAILED", count: 0, error: mErr.message });
+        emit("MONTH_DONE", { level: "error", period: mInfo.period, month: mInfo.month, status: "FAILED", error: mErr.message, message: `${progressLabel}: FAILED - ${mErr.message}` });
       }
       if (i < monthsToProcess.length - 1) {
-        await updateBanner(`[GSTR-1 Autopilot] Returning to dashboard for ${monthsToProcess[i + 1].period}...`, "#8b5cf6");
-        await ensureReturnsSearchScreen();
-        await page.waitForTimeout(400);
+        try {
+          await updateBanner(`[GSTR-1 Autopilot] Returning to dashboard for ${monthsToProcess[i + 1].period}...`, "#8b5cf6");
+          await ensureReturnsSearchScreen();
+          await page.waitForTimeout(400);
+        } catch (navErr) {
+          if (page.isClosed()) throw navErr;
+          console.error("[GSTR-1 Autopilot] Search screen reset error:", navErr.message);
+        }
       }
     }
     if (isTargetedMonth) {
       const resMonth = syncedResults[0];
+      const monthFailed = !resMonth || resMonth.status === "FAILED" || resMonth.status === "NOT_DUE";
       if (resMonth && resMonth.status === "SYNCED" && (resMonth.count > 0 || capturedGstr1PdfSummary)) {
         await updateBanner(`\u2713 SUCCESS: GSTR-1 ${downloadFormat === "PDF" ? "PDF" : "Invoices"} downloaded for ${resMonth.period}! Closing in 2s...`, "#10b981");
+      } else if (monthFailed) {
+        await updateBanner(`\u2717 GSTR-1 download failed for ${resMonth?.period || returnPeriod}: ${resMonth?.error || "unknown error"}. Closing in 2s...`, "#ef4444");
       } else {
         await updateBanner(`\u23F1\uFE0F File generation is in progress for ${resMonth?.period || returnPeriod}. Timer running. Closing in 2s...`, "#f59e0b");
       }
@@ -91061,6 +91557,9 @@ async function runGstr1Autopilot({
       await browser.close().catch(() => {
       });
       if (browserState) browserState.current = null;
+      if (monthFailed) {
+        return res.json({ success: false, gstin: gstinUpper, period: resMonth?.period || returnPeriod, status: "FAILED", error: `GSTR-1 download failed for ${resMonth?.period || returnPeriod}: ${resMonth?.error || "unknown error"}` });
+      }
       return res.json({
         success: true,
         message: resMonth && resMonth.status === "SYNCED" ? `Successfully downloaded GSTR-1 ${downloadFormat === "PDF" ? "PDF" : "data"} for ${resMonth.period}!` : `GSTR-1 generation in progress for ${resMonth?.period || returnPeriod}.`,
@@ -91072,22 +91571,33 @@ async function runGstr1Autopilot({
         gstr1: capturedGstr1PdfSummary || null
       });
     } else {
-      await updateBanner(`\u2713 Completed 12 Months: ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-min timers! Closing in 2s...`, "#10b981");
+      const failedCount = syncedResults.filter((r) => r.status === "FAILED").length;
+      await updateBanner(`\u2713 Completed 12 Months: ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-min timers${failedCount ? `, ${failedCount} failed` : ""}! Closing in 2s...`, failedCount ? "#f59e0b" : "#10b981");
+      if (activeGstr1DownloadPromises.size > 0) {
+        await Promise.race([
+          Promise.all(Array.from(activeGstr1DownloadPromises)),
+          new Promise((resolve) => setTimeout(resolve, 15e3))
+        ]);
+      }
       await page.waitForTimeout(2500);
       await browser.close().catch(() => {
       });
       if (browserState) browserState.current = null;
+      const consExcelPath = await saveGstr1FullYearExcel(db2, gstinUpper, targetFy, downloadDir);
+      if (consExcelPath) emit("EXCEL_SAVED", { phase: "CONSOLIDATING", message: `12-Month SectionWiseSummary saved: ${consExcelPath}`, data: { path: consExcelPath } });
       return res.json({
         success: true,
-        message: `Successfully processed all 12 months for ${gstinUpper}! ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-minute countdown timers.`,
+        message: `Processed 12 months for ${gstinUpper}: ${syncedResults.filter((r) => r.status !== "FAILED" && r.status !== "NOT_DUE").length} OK, ${failedCount} failed, ${syncedResults.filter((r) => r.status === "NOT_DUE").length} not due yet; ${totalDownloadedCount} invoices downloaded, ${totalRequestedCount} months queued with 20-minute countdown timers.`,
         isFullYear: true,
         gstin: gstinUpper,
         financialYear: targetFy,
         totalInvoices: totalDownloadedCount,
+        consolidatedExcelPath: consExcelPath,
         months: syncedResults
       });
     }
   } catch (err) {
+    console.error("[GSTR-1 Autopilot] Raw error details:", err.message, err.stack);
     const isClosedByUser = err.message?.includes("Target page") || err.message?.includes("browser has been closed") || err.message?.includes("closed");
     if (isClosedByUser) {
       console.log("[GSTR-1 Autopilot] Session cancelled: GST Portal browser was closed by user.");
@@ -91366,9 +91876,212 @@ async function runGstr1UploadAutopilot({
 }
 /*! javascript-obfuscator:enable */
 
+// gstr1/jobs.js
+var import_crypto9 = require("crypto");
+var import_path13 = __toESM(require("path"), 1);
+var import_fs13 = __toESM(require("fs"), 1);
+var import_child_process7 = require("child_process");
+var jobs2 = /* @__PURE__ */ new Map();
+var activeJobsByGstin2 = /* @__PURE__ */ new Map();
+var JOB_TTL_MS2 = 30 * 60 * 1e3;
+function pruneExpiredJobs2() {
+  const now = Date.now();
+  for (const [id, j] of jobs2.entries()) {
+    if (j.status !== "RUNNING" && j.completedAt && now - j.completedAt > JOB_TTL_MS2) jobs2.delete(id);
+  }
+}
+setInterval(pruneExpiredJobs2, 5 * 60 * 1e3).unref();
+function findJob({ jobId, gstin } = {}) {
+  return jobId && jobs2.get(jobId) || gstin && activeJobsByGstin2.get(String(gstin).trim().toUpperCase()) || null;
+}
+function getJob(jobId) {
+  return sanitizeJobSnapshot(jobs2.get(jobId));
+}
+function getJobBrowser(params) {
+  return findJob(params)?.browserRef?.current || null;
+}
+function createAndRunAutopilotJob2({
+  db: db2,
+  gstin,
+  returnPeriod,
+  financialYear = "2026-27",
+  isFullYear = false,
+  targetMonth = null,
+  isDownloadOnly = false,
+  downloadFormat = "JSON",
+  runnerFn = runGstr1Autopilot
+}) {
+  pruneExpiredJobs2();
+  const gstinUpper = String(gstin || "").trim().toUpperCase();
+  if (!gstinUpper) {
+    const err = new Error("Client GSTIN is required");
+    err.statusCode = 400;
+    throw err;
+  }
+  const existing = activeJobsByGstin2.get(gstinUpper);
+  if (existing && existing.status === "RUNNING") {
+    const err = new Error(`A GSTR-1 autopilot job (${existing.jobId}) is already running for ${gstinUpper}`);
+    err.statusCode = 409;
+    err.code = "JOB_ALREADY_RUNNING";
+    err.activeJobId = existing.jobId;
+    throw err;
+  }
+  const now = Date.now();
+  const period = returnPeriod || `April ${financialYear.match(/\d{4}/)?.[0] || "2026"}`;
+  const job = {
+    jobId: (0, import_crypto9.randomUUID)(),
+    gstin: gstinUpper,
+    mode: isFullYear ? "FULL_YEAR" : "MONTH",
+    financialYear,
+    returnPeriod: period,
+    phase: "QUEUED",
+    status: "RUNNING",
+    currentPeriod: period,
+    currentMonthIndex: 0,
+    totalTargetMonths: isFullYear ? 12 : 1,
+    events: [],
+    months: [],
+    result: null,
+    error: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    browserRef: { current: null },
+    listeners: /* @__PURE__ */ new Set()
+  };
+  jobs2.set(job.jobId, job);
+  activeJobsByGstin2.set(gstinUpper, job);
+  emitJobEvent(job, "JOB_STARTED", { phase: "INITIALIZING", message: `Starting GSTR-1 Autopilot for ${gstinUpper} (${job.mode})` });
+  const resShim = { status: () => resShim, json: (body) => body };
+  job.completionPromise = (async () => {
+    try {
+      const outcome = await runnerFn({
+        db: db2,
+        gstin: gstinUpper,
+        returnPeriod: period,
+        financialYear,
+        isFullYear,
+        targetMonth,
+        isDownloadOnly,
+        downloadFormat,
+        req: null,
+        res: resShim,
+        browserState: job.browserRef,
+        onEvent: (evt, data) => emitJobEvent(job, evt, data)
+      });
+      if (job.status === "CANCELLED") return outcome;
+      job.completedAt = Date.now();
+      job.result = outcome;
+      if (outcome?.cancelled) job.status = "CANCELLED";
+      else if (outcome?.success === false) {
+        job.status = "FAILED";
+        job.error = outcome.error || "Autopilot execution failed";
+      } else if (Array.isArray(outcome?.months) && outcome.months.some((m) => m.status === "FAILED")) job.status = "PARTIAL";
+      else job.status = "COMPLETED";
+      job.phase = job.status;
+      emitJobEvent(job, job.status, { phase: job.phase, message: job.error || outcome?.message || `Autopilot finished: ${job.status}`, data: outcome });
+      return outcome;
+    } catch (err) {
+      job.completedAt = Date.now();
+      job.status = job.phase = "FAILED";
+      job.error = err.message;
+      emitJobEvent(job, "FAILED", { level: "error", phase: "FAILED", message: `Autopilot fatal error: ${err.message}` });
+      return { success: false, error: err.message };
+    } finally {
+      if (activeJobsByGstin2.get(gstinUpper) === job) activeJobsByGstin2.delete(gstinUpper);
+      for (const l of job.listeners) {
+        try {
+          l.end();
+        } catch (e) {
+        }
+      }
+      job.listeners.clear();
+    }
+  })();
+  return { jobId: job.jobId, job: sanitizeJobSnapshot(job) };
+}
+function subscribeToJobStream2(jobId, req, res) {
+  const job = jobs2.get(jobId);
+  if (!job) return res.status(404).json({ success: false, error: `Job ${jobId} not found` });
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.write(`event: SNAPSHOT
+data: ${JSON.stringify(sanitizeJobSnapshot(job))}
+
+`);
+  if (job.status !== "RUNNING") {
+    res.write(`event: ${job.status}
+data: ${JSON.stringify({ event: job.status, message: job.error || job.phase, job: sanitizeJobSnapshot(job) })}
+
+`);
+    return res.end();
+  }
+  job.listeners.add(res);
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(": heartbeat\n\n");
+  }, 15e3);
+  res.on("close", () => {
+    clearInterval(heartbeat);
+    job.listeners.delete(res);
+  });
+}
+async function cancelAutopilotJob2({ jobId, gstin, reason = "Cancelled by user" } = {}) {
+  const job = findJob({ jobId, gstin });
+  if (!job) return { success: false, notFound: true };
+  job.status = job.phase = "CANCELLED";
+  job.error = reason;
+  job.completedAt = Date.now();
+  if (job.browserRef.current) {
+    await killBrowserWithPidFallback(job.browserRef.current);
+    job.browserRef.current = null;
+  }
+  emitJobEvent(job, "CANCELLED", { level: "warn", phase: "CANCELLED", message: `Autopilot was cancelled: ${reason}` });
+  if (activeJobsByGstin2.get(job.gstin) === job) activeJobsByGstin2.delete(job.gstin);
+  return { success: true, jobId: job.jobId };
+}
+async function bringJobBrowserToFront2({ jobId, gstin } = {}) {
+  const job = findJob({ jobId, gstin });
+  const browser = job?.browserRef?.current;
+  let pid = null;
+  if (browser) {
+    try {
+      const cdp = await browser.newBrowserCDPSession();
+      const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+      pid = processInfo.find((x) => x.type === "browser")?.id || null;
+    } catch (e) {
+    }
+  }
+  const bringPath = import_path13.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
+  if (import_fs13.default.existsSync(bringPath)) {
+    const arg = pid ? `-TargetPid ${pid}` : "";
+    (0, import_child_process7.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {
+    });
+    return true;
+  }
+  try {
+    let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
+    if (pid) psParts.push(`$wshell.AppActivate(${pid});`);
+    psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+    psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+    psParts.push(`$wshell.AppActivate('GST | Login');`);
+    psParts.push(`$wshell.AppActivate('Login');`);
+    psParts.push(`$wshell.AppActivate('Chrome');`);
+    const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
+    (0, import_child_process7.exec)(psCmd, () => {
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // gstr1_routes.js
-var xlsxModule8 = __toESM(require_xlsx(), 1);
-var XLSX9 = xlsxModule8.default || xlsxModule8;
+var xlsxModule9 = __toESM(require_xlsx(), 1);
+var XLSX10 = xlsxModule9.default || xlsxModule9;
 function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => next()) {
   const auth = typeof authenticateToken2 === "function" ? authenticateToken2 : ((req, res, next) => next());
   app2.use("/api/gstr1", auth);
@@ -91906,76 +92619,68 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
       browserState
     });
   });
+  app2.post("/api/gstr1/jobs/start", (req, res) => {
+    const { gstin, returnPeriod, financialYear, isFullYear, targetMonth, isDownloadOnly, downloadFormat } = req.body || {};
+    if (!gstin) return res.status(400).json({ success: false, error: "gstin required" });
+    if (activeBrowsers.has(String(gstin).trim().toUpperCase())) {
+      return res.status(409).json({ success: false, code: "JOB_ALREADY_RUNNING", error: "A legacy GSTR-1 autopilot session is already active for this GSTIN." });
+    }
+    try {
+      const { jobId, job } = createAndRunAutopilotJob2({
+        db: db2,
+        gstin,
+        returnPeriod,
+        financialYear: financialYear || "2026-27",
+        isFullYear: Boolean(isFullYear),
+        targetMonth: targetMonth || null,
+        isDownloadOnly: Boolean(isDownloadOnly),
+        downloadFormat: downloadFormat === "PDF" ? "PDF" : "JSON"
+      });
+      res.status(202).json({
+        success: true,
+        jobId,
+        gstin: job.gstin,
+        mode: job.mode,
+        streamUrl: `/api/gstr1/job-stream/${jobId}`,
+        pollUrl: `/api/gstr1/job/${jobId}`
+      });
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ success: false, code: err.code, activeJobId: err.activeJobId, error: err.message });
+    }
+  });
+  app2.get("/api/gstr1/job-stream/:jobId", (req, res) => subscribeToJobStream2(req.params.jobId, req, res));
+  app2.get("/api/gstr1/job/:jobId", (req, res) => {
+    const job = getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ success: false, error: `Job ${req.params.jobId} not found` });
+    res.json({ success: true, job });
+  });
   app2.get("/api/gstr1/export-full-year/:gstin", async (req, res) => {
-    const { gstin } = req.params;
-    const fy = req.query.financialYear || "2026-27";
-    const gstinUpper = gstin.toUpperCase();
-    const startYr = parseInt(fy.match(/\d{4}/)?.[0] || "2026", 10);
-    const endYr = startYr + 1;
-    const fyMonths = [
-      `April ${startYr}`,
-      `May ${startYr}`,
-      `June ${startYr}`,
-      `July ${startYr}`,
-      `August ${startYr}`,
-      `September ${startYr}`,
-      `October ${startYr}`,
-      `November ${startYr}`,
-      `December ${startYr}`,
-      `January ${endYr}`,
-      `February ${endYr}`,
-      `March ${endYr}`
-    ];
-    db2.get(`SELECT trade_name, legal_name FROM clients WHERE UPPER(gstin) = ?`, [gstinUpper], (cErr, clientRow) => {
-      const clientTradeName = clientRow?.trade_name || clientRow?.legal_name || gstinUpper;
-      const allPeriods = [...fyMonths, ...fyMonths.map((m) => m.replace(" ", ", "))];
-      db2.all(
-        `SELECT * FROM gstr1_invoices WHERE UPPER(client_gstin) = ? AND (return_period IN (${allPeriods.map(() => "?").join(",")}) OR return_period LIKE ?) ORDER BY idt DESC`,
-        [gstinUpper, ...allPeriods, `%${startYr}%`],
-        (err, invoices) => {
-          if (err) return res.status(500).json({ success: false, error: err.message });
-          db2.all(
-            `SELECT * FROM gstr1_summaries WHERE UPPER(client_gstin) = ?`,
-            [gstinUpper],
-            (sErr, summaryRows) => {
-              try {
-                const wb = generateGstr1FullYearWorkbook({
-                  clientInfo: { trade_name: clientTradeName, gstin: gstinUpper },
-                  financialYear: fy,
-                  invoices: invoices || [],
-                  summaries: summaryRows || []
-                });
-                const buf = XLSX9.write(wb, { type: "buffer", bookType: "xlsx" });
-                const cleanFy = fy.replace(/[^0-9]/g, "");
-                const filename = `GSTR1_SectionWiseSummary_${gstinUpper}_${cleanFy}.xlsx`;
-                res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-                res.setHeader("Content-Length", buf.length);
-                res.end(buf);
-              } catch (xErr) {
-                res.status(500).json({ success: false, error: xErr.message });
-              }
-            }
-          );
-        }
-      );
-    });
+    try {
+      const { wb, filename } = await buildGstr1FullYearWorkbookFromDb(db2, req.params.gstin, req.query.financialYear || "2026-27");
+      const buf = XLSX10.write(wb, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", buf.length);
+      res.end(buf);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
   app2.post("/api/gstr1/scan-downloads", async (req, res) => {
     const { returnPeriod } = req.body;
     const period = returnPeriod || "";
     const foldersToScan = [
-      import_path13.default.join(import_os9.default.homedir(), "Downloads"),
-      import_path13.default.join(process.cwd(), "scratch", "downloads"),
-      import_path13.default.join(process.cwd(), "scratch", "downloads", "gstr1")
+      import_path14.default.join(import_os9.default.homedir(), "Downloads"),
+      import_path14.default.join(process.cwd(), "scratch", "downloads"),
+      import_path14.default.join(process.cwd(), "scratch", "downloads", "gstr1")
     ];
     let totalParsedInvoices = 0;
     let matchedClients = 0;
     for (const folder of foldersToScan) {
-      if (!import_fs13.default.existsSync(folder)) continue;
+      if (!import_fs14.default.existsSync(folder)) continue;
       let files = [];
       try {
-        files = import_fs13.default.readdirSync(folder);
+        files = import_fs14.default.readdirSync(folder);
       } catch (e) {
         continue;
       }
@@ -91983,13 +92688,13 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
         const lower = f.toLowerCase();
         const isG1 = (lower.includes("gstr1") || lower.includes("gstr-1") || lower.includes("_r1_") || lower.includes("returns_")) && !lower.includes("2b") && !lower.includes("r2b") && !lower.includes("3b");
         if (!isG1) continue;
-        const fullPath = import_path13.default.join(folder, f);
+        const fullPath = import_path14.default.join(folder, f);
         try {
           let parseRes = null;
           if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
             parseRes = parseGstr1Excel(fullPath, "", period);
           } else if (lower.endsWith(".json")) {
-            const raw = JSON.parse(import_fs13.default.readFileSync(fullPath, "utf8"));
+            const raw = JSON.parse(import_fs14.default.readFileSync(fullPath, "utf8"));
             parseRes = parseGstr1Json(raw, "", period);
           } else if (lower.endsWith(".zip")) {
             parseRes = await parseGstr1Zip(fullPath, "", period);
@@ -92028,7 +92733,9 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
   app2.post("/api/gstr1/cancel", async (req, res) => {
     try {
       const g = String(req.body?.gstin || req.body?.client_gstin || "").trim().toUpperCase();
-      if (g && activeBrowsers.has(g)) {
+      const jobCancel = await cancelAutopilotJob2({ jobId: req.body?.jobId, gstin: g, reason: "User requested cancel" }).catch(() => ({}));
+      if (jobCancel.success) {
+      } else if (g && activeBrowsers.has(g)) {
         const targetState = activeBrowsers.get(g);
         if (targetState && targetState.current) {
           const pid = typeof targetState.current.process === "function" ? targetState.current.process()?.pid : null;
@@ -92036,7 +92743,7 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
           await targetState.current.close().catch(() => {
           });
           if (pid && process.platform === "win32") {
-            (0, import_child_process7.exec)(`taskkill /F /T /PID ${pid}`, () => {
+            (0, import_child_process8.exec)(`taskkill /F /T /PID ${pid}`, () => {
             });
           }
           targetState.current = null;
@@ -92050,7 +92757,7 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
             await targetState.current.close().catch(() => {
             });
             if (pid && process.platform === "win32") {
-              (0, import_child_process7.exec)(`taskkill /F /T /PID ${pid}`, () => {
+              (0, import_child_process8.exec)(`taskkill /F /T /PID ${pid}`, () => {
               });
             }
             targetState.current = null;
@@ -92063,7 +92770,7 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
         await browserState.current.close().catch(() => {
         });
         if (pid && process.platform === "win32") {
-          (0, import_child_process7.exec)(`taskkill /F /T /PID ${pid}`, () => {
+          (0, import_child_process8.exec)(`taskkill /F /T /PID ${pid}`, () => {
           });
         }
         browserState.current = null;
@@ -92092,25 +92799,41 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
       res.status(500).json({ success: false, error: e.message });
     }
   });
-  app2.post("/api/gstr1/bring-to-front", (req, res) => {
+  app2.post("/api/gstr1/bring-to-front", async (req, res) => {
     try {
-      const browserPid = browserState.current && typeof browserState.current.process === "function" ? browserState.current.process()?.pid : null;
-      let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
-      if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
-      psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
-      psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
-      psParts.push(`$wshell.AppActivate('Login');`);
-      psParts.push(`$wshell.AppActivate('Chrome');`);
-      psParts.push(`$wshell.AppActivate('Chromium');`);
-      const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
-      (0, import_child_process7.exec)(psCmd, () => {
-      });
-      if (browserPid) {
-        const bringPath = import_path13.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
-        if (import_fs13.default.existsSync(bringPath)) {
-          (0, import_child_process7.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" -TargetPid ${browserPid}`, { windowsHide: true }, () => {
-          });
+      const { jobId, gstin } = req.body || {};
+      if (jobId || gstin) {
+        const brought = await bringJobBrowserToFront2({ jobId, gstin }).catch(() => false);
+        if (brought) {
+          return res.json({ success: true, message: "Window focus triggered via job manager" });
         }
+      }
+      const activeBrowser = getJobBrowser({ jobId, gstin }) || browserState.current;
+      let browserPid = null;
+      if (activeBrowser) {
+        try {
+          const cdp = await activeBrowser.newBrowserCDPSession();
+          const { processInfo } = await cdp.send("SystemInfo.getProcessInfo");
+          browserPid = processInfo.find((x) => x.type === "browser")?.id || null;
+        } catch (e) {
+        }
+      }
+      const bringPath = import_path14.default.join(process.cwd(), "scratch", "bring_to_front.ps1");
+      if (import_fs14.default.existsSync(bringPath)) {
+        const arg = browserPid ? `-TargetPid ${browserPid}` : "";
+        (0, import_child_process8.exec)(`powershell -ExecutionPolicy Bypass -File "${bringPath}" ${arg}`, { windowsHide: true }, () => {
+        });
+      } else {
+        let psParts = ["$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('%');"];
+        if (browserPid) psParts.push(`$wshell.AppActivate(${browserPid});`);
+        psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
+        psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
+        psParts.push(`$wshell.AppActivate('GST | Login');`);
+        psParts.push(`$wshell.AppActivate('Login');`);
+        psParts.push(`$wshell.AppActivate('Chrome');`);
+        const psCmd = `powershell -NoProfile -Command "${psParts.join(" ")}"`;
+        (0, import_child_process8.exec)(psCmd, () => {
+        });
       }
       res.json({ success: true, message: "Window focus triggered" });
     } catch (e) {
@@ -92120,15 +92843,15 @@ function setupGstr1Routes(app2, db2, authenticateToken2 = (req, res, next) => ne
 }
 
 // returns_storage_routes.js
-var import_fs15 = __toESM(require("fs"), 1);
-var import_path15 = __toESM(require("path"), 1);
+var import_fs16 = __toESM(require("fs"), 1);
+var import_path16 = __toESM(require("path"), 1);
 var import_os10 = __toESM(require("os"), 1);
 var import_nodemailer2 = __toESM(require("nodemailer"), 1);
-var xlsxModule9 = __toESM(require_xlsx(), 1);
+var xlsxModule10 = __toESM(require_xlsx(), 1);
 var import_exceljs2 = __toESM(require("exceljs"), 1);
 
 // gstr_tracking/autopilot.js
-var import_child_process8 = require("child_process");
+var import_child_process9 = require("child_process");
 function normalizePortalDate(dateStr) {
   if (!dateStr) return null;
   const clean = dateStr.trim();
@@ -92357,7 +93080,7 @@ async function runReturnsTrackingAutopilot({
       psParts.push(`$wshell.AppActivate('Goods & Services Tax');`);
       psParts.push(`$wshell.AppActivate('Goods and Services Tax');`);
       psParts.push(`$wshell.AppActivate('Chrome');`);
-      (0, import_child_process8.exec)(`powershell -NoProfile -Command "${psParts.join(" ")}"`, () => {
+      (0, import_child_process9.exec)(`powershell -NoProfile -Command "${psParts.join(" ")}"`, () => {
       });
     } catch (e) {
     }
@@ -93062,8 +93785,8 @@ async function runReturnsTrackingAutopilot({
 }
 
 // gstr3b/autopilot.js
-var import_path14 = __toESM(require("path"), 1);
-var import_fs14 = __toESM(require("fs"), 1);
+var import_path15 = __toESM(require("path"), 1);
+var import_fs15 = __toESM(require("fs"), 1);
 /*! javascript-obfuscator:disable */
 async function runGstr3bUploadAutopilot({
   db: db2,
@@ -93081,15 +93804,15 @@ async function runGstr3bUploadAutopilot({
   try {
     let uploadFile = jsonFilePath;
     if (!uploadFile && jsonContent) {
-      const tempDir = import_path14.default.join(process.cwd(), "scratch", "uploads", "gstr3b");
-      if (!import_fs14.default.existsSync(tempDir)) {
-        import_fs14.default.mkdirSync(tempDir, { recursive: true });
+      const tempDir = import_path15.default.join(process.cwd(), "scratch", "uploads", "gstr3b");
+      if (!import_fs15.default.existsSync(tempDir)) {
+        import_fs15.default.mkdirSync(tempDir, { recursive: true });
       }
-      uploadFile = import_path14.default.join(tempDir, `gstr3b_upload_${gstinUpper}_${month}.json`);
+      uploadFile = import_path15.default.join(tempDir, `gstr3b_upload_${gstinUpper}_${month}.json`);
       const contentStr = typeof jsonContent === "string" ? jsonContent : JSON.stringify(jsonContent, null, 2);
-      import_fs14.default.writeFileSync(uploadFile, contentStr, "utf8");
+      import_fs15.default.writeFileSync(uploadFile, contentStr, "utf8");
     }
-    if (!uploadFile || !import_fs14.default.existsSync(uploadFile)) {
+    if (!uploadFile || !import_fs15.default.existsSync(uploadFile)) {
       throw new Error(`GSTR-3B JSON upload file not found: ${uploadFile || "No path provided"}`);
     }
     console.log(`
@@ -93395,7 +94118,7 @@ async function runGstr3bUploadAutopilot({
     console.log("[GSTR-3B Upload Autopilot] Waiting for Offline upload file input...");
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.waitFor({ state: "attached", timeout: 2e4 });
-    await updateBanner(`Uploading JSON file: ${import_path14.default.basename(uploadFile)}...`);
+    await updateBanner(`Uploading JSON file: ${import_path15.default.basename(uploadFile)}...`);
     console.log(`[GSTR-3B Upload Autopilot] Setting file payload: ${uploadFile}`);
     await fileInput.setInputFiles(uploadFile);
     await fileInput.evaluate((el) => {
@@ -93434,7 +94157,7 @@ async function runGstr3bUploadAutopilot({
       month,
       financialYear,
       message: confirmedMessage,
-      file: import_path14.default.basename(uploadFile)
+      file: import_path15.default.basename(uploadFile)
     };
   } catch (err) {
     console.error("[GSTR-3B Upload Autopilot Error]:", err);
@@ -93444,7 +94167,7 @@ async function runGstr3bUploadAutopilot({
 
 // returns_storage_routes.js
 var import_multer2 = __toESM(require_multer(), 1);
-var XLSX10 = xlsxModule9.default || xlsxModule9;
+var XLSX11 = xlsxModule10.default || xlsxModule10;
 var uploadMemory = (0, import_multer2.default)({
   storage: import_multer2.default.memoryStorage(),
   limits: { fileSize: 30 * 1024 * 1024 }
@@ -93564,14 +94287,14 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     return ips;
   }
   function getActiveDataPath() {
-    const defaultPath = import_path15.default.resolve(defaultUserDataPath, "gst_returns_data");
+    const defaultPath = import_path16.default.resolve(defaultUserDataPath, "gst_returns_data");
     if (_cachedActiveDataPath && Date.now() - _lastPathCheckTime < PATH_CACHE_TTL) {
       return Promise.resolve(_cachedActiveDataPath);
     }
     return new Promise((resolve) => {
-      if (!import_fs15.default.existsSync(defaultPath)) {
+      if (!import_fs16.default.existsSync(defaultPath)) {
         try {
-          import_fs15.default.mkdirSync(defaultPath, { recursive: true });
+          import_fs16.default.mkdirSync(defaultPath, { recursive: true });
         } catch (e) {
           console.warn("[Returns Storage] Could not create default path:", e.message);
         }
@@ -93579,9 +94302,9 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
       db2.get("SELECT value FROM app_config WHERE key = 'returns_data_path'", [], (err, row) => {
         if (!err && row && row.value) {
           const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
-          const candidatePath = import_path15.default.resolve(raw);
+          const candidatePath = import_path16.default.resolve(raw);
           try {
-            if (import_fs15.default.existsSync(candidatePath)) {
+            if (import_fs16.default.existsSync(candidatePath)) {
               _cachedActiveDataPath = candidatePath;
               _lastPathCheckTime = Date.now();
               return resolve(candidatePath);
@@ -93597,20 +94320,20 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     });
   }
   function getActiveRecoHistoryPath() {
-    const defaultPath = import_path15.default.resolve(defaultUserDataPath, "reco_history");
+    const defaultPath = import_path16.default.resolve(defaultUserDataPath, "reco_history");
     return new Promise((resolve) => {
-      if (!import_fs15.default.existsSync(defaultPath)) {
+      if (!import_fs16.default.existsSync(defaultPath)) {
         try {
-          import_fs15.default.mkdirSync(defaultPath, { recursive: true });
+          import_fs16.default.mkdirSync(defaultPath, { recursive: true });
         } catch (e) {
         }
       }
       db2.get("SELECT value FROM app_config WHERE key = 'reco_history_path'", [], (err, row) => {
         if (!err && row && row.value) {
           const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
-          const candidate = import_path15.default.resolve(raw);
+          const candidate = import_path16.default.resolve(raw);
           try {
-            if (import_fs15.default.existsSync(candidate)) return resolve(candidate);
+            if (import_fs16.default.existsSync(candidate)) return resolve(candidate);
           } catch (e) {
           }
         }
@@ -93619,20 +94342,20 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     });
   }
   function getActiveMonthlyAuditPath() {
-    const defaultPath = import_path15.default.resolve(defaultUserDataPath, "monthly_audits");
+    const defaultPath = import_path16.default.resolve(defaultUserDataPath, "monthly_audits");
     return new Promise((resolve) => {
-      if (!import_fs15.default.existsSync(defaultPath)) {
+      if (!import_fs16.default.existsSync(defaultPath)) {
         try {
-          import_fs15.default.mkdirSync(defaultPath, { recursive: true });
+          import_fs16.default.mkdirSync(defaultPath, { recursive: true });
         } catch (e) {
         }
       }
       db2.get("SELECT value FROM app_config WHERE key = 'monthly_audit_path'", [], (err, row) => {
         if (!err && row && row.value) {
           const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
-          const candidate = import_path15.default.resolve(raw);
+          const candidate = import_path16.default.resolve(raw);
           try {
-            if (import_fs15.default.existsSync(candidate)) return resolve(candidate);
+            if (import_fs16.default.existsSync(candidate)) return resolve(candidate);
           } catch (e) {
           }
         }
@@ -93645,30 +94368,30 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
       db2.get("SELECT value FROM app_config WHERE key = 'master_data_path'", [], async (err, row) => {
         if (!err && row && row.value) {
           const raw = String(row.value).trim().replace(/^["']|["']$/g, "");
-          const candidate = import_path15.default.resolve(raw);
+          const candidate = import_path16.default.resolve(raw);
           try {
-            if (import_fs15.default.existsSync(candidate)) return resolve(candidate);
+            if (import_fs16.default.existsSync(candidate)) return resolve(candidate);
           } catch (e) {
           }
         }
         const retPath = await getActiveDataPath();
-        if (import_path15.default.basename(retPath).toLowerCase() === "gst_returns_data") {
-          return resolve(import_path15.default.dirname(retPath));
+        if (import_path16.default.basename(retPath).toLowerCase() === "gst_returns_data") {
+          return resolve(import_path16.default.dirname(retPath));
         }
         return resolve(retPath);
       });
     });
   }
   function inspectDatabaseHealth() {
-    const dbPath = import_path15.default.resolve(defaultUserDataPath, "network_data.db");
-    const exists = import_fs15.default.existsSync(dbPath);
+    const dbPath = import_path16.default.resolve(defaultUserDataPath, "network_data.db");
+    const exists = import_fs16.default.existsSync(dbPath);
     let sizeBytes = 0;
     if (exists) {
       try {
-        sizeBytes += import_fs15.default.statSync(dbPath).size;
+        sizeBytes += import_fs16.default.statSync(dbPath).size;
         const walPath = `${dbPath}-wal`;
-        if (import_fs15.default.existsSync(walPath)) {
-          sizeBytes += import_fs15.default.statSync(walPath).size;
+        if (import_fs16.default.existsSync(walPath)) {
+          sizeBytes += import_fs16.default.statSync(walPath).size;
         }
       } catch {
       }
@@ -93683,7 +94406,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
           resolve({
             name: "Master Relational SQLite Database",
             path: dbPath,
-            directory: import_path15.default.dirname(dbPath),
+            directory: import_path16.default.dirname(dbPath),
             exists,
             sizeBytes,
             walMode,
@@ -93694,7 +94417,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
         resolve({
           name: "Master Relational SQLite Database",
           path: dbPath,
-          directory: import_path15.default.dirname(dbPath),
+          directory: import_path16.default.dirname(dbPath),
           exists,
           sizeBytes,
           walMode: false,
@@ -93739,33 +94462,33 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
   const RENAME_COOLDOWN_MS = 10 * 60 * 1e3;
   function resolveClientDirectory(dataPath, gstin, clientName = "", autoRename = true) {
     const gstinUpper = (gstin || "").trim().toUpperCase();
-    if (!import_fs15.default.existsSync(dataPath)) {
+    if (!import_fs16.default.existsSync(dataPath)) {
       try {
-        import_fs15.default.mkdirSync(dataPath, { recursive: true });
+        import_fs16.default.mkdirSync(dataPath, { recursive: true });
       } catch {
       }
     }
-    const subGst = import_path15.default.join(dataPath, "gst_returns_data");
+    const subGst = import_path16.default.join(dataPath, "gst_returns_data");
     const searchDirs = [dataPath];
-    if (import_fs15.default.existsSync(subGst) && subGst !== dataPath) {
+    if (import_fs16.default.existsSync(subGst) && subGst !== dataPath) {
       searchDirs.push(subGst);
     }
     const targetName = buildClientFolderName(clientName, gstinUpper);
     for (const dir of searchDirs) {
-      const candidate = import_path15.default.join(dir, targetName);
-      if (import_fs15.default.existsSync(candidate)) return candidate;
+      const candidate = import_path16.default.join(dir, targetName);
+      if (import_fs16.default.existsSync(candidate)) return candidate;
     }
     try {
       for (const dir of searchDirs) {
-        if (!import_fs15.default.existsSync(dir)) continue;
-        const entries = import_fs15.default.readdirSync(dir, { withFileTypes: true });
+        if (!import_fs16.default.existsSync(dir)) continue;
+        const entries = import_fs16.default.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.isDirectory()) {
             if (entry.name === "gst_returns_data" || entry.name === "reco_history" || entry.name === "monthly_audits") continue;
             const foundGstin = extractGstinFromDirName(entry.name);
             if (foundGstin === gstinUpper) {
-              const existingPath = import_path15.default.join(dir, entry.name);
-              const targetPath = import_path15.default.join(dir, targetName);
+              const existingPath = import_path16.default.join(dir, entry.name);
+              const targetPath = import_path16.default.join(dir, targetName);
               const existingHasName = entry.name.includes(" - " + gstinUpper);
               const existingPrefix = existingHasName ? entry.name.split(" - ")[0].trim().toUpperCase() : "";
               const targetPrefix = targetName.includes(" - " + gstinUpper) ? targetName.split(" - ")[0].trim().toUpperCase() : "";
@@ -93774,7 +94497,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
               const inCooldown = (_failedRenameCooldown.get(cooldownKey) || 0) > Date.now();
               if (autoRename && !isShorteningExisting && !inCooldown && targetName !== entry.name && targetName.includes(" - " + gstinUpper)) {
                 try {
-                  import_fs15.default.renameSync(existingPath, targetPath);
+                  import_fs16.default.renameSync(existingPath, targetPath);
                   console.log(`[Returns Storage] Auto-renamed folder: "${entry.name}" -> "${targetName}"`);
                   return targetPath;
                 } catch (renameErr) {
@@ -93793,8 +94516,8 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     } catch (e) {
       console.warn("[Returns Storage] Directory scan error:", e.message);
     }
-    const preferredBase = import_fs15.default.existsSync(subGst) ? subGst : dataPath;
-    const finalNewPath = import_path15.default.join(preferredBase, targetName);
+    const preferredBase = import_fs16.default.existsSync(subGst) ? subGst : dataPath;
+    const finalNewPath = import_path16.default.join(preferredBase, targetName);
     return finalNewPath;
   }
   const MONTH_MAP = [
@@ -93816,17 +94539,17 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
       return { exists: false, isWritable: false, totalClientsWithData: 0, totalVaultClients: 0, totalFiles: 0, sizeBytes: 0 };
     }
     const cleanPath = dirPath.replace(/^["']|["']$/g, "").trim();
-    if (!import_fs15.default.existsSync(cleanPath)) {
+    if (!import_fs16.default.existsSync(cleanPath)) {
       return { exists: false, isWritable: false, totalClientsWithData: 0, totalVaultClients: 0, totalFiles: 0, sizeBytes: 0 };
     }
     let isWritable = true;
     try {
-      import_fs15.default.accessSync(cleanPath, import_fs15.default.constants.W_OK);
+      import_fs16.default.accessSync(cleanPath, import_fs16.default.constants.W_OK);
     } catch {
       try {
-        const testFile = import_path15.default.join(cleanPath, `.access_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
-        import_fs15.default.writeFileSync(testFile, "OK");
-        import_fs15.default.unlinkSync(testFile);
+        const testFile = import_path16.default.join(cleanPath, `.access_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
+        import_fs16.default.writeFileSync(testFile, "OK");
+        import_fs16.default.unlinkSync(testFile);
         isWritable = true;
       } catch {
         isWritable = false;
@@ -93841,13 +94564,13 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     let sizeBytes = 0;
     try {
       const vaultPaths = [
-        import_path15.default.join(cleanPath, "central_clients_vault.json"),
-        import_path15.default.join(cleanPath, "gst_returns_data", "central_clients_vault.json")
+        import_path16.default.join(cleanPath, "central_clients_vault.json"),
+        import_path16.default.join(cleanPath, "gst_returns_data", "central_clients_vault.json")
       ];
       for (const vp of vaultPaths) {
-        if (import_fs15.default.existsSync(vp)) {
+        if (import_fs16.default.existsSync(vp)) {
           try {
-            const vRaw = import_fs15.default.readFileSync(vp, "utf8");
+            const vRaw = import_fs16.default.readFileSync(vp, "utf8");
             const vParsed = JSON.parse(vRaw);
             if (vParsed && vParsed.clients && typeof vParsed.clients === "object") {
               totalVaultClients = Math.max(totalVaultClients, Object.keys(vParsed.clients).length);
@@ -93858,12 +94581,12 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
       }
       const clientGstins = /* @__PURE__ */ new Set();
       const scanDir = (targetDir, depth = 0) => {
-        if (!import_fs15.default.existsSync(targetDir) || depth > 2) return;
-        const items = import_fs15.default.readdirSync(targetDir, { withFileTypes: true });
+        if (!import_fs16.default.existsSync(targetDir) || depth > 2) return;
+        const items = import_fs16.default.readdirSync(targetDir, { withFileTypes: true });
         for (const item of items) {
           if (item.isDirectory()) {
             if (item.name === "gst_returns_data") {
-              scanDir(import_path15.default.join(targetDir, item.name), depth + 1);
+              scanDir(import_path16.default.join(targetDir, item.name), depth + 1);
             } else if (item.name === "reco_history" || item.name === "monthly_audits") {
               continue;
             } else if (isReturns) {
@@ -93873,7 +94596,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
           } else if (item.isFile()) {
             totalFiles++;
             try {
-              const st = import_fs15.default.statSync(import_path15.default.join(targetDir, item.name));
+              const st = import_fs16.default.statSync(import_path16.default.join(targetDir, item.name));
               sizeBytes += st.size;
             } catch {
             }
@@ -93909,10 +94632,10 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
       }
       const serverIps = getServerNetworkIps();
       const serverHost = import_os10.default.hostname();
-      const defaultReturnsPath = import_path15.default.resolve(defaultUserDataPath, "gst_returns_data");
-      const defaultRecoPath = import_path15.default.resolve(defaultUserDataPath, "reco_history");
-      const defaultAuditPath = import_path15.default.resolve(defaultUserDataPath, "monthly_audits");
-      const defaultMasterPath = import_path15.default.resolve(defaultUserDataPath);
+      const defaultReturnsPath = import_path16.default.resolve(defaultUserDataPath, "gst_returns_data");
+      const defaultRecoPath = import_path16.default.resolve(defaultUserDataPath, "reco_history");
+      const defaultAuditPath = import_path16.default.resolve(defaultUserDataPath, "monthly_audits");
+      const defaultMasterPath = import_path16.default.resolve(defaultUserDataPath);
       const recoHistoryPath = await getActiveRecoHistoryPath();
       const recoStats = inspectStorageDirectory(recoHistoryPath, false);
       const monthlyAuditPath = await getActiveMonthlyAuditPath();
@@ -93975,19 +94698,19 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
         return res.status(400).json({ success: false, error: "Valid master folder path is required" });
       }
       const cleanMaster = masterPath.trim().replace(/^["']|["']$/g, "").trim();
-      const normalizedMaster = import_path15.default.resolve(cleanMaster);
-      if (!import_fs15.default.existsSync(normalizedMaster)) {
-        import_fs15.default.mkdirSync(normalizedMaster, { recursive: true });
+      const normalizedMaster = import_path16.default.resolve(cleanMaster);
+      if (!import_fs16.default.existsSync(normalizedMaster)) {
+        import_fs16.default.mkdirSync(normalizedMaster, { recursive: true });
       }
-      const testFile = import_path15.default.join(normalizedMaster, `.write_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
-      import_fs15.default.writeFileSync(testFile, "OK");
-      if (import_fs15.default.existsSync(testFile)) import_fs15.default.unlinkSync(testFile);
-      const subReturnsPath = import_path15.default.join(normalizedMaster, "gst_returns_data");
-      const subRecoPath = import_path15.default.join(normalizedMaster, "reco_history");
-      const subAuditPath = import_path15.default.join(normalizedMaster, "monthly_audits");
-      if (!import_fs15.default.existsSync(subReturnsPath)) import_fs15.default.mkdirSync(subReturnsPath, { recursive: true });
-      if (!import_fs15.default.existsSync(subRecoPath)) import_fs15.default.mkdirSync(subRecoPath, { recursive: true });
-      if (!import_fs15.default.existsSync(subAuditPath)) import_fs15.default.mkdirSync(subAuditPath, { recursive: true });
+      const testFile = import_path16.default.join(normalizedMaster, `.write_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
+      import_fs16.default.writeFileSync(testFile, "OK");
+      if (import_fs16.default.existsSync(testFile)) import_fs16.default.unlinkSync(testFile);
+      const subReturnsPath = import_path16.default.join(normalizedMaster, "gst_returns_data");
+      const subRecoPath = import_path16.default.join(normalizedMaster, "reco_history");
+      const subAuditPath = import_path16.default.join(normalizedMaster, "monthly_audits");
+      if (!import_fs16.default.existsSync(subReturnsPath)) import_fs16.default.mkdirSync(subReturnsPath, { recursive: true });
+      if (!import_fs16.default.existsSync(subRecoPath)) import_fs16.default.mkdirSync(subRecoPath, { recursive: true });
+      if (!import_fs16.default.existsSync(subAuditPath)) import_fs16.default.mkdirSync(subAuditPath, { recursive: true });
       await new Promise((resolve, reject) => {
         db2.serialize(() => {
           const stmt = db2.prepare(`
@@ -94023,7 +94746,7 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
           returns: subReturnsPath,
           recoHistory: subRecoPath,
           monthlyAudit: subAuditPath,
-          vaultFile: import_path15.default.join(normalizedMaster, "central_clients_vault.json")
+          vaultFile: import_path16.default.join(normalizedMaster, "central_clients_vault.json")
         },
         totalVaultClients: dbClientCount,
         totalClientsWithData: stats.totalClientsWithData,
@@ -94055,19 +94778,19 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
         friendlyName = "Monthly Audit Working Papers";
       }
       const cleanPath = dataPath.trim().replace(/^["']|["']$/g, "").trim();
-      const normalized = import_path15.default.resolve(cleanPath);
-      if (!import_fs15.default.existsSync(normalized)) {
-        import_fs15.default.mkdirSync(normalized, { recursive: true });
+      const normalized = import_path16.default.resolve(cleanPath);
+      if (!import_fs16.default.existsSync(normalized)) {
+        import_fs16.default.mkdirSync(normalized, { recursive: true });
       }
-      const testFile = import_path15.default.join(normalized, `.write_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
+      const testFile = import_path16.default.join(normalized, `.write_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`);
       let writeOk = false;
       try {
-        import_fs15.default.writeFileSync(testFile, "OK");
+        import_fs16.default.writeFileSync(testFile, "OK");
         writeOk = true;
       } finally {
         if (writeOk) {
           try {
-            if (import_fs15.default.existsSync(testFile)) import_fs15.default.unlinkSync(testFile);
+            if (import_fs16.default.existsSync(testFile)) import_fs16.default.unlinkSync(testFile);
           } catch (cleanErr) {
             console.warn("[Returns Storage] Canary cleanup note (non-fatal):", cleanErr.message);
           }
@@ -94109,19 +94832,19 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     try {
       const { pathType, key } = req.body || {};
       let targetKey = "returns_data_path";
-      let defaultPath = import_path15.default.resolve(defaultUserDataPath, "gst_returns_data");
+      let defaultPath = import_path16.default.resolve(defaultUserDataPath, "gst_returns_data");
       let friendlyName = "Returns Preparation Storage";
       if (pathType === "reco" || pathType === "recoHistory" || key === "reco_history_path") {
         targetKey = "reco_history_path";
-        defaultPath = import_path15.default.resolve(defaultUserDataPath, "reco_history");
+        defaultPath = import_path16.default.resolve(defaultUserDataPath, "reco_history");
         friendlyName = "GST Reco & TDS Runs History";
       } else if (pathType === "audit" || pathType === "monthlyAudit" || key === "monthly_audit_path") {
         targetKey = "monthly_audit_path";
-        defaultPath = import_path15.default.resolve(defaultUserDataPath, "monthly_audits");
+        defaultPath = import_path16.default.resolve(defaultUserDataPath, "monthly_audits");
         friendlyName = "Monthly Audit Working Papers";
       }
-      if (!import_fs15.default.existsSync(defaultPath)) {
-        import_fs15.default.mkdirSync(defaultPath, { recursive: true });
+      if (!import_fs16.default.existsSync(defaultPath)) {
+        import_fs16.default.mkdirSync(defaultPath, { recursive: true });
       }
       db2.run("DELETE FROM app_config WHERE key = ?", [targetKey], (err) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
@@ -94142,24 +94865,24 @@ function setupReturnsStorageRoutes(app2, db2, defaultUserDataPath = ".", authent
     try {
       let targetFolder = await getActiveDataPath();
       if (req.body && req.body.folderPath) {
-        const customPath = import_path15.default.resolve(String(req.body.folderPath).trim().replace(/^["']|["']$/g, ""));
-        const allowedBase = import_path15.default.resolve(targetFolder);
-        const allowedUser = import_path15.default.resolve(defaultUserDataPath);
-        const allowedCwd = import_path15.default.resolve(process.cwd());
+        const customPath = import_path16.default.resolve(String(req.body.folderPath).trim().replace(/^["']|["']$/g, ""));
+        const allowedBase = import_path16.default.resolve(targetFolder);
+        const allowedUser = import_path16.default.resolve(defaultUserDataPath);
+        const allowedCwd = import_path16.default.resolve(process.cwd());
         const isSubdir = (parent, child) => {
-          const rel = import_path15.default.relative(parent, child);
-          return rel === "" || !rel.startsWith("..") && !import_path15.default.isAbsolute(rel);
+          const rel = import_path16.default.relative(parent, child);
+          return rel === "" || !rel.startsWith("..") && !import_path16.default.isAbsolute(rel);
         };
         if (isSubdir(allowedBase, customPath) || isSubdir(allowedUser, customPath) || isSubdir(allowedCwd, customPath)) {
-          if (import_fs15.default.existsSync(customPath)) {
+          if (import_fs16.default.existsSync(customPath)) {
             targetFolder = customPath;
           }
         } else {
           return res.status(403).json({ success: false, error: "Access denied: folder path outside authorized data directory" });
         }
       }
-      if (!import_fs15.default.existsSync(targetFolder)) {
-        import_fs15.default.mkdirSync(targetFolder, { recursive: true });
+      if (!import_fs16.default.existsSync(targetFolder)) {
+        import_fs16.default.mkdirSync(targetFolder, { recursive: true });
       }
       import("child_process").then(({ spawn: spawn2 }) => {
         const child = spawn2("explorer.exe", [targetFolder], {
@@ -94199,8 +94922,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 }
 `;
       const b64 = Buffer.from(psScript, "utf16le").toString("base64");
-      import("child_process").then(({ exec: exec8 }) => {
-        exec8(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${b64}`, { windowsHide: false }, (err, stdout) => {
+      import("child_process").then(({ exec: exec9 }) => {
+        exec9(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${b64}`, { windowsHide: false }, (err, stdout) => {
           if (err) {
             return res.json({ success: false, error: err.message });
           }
@@ -94223,25 +94946,25 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const fyClean = String(fy || "2026-27").trim();
       const dataPath = await getActiveDataPath();
       const clientDir = resolveClientDirectory(dataPath, gstinClean, clientName || "", false);
-      const fyDir = import_path15.default.join(clientDir, fyClean);
-      const annualFile = import_path15.default.join(fyDir, "annual_gstr3b_working.json");
-      const fyFile = import_path15.default.join(fyDir, `gstr3b_${fyClean}.json`);
-      const rootLegacy = import_path15.default.join(clientDir, `gstr3b_${fyClean}.json`);
+      const fyDir = import_path16.default.join(clientDir, fyClean);
+      const annualFile = import_path16.default.join(fyDir, "annual_gstr3b_working.json");
+      const fyFile = import_path16.default.join(fyDir, `gstr3b_${fyClean}.json`);
+      const rootLegacy = import_path16.default.join(clientDir, `gstr3b_${fyClean}.json`);
       let workingData = null;
       let lastModified = 0;
       let sourcePath = "";
-      if (import_fs15.default.existsSync(annualFile)) {
+      if (import_fs16.default.existsSync(annualFile)) {
         sourcePath = annualFile;
-        workingData = JSON.parse(import_fs15.default.readFileSync(annualFile, "utf8"));
-        lastModified = import_fs15.default.statSync(annualFile).mtimeMs;
-      } else if (import_fs15.default.existsSync(fyFile)) {
+        workingData = JSON.parse(import_fs16.default.readFileSync(annualFile, "utf8"));
+        lastModified = import_fs16.default.statSync(annualFile).mtimeMs;
+      } else if (import_fs16.default.existsSync(fyFile)) {
         sourcePath = fyFile;
-        workingData = JSON.parse(import_fs15.default.readFileSync(fyFile, "utf8"));
-        lastModified = import_fs15.default.statSync(fyFile).mtimeMs;
-      } else if (import_fs15.default.existsSync(rootLegacy)) {
+        workingData = JSON.parse(import_fs16.default.readFileSync(fyFile, "utf8"));
+        lastModified = import_fs16.default.statSync(fyFile).mtimeMs;
+      } else if (import_fs16.default.existsSync(rootLegacy)) {
         sourcePath = rootLegacy;
-        workingData = JSON.parse(import_fs15.default.readFileSync(rootLegacy, "utf8"));
-        lastModified = import_fs15.default.statSync(rootLegacy).mtimeMs;
+        workingData = JSON.parse(import_fs16.default.readFileSync(rootLegacy, "utf8"));
+        lastModified = import_fs16.default.statSync(rootLegacy).mtimeMs;
       }
       if (!workingData) {
         return res.json({
@@ -94253,14 +94976,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           fy: fyClean
         });
       }
-      if (import_fs15.default.existsSync(fyDir) && workingData && workingData.months) {
+      if (import_fs16.default.existsSync(fyDir) && workingData && workingData.months) {
         for (const m of MONTH_MAP) {
-          const mFile = import_path15.default.join(fyDir, m.folder, `gstr3b_${m.key}.json`);
-          if (import_fs15.default.existsSync(mFile)) {
+          const mFile = import_path16.default.join(fyDir, m.folder, `gstr3b_${m.key}.json`);
+          if (import_fs16.default.existsSync(mFile)) {
             try {
-              const stat = import_fs15.default.statSync(mFile);
+              const stat = import_fs16.default.statSync(mFile);
               if (stat.mtimeMs > lastModified) lastModified = stat.mtimeMs;
-              const mParsed = JSON.parse(import_fs15.default.readFileSync(mFile, "utf8"));
+              const mParsed = JSON.parse(import_fs16.default.readFileSync(mFile, "utf8"));
               if (mParsed && mParsed.data) {
                 workingData.months[m.key] = mParsed.data;
               }
@@ -94311,25 +95034,25 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const fyClean = String(fy || workingData.profile?.financialYear || "2026-27").trim();
       const firmName = clientName || workingData.profile?.firmName || "";
       const dataPath = await getActiveDataPath();
-      const defaultPath = import_path15.default.resolve(defaultUserDataPath, "gst_returns_data");
+      const defaultPath = import_path16.default.resolve(defaultUserDataPath, "gst_returns_data");
       let usedFallback = false;
       let effectiveDataPath = dataPath;
       let clientDir = resolveClientDirectory(effectiveDataPath, gstinClean, firmName, true);
-      let fyDir = import_path15.default.join(clientDir, fyClean);
+      let fyDir = import_path16.default.join(clientDir, fyClean);
       const performSave = (targetFyDir) => {
-        if (!import_fs15.default.existsSync(targetFyDir)) {
-          import_fs15.default.mkdirSync(targetFyDir, { recursive: true });
+        if (!import_fs16.default.existsSync(targetFyDir)) {
+          import_fs16.default.mkdirSync(targetFyDir, { recursive: true });
         }
-        const annualFile2 = import_path15.default.join(targetFyDir, "annual_gstr3b_working.json");
-        const fyFile = import_path15.default.join(targetFyDir, `gstr3b_${fyClean}.json`);
+        const annualFile2 = import_path16.default.join(targetFyDir, "annual_gstr3b_working.json");
+        const fyFile = import_path16.default.join(targetFyDir, `gstr3b_${fyClean}.json`);
         const serialized = JSON.stringify(workingData, null, 2);
-        import_fs15.default.writeFileSync(annualFile2, serialized, "utf8");
-        import_fs15.default.writeFileSync(fyFile, serialized, "utf8");
+        import_fs16.default.writeFileSync(annualFile2, serialized, "utf8");
+        import_fs16.default.writeFileSync(fyFile, serialized, "utf8");
         if (workingData.months) {
           for (const m of MONTH_MAP) {
-            const mDir = import_path15.default.join(targetFyDir, m.folder);
-            if (!import_fs15.default.existsSync(mDir)) {
-              import_fs15.default.mkdirSync(mDir, { recursive: true });
+            const mDir = import_path16.default.join(targetFyDir, m.folder);
+            if (!import_fs16.default.existsSync(mDir)) {
+              import_fs16.default.mkdirSync(mDir, { recursive: true });
             }
             const monthPayload = {
               month: m.key,
@@ -94339,8 +95062,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
               lastUpdated: Date.now(),
               data: workingData.months[m.key] || null
             };
-            const mFile = import_path15.default.join(mDir, `gstr3b_${m.key}.json`);
-            import_fs15.default.writeFileSync(mFile, JSON.stringify(monthPayload, null, 2), "utf8");
+            const mFile = import_path16.default.join(mDir, `gstr3b_${m.key}.json`);
+            import_fs16.default.writeFileSync(mFile, JSON.stringify(monthPayload, null, 2), "utf8");
           }
         }
         return annualFile2;
@@ -94354,7 +95077,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           usedFallback = true;
           effectiveDataPath = defaultPath;
           clientDir = resolveClientDirectory(effectiveDataPath, gstinClean, firmName, true);
-          fyDir = import_path15.default.join(clientDir, fyClean);
+          fyDir = import_path16.default.join(clientDir, fyClean);
           annualFile = performSave(fyDir);
         } else {
           throw writeErr;
@@ -94651,10 +95374,10 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       try {
         const dataPath = await getActiveDataPath();
         const clientDir = resolveClientDirectory(dataPath, gstinClean, "", false);
-        const fyDir = import_path15.default.join(clientDir, fyClean);
-        const annualFile = import_path15.default.join(fyDir, "annual_gstr3b_working.json");
-        if (import_fs15.default.existsSync(annualFile)) {
-          const parsed = JSON.parse(import_fs15.default.readFileSync(annualFile, "utf8"));
+        const fyDir = import_path16.default.join(clientDir, fyClean);
+        const annualFile = import_path16.default.join(fyDir, "annual_gstr3b_working.json");
+        if (import_fs16.default.existsSync(annualFile)) {
+          const parsed = JSON.parse(import_fs16.default.readFileSync(annualFile, "utf8"));
           if (parsed && parsed.lockedMonths && typeof parsed.lockedMonths === "object") {
             for (const [m, isLocked] of Object.entries(parsed.lockedMonths)) {
               if (lockedMonths[m] === void 0) {
@@ -94704,18 +95427,18 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       try {
         const dataPath = await getActiveDataPath();
         const clientDir = resolveClientDirectory(dataPath, gstinClean, firmName, false);
-        const fyDir = import_path15.default.join(clientDir, fyClean);
-        const annualFile = import_path15.default.join(fyDir, "annual_gstr3b_working.json");
-        const fyFile = import_path15.default.join(fyDir, `gstr3b_${fyClean}.json`);
-        if (import_fs15.default.existsSync(annualFile)) {
+        const fyDir = import_path16.default.join(clientDir, fyClean);
+        const annualFile = import_path16.default.join(fyDir, "annual_gstr3b_working.json");
+        const fyFile = import_path16.default.join(fyDir, `gstr3b_${fyClean}.json`);
+        if (import_fs16.default.existsSync(annualFile)) {
           try {
-            const raw = JSON.parse(import_fs15.default.readFileSync(annualFile, "utf8"));
+            const raw = JSON.parse(import_fs16.default.readFileSync(annualFile, "utf8"));
             if (!raw.lockedMonths) raw.lockedMonths = {};
             raw.lockedMonths[monthClean] = isLocked;
             const serialized = JSON.stringify(raw, null, 2);
-            import_fs15.default.writeFileSync(annualFile, serialized, "utf8");
-            if (import_fs15.default.existsSync(fyFile)) {
-              import_fs15.default.writeFileSync(fyFile, serialized, "utf8");
+            import_fs16.default.writeFileSync(annualFile, serialized, "utf8");
+            if (import_fs16.default.existsSync(fyFile)) {
+              import_fs16.default.writeFileSync(fyFile, serialized, "utf8");
             }
           } catch {
           }
@@ -94765,7 +95488,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const dateTimeStamp = `${datePart}_${timePart}`;
       const humanDate = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
       const humanTime = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const defaultPath = import_path15.default.resolve(defaultUserDataPath, "gst_returns_data");
+      const defaultPath = import_path16.default.resolve(defaultUserDataPath, "gst_returns_data");
       let effectiveDataPath = dataPath;
       let usedFallback = false;
       const queryDbSafe = (sql, params = []) => {
@@ -94797,7 +95520,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           if (!rawSheet) continue;
           let aoa = rawSheet;
           if (!Array.isArray(rawSheet) && rawSheet["!ref"]) {
-            aoa = XLSX10.utils.sheet_to_json(rawSheet, { header: 1 });
+            aoa = XLSX11.utils.sheet_to_json(rawSheet, { header: 1 });
           }
           if (!Array.isArray(aoa) || aoa.length === 0) continue;
           let tabColor = "1E3A8A";
@@ -94926,81 +95649,81 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             sheet.model.merges = [];
           }
         });
-        const parentDir = import_path15.default.dirname(targetPath);
-        if (!import_fs15.default.existsSync(parentDir)) {
-          import_fs15.default.mkdirSync(parentDir, { recursive: true });
+        const parentDir = import_path16.default.dirname(targetPath);
+        if (!import_fs16.default.existsSync(parentDir)) {
+          import_fs16.default.mkdirSync(parentDir, { recursive: true });
         }
         await wb.xlsx.writeFile(targetPath);
       };
       const writeBundleFiles = async (basePath) => {
         const cDir = resolveClientDirectory(basePath, gstinClean, firmName, true);
-        const fDir = import_path15.default.join(cDir, fyClean);
+        const fDir = import_path16.default.join(cDir, fyClean);
         const mMatch = MONTH_MAP.find((m) => m.key.toLowerCase() === monthClean.toLowerCase());
         const mFolderName = mMatch ? mMatch.folder : monthClean;
-        const mDir = import_path15.default.join(fDir, mFolderName);
-        const monthWorkingDir2 = import_path15.default.join(mDir, "3B Working");
-        const dir3b2 = import_path15.default.join(monthWorkingDir2, "3B Working");
-        const dirR12 = import_path15.default.join(monthWorkingDir2, "R1 Base");
-        const dir2b2 = import_path15.default.join(monthWorkingDir2, "2B Base");
-        const dirCN2 = import_path15.default.join(monthWorkingDir2, "Credit Notes Base");
-        const dirRev2 = import_path15.default.join(monthWorkingDir2, "Reversal Base");
+        const mDir = import_path16.default.join(fDir, mFolderName);
+        const monthWorkingDir2 = import_path16.default.join(mDir, "3B Working");
+        const dir3b2 = import_path16.default.join(monthWorkingDir2, "3B Working");
+        const dirR12 = import_path16.default.join(monthWorkingDir2, "R1 Base");
+        const dir2b2 = import_path16.default.join(monthWorkingDir2, "2B Base");
+        const dirCN2 = import_path16.default.join(monthWorkingDir2, "Credit Notes Base");
+        const dirRev2 = import_path16.default.join(monthWorkingDir2, "Reversal Base");
         [mDir, monthWorkingDir2, dir3b2, dirR12, dir2b2, dirCN2, dirRev2].forEach((dir) => {
-          if (!import_fs15.default.existsSync(dir)) {
-            import_fs15.default.mkdirSync(dir, { recursive: true });
+          if (!import_fs16.default.existsSync(dir)) {
+            import_fs16.default.mkdirSync(dir, { recursive: true });
           }
         });
         const files = [];
         if (excelBase64) {
           const excelBuffer = Buffer.from(excelBase64, "base64");
-          const excelTimeFile = import_path15.default.join(dir3b2, `${safeFirm} - GSTR-3B Working ${monthClean}_${dateTimeStamp}.xlsx`);
-          const excelLatestFile = import_path15.default.join(dir3b2, `gstr3b_working_${monthClean}.xlsx`);
-          const excelAnnualTimeFile = import_path15.default.join(fDir, `${safeFirm} - GSTR-3B Annual Working ${fyClean}_${dateTimeStamp}.xlsx`);
-          const excelAnnualLatestFile = import_path15.default.join(fDir, `gstr3b_annual_working_${fyClean}.xlsx`);
+          const excelTimeFile = import_path16.default.join(dir3b2, `${safeFirm} - GSTR-3B Working ${monthClean}_${dateTimeStamp}.xlsx`);
+          const excelLatestFile = import_path16.default.join(dir3b2, `gstr3b_working_${monthClean}.xlsx`);
+          const excelAnnualTimeFile = import_path16.default.join(fDir, `${safeFirm} - GSTR-3B Annual Working ${fyClean}_${dateTimeStamp}.xlsx`);
+          const excelAnnualLatestFile = import_path16.default.join(fDir, `gstr3b_annual_working_${fyClean}.xlsx`);
           await Promise.all([
-            import_fs15.default.promises.writeFile(excelTimeFile, excelBuffer),
-            import_fs15.default.promises.writeFile(excelLatestFile, excelBuffer),
-            import_fs15.default.promises.writeFile(excelAnnualTimeFile, excelBuffer),
-            import_fs15.default.promises.writeFile(excelAnnualLatestFile, excelBuffer),
-            import_fs15.default.promises.writeFile(import_path15.default.join(mDir, `gstr3b_working_${monthClean}.xlsx`), excelBuffer)
+            import_fs16.default.promises.writeFile(excelTimeFile, excelBuffer),
+            import_fs16.default.promises.writeFile(excelLatestFile, excelBuffer),
+            import_fs16.default.promises.writeFile(excelAnnualTimeFile, excelBuffer),
+            import_fs16.default.promises.writeFile(excelAnnualLatestFile, excelBuffer),
+            import_fs16.default.promises.writeFile(import_path16.default.join(mDir, `gstr3b_working_${monthClean}.xlsx`), excelBuffer)
           ]);
           files.push(
-            import_path15.default.basename(excelTimeFile),
-            import_path15.default.basename(excelAnnualTimeFile)
+            import_path16.default.basename(excelTimeFile),
+            import_path16.default.basename(excelAnnualTimeFile)
           );
         }
         if (pdfBase64) {
           const pdfBuffer = Buffer.from(pdfBase64, "base64");
-          const pdfTimeFile = import_path15.default.join(dir3b2, `${safeFirm} - GSTR-3B Working ${monthClean}_${dateTimeStamp}.pdf`);
-          const pdfLatestFile = import_path15.default.join(dir3b2, `gstr3b_working_${monthClean}.pdf`);
+          const pdfTimeFile = import_path16.default.join(dir3b2, `${safeFirm} - GSTR-3B Working ${monthClean}_${dateTimeStamp}.pdf`);
+          const pdfLatestFile = import_path16.default.join(dir3b2, `gstr3b_working_${monthClean}.pdf`);
           await Promise.all([
-            import_fs15.default.promises.writeFile(pdfTimeFile, pdfBuffer),
-            import_fs15.default.promises.writeFile(pdfLatestFile, pdfBuffer),
-            import_fs15.default.promises.writeFile(import_path15.default.join(mDir, `gstr3b_working_${monthClean}.pdf`), pdfBuffer)
+            import_fs16.default.promises.writeFile(pdfTimeFile, pdfBuffer),
+            import_fs16.default.promises.writeFile(pdfLatestFile, pdfBuffer),
+            import_fs16.default.promises.writeFile(import_path16.default.join(mDir, `gstr3b_working_${monthClean}.pdf`), pdfBuffer)
           ]);
-          files.push(import_path15.default.basename(pdfTimeFile));
+          files.push(import_path16.default.basename(pdfTimeFile));
         }
         if (portalJson) {
           const portalJsonStr = typeof portalJson === "string" ? portalJson : JSON.stringify(portalJson, null, 2);
-          const portalTimeFile = import_path15.default.join(dir3b2, `${safeFirm} - GSTR-3B Portal Upload ${monthClean}_${dateTimeStamp}.json`);
-          const portalLatestFile = import_path15.default.join(dir3b2, `gstr3b_portal_${monthClean}.json`);
+          const portalTimeFile = import_path16.default.join(dir3b2, `${safeFirm} - GSTR-3B Portal Upload ${monthClean}_${dateTimeStamp}.json`);
+          const portalLatestFile = import_path16.default.join(dir3b2, `gstr3b_portal_${monthClean}.json`);
           await Promise.all([
-            import_fs15.default.promises.writeFile(portalTimeFile, portalJsonStr, "utf8"),
-            import_fs15.default.promises.writeFile(portalLatestFile, portalJsonStr, "utf8"),
-            import_fs15.default.promises.writeFile(import_path15.default.join(mDir, `gstr3b_portal_${monthClean}.json`), portalJsonStr, "utf8")
+            import_fs16.default.promises.writeFile(portalTimeFile, portalJsonStr, "utf8"),
+            import_fs16.default.promises.writeFile(portalLatestFile, portalJsonStr, "utf8"),
+            import_fs16.default.promises.writeFile(import_path16.default.join(mDir, `gstr3b_portal_${monthClean}.json`), portalJsonStr, "utf8")
           ]);
-          files.push(import_path15.default.basename(portalTimeFile));
+          files.push(import_path16.default.basename(portalTimeFile));
         }
         if (workingData) {
           const workingDataStr = JSON.stringify(workingData, null, 2);
-          const annualMasterFile = import_path15.default.join(fDir, "annual_gstr3b_working.json");
-          const annualTimeFile = import_path15.default.join(fDir, `${safeFirm} - GSTR-3B Data ${fyClean}_${dateTimeStamp}.json`);
-          const monthTimeFile = import_path15.default.join(dir3b2, `${safeFirm} - GSTR-3B Data ${monthClean}_${dateTimeStamp}.json`);
-          const monthLatestFile = import_path15.default.join(dir3b2, `gstr3b_data_${monthClean}.json`);
+          const annualMasterFile = import_path16.default.join(fDir, "annual_gstr3b_working.json");
+          const annualTimeFile = import_path16.default.join(fDir, `${safeFirm} - GSTR-3B Data ${fyClean}_${dateTimeStamp}.json`);
+          const monthTimeFile = import_path16.default.join(dir3b2, `${safeFirm} - GSTR-3B Data ${monthClean}_${dateTimeStamp}.json`);
+          const monthLatestFile = import_path16.default.join(dir3b2, `gstr3b_data_${monthClean}.json`);
           const masterJsonWrites = [
-            import_fs15.default.promises.writeFile(annualMasterFile, workingDataStr, "utf8"),
-            import_fs15.default.promises.writeFile(annualTimeFile, workingDataStr, "utf8"),
-            import_fs15.default.promises.writeFile(monthTimeFile, workingDataStr, "utf8"),
-            import_fs15.default.promises.writeFile(monthLatestFile, workingDataStr, "utf8")
+            import_fs16.default.promises.writeFile(annualMasterFile, workingDataStr, "utf8"),
+            import_fs16.default.promises.writeFile(annualTimeFile, workingDataStr, "utf8"),
+            import_fs16.default.promises.writeFile(monthTimeFile, workingDataStr, "utf8"),
+            import_fs16.default.promises.writeFile(monthLatestFile, workingDataStr, "utf8")
           ];
           if (workingData.lockedMonths && typeof workingData.lockedMonths === "object" && db2 && typeof db2.run === "function") {
             const nowMs = Date.now();
@@ -95029,14 +95752,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             };
             const monthPayloadStr = JSON.stringify(monthPayload, null, 2);
             masterJsonWrites.push(
-              import_fs15.default.promises.writeFile(import_path15.default.join(mDir, `gstr3b_${monthClean}.json`), monthPayloadStr, "utf8"),
-              import_fs15.default.promises.writeFile(import_path15.default.join(mDir, "working.json"), monthPayloadStr, "utf8")
+              import_fs16.default.promises.writeFile(import_path16.default.join(mDir, `gstr3b_${monthClean}.json`), monthPayloadStr, "utf8"),
+              import_fs16.default.promises.writeFile(import_path16.default.join(mDir, "working.json"), monthPayloadStr, "utf8")
             );
           }
           await Promise.all(masterJsonWrites);
           files.push(
-            import_path15.default.basename(annualTimeFile),
-            import_path15.default.basename(monthTimeFile)
+            import_path16.default.basename(annualTimeFile),
+            import_path16.default.basename(monthTimeFile)
           );
         }
         const mData = workingData?.months?.[monthClean] || {};
@@ -95107,8 +95830,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           ];
           r1Sheets["Outward Invoices Register"] = invAoa;
         }
-        const r1TimeFile = import_path15.default.join(dirR12, `${safeFirm} - GSTR-1 Outward Base ${monthClean}_${dateTimeStamp}.xlsx`);
-        const r1LatestFile = import_path15.default.join(dirR12, `gstr1_base_${monthClean}.xlsx`);
+        const r1TimeFile = import_path16.default.join(dirR12, `${safeFirm} - GSTR-1 Outward Base ${monthClean}_${dateTimeStamp}.xlsx`);
+        const r1LatestFile = import_path16.default.join(dirR12, `gstr1_base_${monthClean}.xlsx`);
         await writeCorporateWorkbook(r1TimeFile, r1Sheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         await writeCorporateWorkbook(r1LatestFile, r1Sheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         const r1Json = {
@@ -95120,8 +95843,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           invoicesCount: gstr1Rows.length,
           invoices: gstr1Rows
         };
-        await import_fs15.default.promises.writeFile(import_path15.default.join(dirR12, `gstr1_base_${monthClean}.json`), JSON.stringify(r1Json, null, 2), "utf8");
-        files.push(import_path15.default.basename(r1TimeFile));
+        await import_fs16.default.promises.writeFile(import_path16.default.join(dirR12, `gstr1_base_${monthClean}.json`), JSON.stringify(r1Json, null, 2), "utf8");
+        files.push(import_path16.default.basename(r1TimeFile));
         const inw = mData?.inward || {};
         const itc2b = inw.itc2b || { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 };
         const importGoods = inw.importGoods || { taxable: 0, igst: 0, cgst: 0, sgst: 0, total: 0 };
@@ -95175,8 +95898,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           ];
           r2bSheets["Inward Invoices Register"] = invAoa;
         }
-        const r2bTimeFile = import_path15.default.join(dir2b2, `${safeFirm} - GSTR-2B Inward Base ${monthClean}_${dateTimeStamp}.xlsx`);
-        const r2bLatestFile = import_path15.default.join(dir2b2, `gstr2b_base_${monthClean}.xlsx`);
+        const r2bTimeFile = import_path16.default.join(dir2b2, `${safeFirm} - GSTR-2B Inward Base ${monthClean}_${dateTimeStamp}.xlsx`);
+        const r2bLatestFile = import_path16.default.join(dir2b2, `gstr2b_base_${monthClean}.xlsx`);
         await writeCorporateWorkbook(r2bTimeFile, r2bSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         await writeCorporateWorkbook(r2bLatestFile, r2bSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         const r2bJson = {
@@ -95188,8 +95911,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           invoicesCount: gstr2bRows.length,
           invoices: gstr2bRows
         };
-        await import_fs15.default.promises.writeFile(import_path15.default.join(dir2b2, `gstr2b_base_${monthClean}.json`), JSON.stringify(r2bJson, null, 2), "utf8");
-        files.push(import_path15.default.basename(r2bTimeFile));
+        await import_fs16.default.promises.writeFile(import_path16.default.join(dir2b2, `gstr2b_base_${monthClean}.json`), JSON.stringify(r2bJson, null, 2), "utf8");
+        files.push(import_path16.default.basename(r2bTimeFile));
         const cnSummaryAoa = [
           ["Credit Note Category", "Applicable Table", "Taxable Value", "IGST", "CGST", "SGST", "Total"],
           ["Outward Credit Notes (Sales Adjustment)", "Table 3.1(a) / GSTR-1 Table 9B", crNote.taxable || 0, crNote.igst || 0, crNote.cgst || 0, crNote.sgst || 0, crNote.total || 0],
@@ -95238,8 +95961,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             ])
           ];
         }
-        const cnTimeFile = import_path15.default.join(dirCN2, `${safeFirm} - Credit Notes Register ${monthClean}_${dateTimeStamp}.xlsx`);
-        const cnLatestFile = import_path15.default.join(dirCN2, `credit_notes_base_${monthClean}.xlsx`);
+        const cnTimeFile = import_path16.default.join(dirCN2, `${safeFirm} - Credit Notes Register ${monthClean}_${dateTimeStamp}.xlsx`);
+        const cnLatestFile = import_path16.default.join(dirCN2, `credit_notes_base_${monthClean}.xlsx`);
         await writeCorporateWorkbook(cnTimeFile, cnSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         await writeCorporateWorkbook(cnLatestFile, cnSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         const cnJson = {
@@ -95253,8 +95976,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           outwardDetailsCount: cdnrOutward.length,
           inwardDetailsCount: cdnrInward.length
         };
-        await import_fs15.default.promises.writeFile(import_path15.default.join(dirCN2, `credit_notes_base_${monthClean}.json`), JSON.stringify(cnJson, null, 2), "utf8");
-        files.push(import_path15.default.basename(cnTimeFile));
+        await import_fs16.default.promises.writeFile(import_path16.default.join(dirCN2, `credit_notes_base_${monthClean}.json`), JSON.stringify(cnJson, null, 2), "utf8");
+        files.push(import_path16.default.basename(cnTimeFile));
         const allocRows = await queryDbSafe(
           `SELECT a.invoice_id, a.target_table, a.notes, a.updated_at,
                   COALESCE(b.section, 'B2B') AS table_name,
@@ -95350,8 +96073,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
         if (tempReversals4b2.length > 0) revSheets["Temporary Reversals 4(B)(2)"] = mapAllocToAoa("4B2", tempReversals4b2);
         if (ineligible4d1.length > 0 || ineligible4d2.length > 0) revSheets["Ineligible Credits 4(D)"] = mapAllocToAoa("4D", [...ineligible4d1, ...ineligible4d2]);
         if (deferredBills.length > 0) revSheets["Deferred Bills"] = mapAllocToAoa("Deferred", deferredBills);
-        const revTimeFile = import_path15.default.join(dirRev2, `${safeFirm} - ITC Reversals & Ineligible Schedule ${monthClean}_${dateTimeStamp}.xlsx`);
-        const revLatestFile = import_path15.default.join(dirRev2, `reversal_base_${monthClean}.xlsx`);
+        const revTimeFile = import_path16.default.join(dirRev2, `${safeFirm} - ITC Reversals & Ineligible Schedule ${monthClean}_${dateTimeStamp}.xlsx`);
+        const revLatestFile = import_path16.default.join(dirRev2, `reversal_base_${monthClean}.xlsx`);
         await writeCorporateWorkbook(revTimeFile, revSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         await writeCorporateWorkbook(revLatestFile, revSheets, { clientName: firmName, gstin: gstinClean, month: monthClean, fy: fyClean });
         const revJson = {
@@ -95363,8 +96086,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
           summary: { permanent4b1: s4b1, temporary4b2: s4b2, ineligible4d1: s4d1, ineligible4d2: s4d2, deferred: sDef },
           allocationsCount: allocRows.length
         };
-        await import_fs15.default.promises.writeFile(import_path15.default.join(dirRev2, `reversal_base_${monthClean}.json`), JSON.stringify(revJson, null, 2), "utf8");
-        files.push(import_path15.default.basename(revTimeFile));
+        await import_fs16.default.promises.writeFile(import_path16.default.join(dirRev2, `reversal_base_${monthClean}.json`), JSON.stringify(revJson, null, 2), "utf8");
+        files.push(import_path16.default.basename(revTimeFile));
         return {
           cDir,
           fDir,
@@ -95472,23 +96195,23 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             }
           });
           const scanDirs = [dataPath];
-          const subReturns = import_path15.default.join(dataPath, "gst_returns_data");
-          if (import_fs15.default.existsSync(subReturns) && subReturns !== dataPath) {
+          const subReturns = import_path16.default.join(dataPath, "gst_returns_data");
+          if (import_fs16.default.existsSync(subReturns) && subReturns !== dataPath) {
             scanDirs.push(subReturns);
           }
           for (const sDir of scanDirs) {
-            if (!import_fs15.default.existsSync(sDir)) continue;
+            if (!import_fs16.default.existsSync(sDir)) continue;
             try {
-              const entries = import_fs15.default.readdirSync(sDir, { withFileTypes: true });
+              const entries = import_fs16.default.readdirSync(sDir, { withFileTypes: true });
               for (const entry of entries) {
                 if (entry.isDirectory()) {
                   if (entry.name === "gst_returns_data" || entry.name === "reco_history" || entry.name === "monthly_audits") continue;
                   const gstinUpper = extractGstinFromDirName(entry.name);
                   if (gstinUpper) {
-                    const clientDir = import_path15.default.join(sDir, entry.name);
+                    const clientDir = import_path16.default.join(sDir, entry.name);
                     const folderClientName = extractClientNameFromDirName(entry.name);
                     try {
-                      const clientEntries = import_fs15.default.readdirSync(clientDir, { withFileTypes: true });
+                      const clientEntries = import_fs16.default.readdirSync(clientDir, { withFileTypes: true });
                       const savedYearsSet = /* @__PURE__ */ new Set();
                       let latestMod = 0;
                       let firmNameFromProfile = "";
@@ -95514,9 +96237,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                             existing.trade_name = resolvedTradeName;
                           }
                           if (entry.name === gstinUpper && existing.trade_name && existing.trade_name !== "Client") {
-                            const newTarget = import_path15.default.join(sDir, `${sanitizeFolderName(existing.trade_name)} - ${gstinUpper}`);
+                            const newTarget = import_path16.default.join(sDir, `${sanitizeFolderName(existing.trade_name)} - ${gstinUpper}`);
                             try {
-                              import_fs15.default.renameSync(clientDir, newTarget);
+                              import_fs16.default.renameSync(clientDir, newTarget);
                             } catch {
                             }
                           }
@@ -96039,7 +96762,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                       const gstin = (c.gstin || "").trim().toUpperCase();
                       const clientName = c.trade_name || c.legal_name || gstin;
                       const clientFolder = resolveClientDirectory(dataPath, gstin, clientName, false);
-                      const fyDir = import_path15.default.join(clientFolder, requestedFy);
+                      const fyDir = import_path16.default.join(clientFolder, requestedFy);
                       monthsToProcess.forEach((month) => {
                         const periodCode = getPeriodCode(month, requestedFy);
                         const trackKey = `${gstin}__${month}`;
@@ -96048,14 +96771,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                         const monthFolderObj = MONTH_MAP.find((m) => m.key === month);
                         const monthFolderName = monthFolderObj ? monthFolderObj.folder : month;
                         const candidatePaths = [
-                          import_path15.default.join(fyDir, monthFolderName, "working.json"),
-                          import_path15.default.join(fyDir, month, "working.json"),
-                          import_path15.default.join(fyDir, `gstr3b_${month}.json`)
+                          import_path16.default.join(fyDir, monthFolderName, "working.json"),
+                          import_path16.default.join(fyDir, month, "working.json"),
+                          import_path16.default.join(fyDir, `gstr3b_${month}.json`)
                         ];
                         for (const cp of candidatePaths) {
-                          if (import_fs15.default.existsSync(cp)) {
+                          if (import_fs16.default.existsSync(cp)) {
                             try {
-                              working3bData = JSON.parse(import_fs15.default.readFileSync(cp, "utf8"));
+                              working3bData = JSON.parse(import_fs16.default.readFileSync(cp, "utf8"));
                               break;
                             } catch {
                             }
@@ -96063,14 +96786,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                         }
                         if (!working3bData) {
                           const annualCandidates = [
-                            import_path15.default.join(fyDir, "annual_gstr3b_working.json"),
-                            import_path15.default.join(fyDir, `gstr3b_${requestedFy}.json`),
-                            import_path15.default.join(clientFolder, `gstr3b_${requestedFy}.json`)
+                            import_path16.default.join(fyDir, "annual_gstr3b_working.json"),
+                            import_path16.default.join(fyDir, `gstr3b_${requestedFy}.json`),
+                            import_path16.default.join(clientFolder, `gstr3b_${requestedFy}.json`)
                           ];
                           for (const ap of annualCandidates) {
-                            if (import_fs15.default.existsSync(ap)) {
+                            if (import_fs16.default.existsSync(ap)) {
                               try {
-                                const annualObj = JSON.parse(import_fs15.default.readFileSync(ap, "utf8"));
+                                const annualObj = JSON.parse(import_fs16.default.readFileSync(ap, "utf8"));
                                 if (annualObj?.months?.[month]) {
                                   working3bData = annualObj.months[month];
                                   break;
@@ -96308,14 +97031,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       try {
         const activeDataPath = await getActiveDataPath();
         const clientDir = resolveClientDirectory(activeDataPath, cleanGstin, "", false);
-        const fDir = import_path15.default.join(clientDir, cleanFy);
+        const fDir = import_path16.default.join(clientDir, cleanFy);
         const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
         const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, "0") : "06";
-        const mDir = import_path15.default.join(fDir, `${mPrefix} - ${cleanMonth}`);
-        const candidate1 = import_path15.default.join(mDir, `gstr3b_portal_${cleanMonth}.json`);
-        const candidate2 = import_path15.default.join(mDir, "3B Working", `gstr3b_portal_${cleanMonth}.json`);
-        if (import_fs15.default.existsSync(candidate1)) jsonFilePath = candidate1;
-        else if (import_fs15.default.existsSync(candidate2)) jsonFilePath = candidate2;
+        const mDir = import_path16.default.join(fDir, `${mPrefix} - ${cleanMonth}`);
+        const candidate1 = import_path16.default.join(mDir, `gstr3b_portal_${cleanMonth}.json`);
+        const candidate2 = import_path16.default.join(mDir, "3B Working", `gstr3b_portal_${cleanMonth}.json`);
+        if (import_fs16.default.existsSync(candidate1)) jsonFilePath = candidate1;
+        else if (import_fs16.default.existsSync(candidate2)) jsonFilePath = candidate2;
       } catch (e) {
       }
       console.log(`[GSTR-3B Portal Upload Route] Initiating upload for ${cleanGstin} (${cleanMonth} ${cleanFy})`);
@@ -96354,14 +97077,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       try {
         const activeDataPath = await getActiveDataPath();
         const clientDir = resolveClientDirectory(activeDataPath, cleanGstin, "", false);
-        const fDir = import_path15.default.join(clientDir, cleanFy);
+        const fDir = import_path16.default.join(clientDir, cleanFy);
         const mIndex = GSTR3B_MONTHS.indexOf(cleanMonth);
         const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, "0") : "06";
-        const mDir = import_path15.default.join(fDir, `${mPrefix} - ${cleanMonth}`);
-        const candidate1 = import_path15.default.join(mDir, `gstr1_portal_${cleanMonth}.json`);
-        const candidate2 = import_path15.default.join(mDir, "1 Working", `gstr1_portal_${cleanMonth}.json`);
-        if (import_fs15.default.existsSync(candidate1)) jsonFilePath = candidate1;
-        else if (import_fs15.default.existsSync(candidate2)) jsonFilePath = candidate2;
+        const mDir = import_path16.default.join(fDir, `${mPrefix} - ${cleanMonth}`);
+        const candidate1 = import_path16.default.join(mDir, `gstr1_portal_${cleanMonth}.json`);
+        const candidate2 = import_path16.default.join(mDir, "1 Working", `gstr1_portal_${cleanMonth}.json`);
+        if (import_fs16.default.existsSync(candidate1)) jsonFilePath = candidate1;
+        else if (import_fs16.default.existsSync(candidate2)) jsonFilePath = candidate2;
       } catch (e) {
       }
       console.log(`[GSTR-1 Portal Upload Route] Initiating upload for ${cleanGstin} (${cleanMonth} ${cleanFy})`);
@@ -96441,38 +97164,38 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
       const mIndex = GSTR3B_MONTHS.indexOf(monthClean);
       const mPrefix = mIndex !== -1 ? (mIndex + 1).toString().padStart(2, "0") : "06";
       const monthFolder = `${mPrefix} - ${monthClean}`;
-      const clientDir = import_path15.default.join(dataPath, safeFirm);
-      const fyDir = import_path15.default.join(clientDir, fyClean);
-      const mDir = import_path15.default.join(fyDir, monthFolder);
-      const workingDir = import_path15.default.join(mDir, "1 Working");
-      if (!import_fs15.default.existsSync(workingDir)) {
-        import_fs15.default.mkdirSync(workingDir, { recursive: true });
+      const clientDir = import_path16.default.join(dataPath, safeFirm);
+      const fyDir = import_path16.default.join(clientDir, fyClean);
+      const mDir = import_path16.default.join(fyDir, monthFolder);
+      const workingDir = import_path16.default.join(mDir, "1 Working");
+      if (!import_fs16.default.existsSync(workingDir)) {
+        import_fs16.default.mkdirSync(workingDir, { recursive: true });
       }
       const savedFiles = [];
       if (portalJson) {
-        const jsonPath = import_path15.default.join(workingDir, `gstr1_portal_${monthClean}.json`);
+        const jsonPath = import_path16.default.join(workingDir, `gstr1_portal_${monthClean}.json`);
         const jsonStr = typeof portalJson === "string" ? portalJson : JSON.stringify(portalJson, null, 2);
-        import_fs15.default.writeFileSync(jsonPath, jsonStr, "utf8");
+        import_fs16.default.writeFileSync(jsonPath, jsonStr, "utf8");
         savedFiles.push(`gstr1_portal_${monthClean}.json`);
       }
       if (excelBase64) {
-        const excelPath = import_path15.default.join(workingDir, `gstr1_v22_${monthClean}.xlsx`);
-        import_fs15.default.writeFileSync(excelPath, Buffer.from(excelBase64, "base64"));
+        const excelPath = import_path16.default.join(workingDir, `gstr1_v22_${monthClean}.xlsx`);
+        import_fs16.default.writeFileSync(excelPath, Buffer.from(excelBase64, "base64"));
         savedFiles.push(`gstr1_v22_${monthClean}.xlsx`);
       }
       if (csvsZipBase64) {
-        const zipPath = import_path15.default.join(workingDir, `gstr1_csvs_${monthClean}.zip`);
-        import_fs15.default.writeFileSync(zipPath, Buffer.from(csvsZipBase64, "base64"));
+        const zipPath = import_path16.default.join(workingDir, `gstr1_csvs_${monthClean}.zip`);
+        import_fs16.default.writeFileSync(zipPath, Buffer.from(csvsZipBase64, "base64"));
         savedFiles.push(`gstr1_csvs_${monthClean}.zip`);
       }
       if (returnData) {
-        const dataPath2 = import_path15.default.join(workingDir, `gstr1_data_${monthClean}.json`);
-        import_fs15.default.writeFileSync(dataPath2, JSON.stringify(returnData, null, 2), "utf8");
+        const dataPath2 = import_path16.default.join(workingDir, `gstr1_data_${monthClean}.json`);
+        import_fs16.default.writeFileSync(dataPath2, JSON.stringify(returnData, null, 2), "utf8");
         savedFiles.push(`gstr1_data_${monthClean}.json`);
       }
       if (drc01bBase64) {
-        const drcPath = import_path15.default.join(workingDir, `gstr1_drc01b_${monthClean}.xlsx`);
-        import_fs15.default.writeFileSync(drcPath, Buffer.from(drc01bBase64, "base64"));
+        const drcPath = import_path16.default.join(workingDir, `gstr1_drc01b_${monthClean}.xlsx`);
+        import_fs16.default.writeFileSync(drcPath, Buffer.from(drc01bBase64, "base64"));
         savedFiles.push(`gstr1_drc01b_${monthClean}.xlsx`);
       }
       res.json({
@@ -96553,7 +97276,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 }
 
 // audit_trail_routes.js
-var import_crypto9 = __toESM(require("crypto"), 1);
+var import_crypto10 = __toESM(require("crypto"), 1);
 function setupAuditTrailRoutes(app2, db2, userDataPath2 = ".", authenticateToken2 = null) {
   const authMiddleware = typeof authenticateToken2 === "function" ? authenticateToken2 : ((req, res, next) => next());
   app2.use("/api/audit/reconciliation-override", authMiddleware);
@@ -96621,7 +97344,7 @@ function setupAuditTrailRoutes(app2, db2, userDataPath2 = ".", authenticateToken
         error: "new_status is required"
       });
     }
-    const recordId = id || import_crypto9.default.randomUUID();
+    const recordId = id || import_crypto10.default.randomUUID();
     const recordTime = timestamp ? Number(timestamp) : Date.now();
     const isoTime = iso_timestamp || new Date(recordTime).toISOString();
     const practitioner = req.user && req.user.username || practitioner_username && String(practitioner_username).trim() || "Local Practitioner";
@@ -96787,13 +97510,13 @@ function setupAuditTrailRoutes(app2, db2, userDataPath2 = ".", authenticateToken
 }
 
 // notices_routes.js
-var import_path18 = __toESM(require("path"), 1);
-var import_fs18 = __toESM(require("fs"), 1);
-var import_crypto12 = __toESM(require("crypto"), 1);
+var import_path19 = __toESM(require("path"), 1);
+var import_fs19 = __toESM(require("fs"), 1);
+var import_crypto13 = __toESM(require("crypto"), 1);
 var import_multer3 = __toESM(require_multer(), 1);
 
 // notices/db.js
-var import_crypto10 = require("crypto");
+var import_crypto11 = require("crypto");
 init_limitation();
 function initGstNoticesDatabase(db2) {
   db2.serialize(() => {
@@ -97024,7 +97747,7 @@ function getNoticeAlertStatus(dueDate) {
 }
 function upsertNotice(db2, data) {
   return new Promise((resolve, reject) => {
-    const id = data.id || (0, import_crypto10.randomUUID)();
+    const id = data.id || (0, import_crypto11.randomUUID)();
     const now = Date.now();
     const gstin = (data.client_gstin || "").trim().toUpperCase();
     const refNo = (data.reference_no || "").trim();
@@ -97147,7 +97870,7 @@ function getNoticeById(db2, id) {
 }
 function saveAttachment(db2, data) {
   return new Promise((resolve, reject) => {
-    const id = data.id || (0, import_crypto10.randomUUID)();
+    const id = data.id || (0, import_crypto11.randomUUID)();
     const now = Date.now();
     const sql = `
             INSERT INTO gst_notice_attachments (
@@ -97171,7 +97894,7 @@ function saveAttachment(db2, data) {
 }
 function saveNoticeReply(db2, data) {
   return new Promise((resolve, reject) => {
-    const id = data.id || (0, import_crypto10.randomUUID)();
+    const id = data.id || (0, import_crypto11.randomUUID)();
     const now = Date.now();
     const sql = `
             INSERT INTO gst_notice_replies (
@@ -97287,7 +98010,7 @@ function clearDemoNotices(db2) {
 }
 function upsertCase(db2, data) {
   return new Promise((resolve, reject) => {
-    const id = data.id || (0, import_crypto10.randomUUID)();
+    const id = data.id || (0, import_crypto11.randomUUID)();
     const now = Date.now();
     const gstin = (data.client_gstin || "UNASSIGNED").trim().toUpperCase();
     db2.run(
@@ -97336,7 +98059,7 @@ function upsertCase(db2, data) {
 }
 function addCasePayment(db2, p) {
   return new Promise((resolve, reject) => {
-    const id = p.id || (0, import_crypto10.randomUUID)();
+    const id = p.id || (0, import_crypto11.randomUUID)();
     db2.run(
       `INSERT INTO gst_case_payments (
                 id, case_id, notice_id, payment_type, arn_no, drc03_ref_no, drc03a_adjusted,
@@ -97370,7 +98093,7 @@ function addCasePayment(db2, p) {
 }
 function addCaseEvent(db2, ev) {
   return new Promise((resolve, reject) => {
-    const id = ev.id || (0, import_crypto10.randomUUID)();
+    const id = ev.id || (0, import_crypto11.randomUUID)();
     db2.run(
       `INSERT INTO gst_case_events (
                 id, case_id, notice_id, event_type, event_date, due_date, form_code,
@@ -97437,13 +98160,13 @@ function deleteCase(db2, caseId) {
 }
 
 // notices/classifier.js
-var import_fs16 = __toESM(require("fs"), 1);
-var import_path16 = __toESM(require("path"), 1);
+var import_fs17 = __toESM(require("fs"), 1);
+var import_path17 = __toESM(require("path"), 1);
 var import_os11 = __toESM(require("os"), 1);
 var import_zlib = __toESM(require("zlib"), 1);
-var import_child_process9 = require("child_process");
+var import_child_process10 = require("child_process");
 var import_util = require("util");
-var execFileAsync = (0, import_util.promisify)(import_child_process9.execFile);
+var execFileAsync = (0, import_util.promisify)(import_child_process10.execFile);
 var WIN_OCR_POWERSHELL_SCRIPT = `
 param([string[]]$Files)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -97501,7 +98224,7 @@ async function runTesseractFallback(imgPaths) {
 }
 async function runLocalNativeOcrOnPdf(buffer, opts = {}) {
   const maxSample = Number(opts?.maxPages) > 0 ? Number(opts.maxPages) : 12;
-  const tmpDir = import_fs16.default.mkdtempSync(import_path16.default.join(import_os11.default.tmpdir(), "winocr_"));
+  const tmpDir = import_fs17.default.mkdtempSync(import_path17.default.join(import_os11.default.tmpdir(), "winocr_"));
   try {
     const pdfMod = await import("pdf-parse");
     const PDFParseClass = pdfMod.PDFParse || pdfMod.default?.PDFParse;
@@ -97530,15 +98253,15 @@ async function runLocalNativeOcrOnPdf(buffer, opts = {}) {
     const imgPaths = [];
     for (const p of pages) {
       if (!p.data) continue;
-      const imgPath = import_path16.default.join(tmpDir, `page_${p.pageNumber || imgPaths.length + 1}.png`);
-      import_fs16.default.writeFileSync(imgPath, p.data);
+      const imgPath = import_path17.default.join(tmpDir, `page_${p.pageNumber || imgPaths.length + 1}.png`);
+      import_fs17.default.writeFileSync(imgPath, p.data);
       imgPaths.push(imgPath);
     }
     if (imgPaths.length === 0) return "";
     if (process.platform === "win32") {
       try {
-        const psPath = import_path16.default.join(tmpDir, "ocr_worker.ps1");
-        import_fs16.default.writeFileSync(psPath, WIN_OCR_POWERSHELL_SCRIPT, "utf8");
+        const psPath = import_path17.default.join(tmpDir, "ocr_worker.ps1");
+        import_fs17.default.writeFileSync(psPath, WIN_OCR_POWERSHELL_SCRIPT, "utf8");
         const psResult = await execFileAsync(
           "powershell.exe",
           ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psPath, "-Files", ...imgPaths],
@@ -97555,7 +98278,7 @@ async function runLocalNativeOcrOnPdf(buffer, opts = {}) {
     return "";
   } finally {
     try {
-      import_fs16.default.rmSync(tmpDir, { recursive: true, force: true });
+      import_fs17.default.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
     }
   }
@@ -97945,10 +98668,10 @@ async function extractTextFromBuffer(buffer, fileName = "") {
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".csv")) {
     try {
       const xlsxMod = await Promise.resolve().then(() => __toESM(require_xlsx(), 1));
-      const XLSX14 = xlsxMod.default || xlsxMod;
-      const wb = XLSX14.read(buffer, { type: "buffer" });
+      const XLSX15 = xlsxMod.default || xlsxMod;
+      const wb = XLSX15.read(buffer, { type: "buffer" });
       return wb.SheetNames.slice(0, 6).map((s) => `[${s}]
-${XLSX14.utils.sheet_to_csv(wb.Sheets[s]).slice(0, 6e3)}`).join("\n");
+${XLSX15.utils.sheet_to_csv(wb.Sheets[s]).slice(0, 6e3)}`).join("\n");
     } catch {
       return "";
     }
@@ -97960,13 +98683,13 @@ ${XLSX14.utils.sheet_to_csv(wb.Sheets[s]).slice(0, 6e3)}`).join("\n");
 }
 function isSkippableScrutinyFile(fileName = "") {
   const lower = fileName.toLowerCase();
-  return /\.(tsf|900|1800|500|bak|rar|exe|dll|zip\.tmp)$/i.test(lower) || /^(thumbs\.db|desktop\.ini|~\$)/i.test(import_path16.default.basename(lower));
+  return /\.(tsf|900|1800|500|bak|rar|exe|dll|zip\.tmp)$/i.test(lower) || /^(thumbs\.db|desktop\.ini|~\$)/i.test(import_path17.default.basename(lower));
 }
 
 // notices/autopilot.js
-var import_fs17 = __toESM(require("fs"), 1);
-var import_path17 = __toESM(require("path"), 1);
-var import_crypto11 = __toESM(require("crypto"), 1);
+var import_fs18 = __toESM(require("fs"), 1);
+var import_path18 = __toESM(require("path"), 1);
+var import_crypto12 = __toESM(require("crypto"), 1);
 function extractNoticeFinancialYear(description, refNo, issueDate) {
   const combined = `${description || ""} ${refNo || ""}`;
   const fyMatch = combined.match(/\b(20\d{2}[-/]\d{2,4})\b/);
@@ -98036,8 +98759,8 @@ data: ${JSON.stringify(data)}
   let browser = null;
   let context = null;
   let page = null;
-  const downloadDir = import_path17.default.join(process.cwd(), "scratch", "downloads", "notices", gstinUpper);
-  if (!import_fs17.default.existsSync(downloadDir)) import_fs17.default.mkdirSync(downloadDir, { recursive: true });
+  const downloadDir = import_path18.default.join(process.cwd(), "scratch", "downloads", "notices", gstinUpper);
+  if (!import_fs18.default.existsSync(downloadDir)) import_fs18.default.mkdirSync(downloadDir, { recursive: true });
   if (browserState && browserState.current) {
     try {
       await browserState.current.close().catch(() => {
@@ -98082,12 +98805,12 @@ data: ${JSON.stringify(data)}
         try {
           const originalName = download.suggestedFilename();
           console.log(`[Notices Autopilot] Download detected: ${originalName}`);
-          const savePath = import_path17.default.join(downloadDir, `${Date.now()}_${originalName}`);
+          const savePath = import_path18.default.join(downloadDir, `${Date.now()}_${originalName}`);
           await download.saveAs(savePath);
-          if (import_fs17.default.existsSync(savePath)) {
-            const fileBuf = import_fs17.default.readFileSync(savePath);
+          if (import_fs18.default.existsSync(savePath)) {
+            const fileBuf = import_fs18.default.readFileSync(savePath);
             if (fileBuf.length > 0) {
-              const hash = import_crypto11.default.createHash("sha256").update(fileBuf).digest("hex");
+              const hash = import_crypto12.default.createHash("sha256").update(fileBuf).digest("hex");
               pendingDownloads.push({
                 fileName: originalName,
                 filePath: savePath,
@@ -98526,21 +99249,21 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
         return res.status(404).json({ success: false, error: "Attachment record not found" });
       }
       const filePath = row.file_path;
-      const resolvedPath = import_path18.default.resolve(filePath);
-      const allowedNoticesDir = import_path18.default.resolve(process.cwd(), "scratch", "downloads", "notices");
-      const allowedUploadsDir = import_path18.default.resolve(process.cwd(), "uploads");
-      if (!resolvedPath.startsWith(allowedNoticesDir + import_path18.default.sep) && !resolvedPath.startsWith(allowedUploadsDir + import_path18.default.sep)) {
+      const resolvedPath = import_path19.default.resolve(filePath);
+      const allowedNoticesDir = import_path19.default.resolve(process.cwd(), "scratch", "downloads", "notices");
+      const allowedUploadsDir = import_path19.default.resolve(process.cwd(), "uploads");
+      if (!resolvedPath.startsWith(allowedNoticesDir + import_path19.default.sep) && !resolvedPath.startsWith(allowedUploadsDir + import_path19.default.sep)) {
         return res.status(403).json({ success: false, error: "Access denied: attachment path outside allowed storage." });
       }
-      if (!import_fs18.default.existsSync(filePath)) {
+      if (!import_fs19.default.existsSync(filePath)) {
         return res.status(404).json({ success: false, error: "File does not exist on disk" });
       }
-      const stats = import_fs18.default.statSync(filePath);
+      const stats = import_fs19.default.statSync(filePath);
       if (stats.size === 0) {
         return res.status(422).json({ success: false, error: "File is empty (0 bytes). Download was interrupted or incomplete." });
       }
-      const rawName = row.file_name || import_path18.default.basename(filePath);
-      const ext = import_path18.default.extname(rawName).toLowerCase() || (row.file_type === "PDF" ? ".pdf" : row.file_type === "ZIP" ? ".zip" : "");
+      const rawName = row.file_name || import_path19.default.basename(filePath);
+      const ext = import_path19.default.extname(rawName).toLowerCase() || (row.file_type === "PDF" ? ".pdf" : row.file_type === "ZIP" ? ".zip" : "");
       const finalName = rawName.includes(".") ? rawName : `${rawName}${ext}`;
       let contentType = "application/octet-stream";
       if (ext === ".pdf" || row.file_type === "PDF") contentType = "application/pdf";
@@ -98549,7 +99272,7 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
       res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Length", stats.size);
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(finalName)}"`);
-      const readStream = import_fs18.default.createReadStream(filePath);
+      const readStream = import_fs19.default.createReadStream(filePath);
       readStream.pipe(res);
     });
   });
@@ -98592,7 +99315,7 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
       }
       const { reconcileNoticeDiscrepancy: reconcileNoticeDiscrepancy2, generateNoticeAnnexureExcel: generateNoticeAnnexureExcel2 } = await Promise.resolve().then(() => (init_noticeReconciliation(), noticeReconciliation_exports));
       const xlsx = await Promise.resolve().then(() => __toESM(require_xlsx(), 1));
-      const XLSX14 = xlsx.default || xlsx;
+      const XLSX15 = xlsx.default || xlsx;
       const twoBInvoices = [];
       const threeBReturns = [];
       const allegedInvoices = await new Promise((resolve) => {
@@ -98613,7 +99336,7 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
         companyName: notice.client_gstin,
         officerName: notice.issuing_officer
       });
-      const buffer = XLSX14.write(wb, { type: "buffer", bookType: "xlsx" });
+      const buffer = XLSX15.write(wb, { type: "buffer", bookType: "xlsx" });
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="Notice_Annexure_${notice.reference_no}.xlsx"`);
       res.send(buffer);
@@ -98752,7 +99475,7 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
     if (role && !["admin", "senior auditor", "senior"].includes(role)) {
       return { ok: false, error: "Admin or Senior Auditor privileges required for host folder scanning." };
     }
-    const resolved = import_path18.default.resolve(clean);
+    const resolved = import_path19.default.resolve(clean);
     const blockedRoots = ["windows", "program files", "program files (x86)", "programdata", "system volume information", "$recycle.bin"];
     const normLow = resolved.toLowerCase();
     if (/^[a-z]:\\$/.test(normLow) || normLow === "/" || blockedRoots.some((b) => normLow.includes(`\\${b}`)) || /^\/(etc|proc|sys|dev|boot|root|bin|sbin|usr)(\/|$)/.test(normLow)) {
@@ -98761,30 +99484,30 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
     return { ok: true, resolved };
   }
   async function walkScrutinyFolder(resolvedRoot, maxFiles = 400) {
-    if (!resolvedRoot || !import_fs18.default.existsSync(resolvedRoot) || !import_fs18.default.statSync(resolvedRoot).isDirectory()) {
+    if (!resolvedRoot || !import_fs19.default.existsSync(resolvedRoot) || !import_fs19.default.statSync(resolvedRoot).isDirectory()) {
       throw new Error("Folder does not exist or is not a directory.");
     }
     const items = [];
     const walk = (dir) => {
       if (items.length >= maxFiles) return;
-      for (const ent of import_fs18.default.readdirSync(dir, { withFileTypes: true })) {
+      for (const ent of import_fs19.default.readdirSync(dir, { withFileTypes: true })) {
         if (items.length >= maxFiles) break;
         if (ent.isSymbolicLink()) continue;
-        const full = import_path18.default.join(dir, ent.name);
+        const full = import_path19.default.join(dir, ent.name);
         if (ent.isDirectory()) {
           walk(full);
           continue;
         }
         if (isSkippableScrutinyFile(ent.name)) continue;
-        const stat = import_fs18.default.statSync(full);
+        const stat = import_fs19.default.statSync(full);
         if (stat.size > 20 * 1024 * 1024) continue;
-        const rel = import_path18.default.relative(resolvedRoot, full).replace(/\\/g, "/");
+        const rel = import_path19.default.relative(resolvedRoot, full).replace(/\\/g, "/");
         if (ent.name.toLowerCase().endsWith(".zip")) {
-          const buf = import_fs18.default.readFileSync(full);
+          const buf = import_fs19.default.readFileSync(full);
           const entries = readZipEntries(buf, (n) => /\.(pdf|docx|xlsx|csv|txt)$/i.test(n));
           items.push({ full, rel, name: ent.name, size: stat.size, ext: ".zip", zipEntries: entries.slice(0, 20) });
         } else if (/\.(pdf|docx|xlsx|xls|csv|txt|json)$/i.test(ent.name)) {
-          items.push({ full, rel, name: ent.name, size: stat.size, ext: import_path18.default.extname(ent.name).toLowerCase() });
+          items.push({ full, rel, name: ent.name, size: stat.size, ext: import_path19.default.extname(ent.name).toLowerCase() });
         }
       }
     };
@@ -98801,7 +99524,7 @@ function setupNoticesRoutes(app2, db2, authenticateToken2 = null) {
 ${zTxt.slice(0, 8e3)}`;
         }
       } else {
-        const buf = import_fs18.default.readFileSync(it.full);
+        const buf = import_fs19.default.readFileSync(it.full);
         text = await extractTextFromBuffer(buf, it.name);
       }
       const cls = classifyNoticeDocument(it.name, text, it.rel);
@@ -98829,7 +99552,7 @@ ${zTxt.slice(0, 8e3)}`;
         detectedGstin = g;
       }
     }
-    return { resolvedRoot, clientName: import_path18.default.basename(resolvedRoot), detectedGstin, documents: classified };
+    return { resolvedRoot, clientName: import_path19.default.basename(resolvedRoot), detectedGstin, documents: classified };
   }
   app2.post("/api/notices/scan-folder", async (req, res) => {
     try {
@@ -98924,7 +99647,7 @@ ${zTxt.slice(0, 8e3)}`;
             portal_source: "FOLDER_IMPORT",
             notice_type: doc3.formCode,
             form_description: `${doc3.formCode}${doc3.isScannedImagePdf ? " [Scanned Image PDF]" : ""} (${doc3.relPath})`,
-            reference_no: doc3.portalRefNo || `LOCAL-${import_crypto12.default.createHash("sha1").update(doc3.relPath).digest("hex").slice(0, 12)}`,
+            reference_no: doc3.portalRefNo || `LOCAL-${import_crypto13.default.createHash("sha1").update(doc3.relPath).digest("hex").slice(0, 12)}`,
             din: doc3.din || "",
             financial_year: doc3.financialYear || primaryFy,
             issue_date: doc3.issueDate || "",
@@ -98986,8 +99709,8 @@ ${zTxt.slice(0, 8e3)}`;
 var notices_routes_default = setupNoticesRoutes;
 
 // monthly_audit_routes.js
-var import_path19 = __toESM(require("path"), 1);
-var import_fs19 = __toESM(require("fs"), 1);
+var import_path20 = __toESM(require("path"), 1);
+var import_fs20 = __toESM(require("fs"), 1);
 var import_xlsx = __toESM(require_xlsx(), 1);
 function initMonthlyAuditDatabase(db2) {
   db2.serialize(() => {
@@ -99193,28 +99916,28 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authentic
       db2.get("SELECT value FROM app_config WHERE key = 'monthly_audit_path'", [], (err, row) => {
         let baseDir = null;
         if (!err && row && row.value) {
-          const candidate = import_path19.default.resolve(String(row.value).trim().replace(/^["']|["']$/g, ""));
+          const candidate = import_path20.default.resolve(String(row.value).trim().replace(/^["']|["']$/g, ""));
           try {
-            if (!import_fs19.default.existsSync(candidate)) import_fs19.default.mkdirSync(candidate, { recursive: true });
+            if (!import_fs20.default.existsSync(candidate)) import_fs20.default.mkdirSync(candidate, { recursive: true });
             baseDir = candidate;
           } catch (e) {
           }
         }
         if (!baseDir) {
-          baseDir = import_path19.default.resolve(defaultUserDataPath, "monthly_audits");
+          baseDir = import_path20.default.resolve(defaultUserDataPath, "monthly_audits");
           try {
-            if (!import_fs19.default.existsSync(baseDir)) import_fs19.default.mkdirSync(baseDir, { recursive: true });
+            if (!import_fs20.default.existsSync(baseDir)) import_fs20.default.mkdirSync(baseDir, { recursive: true });
           } catch (e) {
           }
         }
         try {
-          const target = import_path19.default.join(baseDir, folderName, cFy, cMonth, subFolder);
-          if (!import_fs19.default.existsSync(target)) import_fs19.default.mkdirSync(target, { recursive: true });
+          const target = import_path20.default.join(baseDir, folderName, cFy, cMonth, subFolder);
+          if (!import_fs20.default.existsSync(target)) import_fs20.default.mkdirSync(target, { recursive: true });
           resolve(target);
         } catch (e) {
-          const fallback = import_path19.default.resolve(defaultUserDataPath, "gst_returns_data", folderName, cFy, cMonth, subFolder);
+          const fallback = import_path20.default.resolve(defaultUserDataPath, "gst_returns_data", folderName, cFy, cMonth, subFolder);
           try {
-            if (!import_fs19.default.existsSync(fallback)) import_fs19.default.mkdirSync(fallback, { recursive: true });
+            if (!import_fs20.default.existsSync(fallback)) import_fs20.default.mkdirSync(fallback, { recursive: true });
           } catch (fbErr) {
           }
           resolve(fallback);
@@ -99714,13 +100437,13 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authentic
         try {
           const targetDir = await resolveMonthlyAuditFolder(clientName || audit.client_name, gstin || audit.client_gstin, fy || audit.fy, month || audit.month, "Released to Client");
           const safeFile = safePathSegment(filename);
-          const fullFilePath = import_path19.default.join(targetDir, safeFile);
-          import_fs19.default.writeFileSync(fullFilePath, Buffer.from(workbookBase64, "base64"));
+          const fullFilePath = import_path20.default.join(targetDir, safeFile);
+          import_fs20.default.writeFileSync(fullFilePath, Buffer.from(workbookBase64, "base64"));
           savedPath = fullFilePath;
           if (req.body.pdfBase64 && req.body.pdfFilename) {
             const safePdfFile = safePathSegment(req.body.pdfFilename);
-            const fullPdfPath = import_path19.default.join(targetDir, safePdfFile);
-            import_fs19.default.writeFileSync(fullPdfPath, Buffer.from(req.body.pdfBase64, "base64"));
+            const fullPdfPath = import_path20.default.join(targetDir, safePdfFile);
+            import_fs20.default.writeFileSync(fullPdfPath, Buffer.from(req.body.pdfBase64, "base64"));
           }
         } catch (writeErr) {
           console.error("[Monthly Audit API] Error writing released workbook:", writeErr);
@@ -100146,9 +100869,9 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authentic
     try {
       const targetDir = await resolveMonthlyAuditFolder(clientName, gstin, fy, month, "Audit Working");
       const safeFilename = safePathSegment(filename);
-      const fullPath = import_path19.default.join(targetDir, safeFilename);
+      const fullPath = import_path20.default.join(targetDir, safeFilename);
       const buffer = Buffer.from(workbookBase64, "base64");
-      import_fs19.default.writeFileSync(fullPath, buffer);
+      import_fs20.default.writeFileSync(fullPath, buffer);
       res.json({
         success: true,
         savedPath: fullPath,
@@ -100167,20 +100890,20 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authentic
       return res.status(400).json({ success: false, error: "filePath parameter is required" });
     }
     try {
-      const resolvedPath = import_path19.default.resolve(String(filePath).trim().replace(/^["']|["']$/g, ""));
+      const resolvedPath = import_path20.default.resolve(String(filePath).trim().replace(/^["']|["']$/g, ""));
       const baseRoot = defaultUserDataPath || ".";
       const allowedDirs = [
-        import_path19.default.resolve(baseRoot, "gst_returns_data"),
-        import_path19.default.resolve(baseRoot)
+        import_path20.default.resolve(baseRoot, "gst_returns_data"),
+        import_path20.default.resolve(baseRoot)
       ];
       const isAllowedPath = allowedDirs.some((dir) => {
-        const prefix = dir.endsWith(import_path19.default.sep) ? dir : dir + import_path19.default.sep;
+        const prefix = dir.endsWith(import_path20.default.sep) ? dir : dir + import_path20.default.sep;
         return resolvedPath === dir || resolvedPath.startsWith(prefix);
       });
       if (!isAllowedPath) {
         return res.status(403).json({ success: false, error: "Access denied: path outside authorized directory" });
       }
-      if (!import_fs19.default.existsSync(resolvedPath)) {
+      if (!import_fs20.default.existsSync(resolvedPath)) {
         return res.status(404).json({ success: false, error: "File not found at specified path" });
       }
       const wb = import_xlsx.default.readFile(resolvedPath);
@@ -100295,7 +101018,7 @@ function setupMonthlyAuditRoutes(app2, db2, defaultUserDataPath = ".", authentic
 }
 
 // audit_storage_routes.js
-var import_path20 = __toESM(require("path"), 1);
+var import_path21 = __toESM(require("path"), 1);
 var import_sqlite3 = __toESM(require("sqlite3"), 1);
 function initAuditStorageDatabase(db2) {
   db2.serialize(() => {
@@ -100386,7 +101109,7 @@ function setupAuditStorageRoutes(app2, db2, defaultUserDataPath = ".", authentic
   app2.use("/api/audit-storage", authMiddleware);
   let activeDb = db2;
   if (!activeDb) {
-    const dbPath = import_path20.default.join(defaultUserDataPath || process.cwd(), "network_data.db");
+    const dbPath = import_path21.default.join(defaultUserDataPath || process.cwd(), "network_data.db");
     activeDb = new import_sqlite3.default.Database(dbPath);
   }
   initAuditStorageDatabase(activeDb);
@@ -102328,11 +103051,12 @@ function sanitizeGeminiHistory(rawHistory) {
   }));
 }
 async function fetchCloudGeminiKey(firestore2, officeId) {
-  const licenseApiUrl = (process.env.LICENSE_API_URL || "").replace(/\/+$/, "");
+  const licenseApiUrl = (process.env.LICENSE_API_URL || (process.env.NODE_ENV === "test" ? "" : "https://vaswani-license-gateway.vercel.app")).replace(/\/+$/, "");
+  const licenseGatewayToken = process.env.LICENSE_GATEWAY_TOKEN || (process.env.NODE_ENV === "test" ? "" : "20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e");
   if (licenseApiUrl) {
     try {
       const headers = { "Content-Type": "application/json" };
-      if (process.env.LICENSE_GATEWAY_TOKEN) headers["x-license-token"] = process.env.LICENSE_GATEWAY_TOKEN;
+      if (licenseGatewayToken) headers["x-license-token"] = licenseGatewayToken;
       const res = await fetch(`${licenseApiUrl}/geminiKeySync`, {
         method: "POST",
         headers,
@@ -102341,9 +103065,11 @@ async function fetchCloudGeminiKey(firestore2, officeId) {
       if (res.ok) {
         const data = await res.json();
         if (data && data.apiKey) return { apiKey: data.apiKey, origin: data.origin || "cloud_office" };
+        return { apiKey: null, origin: null };
       }
     } catch (e) {
       console.warn("[AI Cloud Sync] Gateway fetch warning:", e.message);
+      return { apiKey: null, origin: null };
     }
   }
   if (!firestore2) return { apiKey: null, origin: null };
@@ -102530,13 +103256,17 @@ function setupGeminiRoutes(app2, db2, firestore2 = null, authenticateToken2 = nu
   });
   app2.post("/api/gemini/push-cloud", authMiddleware, requireAdminIfAuthenticated, async (req, res) => {
     try {
-      const licenseApiUrl = (process.env.LICENSE_API_URL || "").replace(/\/+$/, "");
-      if (!firestore2 && !licenseApiUrl) {
-        return res.status(503).json({ ok: false, error: "Firebase Firestore is not initialized on this server" });
-      }
       const { apiKey, scope = "office" } = req.body;
       if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
         return res.status(400).json({ error: "Valid apiKey string is required" });
+      }
+      if (!["office", "global"].includes(scope)) {
+        return res.status(400).json({ error: "Invalid scope parameter. Must be 'office' or 'global'." });
+      }
+      const licenseApiUrl = (process.env.LICENSE_API_URL || (process.env.NODE_ENV === "test" ? "" : "https://vaswani-license-gateway.vercel.app")).replace(/\/+$/, "");
+      const licenseGatewayToken = process.env.LICENSE_GATEWAY_TOKEN || (process.env.NODE_ENV === "test" ? "" : "20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e");
+      if (!firestore2 && !licenseApiUrl) {
+        return res.status(503).json({ ok: false, error: "Firebase Firestore is not initialized on this server" });
       }
       const trimmedKey = apiKey.trim();
       if (licenseApiUrl) {
@@ -102545,7 +103275,7 @@ function setupGeminiRoutes(app2, db2, firestore2 = null, authenticateToken2 = nu
           return res.status(400).json({ error: "This installation does not have an active office_id assigned." });
         }
         const headers = { "Content-Type": "application/json" };
-        if (process.env.LICENSE_GATEWAY_TOKEN) headers["x-license-token"] = process.env.LICENSE_GATEWAY_TOKEN;
+        if (licenseGatewayToken) headers["x-license-token"] = licenseGatewayToken;
         const gwRes = await fetch(`${licenseApiUrl}/geminiKeySync`, {
           method: "POST",
           headers,
@@ -102970,9 +103700,9 @@ var import_localtunnel = __toESM(require("localtunnel"), 1);
 var import_meta2 = {};
 import_dns.default.setDefaultResultOrder("ipv4first");
 try {
-  const envPath = import_path21.default.join(process.cwd(), ".env");
-  if (import_fs20.default.existsSync(envPath)) {
-    for (const line of import_fs20.default.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+  const envPath = import_path22.default.join(process.cwd(), ".env");
+  if (import_fs21.default.existsSync(envPath)) {
+    for (const line of import_fs21.default.readFileSync(envPath, "utf8").split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
       const eqIdx = trimmed.indexOf("=");
@@ -103101,28 +103831,28 @@ app.use((0, import_helmet.default)({
 }));
 var PORT = 3001;
 var userDataPath = process.env.USER_DATA_PATH || ".";
-var CONFIG_PATH = import_path21.default.join(userDataPath, "server_config.json");
+var CONFIG_PATH = import_path22.default.join(userDataPath, "server_config.json");
 var JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  if (import_fs20.default.existsSync(CONFIG_PATH)) {
+  if (import_fs21.default.existsSync(CONFIG_PATH)) {
     try {
-      const rawCfg = JSON.parse(import_fs20.default.readFileSync(CONFIG_PATH, "utf8"));
+      const rawCfg = JSON.parse(import_fs21.default.readFileSync(CONFIG_PATH, "utf8"));
       if (rawCfg && rawCfg.jwtSecret) {
         JWT_SECRET = decryptSecret(rawCfg.jwtSecret);
         if (!isEncryptedSecret(rawCfg.jwtSecret) && JWT_SECRET) {
-          import_fs20.default.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 384 });
+          import_fs21.default.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 384 });
         }
       }
     } catch (e) {
     }
   }
   if (!JWT_SECRET) {
-    JWT_SECRET = import_crypto13.default.randomBytes(32).toString("hex");
+    JWT_SECRET = import_crypto14.default.randomBytes(32).toString("hex");
     try {
-      if (!import_fs20.default.existsSync(userDataPath)) {
-        import_fs20.default.mkdirSync(userDataPath, { recursive: true });
+      if (!import_fs21.default.existsSync(userDataPath)) {
+        import_fs21.default.mkdirSync(userDataPath, { recursive: true });
       }
-      import_fs20.default.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 384 });
+      import_fs21.default.writeFileSync(CONFIG_PATH, JSON.stringify({ jwtSecret: encryptSecret(JWT_SECRET) }), { mode: 384 });
       console.log("Generated new secure encrypted JWT Secret for this installation.");
     } catch (err) {
       console.error("Failed to write server_config.json:", err);
@@ -103202,21 +103932,21 @@ var mailRateLimiter = createRateLimiter({
   keyFn: (req) => req.user?.username || req.ip || "unknown",
   message: "Email dispatch rate limit exceeded (max 10 requests per minute)."
 });
-app.use("/updates", import_express.default.static(import_path21.default.join(__dirname2, "updates")));
+app.use("/updates", import_express.default.static(import_path22.default.join(__dirname2, "updates")));
 function findDistPath() {
   const candidates = [
-    import_path21.default.join(import_path21.default.dirname(process.execPath), "resources", "app.asar.unpacked", "dist"),
-    import_path21.default.join(import_path21.default.dirname(process.execPath), "resources", "app.asar", "dist"),
-    import_path21.default.join(import_path21.default.dirname(process.execPath), "resources", "app", "dist"),
-    import_path21.default.join(process.cwd(), "resources", "app.asar.unpacked", "dist"),
-    import_path21.default.join(process.cwd(), "resources", "app.asar", "dist"),
-    typeof __dirname2 !== "undefined" ? import_path21.default.join(__dirname2, "dist") : null,
-    import_path21.default.join(process.cwd(), "dist"),
-    import_path21.default.join(import_path21.default.dirname(process.execPath), "dist")
+    import_path22.default.join(import_path22.default.dirname(process.execPath), "resources", "app.asar.unpacked", "dist"),
+    import_path22.default.join(import_path22.default.dirname(process.execPath), "resources", "app.asar", "dist"),
+    import_path22.default.join(import_path22.default.dirname(process.execPath), "resources", "app", "dist"),
+    import_path22.default.join(process.cwd(), "resources", "app.asar.unpacked", "dist"),
+    import_path22.default.join(process.cwd(), "resources", "app.asar", "dist"),
+    typeof __dirname2 !== "undefined" ? import_path22.default.join(__dirname2, "dist") : null,
+    import_path22.default.join(process.cwd(), "dist"),
+    import_path22.default.join(import_path22.default.dirname(process.execPath), "dist")
   ].filter(Boolean);
   for (const p of candidates) {
     try {
-      if (import_fs20.default.existsSync(import_path21.default.join(p, "index.html"))) {
+      if (import_fs21.default.existsSync(import_path22.default.join(p, "index.html"))) {
         console.log(`[Frontend Path] Located valid dist folder at: ${p}`);
         return p;
       }
@@ -103226,7 +103956,7 @@ function findDistPath() {
       }
     }
   }
-  const fallback = typeof __dirname2 !== "undefined" ? import_path21.default.join(__dirname2, "dist") : import_path21.default.join(process.cwd(), "dist");
+  const fallback = typeof __dirname2 !== "undefined" ? import_path22.default.join(__dirname2, "dist") : import_path22.default.join(process.cwd(), "dist");
   console.warn(`[Frontend Path] Warning: could not locate index.html. Defaulting to: ${fallback}`);
   return fallback;
 }
@@ -103271,18 +104001,18 @@ app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/ping", (req, res) => res.json({ success: true, status: "ok", isServer: true, pcName: import_os12.default.hostname(), timestamp: Date.now() }));
 app.get("/api/health", (req, res) => res.json({ status: "ok", timestamp: Date.now() }));
-var BANNED_PATH = import_path21.default.join(userDataPath, "banned_users.json");
-var AUDIT_PATH = import_path21.default.join(userDataPath, "audit_logs.json");
-var DB_PATH = import_path21.default.join(userDataPath, "network_data.db");
+var BANNED_PATH = import_path22.default.join(userDataPath, "banned_users.json");
+var AUDIT_PATH = import_path22.default.join(userDataPath, "audit_logs.json");
+var DB_PATH = import_path22.default.join(userDataPath, "network_data.db");
 var activeSessions = {};
 var screenFrames = {};
 var screenRequests = {};
 var userMessages = {};
-var loadJson = (p) => import_fs20.default.existsSync(p) ? JSON.parse(import_fs20.default.readFileSync(p)) : {};
-var saveJson = (p, data) => import_fs20.default.writeFileSync(p, JSON.stringify(data, null, 2));
+var loadJson = (p) => import_fs21.default.existsSync(p) ? JSON.parse(import_fs21.default.readFileSync(p)) : {};
+var saveJson = (p, data) => import_fs21.default.writeFileSync(p, JSON.stringify(data, null, 2));
 var getAuditLogs = () => {
   try {
-    const data = JSON.parse(import_fs20.default.readFileSync(AUDIT_PATH));
+    const data = JSON.parse(import_fs21.default.readFileSync(AUDIT_PATH));
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
@@ -103290,21 +104020,21 @@ var getAuditLogs = () => {
 };
 function ensureProductionDatabase(targetDbPath, userDataDir) {
   try {
-    if (!import_fs20.default.existsSync(userDataDir)) {
-      import_fs20.default.mkdirSync(userDataDir, { recursive: true });
+    if (!import_fs21.default.existsSync(userDataDir)) {
+      import_fs21.default.mkdirSync(userDataDir, { recursive: true });
     }
     const candidateMasters = [
-      import_path21.default.join(import_path21.default.dirname(process.execPath), "resources", "network_data.db"),
-      import_path21.default.join(process.cwd(), "resources", "network_data.db"),
-      typeof __dirname2 !== "undefined" ? import_path21.default.join(__dirname2, "network_data.db") : null,
-      import_path21.default.join(process.cwd(), "network_data.db"),
-      import_path21.default.join(import_path21.default.dirname(process.execPath), "network_data.db")
+      import_path22.default.join(import_path22.default.dirname(process.execPath), "resources", "network_data.db"),
+      import_path22.default.join(process.cwd(), "resources", "network_data.db"),
+      typeof __dirname2 !== "undefined" ? import_path22.default.join(__dirname2, "network_data.db") : null,
+      import_path22.default.join(process.cwd(), "network_data.db"),
+      import_path22.default.join(import_path22.default.dirname(process.execPath), "network_data.db")
     ].filter(Boolean);
     let masterSeedPath = null;
     for (const candidate of candidateMasters) {
       try {
-        if (import_fs20.default.existsSync(candidate) && import_path21.default.resolve(candidate) !== import_path21.default.resolve(targetDbPath)) {
-          const stats = import_fs20.default.statSync(candidate);
+        if (import_fs21.default.existsSync(candidate) && import_path22.default.resolve(candidate) !== import_path22.default.resolve(targetDbPath)) {
+          const stats = import_fs21.default.statSync(candidate);
           if (stats.size > 5e4) {
             masterSeedPath = candidate;
             break;
@@ -103317,11 +104047,11 @@ function ensureProductionDatabase(targetDbPath, userDataDir) {
       }
     }
     if (!masterSeedPath) return;
-    const targetExists = import_fs20.default.existsSync(targetDbPath);
-    const targetSize = targetExists ? import_fs20.default.statSync(targetDbPath).size : 0;
+    const targetExists = import_fs21.default.existsSync(targetDbPath);
+    const targetSize = targetExists ? import_fs21.default.statSync(targetDbPath).size : 0;
     if (!targetExists || targetSize < 5e4) {
       console.log(`[DB Init] Seeding production database from master (${masterSeedPath}) to (${targetDbPath})...`);
-      import_fs20.default.copyFileSync(masterSeedPath, targetDbPath);
+      import_fs21.default.copyFileSync(masterSeedPath, targetDbPath);
       console.log("[DB Init] Master database successfully seeded with all client records!");
     }
   } catch (err) {
@@ -103755,7 +104485,7 @@ app.post("/api/network/go-global", authenticateToken, async (req, res) => {
         details: `Tunnel expires in 2h`
       });
       if (logs.length > 500) logs.pop();
-      import_fs20.default.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
+      import_fs21.default.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
     } catch {
     }
     const officeId = await getOfficeId();
@@ -103794,8 +104524,8 @@ app.post("/api/network/stop-global", authenticateToken, async (req, res) => {
   }
   res.json({ success: true });
 });
-var LICENSE_API_URL = (process.env.LICENSE_API_URL || "").replace(/\/+$/, "");
-var LICENSE_GATEWAY_TOKEN = process.env.LICENSE_GATEWAY_TOKEN || "";
+var LICENSE_API_URL = (process.env.LICENSE_API_URL || "https://vaswani-license-gateway.vercel.app").replace(/\/+$/, "");
+var LICENSE_GATEWAY_TOKEN = process.env.LICENSE_GATEWAY_TOKEN || "20ae6b484f23bc7f499760752c9171ff3661d8030138f255ad92a97346fd016e";
 async function callLicenseGateway(endpoint, body) {
   if (!LICENSE_API_URL) return null;
   const headers = { "Content-Type": "application/json" };
@@ -105198,7 +105928,7 @@ app.post("/audit", authenticateToken, (req, res) => {
       role: req.user.role
     });
     if (logs.length > 500) logs.pop();
-    import_fs20.default.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
+    import_fs21.default.writeFileSync(AUDIT_PATH, JSON.stringify(logs, null, 2));
   });
   auditWriteQueue.then(() => res.json({ success: true })).catch((err) => res.status(500).json({ success: false, error: err.message }));
 });
@@ -105276,13 +106006,13 @@ app.post("/api/tally/test-connection", async (req, res) => {
 });
 function resolvePythonExecutable() {
   try {
-    (0, import_child_process10.execSync)(process.platform === "win32" ? "python --version" : "python3 --version", { stdio: "ignore" });
+    (0, import_child_process11.execSync)(process.platform === "win32" ? "python --version" : "python3 --version", { stdio: "ignore" });
     return process.platform === "win32" ? "python" : "python3";
   } catch (e) {
   }
   if (process.platform === "win32") {
     try {
-      (0, import_child_process10.execSync)("py --version", { stdio: "ignore" });
+      (0, import_child_process11.execSync)("py --version", { stdio: "ignore" });
       return "py";
     } catch (e) {
       if (e && e.code !== "unavailable") {
@@ -105290,13 +106020,13 @@ function resolvePythonExecutable() {
       }
     }
     const userProfile = process.env.USERPROFILE || "C:\\Users\\" + (process.env.USERNAME || "PC-10");
-    const localPrograms = import_path21.default.join(userProfile, "AppData", "Local", "Programs", "Python");
-    if (import_fs20.default.existsSync(localPrograms)) {
+    const localPrograms = import_path22.default.join(userProfile, "AppData", "Local", "Programs", "Python");
+    if (import_fs21.default.existsSync(localPrograms)) {
       try {
-        const subdirs = import_fs20.default.readdirSync(localPrograms).filter((d) => d.toLowerCase().startsWith("python"));
+        const subdirs = import_fs21.default.readdirSync(localPrograms).filter((d) => d.toLowerCase().startsWith("python"));
         for (const dir of subdirs.reverse()) {
-          const candidate = import_path21.default.join(localPrograms, dir, "python.exe");
-          if (import_fs20.default.existsSync(candidate)) return candidate;
+          const candidate = import_path22.default.join(localPrograms, dir, "python.exe");
+          if (import_fs21.default.existsSync(candidate)) return candidate;
         }
       } catch (e) {
         if (e && e.code !== "unavailable") {
@@ -105309,16 +106039,16 @@ function resolvePythonExecutable() {
       "C:\\Python312\\python.exe",
       "C:\\Python311\\python.exe",
       "C:\\Python310\\python.exe",
-      import_path21.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python313", "python.exe"),
-      import_path21.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "python.exe")
+      import_path22.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python313", "python.exe"),
+      import_path22.default.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "python.exe")
     ];
     for (const p of standardPaths) {
-      if (p && import_fs20.default.existsSync(p)) return p;
+      if (p && import_fs21.default.existsSync(p)) return p;
     }
   } else {
     for (const cmd of ["python3", "python"]) {
       try {
-        (0, import_child_process10.execSync)(`${cmd} --version`, { stdio: "ignore" });
+        (0, import_child_process11.execSync)(`${cmd} --version`, { stdio: "ignore" });
         return cmd;
       } catch (e) {
         if (e && e.code !== "unavailable") {
@@ -105330,13 +106060,13 @@ function resolvePythonExecutable() {
   return null;
 }
 app.post("/api/cma/generate", authenticateToken, async (req, res) => {
-  const runId = import_crypto13.default.randomUUID();
-  const tempJsonPath = import_path21.default.join(import_os12.default.tmpdir(), `temp_cma_${runId}.json`);
-  const tempExcelPath = import_path21.default.join(import_os12.default.tmpdir(), `CMA_Report_${runId}.xlsx`);
+  const runId = import_crypto14.default.randomUUID();
+  const tempJsonPath = import_path22.default.join(import_os12.default.tmpdir(), `temp_cma_${runId}.json`);
+  const tempExcelPath = import_path22.default.join(import_os12.default.tmpdir(), `CMA_Report_${runId}.xlsx`);
   const cleanupCmaFiles = () => {
     for (const f of [tempJsonPath, tempExcelPath]) {
       try {
-        if (import_fs20.default.existsSync(f)) import_fs20.default.unlinkSync(f);
+        if (import_fs21.default.existsSync(f)) import_fs21.default.unlinkSync(f);
       } catch (e) {
       }
     }
@@ -105344,14 +106074,14 @@ app.post("/api/cma/generate", authenticateToken, async (req, res) => {
   let responded = false;
   try {
     const payload = req.body;
-    import_fs20.default.writeFileSync(tempJsonPath, JSON.stringify(payload));
+    import_fs21.default.writeFileSync(tempJsonPath, JSON.stringify(payload));
     const pythonCmd = resolvePythonExecutable();
     if (!pythonCmd) {
       cleanupCmaFiles();
       return res.status(503).json({ error: "Python runtime is not detected on this system. Please install Python to generate CMA Excel reports." });
     }
-    const generatorScript = import_path21.default.join(__dirname2, "scripts", "cma", "cma_generator.py");
-    const child = (0, import_child_process10.spawn)(pythonCmd, [generatorScript, tempJsonPath, tempExcelPath]);
+    const generatorScript = import_path22.default.join(__dirname2, "scripts", "cma", "cma_generator.py");
+    const child = (0, import_child_process11.spawn)(pythonCmd, [generatorScript, tempJsonPath, tempExcelPath]);
     child.on("error", (spawnErr) => {
       cleanupCmaFiles();
       if (!responded && !res.headersSent) {
@@ -105365,7 +106095,7 @@ app.post("/api/cma/generate", authenticateToken, async (req, res) => {
     });
     child.on("close", (code) => {
       try {
-        if (import_fs20.default.existsSync(tempJsonPath)) import_fs20.default.unlinkSync(tempJsonPath);
+        if (import_fs21.default.existsSync(tempJsonPath)) import_fs21.default.unlinkSync(tempJsonPath);
       } catch (err) {
       }
       if (responded) return;
@@ -105395,7 +106125,7 @@ app.use("/api", (req, res) => {
   return res.status(404).json({ success: false, error: "API route not found: " + req.method + " " + req.path });
 });
 app.get(/(.*)/, (req, res) => {
-  res.sendFile(import_path21.default.join(DIST_PATH, "index.html"));
+  res.sendFile(import_path22.default.join(DIST_PATH, "index.html"));
 });
 app.get("/api/network/servers", authenticateToken, async (req, res) => {
   try {
@@ -105459,8 +106189,8 @@ app.get("/api/network/servers", authenticateToken, async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Network Server API running on port ${PORT}`);
   try {
-    const pythonScriptPath = import_path21.default.join(__dirname2, "LevitateExtract", "main.py");
-    if (!import_fs20.default.existsSync(pythonScriptPath)) {
+    const pythonScriptPath = import_path22.default.join(__dirname2, "LevitateExtract", "main.py");
+    if (!import_fs21.default.existsSync(pythonScriptPath)) {
       console.log("[LevitateExtract] Microservice script not found, skipping launch.");
       return;
     }
@@ -105477,10 +106207,10 @@ app.listen(PORT, "0.0.0.0", () => {
     env.NUMEXPR_NUM_THREADS = "1";
     env.PYTHONDONTWRITEBYTECODE = "1";
     const logBaseDir = userDataPath || process.cwd();
-    const outLog = import_fs20.default.openSync(import_path21.default.join(logBaseDir, "programmatic_out.log"), "a");
-    const errLog = import_fs20.default.openSync(import_path21.default.join(logBaseDir, "programmatic_err.log"), "a");
-    const pythonProcess = (0, import_child_process10.spawn)(pythonExe, [pythonScriptPath], {
-      cwd: import_path21.default.join(__dirname2, "LevitateExtract"),
+    const outLog = import_fs21.default.openSync(import_path22.default.join(logBaseDir, "programmatic_out.log"), "a");
+    const errLog = import_fs21.default.openSync(import_path22.default.join(logBaseDir, "programmatic_err.log"), "a");
+    const pythonProcess = (0, import_child_process11.spawn)(pythonExe, [pythonScriptPath], {
+      cwd: import_path22.default.join(__dirname2, "LevitateExtract"),
       env,
       detached: true,
       stdio: ["ignore", outLog, errLog]

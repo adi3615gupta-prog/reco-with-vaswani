@@ -20,8 +20,8 @@ echo  Active Branch  : %CURRENT_BRANCH%
 echo ==============================================================================
 echo.
 echo   [1] QUICK PUSH  - Stage all (git add .), Commit ("today work"), Push to main
-echo   [2] PULL        - Fetch and Pull latest updates from origin main
-echo   [3] FULL SYNC   - Pull from origin main, then Commit and Push
+echo   [2] PULL        - Safe Pull with Auto-Stash from origin main
+echo   [3] FULL SYNC   - Pull latest from main, merge local work, and Push
 echo   [4] GIT STATUS  - Check modified/untracked files and recent commits
 echo   [5] EXIT
 echo.
@@ -85,16 +85,43 @@ goto :MENU
 :PULL
 cls
 echo ==============================================================================
-echo                           PULL LATEST FROM GITHUB
+echo                           SAFE PULL FROM GITHUB
 echo ==============================================================================
 echo.
+
+set HAS_DIRTY=0
+for /f "tokens=*" %%x in ('git status --porcelain 2^>nul') do set HAS_DIRTY=1
+
+set AUTO_STASHED=0
+if "%HAS_DIRTY%"=="1" (
+    echo [INFO] Uncommitted local modifications detected.
+    echo Stashing your local work safely before pulling to prevent overwrite conflicts...
+    git stash push -m "Auto-stashed by SYNC_GITHUB.bat at %TIME%" >nul 2>&1
+    if not errorlevel 1 set AUTO_STASHED=1
+    echo.
+)
+
 echo Pulling latest commits from origin main...
 git pull origin main
-if errorlevel 1 (
+set PULL_STATUS=%ERRORLEVEL%
+
+if "%AUTO_STASHED%"=="1" (
     echo.
+    echo Restoring your uncommitted local modifications (git stash pop)...
+    git stash pop
+    if errorlevel 1 (
+        echo.
+        echo [NOTICE] Some stashed changes had merge overlaps with incoming commits.
+        echo Please review git status to inspect conflicting files.
+    ) else (
+        echo [SUCCESS] Local changes restored cleanly on top of latest commits!
+    )
+)
+
+echo.
+if not "%PULL_STATUS%"=="0" (
     echo [ERROR] Git pull failed! Please check for merge conflicts or connection issues.
 ) else (
-    echo.
     echo [SUCCESS] Successfully updated from origin main!
 )
 echo.
@@ -107,25 +134,40 @@ echo ===========================================================================
 echo                           FULL TWO-WAY SYNC
 echo ==============================================================================
 echo.
-echo [Step 1/4] Pulling latest changes from origin main...
+set HAS_DIRTY=0
+for /f "tokens=*" %%x in ('git status --porcelain 2^>nul') do set HAS_DIRTY=1
+
+set AUTO_STASHED=0
+if "%HAS_DIRTY%"=="1" (
+    echo [Step 1/5] Local modifications detected. Stashing safely before pull...
+    git stash push -m "Auto-stashed by FULL_SYNC at %TIME%" >nul 2>&1
+    if not errorlevel 1 set AUTO_STASHED=1
+)
+
+echo [Step 2/5] Pulling latest changes from origin main...
 git pull origin main
 if errorlevel 1 (
-    echo.
     echo [WARNING] Pull reported issues. Review before proceeding.
+    if "%AUTO_STASHED%"=="1" git stash pop >nul 2>&1
     pause
     goto :MENU
 )
 
-echo.
-echo [Step 2/4] Staging local changes (git add .)...
-git add .
+if "%AUTO_STASHED%"=="1" (
+    echo.
+    echo Restoring local changes...
+    git stash pop
+)
 
 echo.
+echo [Step 3/5] Staging local changes (git add .)...
+git add .
+
 set /p MSG="Enter commit message (Press Enter for 'sync work'): "
 if "%MSG%"=="" set MSG=sync work
 
 echo.
-echo [Step 3/4] Committing local changes...
+echo [Step 4/5] Committing local changes...
 git commit -m "%MSG%"
 
 :: If on another branch, merge to main
@@ -138,7 +180,7 @@ if not "%CB%"=="main" (
 )
 
 echo.
-echo [Step 4/4] Pushing to origin main...
+echo [Step 5/5] Pushing to origin main...
 git push origin main
 if errorlevel 1 (
     echo.

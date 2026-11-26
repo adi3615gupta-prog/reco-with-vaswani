@@ -1,7 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import PerspectiveTunnelHero, { unsplash, type TunnelImage } from "@/components/ui/perspective-tunnel-hero";
+import PerspectiveTunnelHero, { type TunnelImage } from "@/components/ui/perspective-tunnel-hero";
 import { WorksWheel, type WorksWheelHandle, type WorksWheelItem } from "@/components/ui/works-wheel";
+
+// Photos are bundled in public/suites so they show offline in the packaged app.
+const LOCAL_PHOTO: Record<string, string> = {
+  "1554224155-6726b3ff858f": "suite-01.jpg",
+  "1460925895917-afdab827c52f": "suite-02.jpg",
+  "1551288049-bebda4e38f71": "suite-03.jpg",
+  "1454165804606-c3d57bc86b40": "suite-04.jpg",
+  "1450101499163-c8848c66ca85": "suite-05.jpg",
+  "1504868584819-f8e8b4b6d7e3": "suite-06.jpg",
+  "1579621970563-ebec7560ff3e": "suite-07.jpg",
+  "1486406146926-c627a92ad1ab": "suite-08.jpg",
+  "1521791136064-7986c2920216": "suite-09.jpg",
+};
+const unsplash = (id: string) => `/suites/${LOCAL_PHOTO[id]}`;
 
 // Module-level so the tunnel's card layout isn't rebuilt on every render.
 const TUNNEL_IMAGES: TunnelImage[] = [
