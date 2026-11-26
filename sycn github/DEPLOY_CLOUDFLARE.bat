@@ -16,31 +16,15 @@ echo  Repository Root: %CD%
 echo ==============================================================================
 echo.
 
-:: 1. Check or load project name from config
+:: 1. Check or load project name from config (Default: finpulse)
 set PROJECT_NAME=
 if exist ".cloudflare_project" (
     set /p PROJECT_NAME=<.cloudflare_project
 )
+if "!PROJECT_NAME!"=="" set PROJECT_NAME=finpulse
 
-if "%PROJECT_NAME%"=="" (
-    echo [SETUP] Please enter your Cloudflare Pages Project Name.
-    echo (You can find this in Cloudflare Dashboard - Workers ^& Pages)
-    echo Example: finpulse or reco-vaswani
-    echo.
-    set /p PROJECT_NAME="Enter Cloudflare Project Name: "
-    if "!PROJECT_NAME!"=="" (
-        echo [ERROR] Project name cannot be empty!
-        pause
-        exit /b 1
-    )
-    echo !PROJECT_NAME!>.cloudflare_project
-    echo Saved project name '!PROJECT_NAME!' to .cloudflare_project
-    echo.
-) else (
-    echo Cloudflare Pages Project: !PROJECT_NAME!
-    echo (To change this, edit or delete the file .cloudflare_project)
-    echo.
-)
+echo Cloudflare Pages Project: !PROJECT_NAME!
+echo.
 
 :: 2. Build Check
 echo [1/2] Checking production build (dist/)...
@@ -68,17 +52,16 @@ if not exist "dist\index.html" (
 
 echo.
 echo [2/2] Deploying 'dist' folder to Cloudflare Pages (!PROJECT_NAME!)...
-echo (If you are deploying for the first time, a browser window will open to authorize Cloudflare)
 echo.
 
-call npx --yes wrangler pages deploy dist --project-name="!PROJECT_NAME!" --commit-dirty=true
+call npx --yes wrangler@3 pages deploy dist --project-name="!PROJECT_NAME!" --commit-dirty=true
 if errorlevel 1 (
     echo.
     echo ==============================================================================
     echo                 [ERROR] CLOUDFLARE DEPLOYMENT ENCOUNTERED AN ISSUE!
     echo ==============================================================================
     echo - Make sure project '!PROJECT_NAME!' exists in Cloudflare Pages dashboard.
-    echo - Check your internet connection or run: npx wrangler login
+    echo - If logged out, run: npx wrangler@3 login
 ) else (
     echo.
     echo ==============================================================================
