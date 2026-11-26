@@ -34,7 +34,7 @@ echo.
 echo [2/2] Deploying fresh 'dist' to Cloudflare Pages: !PROJECT_NAME!...
 echo.
 
-call npx --yes wrangler@3 pages deploy dist --project-name="!PROJECT_NAME!" --commit-dirty=true
+call npx --yes wrangler@3 pages deploy dist --project-name="!PROJECT_NAME!" --branch=production --commit-dirty=true
 if errorlevel 1 goto :DEPLOY_FAIL
 
 echo.
