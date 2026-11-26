@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Vaswani Enterprise - GitHub Sync Manager
+title Vaswani Enterprise - GitHub & Cloudflare Sync Manager
 
 :: Locate Repository Root Directory
 cd /d "%~dp0"
@@ -11,7 +11,7 @@ if exist "..\.git" (
 :MENU
 cls
 echo ==============================================================================
-echo             VASWANI RETURN ENTERPRISE - GITHUB SYNC UTILITY
+echo             VASWANI RETURN ENTERPRISE - GITHUB & CLOUDFLARE SYNC
 echo ==============================================================================
 echo  Repository Root: %CD%
 for /f "tokens=*" %%i in ('git branch --show-current 2^>nul') do set CURRENT_BRANCH=%%i
@@ -19,22 +19,24 @@ if not defined CURRENT_BRANCH set CURRENT_BRANCH=main
 echo  Active Branch  : %CURRENT_BRANCH%
 echo ==============================================================================
 echo.
-echo   [1] QUICK PUSH  - Stage all (git add .), Commit ("today work"), Push to main
-echo   [2] PULL        - Safe Pull with Auto-Stash from origin main
-echo   [3] FULL SYNC   - Pull latest from main, merge local work, and Push
-echo   [4] GIT STATUS  - Check modified/untracked files and recent commits
-echo   [5] EXIT
+echo   [1] QUICK PUSH       - Stage all (git add .), Commit ("today work"), Push to main
+echo   [2] PULL             - Safe Pull with Auto-Stash from origin main
+echo   [3] FULL SYNC        - Pull latest from main, merge local work, and Push
+echo   [4] GIT STATUS       - Check modified/untracked files and recent commits
+echo   [5] DEPLOY CLOUDFLARE- 1-Click build and direct push to Cloudflare Pages
+echo   [6] EXIT
 echo.
-set /p CHOICE="Select an option (1-5) [Default: 1]: "
+set /p CHOICE="Select an option (1-6) [Default: 1]: "
 if "%CHOICE%"=="" set CHOICE=1
 
 if "%CHOICE%"=="1" goto :QUICK_PUSH
 if "%CHOICE%"=="2" goto :PULL
 if "%CHOICE%"=="3" goto :FULL_SYNC
 if "%CHOICE%"=="4" goto :STATUS
-if "%CHOICE%"=="5" goto :EOF
+if "%CHOICE%"=="5" goto :CLOUDFLARE
+if "%CHOICE%"=="6" goto :EOF
 echo.
-echo Invalid selection. Please choose 1 to 5.
+echo Invalid selection. Please choose 1 to 6.
 timeout /t 2 >nul
 goto :MENU
 
@@ -191,6 +193,18 @@ if errorlevel 1 (
 )
 echo.
 pause
+goto :MENU
+
+:CLOUDFLARE
+cls
+if exist "DEPLOY_CLOUDFLARE.bat" (
+    call "DEPLOY_CLOUDFLARE.bat"
+) else if exist "sycn github\DEPLOY_CLOUDFLARE.bat" (
+    call "sycn github\DEPLOY_CLOUDFLARE.bat"
+) else (
+    echo [ERROR] DEPLOY_CLOUDFLARE.bat not found!
+    pause
+)
 goto :MENU
 
 :STATUS
