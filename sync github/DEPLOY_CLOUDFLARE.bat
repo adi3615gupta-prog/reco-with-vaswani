@@ -24,21 +24,14 @@ if "!PROJECT_NAME!"=="" set PROJECT_NAME=finpulse
 echo Cloudflare Pages Target Project: !PROJECT_NAME!
 echo.
 
-:: 2. Check if dist folder exists
-echo [1/2] Checking production build...
-if not exist "dist\index.html" goto :DO_BUILD
-
-echo Production build found in dist folder.
-goto :DO_DEPLOY
-
-:DO_BUILD
-echo Building fresh production assets...
+:: 2. Always build fresh production bundle before deploying
+echo [1/2] Compiling latest production assets (npm run build)...
 call npm run build
 if errorlevel 1 goto :BUILD_FAIL
 
-:DO_DEPLOY
+:: 3. Deploy to Cloudflare Pages
 echo.
-echo [2/2] Deploying to Cloudflare Pages: !PROJECT_NAME!...
+echo [2/2] Deploying fresh 'dist' to Cloudflare Pages: !PROJECT_NAME!...
 echo.
 
 call npx --yes wrangler@3 pages deploy dist --project-name="!PROJECT_NAME!" --commit-dirty=true

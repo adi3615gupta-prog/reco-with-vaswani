@@ -26,11 +26,18 @@ import {
   fetchCompanyInfo,
   fetchAllLedgerNames,
   fetchLedgerVouchers,
+  fetchLedgerBalances,
   type TallyConnectionConfig,
   type TallyCompanyInfo,
   type TallyLedgerListItem,
   type LedgerVoucherEntry,
+  type LedgerBalanceSummary,
 } from '@/lib/tallyApi';
+import {
+  buildLedgerImportWorkbook,
+  formatSignedBalanceText,
+  lookupLedgerBalance,
+} from '@/lib/tallyLedgerExport';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -67,6 +74,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
 
   // Results
   const [voucherEntries, setVoucherEntries] = useState<LedgerVoucherEntry[]>([]);
+  const [ledgerBalances, setLedgerBalances] = useState<Map<string, LedgerBalanceSummary>>(new Map());
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0, ledgerName: '' });
 
@@ -168,19 +176,28 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
 
     setFetchingVouchers(true);
     setVoucherEntries([]);
-    setFetchProgress({ current: 1, total: names.length, ledgerName: 'Fetching from Tally...' });
+    setLedgerBalances(new Map());
+    setEntriesPage(1);
+    setLedgerFilter('');
+    setTypeFilter('');
+    setTableSearch('');
+    setFetchProgress({ current: 1, total: names.length, ledgerName: 'Fetching vouchers & balances from Tally...' });
 
     try {
-      const allEntries = await fetchLedgerVouchers(names, fromDate, toDate, config);
+      const [allEntries, balances] = await Promise.all([
+        fetchLedgerVouchers(names, fromDate, toDate, config),
+        fetchLedgerBalances(names, fromDate, toDate, config, companyInfo?.financialYear),
+      ]);
       setVoucherEntries(allEntries);
+      setLedgerBalances(balances);
       setCurrentStep('results');
-      toast.success(`Fetched ${allEntries.length} voucher entries across ${names.length} ledgers`);
+      toast.success(`Fetched ${allEntries.length} voucher entries & balances across ${names.length} ledgers`);
     } catch (err) {
       toast.error('Failed to fetch vouchers');
     } finally {
       setFetchingVouchers(false);
     }
-  }, [selectedLedgers, fromDate, toDate, config]);
+  }, [selectedLedgers, fromDate, toDate, config, companyInfo?.financialYear]);
 
   // ─── Sorted & Filtered Results ───────────────────────────
 
@@ -232,15 +249,79 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
     [voucherEntries]
   );
 
-  const uniqueLedgerNames = useMemo(() =>
-    Array.from(new Set(voucherEntries.map(e => e.ledgerName))).sort(),
-    [voucherEntries]
-  );
+  const uniqueLedgerNames = useMemo(() => {
+    const set = new Set<string>();
+    selectedLedgers.forEach(l => set.add(l));
+    ledgerBalances.forEach((_, k) => set.add(k));
+    voucherEntries.forEach(e => set.add(e.ledgerName));
+    return Array.from(set).sort();
+  }, [selectedLedgers, ledgerBalances, voucherEntries]);
+
+  const activeLedgerNames = useMemo(() => {
+    if (ledgerFilter) return [ledgerFilter];
+    return uniqueLedgerNames;
+  }, [ledgerFilter, uniqueLedgerNames]);
 
   const totals = useMemo(() => ({
     debit: processedEntries.reduce((s, e) => s + e.debit, 0),
     credit: processedEntries.reduce((s, e) => s + e.credit, 0),
   }), [processedEntries]);
+
+  const perLedgerSummaries = useMemo(() => {
+    return uniqueLedgerNames.map(ln => {
+      const bal = lookupLedgerBalance(ledgerBalances, ln);
+      const op = bal?.openingBalance ?? 0;
+      const cl = bal?.closingBalance ?? 0;
+      const lEntries = voucherEntries.filter(e => e.ledgerName.toUpperCase() === ln.toUpperCase());
+      const pDr = lEntries.reduce((s, e) => s + e.debit, 0);
+      const pCr = lEntries.reduce((s, e) => s + e.credit, 0);
+      const computedClosing = op + pDr - pCr;
+      const isExactMatch = Math.abs(computedClosing - cl) < 0.05;
+      return {
+        ledgerName: ln,
+        parent: bal?.parent || '',
+        openingBalance: op,
+        periodDebit: pDr,
+        periodCredit: pCr,
+        closingBalance: cl,
+        voucherCount: lEntries.length,
+        isExactMatch,
+      };
+    });
+  }, [uniqueLedgerNames, ledgerBalances, voucherEntries]);
+
+  const activeBalanceTotals = useMemo(() => {
+    let openingSigned = 0;
+    let closingSigned = 0;
+    let openingDebit = 0;
+    let openingCredit = 0;
+    let closingDebit = 0;
+    let closingCredit = 0;
+
+    for (const ln of activeLedgerNames) {
+      const bal = lookupLedgerBalance(ledgerBalances, ln);
+      const op = bal?.openingBalance ?? 0;
+      const cl = bal?.closingBalance ?? 0;
+      openingSigned += op;
+      closingSigned += cl;
+      if (op > 0) openingDebit += op;
+      else if (op < 0) openingCredit += Math.abs(op);
+      if (cl > 0) closingDebit += cl;
+      else if (cl < 0) closingCredit += Math.abs(cl);
+    }
+
+    return {
+      openingSigned,
+      closingSigned,
+      openingDebit,
+      openingCredit,
+      closingDebit,
+      closingCredit,
+    };
+  }, [activeLedgerNames, ledgerBalances]);
+
+  const isSingleLedgerView = activeLedgerNames.length === 1;
+  const showOpeningClosingRows = !tableSearch && !typeFilter;
 
   // ─── Sort handler ────────────────────────────────────────
 
@@ -256,150 +337,25 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
   // ─── Export to Excel ─────────────────────────────────────
 
   const handleExport = useCallback(() => {
-    if (processedEntries.length === 0) {
+    if (processedEntries.length === 0 && ledgerBalances.size === 0) {
       toast.error('No data to export');
       return;
     }
 
-    const wb = XLSX.utils.book_new();
-
-    // Header style
-    const headerStyle = {
-      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-      fill: { fgColor: { rgb: '1E3A5F' } },
-      alignment: { horizontal: 'center' as const, vertical: 'center' as const },
-      border: {
-        top: { style: 'thin' as const, color: { rgb: '999999' } },
-        bottom: { style: 'thin' as const, color: { rgb: '999999' } },
-        left: { style: 'thin' as const, color: { rgb: '999999' } },
-        right: { style: 'thin' as const, color: { rgb: '999999' } },
-      }
-    };
-
-    const cellBorder = {
-      top: { style: 'thin' as const, color: { rgb: 'DDDDDD' } },
-      bottom: { style: 'thin' as const, color: { rgb: 'DDDDDD' } },
-      left: { style: 'thin' as const, color: { rgb: 'DDDDDD' } },
-      right: { style: 'thin' as const, color: { rgb: 'DDDDDD' } },
-    };
-
-    const numFmt = '#,##0.00';
-
-    // Build data
-    const headers = ['Date', 'Voucher No.', 'Voucher Type', 'Ledger Name', 'Party Name', 'Debit (₹)', 'Credit (₹)', 'Narration'];
-    const rows = processedEntries.map(e => [
-      e.date, e.voucherNumber, e.voucherType, e.ledgerName, e.partyName,
-      e.debit || '', e.credit || '', e.narration
-    ]);
-
-    // Add totals row
-    rows.push(['', '', '', '', 'TOTAL', totals.debit, totals.credit, '']);
-
-    const ws = XLSX.utils.aoa_to_sheet([
-      [`Ledger Voucher Import — ${companyInfo?.name || 'Tally Company'}`],
-      [`Period: ${fromDate} to ${toDate} | Ledgers: ${Array.from(selectedLedgers).join(', ')}`],
-      [],
-      headers,
-      ...rows
-    ]);
-
-    // Merge title cells
-    ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
-    ];
-
-    // Title style
-    if (ws['A1']) ws['A1'].s = { font: { bold: true, sz: 14, color: { rgb: '1E3A5F' } }, alignment: { horizontal: 'center' } };
-    if (ws['A2']) ws['A2'].s = { font: { sz: 10, color: { rgb: '666666' } }, alignment: { horizontal: 'center' } };
-
-    // Header row styles
-    const headerRowIdx = 3;
-    headers.forEach((_, ci) => {
-      const cellRef = XLSX.utils.encode_cell({ r: headerRowIdx, c: ci });
-      if (ws[cellRef]) ws[cellRef].s = headerStyle;
+    const wb = buildLedgerImportWorkbook({
+      companyName: companyInfo?.name || 'Tally Company',
+      fromDate,
+      toDate,
+      selectedLedgerNames: activeLedgerNames,
+      entries: processedEntries,
+      balances: ledgerBalances,
+      isFilteredBySearchOrType: Boolean(tableSearch || typeFilter),
     });
-
-    // Data cell styles
-    for (let ri = 0; ri < rows.length; ri++) {
-      const isTotal = ri === rows.length - 1;
-      for (let ci = 0; ci < headers.length; ci++) {
-        const cellRef = XLSX.utils.encode_cell({ r: headerRowIdx + 1 + ri, c: ci });
-        if (ws[cellRef]) {
-          const style: any = { border: cellBorder };
-          if (isTotal) {
-            style.font = { bold: true, sz: 11 };
-            style.fill = { fgColor: { rgb: 'F0F4F8' } };
-          }
-          if (ci === 5 || ci === 6) {
-            style.numFmt = numFmt;
-            if (typeof ws[cellRef].v === 'number') {
-              style.alignment = { horizontal: 'right' };
-            }
-          }
-          ws[cellRef].s = { ...ws[cellRef].s, ...style };
-        }
-      }
-    }
-
-    // Column widths
-    ws['!cols'] = [
-      { wch: 12 }, // Date
-      { wch: 16 }, // Voucher No
-      { wch: 16 }, // Voucher Type
-      { wch: 30 }, // Ledger Name
-      { wch: 30 }, // Party Name
-      { wch: 15 }, // Debit
-      { wch: 15 }, // Credit
-      { wch: 40 }, // Narration
-    ];
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Ledger Vouchers');
-
-    // Per-ledger sheets
-    const ledgerNames = Array.from(new Set(processedEntries.map(e => e.ledgerName)));
-    for (const ln of ledgerNames) {
-      const lEntries = processedEntries.filter(e => e.ledgerName === ln);
-      if (lEntries.length === 0) continue;
-
-      const lHeaders = ['Date', 'Voucher No.', 'Voucher Type', 'Party Name', 'Debit (₹)', 'Credit (₹)', 'Narration'];
-      const lRows = lEntries.map(e => [
-        e.date, e.voucherNumber, e.voucherType, e.partyName,
-        e.debit || '', e.credit || '', e.narration
-      ]);
-      const lTotalDebit = lEntries.reduce((s, e) => s + e.debit, 0);
-      const lTotalCredit = lEntries.reduce((s, e) => s + e.credit, 0);
-      lRows.push(['', '', '', 'TOTAL', lTotalDebit, lTotalCredit, '']);
-
-      const lws = XLSX.utils.aoa_to_sheet([
-        [`${ln} — Voucher Details`],
-        [],
-        lHeaders,
-        ...lRows
-      ]);
-
-      lws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }];
-      if (lws['A1']) lws['A1'].s = { font: { bold: true, sz: 13, color: { rgb: '1E3A5F' } } };
-
-      const lHeaderRowIdx = 2;
-      lHeaders.forEach((_, ci) => {
-        const cellRef = XLSX.utils.encode_cell({ r: lHeaderRowIdx, c: ci });
-        if (lws[cellRef]) lws[cellRef].s = headerStyle;
-      });
-
-      lws['!cols'] = [
-        { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 40 },
-      ];
-
-      // Sanitize sheet name (max 31 chars, no special chars)
-      const sheetName = ln.replace(/[\\/*?[\]:]/g, '').substring(0, 31) || 'Ledger';
-      XLSX.utils.book_append_sheet(wb, lws, sheetName);
-    }
 
     const fileName = `Ledger_Import_${companyInfo?.name?.replace(/[^A-Za-z0-9]/g, '_') || 'Tally'}_${fromDate}_to_${toDate}.xlsx`;
     XLSX.writeFile(wb, fileName);
     toast.success('Excel exported successfully', { description: fileName });
-  }, [processedEntries, companyInfo, fromDate, toDate, selectedLedgers, totals]);
+  }, [processedEntries, ledgerBalances, companyInfo, fromDate, toDate, activeLedgerNames, tableSearch, typeFilter]);
 
   // ─── Format helpers ──────────────────────────────────────
 
@@ -706,7 +662,12 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                     </span>
                     {ledger.closingBalance > 0 && (
                       <span className="text-xs text-slate-600 font-mono whitespace-nowrap">
-                        ₹{ledger.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{ledger.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                        {ledger.signedClosingBalance !== undefined && ledger.signedClosingBalance !== 0 && (
+                          <span className={ledger.signedClosingBalance > 0 ? 'text-emerald-600 font-bold' : 'text-red-600 font-bold'}>
+                            {ledger.signedClosingBalance > 0 ? 'Dr' : 'Cr'}
+                          </span>
+                        )}
                       </span>
                     )}
                   </div>
@@ -774,27 +735,119 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
         >
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Total Entries</p>
-              <p className="text-2xl font-black text-slate-900">{processedEntries.length.toLocaleString()}</p>
+            <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 space-y-1">
+              <p className="text-[10px] text-blue-600 uppercase tracking-wider font-bold">
+                {isSingleLedgerView ? 'Opening Balance' : 'Net Opening Balance'}
+              </p>
+              <p className="text-lg font-black text-blue-700 font-mono">
+                {formatSignedBalanceText(activeBalanceTotals.openingSigned)}
+              </p>
+              <p className="text-[10px] text-slate-500 font-mono">As on {fmtDate(fromDate)}</p>
             </div>
             <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
-              <p className="text-[10px] text-emerald-500 uppercase tracking-wider font-bold">Total Debit</p>
-              <p className="text-lg font-black text-emerald-300">{fmtAmount(totals.debit)}</p>
+              <p className="text-[10px] text-emerald-600 uppercase tracking-wider font-bold">Period Debit</p>
+              <p className="text-lg font-black text-emerald-700 font-mono">{fmtAmount(totals.debit)}</p>
+              <p className="text-[10px] text-slate-500 font-mono">{processedEntries.length.toLocaleString()} entries</p>
             </div>
             <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 space-y-1">
-              <p className="text-[10px] text-red-500 uppercase tracking-wider font-bold">Total Credit</p>
-              <p className="text-lg font-black text-red-300">{fmtAmount(totals.credit)}</p>
+              <p className="text-[10px] text-red-600 uppercase tracking-wider font-bold">Period Credit</p>
+              <p className="text-lg font-black text-red-700 font-mono">{fmtAmount(totals.credit)}</p>
+              <p className="text-[10px] text-slate-500 font-mono">{uniqueVoucherTypes.length} voucher types</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 space-y-1">
+              <p className="text-[10px] text-teal-700 uppercase tracking-wider font-bold">
+                {isSingleLedgerView ? 'Closing Balance' : 'Net Closing Balance'}
+              </p>
+              <p className="text-lg font-black text-teal-800 font-mono">
+                {formatSignedBalanceText(activeBalanceTotals.closingSigned)}
+              </p>
+              <p className="text-[10px] text-slate-500 font-mono">As on {fmtDate(toDate)}</p>
             </div>
             <div className="p-4 rounded-2xl bg-orange-500/5 border border-orange-500/20 space-y-1">
-              <p className="text-[10px] text-orange-500 uppercase tracking-wider font-bold">Ledgers</p>
-              <p className="text-2xl font-black text-orange-300">{uniqueLedgerNames.length}</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 space-y-1">
-              <p className="text-[10px] text-blue-500 uppercase tracking-wider font-bold">Voucher Types</p>
-              <p className="text-2xl font-black text-blue-300">{uniqueVoucherTypes.length}</p>
+              <p className="text-[10px] text-orange-600 uppercase tracking-wider font-bold">Ledgers</p>
+              <p className="text-2xl font-black text-orange-700">{activeLedgerNames.length}</p>
+              <p className="text-[10px] text-slate-500 font-mono">
+                {ledgerFilter ? 'Filtered 1 ledger' : `${uniqueLedgerNames.length} selected`}
+              </p>
             </div>
           </div>
+
+          {/* Per-Ledger Opening & Closing Balances Summary */}
+          {perLedgerSummaries.length > 0 && (
+            <div className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Ledger Opening &amp; Closing Balances (Tally Match)
+                </span>
+                {ledgerFilter && (
+                  <button
+                    onClick={() => { setLedgerFilter(''); setEntriesPage(1); }}
+                    className="text-[11px] font-semibold text-orange-600 hover:text-orange-700"
+                  >
+                    Show All Ledgers
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto max-h-[200px] overflow-y-auto custom-scrollbar">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-bold text-slate-600 uppercase tracking-wider">Ledger Name</th>
+                      <th className="px-4 py-2 text-left font-bold text-slate-600 uppercase tracking-wider">Group</th>
+                      <th className="px-4 py-2 text-right font-bold text-blue-700 uppercase tracking-wider">Opening Balance</th>
+                      <th className="px-4 py-2 text-right font-bold text-emerald-700 uppercase tracking-wider">Period Debit</th>
+                      <th className="px-4 py-2 text-right font-bold text-red-700 uppercase tracking-wider">Period Credit</th>
+                      <th className="px-4 py-2 text-right font-bold text-teal-700 uppercase tracking-wider">Closing Balance</th>
+                      <th className="px-4 py-2 text-center font-bold text-slate-600 uppercase tracking-wider">Tally Check</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perLedgerSummaries.map(row => {
+                      const isActive = ledgerFilter === row.ledgerName;
+                      return (
+                        <tr
+                          key={row.ledgerName}
+                          onClick={() => {
+                            setLedgerFilter(isActive ? '' : row.ledgerName);
+                            setEntriesPage(1);
+                          }}
+                          className={`border-b border-slate-100 cursor-pointer transition-colors ${
+                            isActive ? 'bg-orange-50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className="px-4 py-2 font-semibold text-slate-900">{row.ledgerName}</td>
+                          <td className="px-4 py-2 text-slate-500">{row.parent || '—'}</td>
+                          <td className="px-4 py-2 text-right font-mono font-semibold text-blue-700">
+                            {formatSignedBalanceText(row.openingBalance)}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-emerald-700">
+                            {row.periodDebit > 0 ? fmtAmount(row.periodDebit) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-red-700">
+                            {row.periodCredit > 0 ? fmtAmount(row.periodCredit) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-teal-800">
+                            {formatSignedBalanceText(row.closingBalance)}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            {row.isExactMatch ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                <CheckCircle2 className="w-3 h-3" /> Exact
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold" title="Opening + Debit - Credit differs slightly from Tally Closing">
+                                <AlertTriangle className="w-3 h-3" /> Check
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Table controls */}
           <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-white border border-slate-200/80 shadow-xs">
@@ -803,14 +856,14 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
               <input
                 type="text"
                 value={tableSearch}
-                onChange={e => setTableSearch(e.target.value)}
+                onChange={e => { setTableSearch(e.target.value); setEntriesPage(1); }}
                 placeholder="Search vouchers, parties, narration..."
                 className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
               />
             </div>
             <select
               value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}
+              onChange={e => { setTypeFilter(e.target.value); setEntriesPage(1); }}
               className="px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
             >
               <option value="">All Types</option>
@@ -818,7 +871,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
             </select>
             <select
               value={ledgerFilter}
-              onChange={e => setLedgerFilter(e.target.value)}
+              onChange={e => { setLedgerFilter(e.target.value); setEntriesPage(1); }}
               className="px-3 py-2 rounded-lg bg-slate-50/80 border border-slate-200 text-slate-900 text-sm focus:border-orange-500/50 focus:outline-none"
             >
               <option value="">All Ledgers</option>
@@ -866,12 +919,48 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {processedEntries.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
-                        No entries found matching your filters
+                  {showOpeningClosingRows && entriesPage === 1 && isSingleLedgerView && (
+                    <tr className="border-b border-blue-200 bg-blue-50/70">
+                      <td className="px-4 py-2.5 text-blue-800 font-mono text-xs whitespace-nowrap font-semibold">
+                        {fmtDate(fromDate)}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-400 font-semibold text-xs">—</td>
+                      <td className="px-4 py-2.5">
+                        <span className="px-2 py-0.5 rounded-md bg-blue-100 border border-blue-200 text-blue-800 text-[10px] font-bold">
+                          Opening Balance
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-blue-900 text-xs font-semibold max-w-[200px] truncate">
+                        {activeLedgerNames[0]}
+                      </td>
+                      <td className="px-4 py-2.5 text-blue-900 text-xs font-bold">
+                        Opening Balance
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs font-bold text-blue-800">
+                        {activeBalanceTotals.openingSigned > 0
+                          ? fmtAmount(activeBalanceTotals.openingSigned)
+                          : activeBalanceTotals.openingSigned === 0
+                          ? '₹ 0.00'
+                          : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs font-bold text-blue-800">
+                        {activeBalanceTotals.openingSigned < 0
+                          ? fmtAmount(Math.abs(activeBalanceTotals.openingSigned))
+                          : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-blue-700 text-xs">
+                        Opening balance as on {fmtDate(fromDate)}
                       </td>
                     </tr>
+                  )}
+                  {processedEntries.length === 0 ? (
+                    !showOpeningClosingRows || !isSingleLedgerView ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                          No voucher entries found matching your filters
+                        </td>
+                      </tr>
+                    ) : null
                   ) : (
                     processedEntries.slice((entriesPage - 1) * ENTRIES_PER_PAGE, entriesPage * ENTRIES_PER_PAGE).map((entry, idx) => (
                       <tr
@@ -889,7 +978,7 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                             {entry.voucherType}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-orange-300 text-xs font-medium max-w-[200px] truncate" title={entry.ledgerName}>
+                        <td className="px-4 py-2.5 text-orange-600 text-xs font-medium max-w-[200px] truncate" title={entry.ledgerName}>
                           {entry.ledgerName}
                         </td>
                         <td className="px-4 py-2.5 text-slate-700 text-xs max-w-[200px] truncate" title={entry.partyName}>
@@ -897,12 +986,12 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-xs">
                           {entry.debit > 0 && (
-                            <span className="text-emerald-400">{fmtAmount(entry.debit)}</span>
+                            <span className="text-emerald-600 font-medium">{fmtAmount(entry.debit)}</span>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-xs">
                           {entry.credit > 0 && (
-                            <span className="text-red-400">{fmtAmount(entry.credit)}</span>
+                            <span className="text-red-600 font-medium">{fmtAmount(entry.credit)}</span>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-slate-500 text-xs max-w-[250px] truncate" title={entry.narration}>
@@ -912,20 +1001,61 @@ export default function TallyLedgerImport({ onBack }: TallyLedgerImportProps) {
                     ))
                   )}
                 </tbody>
-                {processedEntries.length > 0 && (
+                {(processedEntries.length > 0 || (showOpeningClosingRows && ledgerBalances.size > 0)) && (
                   <tfoot className="sticky bottom-0">
                     <tr className="bg-white/95 border-t-2 border-orange-500/30">
-                      <td colSpan={5} className="px-4 py-3 text-right text-xs font-black text-slate-900 uppercase tracking-wider">
-                        Total ({processedEntries.length} entries)
+                      <td colSpan={5} className="px-4 py-2.5 text-right text-xs font-black text-slate-900 uppercase tracking-wider">
+                        {showOpeningClosingRows ? `Current Total (${processedEntries.length} entries)` : `Total (${processedEntries.length} entries)`}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-sm font-black text-emerald-400">
+                      <td className="px-4 py-2.5 text-right font-mono text-sm font-black text-emerald-700">
                         {fmtAmount(totals.debit)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-sm font-black text-red-400">
+                      <td className="px-4 py-2.5 text-right font-mono text-sm font-black text-red-700">
                         {fmtAmount(totals.credit)}
                       </td>
-                      <td className="px-4 py-3" />
+                      <td className="px-4 py-2.5" />
                     </tr>
+                    {showOpeningClosingRows && ledgerBalances.size > 0 && (
+                      <>
+                        {!isSingleLedgerView && (
+                          <tr className="bg-blue-50/95 border-t border-blue-200">
+                            <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold text-blue-900 uppercase tracking-wider">
+                              Opening Balance Total (All Selected)
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-xs font-bold text-blue-800">
+                              {activeBalanceTotals.openingDebit > 0 ? fmtAmount(activeBalanceTotals.openingDebit) : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-xs font-bold text-blue-800">
+                              {activeBalanceTotals.openingCredit > 0 ? fmtAmount(activeBalanceTotals.openingCredit) : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-blue-700 font-mono">
+                              Net: {formatSignedBalanceText(activeBalanceTotals.openingSigned)}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="bg-teal-50/95 border-t border-teal-200">
+                          <td colSpan={5} className="px-4 py-2.5 text-right text-xs font-black text-teal-900 uppercase tracking-wider">
+                            {isSingleLedgerView ? 'Closing Balance' : 'Net Closing Balance'} (
+                            {activeBalanceTotals.closingSigned > 0 ? 'Dr' : activeBalanceTotals.closingSigned < 0 ? 'Cr' : 'Nil'})
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-sm font-black text-teal-800">
+                            {activeBalanceTotals.closingSigned > 0
+                              ? fmtAmount(activeBalanceTotals.closingSigned)
+                              : activeBalanceTotals.closingSigned === 0
+                              ? '₹ 0.00'
+                              : ''}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-sm font-black text-teal-800">
+                            {activeBalanceTotals.closingSigned < 0
+                              ? fmtAmount(Math.abs(activeBalanceTotals.closingSigned))
+                              : ''}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-teal-700 font-mono">
+                            As on {fmtDate(toDate)}
+                          </td>
+                        </tr>
+                      </>
+                    )}
                   </tfoot>
                 )}
               </table>

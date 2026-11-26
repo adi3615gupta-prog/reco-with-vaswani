@@ -3235,6 +3235,48 @@ export interface TallyLedgerListItem {
   name: string;
   parent: string;
   closingBalance: number;
+  /** Signed closing balance: positive = Debit (Dr), negative = Credit (Cr) */
+  signedClosingBalance?: number;
+}
+
+/**
+ * Parse a Tally balance string into a signed number using standard accounting sign:
+ *   positive (+) = Debit (Dr)
+ *   negative (-) = Credit (Cr)
+ *   0            = Nil
+ *
+ * Handles both explicit Dr/Cr suffixes (e.g. "50,000.00 Dr", "50,000.00 Cr")
+ * and raw Tally XML numbers (negative = Debit, positive = Credit).
+ */
+export function parseTallySignedBalance(raw: string | undefined | null): number {
+  if (!raw) return 0;
+  const trimmed = unescapeXml(raw).trim();
+  if (!trimmed) return 0;
+  const upper = trimmed.toUpperCase();
+  const hasDr = /\bDR\b/.test(upper) || upper.endsWith('DR');
+  const hasCr = /\bCR\b/.test(upper) || upper.endsWith('CR');
+  const numericStr = trimmed.replace(/[₹,\s]/g, '').replace(/Dr|Cr/gi, '').trim();
+  const num = parseFloat(numericStr);
+  if (isNaN(num) || num === 0) return 0;
+  if (hasDr) return Math.abs(num);
+  if (hasCr) return -Math.abs(num);
+  // Raw Tally XML numeric convention: negative = Debit (+), positive = Credit (-)
+  return -num;
+}
+
+/** Subtract 1 calendar day from a YYYY-MM-DD or YYYYMMDD date string and return YYYYMMDD */
+function subtractOneDayTally(dateStr: string): string {
+  const tallyYmd = formatToTallyDate(dateStr);
+  if (!/^\d{8}$/.test(tallyYmd)) return '';
+  const y = parseInt(tallyYmd.slice(0, 4), 10);
+  const m = parseInt(tallyYmd.slice(4, 6), 10);
+  const d = parseInt(tallyYmd.slice(6, 8), 10);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}${mm}${dd}`;
 }
 
 /** Fetch all ledger names from Tally for the user to search/select */
@@ -3279,11 +3321,238 @@ export async function fetchAllLedgerNames(
 
     const cbMatch = m[2].match(/<CLOSINGBALANCE[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
     const closingBalance = cbMatch ? safeNum(cbMatch[1]) : 0;
+    const signedClosingBalance = cbMatch ? parseTallySignedBalance(cbMatch[1]) : 0;
 
-    results.push({ name, parent, closingBalance });
+    results.push({ name, parent, closingBalance, signedClosingBalance });
   }
 
   return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface LedgerBalanceSummary {
+  ledgerName: string;
+  parent: string;
+  /** Signed opening balance as of fromDate: positive = Debit (Dr), negative = Credit (Cr) */
+  openingBalance: number;
+  /** Signed closing balance as of toDate: positive = Debit (Dr), negative = Credit (Cr) */
+  closingBalance: number;
+  /** Period Debit total reported directly by Tally */
+  tallyDebitTotal: number;
+  /** Period Credit total reported directly by Tally */
+  tallyCreditTotal: number;
+}
+
+interface RawLedgerBalanceRecord {
+  name: string;
+  parent: string;
+  openingBalance: number;
+  closingBalance: number;
+  debitTotal: number;
+  creditTotal: number;
+}
+
+function buildLedgerBalanceCollectionXml(
+  collName: string,
+  fromTally: string,
+  toTally: string,
+  fetchFields: string,
+  filterNames?: string[]
+): string {
+  const canFilter =
+    filterNames &&
+    filterNames.length > 0 &&
+    filterNames.length <= 20 &&
+    !filterNames.some(n => n.includes('"'));
+
+  const filterTag = canFilter ? `<FILTER>${collName}_Filter</FILTER>` : '';
+  const formulaTag = canFilter
+    ? `<SYSTEM TYPE="FORMULAS" NAME="${collName}_Filter">${filterNames!
+        .map(n => `$Name = "${escapeXml(n)}"`)
+        .join(' OR ')}</SYSTEM>`
+    : '';
+
+  return `<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>${collName}</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        ${fromTally ? `<SVFROMDATE>${fromTally}</SVFROMDATE>` : ''}
+        ${toTally ? `<SVTODATE>${toTally}</SVTODATE>` : ''}
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="${collName}">
+            <TYPE>Ledger</TYPE>
+            ${filterTag}
+            <FETCH>${fetchFields}</FETCH>
+          </COLLECTION>
+          ${formulaTag}
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+}
+
+function parseLedgerBalanceResponse(resp: string): Map<string, RawLedgerBalanceRecord> {
+  const map = new Map<string, RawLedgerBalanceRecord>();
+  const blockRegex = /<LEDGER([^>]*)>([\s\S]*?)<\/LEDGER>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRegex.exec(resp)) !== null) {
+    const name = extractLedgerNameFromBlock(m[1], m[2]);
+    if (!name) continue;
+    const body = m[2];
+    const parentMatch = body.match(/<PARENT[^>]*>([^<]+)<\/PARENT>/i);
+    const parent = parentMatch ? unescapeXml(parentMatch[1]).trim() : '';
+
+    const obMatch = body.match(/<OPENINGBALANCE[^>]*>([^<]+)<\/OPENINGBALANCE>/i);
+    const cbMatch = body.match(/<CLOSINGBALANCE[^>]*>([^<]+)<\/CLOSINGBALANCE>/i);
+    const dtMatch = body.match(/<DEBITTOTALS[^>]*>([^<]+)<\/DEBITTOTALS>/i);
+    const ctMatch = body.match(/<CREDITTOTALS[^>]*>([^<]+)<\/CREDITTOTALS>/i);
+
+    const rec: RawLedgerBalanceRecord = {
+      name,
+      parent,
+      openingBalance: obMatch ? parseTallySignedBalance(obMatch[1]) : 0,
+      closingBalance: cbMatch ? parseTallySignedBalance(cbMatch[1]) : 0,
+      debitTotal: dtMatch ? safeNum(dtMatch[1]) : 0,
+      creditTotal: ctMatch ? safeNum(ctMatch[1]) : 0,
+    };
+
+    const upperKey = name.toUpperCase().trim();
+    map.set(upperKey, rec);
+  }
+  return map;
+}
+
+/**
+ * Resolve exact period Opening Balance (as of fromDate) and Closing Balance (as of toDate)
+ * from TallyPrime for the requested ledgers.
+ *
+ * Strategy for 100% Tally parity across full FY, multi-year, and mid-year periods:
+ *  1) Period query (SVFROMDATE=from, SVTODATE=to) returns ClosingBalance as of toDate,
+ *     master OpeningBalance, and Tally's period DebitTotals / CreditTotals.
+ *  2) Pre-period query (SVTODATE=fromDate - 1 day) returns ClosingBalance right before fromDate,
+ *     which equals the exact carried-forward Opening Balance for mid-year or multi-year queries.
+ *  3) When fromDate <= BooksFrom (no prior vouchers exist) or when the pre-period query fails
+ *     the accounting identity while masterOpening satisfies it, masterOpening is used.
+ */
+export async function fetchLedgerBalances(
+  ledgerNames: string[],
+  fromDate: string,
+  toDate: string,
+  config: TallyConnectionConfig = DEFAULT_CONFIG,
+  booksFrom?: string
+): Promise<Map<string, LedgerBalanceSummary>> {
+  const result = new Map<string, LedgerBalanceSummary>();
+  if (!ledgerNames || ledgerNames.length === 0) return result;
+
+  const from = formatToTallyDate(fromDate);
+  const to = formatToTallyDate(toDate);
+  const prevDay = from ? subtractOneDayTally(fromDate) : '';
+  const booksFromTally = booksFrom ? formatToTallyDate(booksFrom) : '';
+
+  const fetchPeriodBalances = async (filterNames?: string[]) => {
+    const xml = buildLedgerBalanceCollectionXml(
+      'LedgerPeriodBalances',
+      from,
+      to,
+      'Name, Parent, OpeningBalance, ClosingBalance, DebitTotals, CreditTotals',
+      filterNames
+    );
+    const resp = await sendTallyRequest(xml, config, 30000);
+    return parseLedgerBalanceResponse(resp);
+  };
+
+  const fetchPrevDayBalances = async (filterNames?: string[]) => {
+    if (!prevDay) return new Map<string, RawLedgerBalanceRecord>();
+    const xml = buildLedgerBalanceCollectionXml(
+      'LedgerPrevDayClosing',
+      '',
+      prevDay,
+      'Name, ClosingBalance',
+      filterNames
+    );
+    const resp = await sendTallyRequest(xml, config, 30000);
+    return parseLedgerBalanceResponse(resp);
+  };
+
+  let [periodMap, prevMap] = await Promise.all([
+    fetchPeriodBalances(ledgerNames),
+    fetchPrevDayBalances(ledgerNames),
+  ]);
+
+  // If any requested ledger was missed due to double-spaces/TDL filter quirks, do an unfiltered fallback
+  const hasMissing = ledgerNames.some(
+    ln => !periodMap.has(ln.replace(/\s+/g, ' ').trim().toUpperCase())
+  );
+  if (hasMissing && ledgerNames.length <= 20) {
+    [periodMap, prevMap] = await Promise.all([
+      fetchPeriodBalances(undefined),
+      fetchPrevDayBalances(undefined),
+    ]);
+  }
+
+  const isAtOrBeforeBooksStart = Boolean(booksFromTally && from && from <= booksFromTally);
+
+  for (const requestedName of ledgerNames) {
+    const normKey = requestedName.replace(/\s+/g, ' ').trim().toUpperCase();
+    const pRec = periodMap.get(normKey);
+    const prevRec = prevMap.get(normKey);
+
+    if (!pRec && !prevRec) {
+      result.set(requestedName, {
+        ledgerName: requestedName,
+        parent: '',
+        openingBalance: 0,
+        closingBalance: 0,
+        tallyDebitTotal: 0,
+        tallyCreditTotal: 0,
+      });
+      continue;
+    }
+
+    const masterOpening = pRec?.openingBalance ?? 0;
+    const closingBalance = pRec?.closingBalance ?? 0;
+    const tallyDebitTotal = pRec?.debitTotal ?? 0;
+    const tallyCreditTotal = pRec?.creditTotal ?? 0;
+    const prevDayClosing = prevRec?.closingBalance ?? 0;
+
+    let openingBalance = masterOpening;
+    if (!from || isAtOrBeforeBooksStart) {
+      openingBalance = masterOpening;
+    } else if (prevRec) {
+      const netTally = tallyDebitTotal - tallyCreditTotal;
+      const prevMatchesIdentity = Math.abs((prevDayClosing + netTally) - closingBalance) <= 0.05;
+      const masterMatchesIdentity = Math.abs((masterOpening + netTally) - closingBalance) <= 0.05;
+
+      if (prevMatchesIdentity) {
+        openingBalance = prevDayClosing;
+      } else if (masterMatchesIdentity) {
+        openingBalance = masterOpening;
+      } else {
+        // Prefer prevDayClosing for mid-year / multi-year periods
+        openingBalance = prevDayClosing;
+      }
+    }
+
+    result.set(requestedName, {
+      ledgerName: requestedName,
+      parent: pRec?.parent || '',
+      openingBalance,
+      closingBalance,
+      tallyDebitTotal,
+      tallyCreditTotal,
+    });
+  }
+
+  return result;
 }
 
 export interface LedgerVoucherEntry {
